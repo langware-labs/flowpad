@@ -24,27 +24,27 @@ async def _create(client, type_name: str, body: dict) -> str:
 
 
 async def test_a_retried_create_lands_on_the_same_row_under_a_minted_uuid4(bootstrapped_client):
-    cycle = {"repo": "org/identity", "cycle_id": "qa-20261116-090000", "branch": "main", "name": "nightly"}
+    cycle = {"repo": "org/identity", "label": "qa-20261116-090000", "branch": "main", "name": "nightly"}
     cycle_ids = {await _create(bootstrapped_client, "qa_cycle", cycle) for _ in range(2)}
     assert len(cycle_ids) == 1, cycle_ids
     (cycle_id,) = cycle_ids
     assert uuid.UUID(cycle_id).version == 4, "minted, not derived from the natural key"
 
-    iteration_id = await _create(bootstrapped_client, "qa_iteration", {"cycle": cycle_id, "order": 1, "iteration_id": "i01"})
-    assert await _create(bootstrapped_client, "qa_iteration", {"cycle": cycle_id, "order": 1, "iteration_id": "i01"}) == iteration_id
-    assert await _create(bootstrapped_client, "qa_iteration", {"cycle": cycle_id, "order": 2, "iteration_id": "i02"}) != iteration_id
+    iteration_id = await _create(bootstrapped_client, "qa_iteration", {"cycle_id": cycle_id, "order": 1, "label": "i01"})
+    assert await _create(bootstrapped_client, "qa_iteration", {"cycle_id": cycle_id, "order": 1, "label": "i01"}) == iteration_id
+    assert await _create(bootstrapped_client, "qa_iteration", {"cycle_id": cycle_id, "order": 2, "label": "i02"}) != iteration_id
 
-    attempt = {"cycle": cycle_id, "iteration": iteration_id, "test_file": "f1", "test_name": "test_login", "status": "fail"}
+    attempt = {"cycle_id": cycle_id, "iteration_id": iteration_id, "test_file_id": "f1", "test_name": "test_login", "status": "fail"}
     first = await _create(bootstrapped_client, "qa_test_execution", {**attempt, "attempt": 1})
     assert await _create(bootstrapped_client, "qa_test_execution", {**attempt, "attempt": 1}) == first
     second = await _create(bootstrapped_client, "qa_test_execution", {**attempt, "attempt": 2, "status": "pass"})
     assert second != first
-    assert len(await QATestExecution.get_all({"iteration": iteration_id})) == 2
+    assert len(await QATestExecution.get_all({"iteration_id": iteration_id})) == 2
 
 
 async def test_a_test_file_is_one_row_per_repository_whatever_its_phase(bootstrapped_client):
     phase_1 = await _create(bootstrapped_client, "qa_phase", {"repo": "org/identity-files", "step": 1, "name": "unit"})
     phase_2 = await _create(bootstrapped_client, "qa_phase", {"repo": "org/identity-files", "step": 2, "name": "e2e"})
-    file_id = await _create(bootstrapped_client, "qa_test_file", {"repo": "org/identity-files", "phase": phase_1, "path": "tests/test_a.py"})
-    assert await _create(bootstrapped_client, "qa_test_file", {"repo": "org/identity-files", "phase": phase_2, "path": "tests/test_a.py"}) == file_id
-    assert await _create(bootstrapped_client, "qa_test_file", {"repo": "org/other", "phase": phase_1, "path": "tests/test_a.py"}) != file_id
+    file_id = await _create(bootstrapped_client, "qa_test_file", {"repo": "org/identity-files", "phase_id": phase_1, "path": "tests/test_a.py"})
+    assert await _create(bootstrapped_client, "qa_test_file", {"repo": "org/identity-files", "phase_id": phase_2, "path": "tests/test_a.py"}) == file_id
+    assert await _create(bootstrapped_client, "qa_test_file", {"repo": "org/other", "phase_id": phase_1, "path": "tests/test_a.py"}) != file_id

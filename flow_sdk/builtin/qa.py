@@ -8,7 +8,7 @@ The rows are written and read through the generic graph API (``/api/v1/graph/<ty
 **Identity is the natural key, looked up — not derived.** A row's id is an ordinary uuid4, minted on its first
 create; a create sends no id. Each type declares its natural key once (``TypeInfo.natural_key``, indexed), and a
 create for a key a row already holds answers with that row (``find_existing_for_create``), so a retried write lands
-on it. A reference to another QA row holds that row's id. Test-file and phase verdicts are not stored: they are
+on it. A reference to another QA row is ``<name>_id`` and holds that row's id. Test-file and phase verdicts are not stored: they are
 inferred from the test executions.
 """
 
@@ -72,8 +72,8 @@ class QATestFile(_FoundByNaturalKey):
     asset_ref: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     #: The target repository, ``org/repo``: a file is one row per repository, whatever its phase.
     repo: str = APIField(default="")
-    #: The ``QAPhase`` it belongs to (its id).
-    phase: str = APIField(default="")
+    #: The ``QAPhase`` it belongs to, by id.
+    phase_id: str = APIField(default="")
     #: The file, from the repository root (normalized).
     path: str = APIField(default="")
     #: What runs it (pytest, vitest, playwright, …).
@@ -95,15 +95,15 @@ class QATestFile(_FoundByNaturalKey):
 class QATestCase(_NestedInParent):
     """A test case of the plan, in one test file. ``name`` is the test case as its runner names it."""
 
-    nests_in: ClassVar[tuple[str, EntityType]] = ("test_file", EntityType.QA_TEST_FILE)
+    nests_in: ClassVar[tuple[str, EntityType]] = ("test_file_id", EntityType.QA_TEST_FILE)
 
     type: str = APIField(default=EntityType.QA_TEST_CASE.value)
     #: Its document's folder: ``<scope>/agentic-assets/<type>/<name>/``, the record the row is rebuilt from.
     asset_ref: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     #: The ``QAPhase`` it belongs to (its test file's), by id.
-    phase: str = APIField(default="")
+    phase_id: str = APIField(default="")
     #: The ``QATestFile`` it is in, by id.
-    test_file: str = APIField(default="")
+    test_file_id: str = APIField(default="")
     #: The commit it was registered at. Whether it changed since is its test file's ``blob_sha``.
     commit_sha: Optional[str] = APIField(default=None)
     #: True once the test case is gone from the repository: it stays, with its executions, and is no longer planned.
@@ -120,7 +120,7 @@ class QACycle(_FoundByNaturalKey):
     #: Its document's folder: ``<scope>/agentic-assets/<type>/<name>/``, the record the row is rebuilt from.
     asset_ref: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     #: ``qa-YYYYMMDD-HHMMSS``, its start time.
-    cycle_id: str = APIField(default="")
+    label: str = APIField(default="")
     #: ``running`` | ``passed`` | ``failed`` | ``stopped`` | ``cancelled``.
     status: str = APIField(default="running")
     #: The repository under test, ``org/repo``.
@@ -138,15 +138,15 @@ class QACycle(_FoundByNaturalKey):
 class QAIteration(_NestedInParent):
     """One pass over the plan within a cycle; fixes land between iterations."""
 
-    nests_in: ClassVar[tuple[str, EntityType]] = ("cycle", EntityType.QA_CYCLE)
+    nests_in: ClassVar[tuple[str, EntityType]] = ("cycle_id", EntityType.QA_CYCLE)
 
     type: str = APIField(default=EntityType.QA_ITERATION.value)
     #: Its document's folder: ``<scope>/agentic-assets/<type>/<name>/``, the record the row is rebuilt from.
     asset_ref: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     #: ``i01``, ``i02``, … in run order.
-    iteration_id: str = APIField(default="")
+    label: str = APIField(default="")
     #: The ``QACycle`` it belongs to, by id.
-    cycle: str = APIField(default="")
+    cycle_id: str = APIField(default="")
     #: Its place in the cycle's run order, from 1.
     order: int = APIField(default=0)
     #: ``running`` | ``PASS`` | ``RED`` | ``BLOCKED`` | ``stopped``.
@@ -163,25 +163,25 @@ class QAIteration(_NestedInParent):
     planned: dict[str, list[str]] = APIField(default_factory=dict)
     #: ``"fix"``: its tester fixes the failing tests it runs. None: it only runs them.
     purpose: Optional[str] = APIField(default=None)
-    #: The request (a person's ask to run the plan) it was opened for.
-    request: Optional[str] = APIField(default=None)
+    #: The request (a person's ask to run the plan) it was opened for, by id.
+    request_id: Optional[str] = APIField(default=None)
 
 
 class QATestExecution(_NestedInParent):
     """One attempt at one test case in an iteration: the one record test-file and phase verdicts are inferred from."""
 
-    nests_in: ClassVar[tuple[str, EntityType]] = ("iteration", EntityType.QA_ITERATION)
+    nests_in: ClassVar[tuple[str, EntityType]] = ("iteration_id", EntityType.QA_ITERATION)
 
     type: str = APIField(default=EntityType.QA_TEST_EXECUTION.value)
     #: Its document's folder: ``<scope>/agentic-assets/<type>/<name>/``, the record the row is rebuilt from.
     asset_ref: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     #: The ``QACycle``, ``QAIteration``, ``QAPhase`` and ``QATestFile`` it belongs to, by id.
-    cycle: str = APIField(default="")
-    iteration: str = APIField(default="")
-    phase: str = APIField(default="")
-    test_file: str = APIField(default="")
+    cycle_id: str = APIField(default="")
+    iteration_id: str = APIField(default="")
+    phase_id: str = APIField(default="")
+    test_file_id: str = APIField(default="")
     #: The ``QATestCase`` it is an attempt at, by id; None for a test case the plan does not hold.
-    test_case: Optional[str] = APIField(default=None)
+    test_case_id: Optional[str] = APIField(default=None)
     #: The test case as the run reported it (pytest node name, vitest title, e2e block title).
     test_name: str = APIField(default="")
     #: The test case's number in its file, as the QA skill numbers test blocks.
@@ -200,8 +200,8 @@ class QATestExecution(_NestedInParent):
     error_category: Optional[str] = APIField(default=None)
     #: The agentic process that ran it.
     process_id: Optional[str] = APIField(default=None)
-    #: Its attachments (screenshots, traces, logs): ``File`` typeids.
-    attachments: list[str] = APIField(default_factory=list)
-    #: The ``Rca`` that explains why it did not pass, as a typeid; one analysis may explain several executions.
-    rca: Optional[str] = APIField(default=None)
+    #: Its attachments (screenshots, traces, logs), by ``File`` id.
+    attachment_ids: list[str] = APIField(default_factory=list)
+    #: The ``Rca`` that explains why it did not pass, by id; one analysis may explain several executions.
+    rca_id: Optional[str] = APIField(default=None)
 

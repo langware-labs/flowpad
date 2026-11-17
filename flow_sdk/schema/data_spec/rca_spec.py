@@ -17,7 +17,7 @@ class RcaSpec(AssetDocumentSpec):
 
     #: The analysis's name AND its folder name.
     name: Optional[str] = None
-    subject: Optional[str] = None
+    subject_typeid: Optional[str] = None
     complexity: Optional[str] = None
     severity: Optional[str] = None
     description_md: str = ""

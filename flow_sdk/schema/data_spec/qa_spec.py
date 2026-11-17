@@ -37,7 +37,7 @@ class QATestFileSpec(_QADocument):
     main_file: ClassVar[str | None] = "qa_test_file.json"
 
     repo: str = ""
-    phase: str = ""
+    phase_id: str = ""
     path: str = ""
     runner: Optional[str] = None
     test_count: Optional[int] = None
@@ -51,8 +51,8 @@ class QATestFileSpec(_QADocument):
 class QATestCaseSpec(_QAChildDocument):
     main_file: ClassVar[str | None] = "qa_test_case.json"
 
-    phase: str = ""
-    test_file: str = ""
+    phase_id: str = ""
+    test_file_id: str = ""
     commit_sha: Optional[str] = None
     removed: bool = False
     assigned_by: str = "mapper"
@@ -62,7 +62,7 @@ class QATestCaseSpec(_QAChildDocument):
 class QACycleSpec(_QADocument):
     main_file: ClassVar[str | None] = "qa_cycle.json"
 
-    cycle_id: str = ""
+    label: str = ""
     status: str = "running"
     repo: str = ""
     branch: str = ""
@@ -77,8 +77,8 @@ class QACycleSpec(_QADocument):
 class QAIterationSpec(_QAChildDocument):
     main_file: ClassVar[str | None] = "qa_iteration.json"
 
-    iteration_id: str = ""
-    cycle: str = ""
+    label: str = ""
+    cycle_id: str = ""
     order: int = 0
     status: str = "running"
     commit_sha: Optional[str] = None
@@ -88,17 +88,17 @@ class QAIterationSpec(_QAChildDocument):
     notes: Optional[str] = None
     planned: dict[str, list[str]] = {}
     purpose: Optional[str] = None
-    request: Optional[str] = None
+    request_id: Optional[str] = None
 
 
 class QATestExecutionSpec(_QAChildDocument):
     main_file: ClassVar[str | None] = "qa_test_execution.json"
 
-    cycle: str = ""
-    iteration: str = ""
-    phase: str = ""
-    test_file: str = ""
-    test_case: Optional[str] = None
+    cycle_id: str = ""
+    iteration_id: str = ""
+    phase_id: str = ""
+    test_file_id: str = ""
+    test_case_id: Optional[str] = None
     test_name: str = ""
     test_number: Optional[int] = None
     attempt: int = 1
@@ -109,5 +109,5 @@ class QATestExecutionSpec(_QAChildDocument):
     error: Optional[str] = None
     error_category: Optional[str] = None
     process_id: Optional[str] = None
-    attachments: list[str] = []
-    rca: Optional[str] = None
+    attachment_ids: list[str] = []
+    rca_id: Optional[str] = None

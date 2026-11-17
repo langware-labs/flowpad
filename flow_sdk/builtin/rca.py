@@ -1,6 +1,6 @@
 """``Rca`` — the root-cause analysis of something that failed: why it failed, how bad it is, how to fix it.
 
-Generic: ``subject`` names what it analyzes by typeid
+Generic: ``subject_typeid`` names what it analyzes, of any type.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ class Rca(Entity):
     #: Its document's folder: ``<scope>/agentic-assets/<type>/<name>/``, the record the row is rebuilt from.
     asset_ref: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
 
-    #: optional flowpad typeid that the rca is linked to.
-    subject: Optional[str] = APIField(default=None)
+    #: What it analyzes, by typeid (any type); None when it is about nothing stored.
+    subject_typeid: Optional[str] = APIField(default=None)
     #: How hard the fix is.
     complexity: Optional[RcaLevel] = APIField(default=None)
     #: How bad the failure is if it stays.
