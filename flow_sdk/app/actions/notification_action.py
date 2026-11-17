@@ -281,17 +281,23 @@ def _parse_asset_references(raw: Any) -> list:
     return []
 
 
+def _json_field(raw: Any, default: Any) -> Any:
+    """A body field as its value: a multipart send carries a list or dict as JSON text, a JSON body
+    as the value itself. Unreadable text reads as ``default``."""
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    if not isinstance(raw, str):
+        return raw
+    try:
+        return _json.loads(raw)
+    except ValueError:
+        return default
+
+
 def _parse_share_config(body: dict) -> dict:
     """Decode the share_config carrier (JSON or multipart) into a dict. Both
     share opt-ins (transfer_mode, create_bookmark) read their own key off this."""
-    raw = body.get("share_config") or body.get("shareConfig") or {}
-    if isinstance(raw, (bytes, bytearray)):
-        raw = raw.decode("utf-8", errors="replace")
-    if isinstance(raw, str):
-        try:
-            raw = _json.loads(raw)
-        except Exception:
-            raw = {}
+    raw = _json_field(body.get("share_config") or body.get("shareConfig") or {}, {})
     return raw if isinstance(raw, dict) else {}
 
 
@@ -924,6 +930,7 @@ async def handle_add_message(
     someone_typeid: str,
     *,
     pending_send: bool = False,
+    origin_process: Optional[str] = None,
 ) -> ApiResponse:
     """Append a message to a Conversation — the single message-send handler.
 
@@ -1143,6 +1150,10 @@ async def handle_add_message(
         reply_to_id=reply_to_id,
         thread_root_id=thread_root_id,
     )
+    if origin_process:
+        # Link the writing session BEFORE the message is announced: a session's `--on-reply` wait
+        # tells its own sends from replies by this link, and the check runs on the save's event.
+        await link_origin_session(conv.id, reply_fm.id, origin_process, someone_typeid)
 
     if start_settings is not None:
         # Guest-side row for the session this prompt opens. The host adopts the
@@ -1182,7 +1193,7 @@ async def handle_add_message(
     # These must ride the HTTP slow path (conv.add_message forwards them; the
     # WS bridge body is text-only), so the hub sees the body and stamps
     # body_status=UPLOADING instead of NA.
-    raw_attachments = body.get("attachment") or []
+    raw_attachments = _json_field(body.get("attachment") or [], [])
     if not isinstance(raw_attachments, list):
         raw_attachments = [raw_attachments]
     # ``call_prompt``: a one-shot prompt for the receiver to approve and run (``process_call_spec``).

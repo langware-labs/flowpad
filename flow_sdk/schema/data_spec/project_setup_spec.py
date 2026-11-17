@@ -170,6 +170,8 @@ class SetupRequirementSpec(DataSpec):
     #: pack: the credential declares a ``test`` (a ``test.json`` beside it), and its last result on this machine.
     has_test: bool = False
     test_result: Optional[CredentialTestResultSpec] = None
+    #: pack: why its values are wrong though present (a source's login was refused) — asked again, unchecked.
+    rejected: str = ""
 
     @property
     def missing(self) -> list[SetupVarSpec]:
