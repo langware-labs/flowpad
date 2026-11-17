@@ -11,7 +11,7 @@ const { openDock, dock } = vi.hoisted(() => {
 });
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openDock }, currentDock: dock }) }));
 vi.mock('@src/hooks/entity-hooks', () => ({
-  useEntitiesQuery: () => ({ data: [{ name: 'inbox.support.billing', color: '#8b5cf6' }] }),
+  useEntitiesQuery: () => ({ data: [{ name: 'stream_inbox.support.billing', color: '#8b5cf6' }] }),
 }));
 vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: undefined }) }));
 
@@ -36,13 +36,13 @@ describe('MessageTags compact cell', () => {
   });
 
   it('shows one tag by its last segment, in its colour', () => {
-    const button = cell(['inbox.support.billing']);
+    const button = cell(['stream_inbox.support.billing']);
     expect(button.textContent).toBe('billing');
     expect(button.getAttribute('style')).toContain('#8b5cf6');
   });
 
   it('shows the first tag and a count, and opens the quick menu through the URL', () => {
-    const button = cell(['inbox.support.billing', 'inbox.urgent', 'inbox.customer.vip']);
+    const button = cell(['stream_inbox.support.billing', 'stream_inbox.urgent', 'stream_inbox.customer.vip']);
     expect(button.textContent).toBe('billing+2');
     fireEvent.click(button);
     expect(dock.withOption).toHaveBeenCalledWith('message_tags', 'm1:picker');
@@ -52,10 +52,10 @@ describe('MessageTags compact cell', () => {
 
 describe('treeRows', () => {
   it('walks the root subtree depth-first, intermediates included', () => {
-    expect(treeRows(['inbox.support.billing', 'inbox.sales', 'other.x'], 'inbox')).toEqual([
-      { name: 'inbox.sales', depth: 0 },
-      { name: 'inbox.support', depth: 0 },
-      { name: 'inbox.support.billing', depth: 1 },
+    expect(treeRows(['stream_inbox.support.billing', 'stream_inbox.sales', 'other.x'], 'stream_inbox')).toEqual([
+      { name: 'stream_inbox.sales', depth: 0 },
+      { name: 'stream_inbox.support', depth: 0 },
+      { name: 'stream_inbox.support.billing', depth: 1 },
     ]);
   });
 });

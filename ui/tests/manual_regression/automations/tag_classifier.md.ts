@@ -14,12 +14,12 @@ import { dismissSetupModal } from '../triggers/helpers';
 type Message = { id: string; text: string; conversation_id?: string; tags: string[] };
 const stamp = Date.now();
 const TREE: Array<[string, string, string]> = [
-  ['inbox.support', '#3b82f6', 'Getting help with the product'],
-  ['inbox.support.billing', '#8b5cf6', 'Invoices, payment methods, plan changes'],
-  ['inbox.support.refund', '#f97316', 'Asks for money back'],
-  ['inbox.sales', '#22c55e', 'Buying, pricing, partnerships'],
-  ['inbox.sales.intro', '#14b8a6', 'An introduction call with someone new'],
-  ['inbox.urgent', '#e11d48', 'Needs an answer today'],
+  ['stream_inbox.support', '#3b82f6', 'Getting help with the product'],
+  ['stream_inbox.support.billing', '#8b5cf6', 'Invoices, payment methods, plan changes'],
+  ['stream_inbox.support.refund', '#f97316', 'Asks for money back'],
+  ['stream_inbox.sales', '#22c55e', 'Buying, pricing, partnerships'],
+  ['stream_inbox.sales.intro', '#14b8a6', 'An introduction call with someone new'],
+  ['stream_inbox.urgent', '#e11d48', 'Needs an answer today'],
 ];
 const TEXT = {
   many: `I was charged twice and I want my money back ${stamp}`,
@@ -94,8 +94,8 @@ test.beforeAll(async () => {
       return Object.keys(arrived).length;
     })
     .toBe(3);
-  await graph('post', `flow_message/${arrived.many.id}/set-tags`, { tags: ['inbox.support.billing', 'inbox.urgent', 'inbox.sales'] });
-  await graph('post', `flow_message/${arrived.one.id}/set-tags`, { tags: ['inbox.support.billing'] });
+  await graph('post', `flow_message/${arrived.many.id}/set-tags`, { tags: ['stream_inbox.support.billing', 'stream_inbox.urgent', 'stream_inbox.sales'] });
+  await graph('post', `flow_message/${arrived.one.id}/set-tags`, { tags: ['stream_inbox.support.billing'] });
 });
 
 test.beforeEach(async ({ page }) => {
@@ -125,11 +125,11 @@ test('quick menu on many tags: see them, remove one with ✕, tick it back', asy
   expect(box!.x, 'the menu opens beside its row, not at the window corner').toBeGreaterThan(200);
   const selected = picker(page).getByTestId('message-picker-tags');
   await expect(selected.locator('[data-message-tag]')).toHaveCount(3);
-  await selected.getByRole('button', { name: 'Remove tag inbox.urgent', exact: true }).click();
-  await expect.poll(() => tagsOf('many')).not.toContain('inbox.urgent');
+  await selected.getByRole('button', { name: 'Remove tag stream_inbox.urgent', exact: true }).click();
+  await expect.poll(() => tagsOf('many')).not.toContain('stream_inbox.urgent');
   await expect(picker(page).getByTestId('message-tag-option-inbox.urgent')).not.toBeChecked();
   await picker(page).getByTestId('message-tag-option-inbox.urgent').check();
-  await expect.poll(() => tagsOf('many')).toContain('inbox.urgent');
+  await expect.poll(() => tagsOf('many')).toContain('stream_inbox.urgent');
   await expect(selected.locator('[data-message-tag]')).toHaveCount(3);
   // Reload keeps the menu open: it lives in the URL.
   await page.reload();
@@ -143,7 +143,7 @@ test('quick menu on no tags: says so, ticking tags the message, unticking clears
   await cell(page, 'none').click();
   await expect(picker(page)).toContainText('No tags yet');
   await picker(page).getByTestId('message-tag-option-inbox.sales.intro').check();
-  await expect.poll(() => tagsOf('none')).toEqual(['inbox.sales.intro']);
+  await expect.poll(() => tagsOf('none')).toEqual(['stream_inbox.sales.intro']);
   await expect(cell(page, 'none')).toHaveText('intro');
   await picker(page).getByTestId('message-tag-option-inbox.sales.intro').uncheck();
   await expect.poll(() => tagsOf('none')).toEqual([]);
@@ -159,22 +159,22 @@ test('Edit tags… opens the editor on this message; add a sub-tag; Run lands on
 
   await page.getByTestId('stream-inbox-tag-add-inbox.support').click();
   await page.getByTestId('stream-inbox-tag-child-name').fill('Chargeback');
-  await expect(page.getByText('inbox.support.chargeback')).toBeVisible();
+  await expect(page.getByText('stream_inbox.support.chargeback')).toBeVisible();
   await page.getByTestId('stream-inbox-tag-child-save').click();
   await expect(page.getByTestId('stream-inbox-tag-row-inbox.support.chargeback')).toBeVisible();
   await expect(page).toHaveURL(/node=inbox\.support\.chargeback/);
 
   await page.getByTestId('stream-inbox-tag-try-run').click();
-  await expect(page.getByTestId('stream-inbox-tag-try-landed')).toHaveText('inbox.support.refund');
+  await expect(page.getByTestId('stream-inbox-tag-try-landed')).toHaveText('stream_inbox.support.refund');
   await expect(page.getByTestId('stream-inbox-tag-row-inbox.support.refund').getByTestId('stream-inbox-tag-lands')).toBeVisible();
   await expect(page.getByTestId('stream-inbox-tag-try-current')).toContainText('billing');
-  expect(await tagsOf('many'), 'Run is a dry run').not.toContain('inbox.support.refund');
+  expect(await tagsOf('many'), 'Run is a dry run').not.toContain('stream_inbox.support.refund');
 });
 
 test('edit instructions marks the result stale; Rerun moves it and shows where it was', async ({ page }) => {
   await page.goto(`/dock/tag/graph?manage=stream_inbox&message=${arrived.many.id}&conversation=${arrived.many.conversation_id}`);
   await page.getByTestId('stream-inbox-tag-try-run').click();
-  await expect(page.getByTestId('stream-inbox-tag-try-landed')).toHaveText('inbox.support.refund');
+  await expect(page.getByTestId('stream-inbox-tag-try-landed')).toHaveText('stream_inbox.support.refund');
   await page.getByTestId('stream-inbox-tag-row-inbox.support.billing').click();
   await page.getByTestId('stream-inbox-tag-swatch-#ef4444').click();
   await page.getByTestId('stream-inbox-tag-description').fill('Charged twice: they want the money back');
@@ -183,9 +183,9 @@ test('edit instructions marks the result stale; Rerun moves it and shows where i
   await page.getByTestId('stream-inbox-tag-save').click();
   await expect(page.getByTestId('stream-inbox-tag-unsaved')).toHaveCount(0);
   await page.getByTestId('stream-inbox-tag-try-run').click();
-  await expect(page.getByTestId('stream-inbox-tag-try-landed')).toHaveText('inbox.support.billing');
-  await expect(page.getByTestId('stream-inbox-tag-try-was')).toHaveText('was inbox.support.refund');
-  const saved = (await graph<Array<{ name: string; color: string }>>('get', 'tag')).find((tag) => tag.name === 'inbox.support.billing');
+  await expect(page.getByTestId('stream-inbox-tag-try-landed')).toHaveText('stream_inbox.support.billing');
+  await expect(page.getByTestId('stream-inbox-tag-try-was')).toHaveText('was stream_inbox.support.refund');
+  const saved = (await graph<Array<{ name: string; color: string }>>('get', 'tag')).find((tag) => tag.name === 'stream_inbox.support.billing');
   expect(saved?.color).toBe('#ef4444');
 });
 
@@ -195,7 +195,7 @@ test('Another message → pick → Run; Apply tags the message', async ({ page }
   await page.getByTestId(`stream-inbox-tag-try-pick-${arrived.one.id}`).click();
   await expect(page.getByTestId('stream-inbox-tag-try-message')).toContainText(`one-${stamp}`);
   await page.getByTestId('stream-inbox-tag-try-run').click();
-  await expect(page.getByTestId('stream-inbox-tag-try-landed')).toHaveText('inbox.sales.intro');
+  await expect(page.getByTestId('stream-inbox-tag-try-landed')).toHaveText('stream_inbox.sales.intro');
   await page.getByTestId('stream-inbox-tag-try-apply').click();
-  await expect.poll(() => tagsOf('one')).toContain('inbox.sales.intro');
+  await expect.poll(() => tagsOf('one')).toContain('stream_inbox.sales.intro');
 });

@@ -134,11 +134,11 @@ files as ghost nodes. It is served through the generic entity-subgraph route
 
 Messages use the same `Entity.tags` field and Tag definitions as every other
 entity. Classification puts a message under ONE tag of a tree: the setting `root`
-(default `inbox`) names the tree, and every nondeprecated Tag within it is an option
+(default `stream_inbox`) names the tree, and every nondeprecated Tag within it is an option
 whose `description` is what it means — the instructions a person edits. The generic
 classifier is `flow_sdk/tags/classify.py`: `classify(value, root)` asks the Decision API
 one choice question and answers a `TagClassification` (`tags.classification`) holding
-the full dot name; it never writes. The inbox calls it with a `MessageContextSpec`
+the full dot name; it never writes. The Stream Inbox calls it with a `MessageContextSpec`
 (`stream_inbox.message.context`, the message for now). The optional Flowpad message
 vocabulary is enabled separately; it does not replace user tags or introduce a
 `labels` field. Tag definitions carry an optional `color` and a `stream_inbox`

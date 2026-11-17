@@ -35,7 +35,7 @@ function messageLabel(message: FlowMessage | null | undefined): [string, string]
   return [message?.sender_name || profileLabel(message?.envelope?.sender), subject];
 }
 
-/** The classification tree under the inbox root: build it, say what each tag means, and try it on a message. */
+/** The classification tree under the stream_inbox root: build it, say what each tag means, and try it on a message. */
 export function StreamInboxTags() {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
@@ -214,7 +214,7 @@ export function StreamInboxTags() {
     <section className="flex h-full min-h-0 flex-col" data-testid="stream-inbox-tags-page">
       <header className="flex flex-wrap items-center gap-3 border-b border-border p-4">
         <h1 className="flex-1 text-lg font-semibold">
-          <Trans>Inbox tags</Trans>
+          <Trans>Stream Inbox tags</Trans>
         </h1>
         {settings && (
           <>

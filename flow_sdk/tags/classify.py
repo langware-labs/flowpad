@@ -1,7 +1,7 @@
 """Classify any value into ONE tag under a root — the decision API picks the full dot name.
 
-    answer = await classify(MessageContextSpec(message=state), "inbox")
-    answer.value.tag   # "inbox.support.billing" when answer.ok and answer.has_value
+    answer = await classify(MessageContextSpec(message=state), "stream_inbox")
+    answer.value.tag   # "stream_inbox.support.billing" when answer.ok and answer.has_value
 
 The ontology is the blessed, non-deprecated Tag rows within ``root`` (``tag_is_within``):
 each one's full name is an option, its description is what the option means — the

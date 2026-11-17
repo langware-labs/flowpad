@@ -13,23 +13,23 @@ from tests.pytest_plugin import async_context
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
-CHOICES = {"inbox.support.billing": "Invoices and charges", "inbox.support.refund": "Asks for money back"}
+CHOICES = {"stream_inbox.support.billing": "Invoices and charges", "stream_inbox.support.refund": "Asks for money back"}
 CONTEXT = MessageContextSpec(message=MessageState(text="I want my money back for the double charge"))
 
 
 async def test_returns_the_chosen_full_tag(decision_double):
-    decision_double["answers"] = {"tag": "inbox.support.refund"}
+    decision_double["answers"] = {"tag": "stream_inbox.support.refund"}
     answer = await classifier.choose(CONTEXT, CHOICES)
     assert answer.exit_code is ExitCode.OK and answer.has_value
-    assert answer.value.tag == "inbox.support.refund"
+    assert answer.value.tag == "stream_inbox.support.refund"
     assert len(decision_double["invoked"]) == 1
 
 
 async def test_a_meaning_edit_moves_the_answer(decision_double):
     decision_double["match"] = True
-    assert (await classifier.choose(CONTEXT, CHOICES)).value.tag == "inbox.support.refund"
-    edited = {**CHOICES, "inbox.support.billing": "A double charge they dispute or want back"}
-    assert (await classifier.choose(CONTEXT, edited)).value.tag == "inbox.support.billing"
+    assert (await classifier.choose(CONTEXT, CHOICES)).value.tag == "stream_inbox.support.refund"
+    edited = {**CHOICES, "stream_inbox.support.billing": "A double charge they dispute or want back"}
+    assert (await classifier.choose(CONTEXT, edited)).value.tag == "stream_inbox.support.billing"
 
 
 async def test_no_decision_api_is_not_a_value(decision_double):
@@ -41,8 +41,8 @@ async def test_no_decision_api_is_not_a_value(decision_double):
 
 async def test_empty_and_single_trees_never_call():
     assert (await classifier.choose(CONTEXT, {})).exit_code is ExitCode.NOT_APPLICABLE
-    only = await classifier.choose(CONTEXT, {"inbox.support": "help"})
-    assert only.value.tag == "inbox.support" and not only.ran
+    only = await classifier.choose(CONTEXT, {"stream_inbox.support": "help"})
+    assert only.value.tag == "stream_inbox.support" and not only.ran
 
 
 @async_context

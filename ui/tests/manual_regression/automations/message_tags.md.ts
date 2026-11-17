@@ -389,7 +389,7 @@ test('tag tree CRUD, rename aliases, color and Flowpad vocabulary settings', asy
   await coverage.action('tag-picker', 'editor', async () => {
     await page.getByTestId('message-tags-manage').click();
     await expect(page.getByTestId('stream-inbox-tags-page')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Inbox tags', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stream Inbox tags', exact: true })).toBeVisible();
   });
   await coverage.screen('tags', page, info);
   const created = `${prefix}.billing.new-review`;

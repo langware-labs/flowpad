@@ -44,7 +44,7 @@ export function useClassificationSettings() {
     retry: false,
   });
   // The tree a message is classified into; the server's default until the settings arrive.
-  return { settings: query.data, root: query.data?.root ?? 'inbox' };
+  return { settings: query.data, root: query.data?.root ?? 'stream_inbox' };
 }
 
 /** A tag colour remains readable in both themes; text uses the app foreground. */

@@ -39,4 +39,4 @@ class MessageClassificationSettings(DataSpec):
     enabled: bool = True
     include_flow_tags: bool = False
     #: The tag tree a message is classified into: every tag within it is an option.
-    root: str = "inbox"
+    root: str = "stream_inbox"
