@@ -31,6 +31,10 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.mark.docker
+# exception to the 30 s policy, approved 2026-11-13 (QA cycle qa-20261112-225208, via the QA manager):
+# run.sh builds the UI, a wheel and a docker image and drives six container stages; its own
+# subprocess budget below is 900 s, and pytest.ini's global --timeout=30 killed it every time.
+@pytest.mark.timeout(900)
 def test_migration_e2e_docker():
     """Full end-to-end: wheel build → image build → container A-F → host browser hint.
 

@@ -156,6 +156,8 @@ _DERIVED_TEXT = {"to_xml", "content", "start_tag_xml", "end_tag_xml"}
 #: transcript carries the call's result.
 PENDING_USER_INPUT_KEY = "pending_user_input"
 _LAUNCH_WATCHES: set = set()  # keeps watcher tasks alive
+#: The launch-screen watcher reads the screen at most this often while output keeps coming.
+LAUNCH_SCREEN_TICK_S = 0.1
 # Gap between typing and Enter for TUIs that don't submit on paste (codex/copilot);
 # mirrors Shell.write_then_submit's submit_delay. claude submits on paste → no gap.
 _PTY_SUBMIT_SETTLE_S = 0.4
@@ -1467,9 +1469,11 @@ class AgenticProcess(Entity):
         "401" in the history is not a refusal. Detection only reports; it never stops the worker."""
         from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import strip_pty_controls
 
+        loop = asyncio.get_running_loop()
         async with shell._output_feed() as feed:
             text, shown = strip_pty_controls(feed.initial[-16384:]) if feed else "", None
             while feed is not None:
+                classified_at = loop.time()
                 if (verdict := screen.classify(text)) != shown:
                     if verdict in BLOCKING_CODES or shown in BLOCKING_CODES:
                         await self._apply_launch_screen(verdict, text, screen)
@@ -1479,7 +1483,14 @@ class AgenticProcess(Entity):
                 chunk = await feed.next()
                 if feed.closed:
                     return
-                text = (text + strip_pty_controls(chunk))[-16384:]
+                # Classify at most once per LAUNCH_SCREEN_TICK_S, not once per chunk: each pass scans
+                # the whole 16 KB tail on the event loop, and a worker flooding its screen writes
+                # thousands of chunks a second -- every request on this backend waited behind them.
+                chunk += feed.pending()
+                while not feed.closed and (wait := classified_at + LAUNCH_SCREEN_TICK_S - loop.time()) > 0:
+                    chunk += await feed.next(timeout=wait)
+                    chunk += feed.pending()
+                text = (text + strip_pty_controls(chunk[-65536:]))[-16384:]
 
     async def _apply_launch_screen(self, verdict: str | None, text: str, screen) -> None:
         proc = await AgenticProcess.get_by_id(self.id) or self
@@ -4397,6 +4408,13 @@ class AgenticProcess(Entity):
             turns.sink = handler
             register_prompt_worker(self.id, worker)
             turns.register()
+        except WorkerSpawnError as e:
+            # Refused before any subprocess (an unfunded harness, a size with no mapping): the
+            # same latch and typed refusal as a refused spawn inside the turn -- a 400 the
+            # person can act on, not a 500 "Internal server error".
+            release_prompt_admission(self.id, admission)
+            await latch_spawn_failure(self, e)
+            return launch_refusal(str(e), self.launch_failure or {})
         except BaseException:
             release_prompt_admission(self.id, admission)
             raise
@@ -5628,6 +5646,14 @@ class AgenticProcess(Entity):
                 self.id,
                 exc_info=True,
             )
+            return
+        # Session adoption is a naming lifecycle edge: binding the native session is what tells
+        # the Chats list to refetch (``worker_history_changed``). A PTY harness that mints its id
+        # after launch (opencode) has no other edge once its session lands.
+        try:
+            await self.reconcile_name()
+        except Exception:
+            logger.warning("AgenticProcess %s transcript: name reconcile failed", self.id, exc_info=True)
 
     @action.post(action_name="transcript")
     async def transcript_action(self) -> ApiSuccessResponse | ApiFailResponse:

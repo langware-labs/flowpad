@@ -28,11 +28,19 @@ function errorMessage(error: unknown): string {
   return 'Tab content failed to load.';
 }
 
+/** The states a tab looks different in (see `getShownSnapshot`). */
+const SHOWN_STATES: ReadonlySet<TabLifecycleState> = new Set([
+  TabLifecycleState.OpenFailed,
+  TabLifecycleState.Closing,
+  TabLifecycleState.CloseFailed,
+]);
+
 /** Headless, per-client lifecycle state. It performs no tab actions or content setup. */
 export class TabLifecycleRegistry {
   private readonly entries = new Map<string, TabLifecycleEntry>();
   private readonly listeners = new Set<() => void>();
   private snapshot: ReadonlyMap<string, TabLifecycleEntry> = new Map();
+  private shown: ReadonlyMap<string, TabLifecycleEntry> = new Map();
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -43,6 +51,16 @@ export class TabLifecycleRegistry {
 
   getSnapshot = (): ReadonlyMap<string, TabLifecycleEntry> => {
     return this.snapshot;
+  };
+
+  /**
+   * Only the entries a tab SHOWS — closing, or failed to open/close. Opening and
+   * Opened look the same on a chip and a panel, and every navigation passes
+   * through both (even a warm switch, two or three writes), so this snapshot keeps
+   * its identity across them: what the tab strip and the panels subscribe to.
+   */
+  getShownSnapshot = (): ReadonlyMap<string, TabLifecycleEntry> => {
+    return this.shown;
   };
 
   get(key: string | null | undefined): TabLifecycleEntry | null {
@@ -100,6 +118,9 @@ export class TabLifecycleRegistry {
 
   private notify(): void {
     this.snapshot = new Map(this.entries);
+    const shown = new Map([...this.entries].filter(([, entry]) => SHOWN_STATES.has(entry.state)));
+    const same = shown.size === this.shown.size && [...shown].every(([key, entry]) => this.shown.get(key) === entry);
+    if (!same) this.shown = shown;
     for (const listener of this.listeners) listener();
   }
 }

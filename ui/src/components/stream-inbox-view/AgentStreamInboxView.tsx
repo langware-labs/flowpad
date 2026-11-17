@@ -41,6 +41,10 @@ export function AgentStreamInboxView() {
   const [state, setState] = useState<AgentMailboxState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // The empty state's bar owns an add dialog that hands over to setup AFTER the source is saved; swapping
+  // to the list the moment the first channel exists would unmount it mid-setup. Hold the empty state open
+  // until that dialog closes.
+  const [addingFromEmpty, setAddingFromEmpty] = useState(false);
   const [refresh, setRefresh] = useState(String(MIN_REFRESH_SECONDS));
   const activeState = state?.agent_id === parsed.agentId ? state : null;
   // The agent's channels — the stream inbox header's own rows, so "has a
@@ -184,7 +188,7 @@ export function AgentStreamInboxView() {
           </div>
         )}
       </section>
-      {activeState?.mailbox || channels.length > 0 ? (
+      {(activeState?.mailbox || channels.length > 0) && !addingFromEmpty ? (
         <div className="min-h-0 flex-1">
           {/* Keyed on the opening channel: the mailbox source lands after the first render, and the
               list must open on it, not remember the empty filter it was first built with. */}
@@ -216,6 +220,7 @@ export function AgentStreamInboxView() {
               builtInOffered={builtInOffered}
               selected={NO_FILTER}
               onSelectedChange={() => undefined}
+              onAddingChange={setAddingFromEmpty}
             />
           )}
           <p>

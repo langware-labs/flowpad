@@ -137,3 +137,58 @@ def test_no_hint_probes_every_vendor(monkeypatch):
     _patch_all(monkeypatch, called)
     scan_actions._resolve_session_record("some-session-id", hint=None)
     assert set(called) == {"claude", "codex", "copilot", "opencode", "deepagents"}
+
+
+# ---------------------------------------------------------------------------
+# Reopening a session by its worker id spawns a PTY only for a terminal session.
+# A headless one (``pty_mode is False``) is never ``visible``; spawning a PTY for
+# it put a terminal worker under the chat surface, which killed it again.
+# ---------------------------------------------------------------------------
+
+
+class _Process:
+    def __init__(self, pty_mode):
+        self.id = "ap-1"
+        self.pty_mode = pty_mode
+        self.visible = False
+        self.shell_id = "shell-1"
+        self.workdir = None
+        self.project_id = None
+        self.context_data = {}
+        self.starts: list[dict] = []
+
+    async def reconcile_name(self):
+        return None
+
+    async def start_pty(self, **kwargs):
+        self.starts.append(kwargs)
+        return scan_actions.ApiSuccessResponse(data={})
+
+    def model_dump(self, mode=None):
+        return {"id": self.id, "pty_mode": self.pty_mode}
+
+
+@pytest.mark.parametrize(("pty_mode", "spawns"), [(False, 0), (True, 1), (None, 1)])
+async def test_reopen_by_worker_id_spawns_a_pty_only_for_a_terminal_session(pty_mode, spawns, monkeypatch):
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    process = _Process(pty_mode)
+
+    async def _by_session_id(_session_id):
+        return process
+
+    async def _by_id(_id):
+        return process
+
+    monkeypatch.setattr(AgenticProcess, "get_by_session_id", staticmethod(_by_session_id))
+    monkeypatch.setattr(AgenticProcess, "get_by_id", staticmethod(_by_id))
+    resp = await scan_actions.ScanActionsMixin._upsert_session_process_impl(
+        object.__new__(scan_actions.ScanActionsMixin),
+        session_id="sess-1",
+        workdir=None,
+        project_id=None,
+        worker_type_raw="copilot",
+        session_rec=object(),
+    )
+    assert isinstance(resp, scan_actions.ApiSuccessResponse)
+    assert len(process.starts) == spawns

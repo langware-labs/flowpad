@@ -101,12 +101,13 @@ export function syncHistoryPosition(action: HistoryAction, win: Window = window)
   // them, so comparing those two answers the question.
   const changed = next.idx !== position.idx || next.maxIdx !== position.maxIdx;
 
-  position = next;
   // The router notifies on every state update — revalidations and fetcher
   // settles included — and most of those land on the same entry we are already
-  // on. Only a real move is worth a storage write, a trace line, or waking the
-  // subscribers.
+  // on. Only a real move is worth a storage write, a trace line, waking the
+  // subscribers, or a new snapshot object (`useSyncExternalStore` compares by
+  // identity).
   if (!changed) return;
+  position = next;
 
   if (next.maxIdx >= 0) writeStoredMaxIdx(next.maxIdx);
   toplog.log('navigation', 'history-position', {

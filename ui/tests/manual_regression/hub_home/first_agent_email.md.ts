@@ -52,6 +52,13 @@ test.afterAll(async ({ request }) => {
     await request.delete(`/api/v1/graph/agent/${id}/mailbox`, { headers: HUB }).catch(() => undefined);
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.agent_box_login.rules: FAILING? an agent box that never signs
+//       in reads no mail and refuses its allocation - read this tag's rules first
+// flowpad:endcapsule tag
 test('email first: the wizard ends with an agent that answers my mail', async ({ page, request }) => {
   // The sender: a second agent's address, made through the same wizard (and so the same hub call).
   const sender = await walkToAddress(page);
@@ -71,6 +78,10 @@ test('email first: the wizard ends with an agent that answers my mail', async ({
   await expect(page.getByTestId('first-agent-live')).toContainText(agent.mailbox.address);
   console.log(`[first-agent-email] live after ${((Date.now() - started) / 1000).toFixed(1)}s`);
 
+  // A new mailbox sends only to its owner (its Sending list, 29194d4c8): open the sender's to the agent.
+  await api(request, 'post', `agent/${sender.agent.id}/mailbox/configure`, {
+    allowed_recipients: [agent.mailbox.address],
+  });
   await api(request, 'post', `agent/${sender.agent.id}/mailbox/send`, {
     to: [agent.mailbox.address],
     subject: 'Opening hours',

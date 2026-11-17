@@ -16,7 +16,9 @@ const SRC = 'about:blank#visibility';
 const frame = () => document.querySelector<HTMLIFrameElement>(`iframe[src="${SRC}"]`)!;
 const listen = (iframe: HTMLIFrameElement) => {
   const told: unknown[] = [];
-  const guest = { postMessage: (message: unknown) => told.push(message) };
+  // `close` too: jsdom's window teardown closes every frame's contentWindow; without it the run ended in an
+  // unhandled "window[i].close is not a function".
+  const guest = { postMessage: (message: unknown) => told.push(message), close: () => {} };
   Object.defineProperty(iframe, 'contentWindow', { get: () => guest, configurable: true });
   return { told, guest };
 };

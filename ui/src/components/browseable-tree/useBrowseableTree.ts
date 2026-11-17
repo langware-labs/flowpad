@@ -90,6 +90,8 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
 
   // Track in-flight fetches to prevent duplicate work on quick toggles.
   const inflight = useRef(new Map<string, Promise<Browseable[]>>());
+  /** Folder + leaf pairs whose missing leaf already forced one re-list (see expandParentsForPointer). */
+  const refreshedForLeaf = useRef(new Set<string>());
 
   // Per-node invalidate generation. A burst of entity ops fires overlapping
   // `invalidate`s, and their fetches can resolve out of order — an older
@@ -328,9 +330,14 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
         // keeping the rows already on screen (as `invalidate` does): this walk
         // re-runs on every roots change, so a reset to "Loading…" here blinks
         // the folder each time.
+        // Once per folder and leaf: a leaf the listing never holds (a file its walk skips, such as
+        // one in an ignored folder) re-walked the whole vault on EVERY visit -- every switch back
+        // to that document, in each tree showing it. A create or delete still invalidates the walk.
         if (parent && parent.listChildren && parentChildren) {
           const leafPresent = parentChildren.some((c) => c.id === leaf.id);
-          if (!leafPresent) {
+          const tried = `${parent.id}\u0000${leaf.id}`;
+          if (!leafPresent && !refreshedForLeaf.current.has(tried)) {
+            refreshedForLeaf.current.add(tried);
             inflight.current.delete(parent.id);
             setLoadState(parent.id, { status: 'ready', children: parentChildren, refreshing: true });
             try {

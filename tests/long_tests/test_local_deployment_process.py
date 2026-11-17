@@ -32,9 +32,14 @@ def _answered(backend: str, chat, text: str) -> None:
 
 
 @pytest.mark.long  # ~8s: a real backend boot, two processes, three turns on the mock worker
-def test_two_local_deployments_are_two_processes_each_answering_its_chat(deployments_backend):
-    first = run(agent("proc-agent").run_locally(snippet=WRAPPER))
-    second = run(agent("proc-agent-2").run_locally(snippet=WRAPPER))
+def test_two_local_deployments_are_two_processes_each_answering_its_chat(deployments_backend, tmp_path):
+    # A local deployment is its PROJECT's (project-less agents share this computer's one), so two
+    # deployments here are two agents of two projects.
+    from flow_sdk.builtin.project import Project
+
+    projects = [run(Project(name=f"proc-{n}", fs_storage_mount_path=str(tmp_path / f"p{n}")).save()) for n in (1, 2)]
+    first = run(agent("proc-agent", project_id=projects[0].id).run_locally(snippet=WRAPPER))
+    second = run(agent("proc-agent-2", project_id=projects[1].id).run_locally(snippet=WRAPPER))
     try:
         assert first.id != second.id, "two agents here: two deployments"
         logs = {d.id: ready(d, 1) for d in (first, second)}

@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@src/components/git/GitRemoteField', () => ({
@@ -19,6 +19,8 @@ vi.mock('@src/components/project-home/ProjectCloudLinkButton', () => ({
 vi.mock('@src/hooks/entity-hooks', () => ({ useEntity: () => ({ data: null }) }));
 vi.mock('@src/hooks/use-git-share-preflight', () => ({ invalidateGitPreflight: vi.fn() }));
 const launchWizard = vi.hoisted(() => vi.fn());
+const notifyError = vi.hoisted(() => vi.fn());
+vi.mock('@src/notifications', () => ({ notify: { error: notifyError, success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   launchWizard,
@@ -60,6 +62,22 @@ describe('GitRequiredStrip', () => {
     fireEvent.click(screen.getByTestId('git-setup-next'));
     expect(screen.getByTestId('cloud-link')).toBeTruthy();
     expect(launchWizard).not.toHaveBeenCalled();
+  });
+
+  it('"Set up" on a project with no folder says so, instead of doing nothing', async () => {
+    const noFolder = { ...PROJECT, fs_storage_mount_path: null } as unknown as Project;
+    render(<GitRequiredStrip project={noFolder} />);
+    fireEvent.click(screen.getByTestId('git-required-add'));
+    fireEvent.click(screen.getByTestId('git-setup-mode-new'));
+    fireEvent.change(screen.getByTestId('git-setup-name'), { target: { value: 'demo-repo' } });
+    fireEvent.click(screen.getByTestId('git-setup-next'));
+    await waitFor(() =>
+      expect(notifyError).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Git setup failed', message: 'This project has no folder on this computer.' }),
+      ),
+    );
+    expect(launchWizard).not.toHaveBeenCalled();
+    expect(screen.getByTestId('git-setup-mode-new')).toBeTruthy(); // back on the first step
   });
 });
 

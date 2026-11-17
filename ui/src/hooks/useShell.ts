@@ -1,4 +1,4 @@
-import { Shell } from '@sdk';
+import { dataManager, Shell, TypeId } from '@sdk';
 import { useCallback, useEffect, useSyncExternalStore, useState } from 'react';
 
 /**
@@ -11,11 +11,18 @@ export function useShell(shellId: string | null | undefined): {
   shell: Shell | null;
   connected: boolean;
 } {
-  const [shell, setShell] = useState<Shell | null>(null);
+  const [shell, setShell] = useState<Shell | null>(() =>
+    shellId ? dataManager.getByTypeIdFromCache<Shell>(new TypeId(Shell.type, shellId)) : null,
+  );
 
   // Resolve Shell entity from SDK cache, with retry
   useEffect(() => {
     if (!shellId) { setShell(null); return; }
+    const cached = dataManager.getByTypeIdFromCache<Shell>(new TypeId(Shell.type, shellId));
+    if (cached) {
+      setShell((prev) => (prev === cached ? prev : cached));
+      return;
+    }
     let cancelled = false;
     let retries = 0;
     const resolve = () => {

@@ -15,6 +15,7 @@ mocked-provider tier as ``test_pty_api.py``. No real OS PTY is spawned:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -283,6 +284,40 @@ async def test_pty_cap_no_eviction_below_cap(eviction_registry):
     with pytest.raises(_StopBeforeSpawn):
         await node.start_machine_pty_session(shell_id="shell-new", connection_id="conn-1")
     assert eviction_registry.evicted == []
+
+
+@pytest.mark.asyncio
+async def test_pty_cap_evicts_concurrently_not_one_after_another(monkeypatch, eviction_registry):
+    """The evicted sessions close together, not one after another: each close
+    force-terminates its PTY (~0.4s of HUP/INT/KILL sleeps), and the launch
+    that hit the cap waited for all of them — 10 × 0.42s put a 4.2s stall on
+    that one createProcess (pty_launch_under_load: 69 live → 0.8s, 70 → 5.2s).
+
+    Each fake close waits until every eviction has started; closed one by one,
+    the first never returns and the launch times out.
+    """
+    node = _Node(MagicMock())
+    pty_registry.states = {}
+    node_keys = _seed_node_states(node, 4)
+    started: list = []
+    all_started = asyncio.Event()
+
+    async def _close_waiting_for_the_others(key):
+        started.append(key)
+        if len(started) == 2:
+            all_started.set()
+        await all_started.wait()
+        pty_registry.states.pop(key, None)
+
+    monkeypatch.setattr(pty_registry, "close_session", _close_waiting_for_the_others)
+    node.compute_provider.get_or_create_pty_session = AsyncMock(return_value={"pid": 1})
+
+    with pytest.raises(_StopBeforeSpawn):
+        await asyncio.wait_for(
+            node.start_machine_pty_session(shell_id="shell-new", connection_id="conn-1"), timeout=2
+        )
+    assert started == node_keys[:2]
+    assert node_keys[0] not in pty_registry.states and node_keys[1] not in pty_registry.states
 
 
 # ``resize`` with ``repaint`` — a view whose xterm drew output at another size asks for a redraw

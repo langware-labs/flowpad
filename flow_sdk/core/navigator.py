@@ -27,7 +27,7 @@ import re
 from functools import lru_cache
 from typing import Any, Literal, Mapping, NamedTuple, Optional
 
-from flow_sdk.core.dock_address import ViewType, parse_dock_url
+from flow_sdk.core.dock_address import VIEW_META, ViewType, parse_dock_url
 from flow_sdk.core.navigation import filter_keys, forms_for, kind, navigation_map, open_form, place_address, place_for
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
 
@@ -56,10 +56,12 @@ def _leader(probabilities: Mapping[str, float], at_least: float, ahead_by: float
     return ranked[0][0] if len(ranked) < 2 or ranked[0][1] - ranked[1][1] >= ahead_by else None
 
 
-def _acted_on(result: Any) -> Optional[str]:
+def _acted_on(result: Any, matches: frozenset[str] = frozenset()) -> Optional[str]:
     """The ``target`` pick to act on: confident (``MIN_CONFIDENCE``), clearly ahead (``CLEAR_LEAD``),
     or -- when the request is plainly only an open (``SCOPE`` "only") -- the best place, if it clearly
-    leads the other places (``PLAIN_LEAD``)."""
+    leads the other places (``PLAIN_LEAD``). ``matches``: the options that are only full-text search
+    matches -- never a "place" for ``PLAIN_LEAD``: "open the README" opened the doc 'Markdown
+    documents' at 0.57 that way, on a project with no README."""
     if (key := result.pick("target", min=MIN_CONFIDENCE)) is not None:
         return key
     probabilities = getattr(result.answers.get("target"), "probabilities", None) or {}
@@ -72,7 +74,8 @@ def _acted_on(result: Any) -> Optional[str]:
     # lower: 0.8 for a 0.91).
     only = (getattr(result.answers.get("scope"), "probabilities", None) or {}).get("only", 0.0)
     if only >= PLAIN_LEAD[0]:
-        return _leader({k: p for k, p in probabilities.items() if k != "agentic"}, *PLAIN_LEAD[1:])
+        place = _leader({k: p for k, p in probabilities.items() if k != "agentic"}, *PLAIN_LEAD[1:])
+        return None if place in matches else place
     return None
 
 
@@ -96,7 +99,10 @@ INSTRUCTIONS = (
     "unless the request is only to open, show or go to one listed thing, or to do one listed action. A request "
     "that also says what to write or fill in (a title, a message, a time, a rule) is `agentic`: an action "
     "opens an empty form. Asking WHERE something is or where to change it ('where do I turn on two-step login', "
-    "'where are my invoices') names a place: pick it. Asking WHAT something says, what changed or why "
+    "'where are my invoices') names a place: pick it. So does asking to change, manage or set something "
+    "on the listed screen where that is done ('edit my env vars', 'change the scrollback lines'), and a "
+    "question a listed screen shows the answer to ('who is in my org', 'which automations failed'): pick "
+    "that screen. Asking WHAT something says, what changed or why "
     "needs an answer written: `agentic` -- and so does asking to be TOLD instead of shown ('do not open it, "
     "just tell me where')."
 )
@@ -139,14 +145,31 @@ def _static_options() -> tuple[dict[str, str], dict[str, str]]:
     for place in navigation_map().places:
         if place.view in _SKIP:
             continue
+        # The tab a bare address opens is the screen itself (``canonical_address``): offered once, as
+        # the screen -- two keys for one place split its answer ("general preferences": 0.33 / 0.33).
+        default = VIEW_META[ViewType(place.view)].default_tab if place.pointer != "required" else ""
         if place.pointer != "required":
             key = f"view:{place_address(place)}"
             aka = ", ".join(place.aliases)
-            options[key] = f"Screen '{place.label}'" + (f" (also called: {aka})" if aka else "")
+            opens_on = next((s.label for s in place.subplaces if s.pointer == default), None)
+            options[key] = (
+                f"Screen '{place.label}'" + (f" (also called: {aka})" if aka else "") + (f", open on {opens_on}" if opens_on else "")
+            )
             for name in (place.label, *place.aliases):
                 names.setdefault(name.lower(), key)
         for sub in place.subplaces:
-            options[f"view:{place_address(place, sub.pointer)}"] = f"Screen '{sub.label}'"
+            if default and sub.pointer == default:
+                continue
+            key = f"view:{place_address(place, sub.pointer)}"
+            options[key] = f"Screen '{sub.label}'" + (f" (also called: {', '.join(sub.aliases)})" if sub.aliases else "")
+            for name in sub.aliases:
+                names.setdefault(name.lower(), key)
+    # A retired screen's name is where it forwards ("signals" is the event bus), as its address is.
+    from flow_sdk.core.dock_address import RETIRED_DOCK_VIEWS  # noqa: PLC0415
+
+    for retired, to in RETIRED_DOCK_VIEWS.items():
+        if (place := place_for(to.view_type.value)) is not None:
+            names.setdefault(retired.value.replace("-", " "), f"view:{place_address(place, to.pointer)}")
     # A type's name opens its list ("specs", "project manifest") -- where no screen has the name.
     from flow_sdk.core.navigation import asset_list_names  # noqa: PLC0415
 
@@ -216,10 +239,13 @@ def _entity_options(ref: dict[str, Any], why: str) -> dict[str, str]:
     kind, _, ident = typeid.partition("-")
     name = f"'{title}'" if title else ""
     noun = kind.replace("_", " ")
+    # What it is, in its own words: a name alone can read as the request ("wizard 'llm-setup-opencode'"
+    # for "set up my LLM" -- it installs OpenCode).
+    about = f": {ref['about']}" if ref.get("about") else ""
     out = {
         f"app:{ident}"
         if kind == "artifact"
-        else f"entity:{typeid}": f"{'Launch app' if kind == 'artifact' else 'Open the ' + noun} {name} ({why})"
+        else f"entity:{typeid}": f"{'Launch app' if kind == 'artifact' else 'Open the ' + noun} {name}{about} ({why})"
     }
     # A screen whose address IS the entity's own (a session's screen, a data source's page) is the
     # same place twice: offered once, as the entity -- two keys split one answer's probability
@@ -354,11 +380,34 @@ def _slips(a: str, b: str) -> int:
     return prev[-1]
 
 
+#: Words that only fill a name out: "set up my llm" names what "set up llm" does.
+_FILLER = frozenset({"the", "my", "our"})
+
+
+#: "what did we deliver" / "what have we delivered": the question whose statement is a name ("what we
+#: delivered", the Artifacts screen's alias) names that screen (navigation sentence 191).
+_ASKED = re.compile(r"^what (?:did|have) (we|i) (\w+?)(?:ed|d)?$")
+
+
+def _stated(core: str) -> tuple[str, ...]:
+    """The statements a ``what did we <verb>`` question asks about: ``what we <verb>ed`` / ``<verb>d``."""
+    if not (m := _ASKED.match(core)):
+        return ()
+    who, verb = m.groups()
+    return (f"what {who} {verb}ed", f"what {who} {verb}d")
+
+
 def _screen_named(core: str) -> Optional[str]:
     """The option key ``core`` names: exactly, else as one slip from exactly one screen's name.
     Short words never count as typos -- "tags" is one slip from "tasks"."""
     names = static_options()[1]
     if key := names.get(core):
+        return key
+    if stated := {names[s] for s in _stated(core) if s in names}:
+        return stated.pop() if len(stated) == 1 else None
+    # "the" or "my" inside the name does not change what it names ("set up my llm" is the screen "Set
+    # up LLM"). "a" / "an" do: "open a terminal" asks for a new one, not the Worker screen.
+    if (bare := " ".join(w for w in core.split() if w not in _FILLER)) != core and (key := names.get(bare)):
         return key
     # Exactly a screen's name, of a screen that needs a pointer ("help desk"): never a typo of
     # another word -- the model decides with the context that pointer comes from.
@@ -399,6 +448,8 @@ def context_rule(utterance: str, here: Any) -> Optional[NavigationTarget]:
     ``name`` is the opening's name or the screen's name / alias -- exact, no model. None when the
     context lacks the entity or what its address needs."""
     core = _LEAD.sub("", utterance.strip().rstrip("!?.").lower()).strip()
+    if here is not None and (on := _project_screen_named(core, getattr(here, "project", None))):
+        return on
     if not (m := _POSSESSIVE.match(core)) or here is None:
         return None
     slot, kind_name = _SLOT[m.group(1).lower()]
@@ -412,6 +463,19 @@ def context_rule(utterance: str, here: Any) -> Optional[NavigationTarget]:
         place_address(p, ptr) for p, ptr, _ in openings if wanted in {p.label.lower(), *(a.lower() for a in p.aliases)}
     }
     return NavigationTarget(kind="view", value=named.pop()) if len(named) == 1 else None
+
+
+def _project_screen_named(core: str, project: Any) -> Optional[NavigationTarget]:
+    """The exact name of a screen that opens on a project ("the help desk"), said with a project in
+    context: that screen, on it. Without one the name stays the model's (``_screen_named``)."""
+    if project is None:
+        return None
+    bare = " ".join(w for w in core.split() if w not in _FILLER)
+    ident = str(project.typeid).partition("-")[2]
+    for place in navigation_map().places:
+        if "project" in place.opens and bare in {place.label.lower(), *(a.lower() for a in place.aliases)}:
+            return NavigationTarget(kind="view", value=place_address(place, ident))
+    return None
 
 
 def _target_of(key: str) -> NavigationTarget:
@@ -443,9 +507,42 @@ async def _candidates(utterance: str) -> list[dict[str, str]]:
     out = []
     for ent in found:
         kind = ent.type or ent.get_type()
-        title = getattr(ent, "_fts_title", None) or getattr(ent, "name", None) or getattr(ent, "title", None) or ""
-        out.append({"typeid": f"{kind}-{ent.id}", "type": kind, "title": str(title)})
+        # What a person calls it: its label when it has one (wizard ``llm-setup`` is "Finish setting up
+        # Flowpad"), else the title the search matched.
+        title = (
+            getattr(ent, "label", None)
+            or getattr(ent, "_fts_title", None)
+            or getattr(ent, "name", None)
+            or getattr(ent, "title", None)
+            or ""
+        )
+        found_one = {"typeid": f"{kind}-{ent.id}", "type": kind, "title": str(title)}
+        if about := _about(getattr(ent, "description", None)):
+            found_one["about"] = about
+        out.append(found_one)
     return out
+
+
+#: How much of a match's description rides on its option: its first sentence, cut at this.
+ABOUT_CHARS = 120
+
+
+def _about(description: Any) -> Optional[str]:
+    """A description's first sentence (``ABOUT_CHARS`` at most) -- what a match IS, beside its name."""
+    text = " ".join(str(description or "").split())
+    if not text:
+        return None
+    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
+    return first if len(first) <= ABOUT_CHARS else first[: ABOUT_CHARS - 1].rstrip() + "…"
+
+
+def _match_keys(here: Any, candidates: list[dict[str, str]]) -> frozenset[str]:
+    """The options only the search offered: a match's own keys, less what the context offers too."""
+    found = {f"file:{c['path']}" for c in candidates if not c.get("typeid") and c.get("path")}
+    for cand in candidates:
+        if cand.get("typeid"):
+            found |= set(_entity_options(cand, "search match"))
+    return frozenset(found - set(options_for(here, [])))
 
 
 def options_for(here: Any, candidates: list[dict[str, str]]) -> dict[str, str]:
@@ -591,7 +688,7 @@ async def route(
         return _offered(NavigatorRoute(route="agentic", reason=exc.reason), candidates, spec, wire=exc.wire)
     confidence = float(getattr(result.answers.get("target"), "confidence", 0.0))
     more = result.pick("scope", min=MORE_AT) == "more"
-    key = None if more else _acted_on(result)
+    key = None if more else _acted_on(result, _match_keys(here, candidates))
     if key in (None, "agentic"):
         reason = "more" if more else "unsure" if key is None else "agentic"
         answer = NavigatorRoute(route="agentic", reason=reason, confidence=confidence, latency_ms=result.latency_ms)

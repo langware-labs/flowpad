@@ -88,6 +88,8 @@ async def mailboxes(hub_base_url, hub_login_payload):
         allocated.append(agent_id)
         outsider_box = await driver.create_mailbox(outsider_id)
         allocated.append(outsider_id)
+        # A new mailbox sends only to its owner (the hub's Sending list): the outsider may write to the agent.
+        await driver.configure_mailbox(outsider_id, {"allowed_recipients": [str(agent_box.get("address") or "")]})
         yield {
             "agent_id": agent_id,
             "agent_address": str(agent_box.get("address") or ""),
@@ -185,6 +187,9 @@ async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
     either test uses — handing back the Agent meant stashing the source on a
     private attribute and reaching through it at every call site.
     """
+    # The hub's Receiving list is the one the gate mirrors (``AgentMailbox._cache_policy``): a new mailbox
+    # admits only its owner, so the allowlist is set where it is enforced, then copied onto the source.
+    await get_agent_mailbox_driver().configure_mailbox(mailboxes["agent_id"], {"allowed_senders": list(allow)})
     agent = Agent(
         id=mailboxes["agent_id"],
         name=f"Mailbot {mailboxes['agent_id'][:8]}",
@@ -315,7 +320,7 @@ async def _sync_until_message(
 # measured ~40s end to end on SentFromAI. Cap raised 30s → 50s with the user's explicit
 # approval (2026-10-02). Do not increase further without approval.
 @pytest.mark.timeout(50)
-async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
+async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server, tmp_path):
     """The public SDK snippet: Gmail → Agent mailbox → real Agent → Gmail."""
     gmail_address = str(os.environ.get("GMAIL_ADDRESS") or "").strip().lower()
     if not gmail_address or not os.environ.get("GMAIL_APP_PASSWORD"):
@@ -331,6 +336,13 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
         poll_interval_seconds=60,
     )
     await gmail.save()
+    # The gmail driver never reads the app password from the process env: it comes
+    # from the `gmail` credential or a store bound to the row. Bind one of its own.
+    from flow_sdk.secrets import SecretStore  # noqa: PLC0415
+
+    store = await SecretStore.get("env_file", {"env_file_path": str(tmp_path / ".env")})
+    await store.save({"GMAIL_ADDRESS": gmail_address, "GMAIL_APP_PASSWORD": os.environ["GMAIL_APP_PASSWORD"]})
+    await gmail.set_secret_store(store)
     pirate = Agent(
         name=f"pirate-{uuid.uuid4().hex[:8]}",
         worker_type="claude",

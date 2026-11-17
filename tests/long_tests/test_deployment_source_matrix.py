@@ -22,7 +22,9 @@ from tests.long_tests._deployments import WRAPPER, agent, alive, end, run, until
 
 pytestmark = [pytest.mark.timeout(90)]  # do not increase timeout without approval
 
-SOURCES = ["folder", "git", "rss", "hackernews", "gdrive", "gcs"]
+# gdrive and gcs are not here: their connection is verified against Google itself (provider_probe), so a planted
+# stand-in token is rejected ("token_rejected") and the cell can only pass with a real Google grant.
+SOURCES = ["folder", "git", "rss", "hackernews"]
 
 
 def _data(response) -> dict:

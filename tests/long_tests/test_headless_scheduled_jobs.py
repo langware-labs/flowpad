@@ -38,6 +38,10 @@ pytestmark = [
         reason="Skipping long tests when DEEP_TESTING is disabled",
     ),
     pytest.mark.asyncio,
+    # The waits this test declares, summed (2+1+1 fire windows, two settles, two prompt retries):
+    # without a budget of its own it ran under pytest.ini's 30 s unit default and died at the first
+    # fire window. Not a raise: this is the test's own budget, first set here.
+    pytest.mark.timeout(1080),  # 4 x FIRE_WAIT_SECONDS + 2 x SETTLE_SECONDS + 2 x 60 s prompt retries
 ]
 
 HUB_URL = os.environ.get("FLOWPAD_HUB_URL")

@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { useEffect, useMemo, useRef } from 'react';
-import { AgenticProcess, QueryFilter, QueryRequest } from '@sdk';
+import { AgenticProcess, QueryFilter, QueryRequest, dataManager } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { toMs } from '@src/utils/process-recency';
@@ -218,6 +218,18 @@ export function useChatHistory(
   const { data: liveProcesses } = useEntitiesQuery<AgenticProcess>(processQuery, {
     enabled: sessionIdsKey.length > 0,
   });
+
+  // A rename of a listed process made elsewhere (another browser, a native title) reaches this list
+  // through one subscription per project of the listed rows, not a backend watch per row.
+  const listProjectsKey = useMemo(
+    () => [...new Set(entries.map((e) => e.project_id).filter((p): p is string => !!p))].sort().join(','),
+    [entries],
+  );
+  useEffect(() => {
+    if (!listProjectsKey) return;
+    const releases = listProjectsKey.split(',').map((projectId) => dataManager.watchChatList(projectId));
+    return () => releases.forEach((release) => release());
+  }, [listProjectsKey]);
 
   // In-place UPDATE ops on member rows (the `activate` stamp) re-notify the
   // watched query (store.ts onDataOp update reconcile), so `liveProcesses` is

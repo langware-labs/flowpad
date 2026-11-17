@@ -33,7 +33,10 @@ def test_every_screen_is_a_place_and_the_snapshot_is_the_map():
 
 def test_the_navigator_offers_the_maps_places_and_subplaces_only():
     options, _ = navigator.static_options()
-    assert "view:credentials/connections" in options and "view:hub/token-plan/me" in options
+    assert "view:hub/token-plan/team" in options and "view:automations/bus" in options
+    # The tab a bare address opens IS the screen: offered once, as the screen, naming the tab.
+    assert "view:credentials/connections" not in options and "Connections" in options["view:credentials"]
+    assert "view:hub/token-plan/me" not in options and "my budget" in options["view:hub/token-plan"]
     assert "view:credentials/api-keys" not in options, "a tab that no longer renders is not a place"
 
 

@@ -43,6 +43,8 @@ class _Hub:
         self.statuses: list[str] = []
         self.changed = asyncio.Condition()
         self.principal = {"id": USER_ID}
+        #: A hub that splits person from principal (FLOWPAD-2353): ``current-user`` is empty for an Identity.
+        self.split = False
 
     async def ui_broadcast(self, raw: str) -> None:
         msg = json.loads(raw)
@@ -56,8 +58,10 @@ class _Hub:
         if hub_ws_manager._connection_id and ws.request.path.endswith(hub_ws_manager._connection_id):
             self.main.append(ws)
         async for raw in ws:
-            if json.loads(raw).get("action") == "current-user":
-                reply = {"status": "success", "data": self.principal}
+            action = json.loads(raw).get("action")
+            if action in ("current-user", "current-principal"):
+                named = action == "current-principal" or not self.split
+                reply = {"status": "success", "data": self.principal if named else None}
                 await ws.send(json.dumps({"message_type": "response_msg", "content": reply}))
 
     async def wait_up_after(self, mark: int) -> None:
@@ -117,6 +121,13 @@ async def test_verification_uses_authenticated_principal_for_humans_and_agents(h
     result = await hub_ws_manager.verify_current_user()
     assert result['hub_user_id'] == USER_ID
     assert result['verified'] is True
+
+
+async def test_an_agent_box_is_verified_by_a_hub_that_names_it_only_as_a_principal(hub):
+    hub.principal, hub.split = {"id": USER_ID, "type": "identity"}, True
+    result = await hub_ws_manager.verify_current_user()
+    assert result["hub_user_id"] == USER_ID
+    assert result["verified"] is True
 
 
 async def test_verification_rejects_a_different_authenticated_principal(hub):

@@ -128,7 +128,7 @@ Measure the navigator against it with `scripts/navigation_coverage.py` (see `nav
 | 88 | add an API key | ACTION: quick-create credential |
 | 89 | connect a data source | ACTION: new data source dialog |
 | 90 | add a feed | ACTION: new data source dialog |
-| 91 | new automation | /dock/automations?creating=event |
+| 91 | new automation | /dock/automations |
 | 92 | schedule a job | /dock/automations?creating=schedule |
 | 93 | add a file watcher automation | /dock/automations?creating=file |
 | 94 | new LLM endpoint | ACTION: new endpoint dialog (hub) |

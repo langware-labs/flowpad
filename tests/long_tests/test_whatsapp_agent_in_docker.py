@@ -89,7 +89,10 @@ def container(tmp_path_factory):
     _sh("docker", "build", "-f", "docker/Dockerfile.flow-backend", "-t", IMAGE, ".", cwd=REPO)
     name, port = f"flowpad-snippet-{uuid.uuid4().hex[:6]}", _free_port()
     _sh("docker", "run", "-d", "--name", name, "-p", f"{port}:{port}", "-e", f"LOCAL_SERVER_PORT={port}",
-        "-e", "IS_SANDBOX=1", "-e", "MINIHUB_RELOAD=False", IMAGE)
+        "-e", "IS_SANDBOX=1", "-e", "MINIHUB_RELOAD=False",
+        # The harness probes /api/v1/health/status with a plain GET, as the other container harnesses do:
+        # every route sits behind the cookie gate since FLOWPAD-2233, so the box runs with it off.
+        "-e", "FLOWPAD_COOKIE_GATE=off", IMAGE)
     try:
         base = f"http://localhost:{port}"
         deadline = time.monotonic() + 120

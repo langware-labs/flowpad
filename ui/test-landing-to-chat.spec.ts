@@ -1,172 +1,33 @@
 import { test, expect } from '@playwright/test';
+import { adjusted } from './tests/adjustableTimeout';
 
 const APP_URL = 'http://localhost:4097';
-const BACKEND_URL = 'http://localhost:9007';
 
-test.setTimeout(120000); // 2 minutes timeout
+test.setTimeout(adjusted(120_000));
 
 test('Start new chat from landing page', async ({ page }) => {
-  // Capture console errors
   const consoleErrors: string[] = [];
-  page.on('console', msg => {
-    if (msg.type() === 'error') {
-      consoleErrors.push(`[Console Error] ${msg.text()}`);
-    }
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text());
   });
 
-  // Capture network errors
-  const networkErrors: string[] = [];
-  page.on('requestfailed', request => {
-    networkErrors.push(`[Network Error] ${request.url()} - ${request.failure()?.errorText}`);
-  });
+  // The LLM-setup onboarding modal is its own flow, not what this covers.
+  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
 
-  console.log('Step 1: Navigate to landing page');
-  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(3000); // Wait for initial render
+  // 1. The landing page: "Hey <name>" over the session input.
+  await page.goto(`${APP_URL}/dock/home`, { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first()).toBeVisible({ timeout: adjusted(60_000) });
 
-  console.log('Step 2: Validate landing page is visible');
-  // Wait for landing page to render - could be project grid or home page
-  await page.waitForTimeout(2000);
+  // 2. Home renders <SessionInput> as a textarea labelled by its placeholder.
+  const input = page.locator('textarea[aria-label="What would you like to work on?"]');
+  await expect(input).toBeVisible({ timeout: adjusted(15_000) });
+  await input.fill('Hello, can you help me?');
+  await input.press('Enter');
 
-  // Check for Desktop Setup modal and skip if present
-  const skipButton = page.getByRole('button', { name: /skip/i });
-  const isSkipVisible = await skipButton.isVisible().catch(() => false);
-  if (isSkipVisible) {
-    console.log('Desktop Setup modal detected, clicking Skip');
-    await skipButton.click();
-    await page.waitForTimeout(1000);
-  }
+  // 3. A home prompt opens the new session as a Vibe host tab (docs/tab-management.md).
+  await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-[0-9a-f-]+/, { timeout: adjusted(30_000) });
 
-  // Check for console errors after page load
-  if (consoleErrors.length > 0) {
-    console.error('Console errors after landing page load:', consoleErrors);
-  }
-
-  // Screenshot landing page
-  await page.screenshot({ path: '/tmp/test-step-1-landing.png', fullPage: true });
-  console.log('Screenshot saved: /tmp/test-step-1-landing.png');
-
-  console.log('Step 3: Look for chat input or "New Flow" button');
-
-  // Try to find chat input - could be on main page or need to click "New Flow"
-  let chatInput = page.locator('textarea, input[type="text"]').filter({ hasText: '' }).first();
-
-  // Check if we need to click "New Flow" button first
-  const newFlowButton = page.getByRole('button', { name: /new flow|new chat|start/i });
-  const isVisible = await newFlowButton.isVisible().catch(() => false);
-
-  if (isVisible) {
-    console.log('Found "New Flow" button, clicking it');
-    await newFlowButton.click();
-    await page.waitForTimeout(1000);
-  }
-
-  console.log('Step 4: Find chat input and type message');
-  // Wait for "Recent Activity" loading to finish
-  await page.waitForTimeout(2000);
-
-  // Re-locate chat input after potential navigation
-  chatInput = page.locator('textarea[placeholder*="work on" i], textarea[placeholder*="message" i], textarea[placeholder*="chat" i], textarea').first();
-  await chatInput.waitFor({ state: 'visible', timeout: 5000 });
-
-  await chatInput.fill('Hello, can you help me?');
-  await page.waitForTimeout(500);
-
-  // Screenshot with message typed
-  await page.screenshot({ path: '/tmp/test-step-2-message-typed.png', fullPage: true });
-  console.log('Screenshot saved: /tmp/test-step-2-message-typed.png');
-
-  console.log('Step 5: Click send button');
-  const urlBeforeSend = page.url();
-  console.log('URL before send:', urlBeforeSend);
-
-  // Find and click the send button (arrow icon)
-  const sendButton = page.locator('button[type="submit"], button:has(svg)').last();
-  await sendButton.click();
-
-  console.log('Step 6: Wait for URL to change to shell path');
-  // Wait for URL to change to shell path (e.g., /dock/shell/<id>)
-  try {
-    await page.waitForURL(/\/(dock\/shell|flow)\/[a-zA-Z0-9_-]+/, { timeout: 10000 });
-  } catch (e) {
-    console.warn('Navigation did not occur within timeout');
-  }
-
-  const urlAfterSend = page.url();
-  console.log('URL after send:', urlAfterSend);
-
-  // Check for console errors after sending
-  if (consoleErrors.length > 0) {
-    console.error('Console errors after sending message:', consoleErrors);
-  }
-
-  // Wait a bit to see if anything happens
-  await page.waitForTimeout(3000);
-
-  console.log('Step 7: Validate user message appears in chat');
-  // Wait for user message to appear
-  const userMessage = page.locator('text="Hello, can you help me?"');
-  await userMessage.waitFor({ state: 'visible', timeout: 5000 });
-  console.log('User message is visible');
-
-  // Screenshot with user message
-  await page.screenshot({ path: '/tmp/test-step-3-user-message.png', fullPage: true });
-  console.log('Screenshot saved: /tmp/test-step-3-user-message.png');
-
-  console.log('Step 8: Wait 5 seconds for AI response');
-  await page.waitForTimeout(5000);
-
-  // Check for console errors during AI response
-  if (consoleErrors.length > 0) {
-    console.error('Console errors during AI response:', consoleErrors);
-  }
-
-  console.log('Step 9: Validate AI response appears');
-  // Look for AI response indicators - could be assistant message, thinking component, etc.
-  const aiResponse = page.locator('[class*="message"], [class*="assistant"], [class*="thinking"]').nth(1);
-  const hasAIResponse = await aiResponse.isVisible().catch(() => false);
-
-  if (!hasAIResponse) {
-    console.warn('No AI response visible after 5 seconds');
-  } else {
-    console.log('AI response is visible');
-  }
-
-  // Screenshot with AI response
-  await page.screenshot({ path: '/tmp/test-step-4-ai-response.png', fullPage: true });
-  console.log('Screenshot saved: /tmp/test-step-4-ai-response.png');
-
-  console.log('Step 10: Validate chat input is empty and ready');
-  const chatInputAfter = page.locator('textarea[placeholder*="message" i], textarea[placeholder*="chat" i], textarea').first();
-  const inputValue = await chatInputAfter.inputValue();
-
-  if (inputValue === '') {
-    console.log('Chat input is empty and ready for next message');
-  } else {
-    console.warn('Chat input is not empty:', inputValue);
-  }
-
-  // Final screenshot
-  await page.screenshot({ path: '/tmp/test-step-5-final.png', fullPage: true });
-  console.log('Screenshot saved: /tmp/test-step-5-final.png');
-
-  // Report all errors
-  console.log('\n=== TEST SUMMARY ===');
-  console.log('Final URL:', page.url());
-  console.log('Console Errors:', consoleErrors.length);
-  consoleErrors.forEach(err => console.error(err));
-
-  console.log('Network Errors:', networkErrors.length);
-  networkErrors.forEach(err => console.error(err));
-
-  // Assertions (soft - we're diagnosing)
-  if (!urlAfterSend.match(/\/(dock\/shell|flow)\/[a-zA-Z0-9_-]+/)) {
-    console.error('FAIL: URL did not change to shell path');
-  }
-  if (consoleErrors.length > 0) {
-    console.error('FAIL: Console errors detected');
-  }
-  if (inputValue !== '') {
-    console.error('FAIL: Chat input not empty');
-  }
+  // 4. The message sent is the session's first turn, shown in its chat.
+  await expect(page.getByText('Hello, can you help me?').first()).toBeVisible({ timeout: adjusted(15_000) });
+  console.log('Console errors:', consoleErrors.length, consoleErrors.slice(0, 5));
 });

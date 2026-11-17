@@ -283,3 +283,27 @@ async def test_history_invalidation_tracks_titles_and_bindings_not_cursor_churn(
     await reconcile_name(str(process.id))
     events = [json.loads(call.args[0]).get("broadcast_type") for call in broadcast.call_args_list]
     assert events.count("worker_history_changed") == 2
+
+
+async def test_a_pty_session_adopted_from_its_transcript_tells_the_chats_list(monkeypatch):
+    """opencode PTY mints its session after the first prompt was named: adopting it from the transcript
+    is the last naming edge, so it must bind the name and send ``worker_history_changed`` (the Chats row)."""
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    process = AgenticProcess(id=mint_uuid(), worker_type="opencode", pty_mode=True)
+    await process._db.save(process)
+    await process.reconcile_name(first_prompt="Why is the ocean blue?")
+    broadcast = AsyncMock()
+    monkeypatch.setattr("flow_sdk.server.routes.websocket.broadcast", broadcast)
+
+    current = await AgenticProcess.get_by_id(process.id)
+    await current._persist_transcript_session_id(SimpleNamespace(session_id="ses_minted_by_opencode"))
+
+    durable = await AgenticProcess.get_by_id(process.id)
+    assert durable.session_id == "ses_minted_by_opencode"
+    assert durable.naming_state.session_id == "ses_minted_by_opencode"
+    assert durable.name == "Why is the ocean blue?"
+    events = [json.loads(call.args[0]).get("broadcast_type") for call in broadcast.call_args_list]
+    assert events.count("worker_history_changed") == 1

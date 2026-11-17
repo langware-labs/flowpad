@@ -15,20 +15,16 @@ export async function printLink(page: Page, shellId: string, link: string, osc =
     const shell = await sdk.Shell.getById(shellId);
     await shell.sendInput(command);
   }, { sdkModule, shellId, command: `printf '%b\\n' ${quote(output)}\n` });
-  await expect(page.locator('.xterm-rows:visible').first()).toContainText(osc ? 'OSC destination' : link);
+  // The terminal it was printed in: other pooled terminals can be laid out (visible) too.
+  const printed = osc ? 'OSC destination' : link;
+  await expect(page.locator('.xterm-rows:visible').filter({ hasText: printed }).first()).toContainText(printed);
 }
 
-/**
- * The screen point of `text` (or the first match of a pattern) on its newest row. `scrollBack`:
- * only the rows on screen are drawn, so scroll up, as a person would, until it shows.
- */
-export async function printedLinkPoint(page: Page, text: string | RegExp, host = '', { scrollBack = false } = {}) {
+/** The screen point of `text` (or the first match of a pattern) on its newest row. */
+export async function printedLinkPoint(page: Page, text: string | RegExp, host = '', exclude?: RegExp) {
   // xterm renders spans, not anchors. Click the actual glyph's DOM position.
-  const rows = page.locator(`${host} .xterm-rows:visible > div`).filter({ hasText: text });
-  for (let up = 0; scrollBack && (await rows.count()) === 0 && up < 20; up++) {
-    await page.locator(`${host} .xterm-screen:visible`).last().hover();
-    await page.mouse.wheel(0, -200);
-  }
+  let rows = page.locator(`${host} .xterm-rows:visible > div`).filter({ hasText: text });
+  if (exclude) rows = rows.filter({ hasNotText: exclude });
   const row = rows.last();
   await expect(row).toBeVisible();
   const pattern = text instanceof RegExp ? text.source : null;

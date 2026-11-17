@@ -6,18 +6,20 @@ port that really is taken. So the block is proven here rather than against fakes
 — the fast tier (``tests/unit/test_compute_op_runner.py``) already pins the state
 machine in milliseconds, and this pins that the machine is right about reality.
 
-The agent op is **Claude Code + OpenRouter + GLM 5.3**: funded through the
-product's own two routes (``lm_keys`` → ``llm-endpoint/select``) and pinned with
-``Capability.model_map``, so a device-funded login cannot be mistaken for it.
+The agent op is **Claude Code on a non-Anthropic model, through a hub endpoint
+funded by Vertex**: the container binds a capped PUBLIC endpoint of the LOCAL hub
+the product's loginless way (``flow llm user use <id> --hub``), and the model is
+pinned with ``Capability.model_map``, so a device-funded login cannot be mistaken
+for it. No provider key enters the container.
 
-Needs docker and ``OPENROUTER_API_KEY`` (env or ``.env.local``); skips otherwise.
+Needs docker and a local Vertex-funded hub (``FLOWPAD_HUB_URL``, ``VERTEX_ROOT_ID``);
+skips otherwise.
 Rebuild the image after changing SDK code: ``FLOWPAD_OP_REBUILD=1``.
 """
 from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import socket
 import subprocess
@@ -30,20 +32,13 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 IMAGE = os.environ.get("FLOWPAD_DOCKER_IMAGE", "flowpad-backend:compute-op-test")
-MODEL = os.environ.get("FLOWPAD_OP_MODEL", "z-ai/glm-5.3")
+#: A non-Anthropic model the Vertex root serves (GLM is not enabled on the QA project).
+MODEL = os.environ.get("FLOWPAD_OP_MODEL", "google/gemini-3.5-flash")
 
 # A fresh container pays for an apt index, a redis install and three cold model
 # turns. Do NOT raise this to make a slow case pass — an op that needs longer
 # than its own declared budget is the bug.
 pytestmark = [pytest.mark.timeout(1800)]
-
-
-def _openrouter_key() -> str:
-    key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not key and (REPO / ".env.local").is_file():
-        match = re.search(r"^\s*OPENROUTER_API_KEY\s*=(.+)$", (REPO / ".env.local").read_text(), re.M)
-        key = match.group(1).strip().strip("'\"") if match else ""
-    return key
 
 
 def _free_port() -> int:
@@ -64,9 +59,9 @@ def _exec(name: str, script: str, *, check: bool = False) -> subprocess.Complete
 def container():
     if shutil.which("docker") is None or _sh("docker", "info", check=False).returncode != 0:
         pytest.skip("docker is not available")
-    key = _openrouter_key()
-    if not key:
-        pytest.skip("OPENROUTER_API_KEY is not set (env or .env.local)")
+    from tests.long_tests._vertex_hub import public_endpoint_for_containers
+
+    endpoint_id, hub_in_container = public_endpoint_for_containers("compute ops", cost_usd_total=25.0)
 
     missing = _sh("docker", "image", "inspect", IMAGE, check=False).returncode != 0
     if missing or os.environ.get("FLOWPAD_OP_REBUILD"):
@@ -78,8 +73,11 @@ def container():
             pytest.exit(f"docker build failed:\n{build.stdout[-2000:]}\n{build.stderr[-2000:]}", returncode=2)
 
     name, port = f"flowpad-op-{uuid.uuid4().hex[:6]}", _free_port()
+    # A throwaway box the host-side test calls over the port map: it holds no cookie-gate token,
+    # so the gate is off (FLOWPAD_COOKIE_GATE=off), as CI runs its test backends.
     _sh("docker", "run", "-d", "--name", name, "-p", f"{port}:{port}",
-        "-e", f"LOCAL_SERVER_PORT={port}", "-e", "IS_SANDBOX=1", "-e", "MINIHUB_RELOAD=False", IMAGE)
+        "--add-host=host.docker.internal:host-gateway",
+        "-e", f"LOCAL_SERVER_PORT={port}", "-e", "IS_SANDBOX=1", "-e", "MINIHUB_RELOAD=False", "-e", "FLOWPAD_COOKIE_GATE=off", IMAGE)
     try:
         base = f"http://localhost:{port}"
         deadline = time.monotonic() + 120
@@ -96,7 +94,7 @@ def container():
         _sh("docker", "cp", str(REPO / "tests"), f"{name}:/app/tests")
         # No key in here: pytest prints a fixture's value on every failure in
         # the test that uses it, and a leaked credential in a log is forever.
-        yield {"name": name, "base": base, "port": port}
+        yield {"name": name, "base": base, "port": port, "endpoint_id": endpoint_id, "hub": hub_in_container}
     finally:
         if os.environ.get("FLOWPAD_OP_KEEP"):
             # A failed agent run is evidence: its transcript and the machine it
@@ -108,15 +106,10 @@ def container():
 
 @pytest.fixture(scope="module")
 def funded(container):
-    """Claude Code, funded by OpenRouter, pinned to GLM 5.3 — the product's own routes."""
-    base, name = container["base"], container["name"]
-    keyed = httpx.post(f"{base}/api/v1/graph/compute_node/@local/lm_keys",
-                       json={"provider": "openrouter", "key": _openrouter_key()}, timeout=60)
-    assert keyed.status_code == 200 and (keyed.json().get("data") or {}).get("valid") is True, keyed.text[:300]
-
-    selected = httpx.post(f"{base}/api/v1/graph/compute_node/@local/llm-endpoint/select",
-                          json={"harness": "claude", "kind": "api_key", "provider": "openrouter"}, timeout=60)
-    assert selected.status_code == 200, selected.text[:300]
+    """Claude Code, funded by a Vertex-backed public hub endpoint, pinned to MODEL — the product's own routes."""
+    name = container["name"]
+    bound = _exec(name, f"flow llm user use {container['endpoint_id']} claude --hub {container['hub']}")
+    assert bound.returncode == 0, f"{bound.stdout[-800:]}\n{bound.stderr[-800:]}"
 
     pinned = _exec(name, "python3 - <<'PY'\n"
         "import asyncio\n"
@@ -124,11 +117,11 @@ def funded(container):
         "from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind\n"
         "async def main():\n"
         "    cap = await Capability.get_by_kind(worker_capability_kind('claude'))\n"
-        f"    cap.model_map = {{'openrouter': {{t: {MODEL!r} for t in ('sm', 'md', 'lg')}}}}\n"
+        f"    cap.model_map = {{'flowpad': {{t: {MODEL!r} for t in ('sm', 'md', 'lg')}}}}\n"
         "    await cap.save()\n"
         "    print(cap.auth_mode, cap.api_provider)\n"
         "asyncio.run(main())\nPY")
-    assert pinned.stdout.split() == ["api", "openrouter"], f"{pinned.stdout}\n{pinned.stderr[-800:]}"
+    assert pinned.stdout.split() == ["api", "flowpad"], f"{pinned.stdout}\n{pinned.stderr[-800:]}"
     return container
 
 
@@ -156,7 +149,7 @@ def _drive(container, *cases: str, flags: str = "", timeout: int = 1500) -> dict
 def test_glm_answers_through_claude_code(funded):
     """The riskiest assumption in the rig, asserted first and alone.
 
-    OpenRouter is addressed on the Anthropic-shaped endpoint, so "can Claude Code
+    The hub is addressed on the Anthropic-shaped wire, so "can Claude Code
     drive a non-Anthropic model" is an empirical question. If this fails, nothing
     below it means anything — and the failure should say so rather than looking
     like ten broken goals.
@@ -172,7 +165,7 @@ def test_glm_answers_through_claude_code(funded):
         "    print('SMOKE', out.ok, out.detail[:400], out.executor)\n"
         "asyncio.run(main())\nPY", check=False)
     assert "SMOKE True" in answered.stdout, (
-        f"GLM 5.3 did not answer through Claude Code.\n{answered.stdout[-1500:]}\n{answered.stderr[-1500:]}"
+        f"{MODEL} did not answer through Claude Code.\n{answered.stdout[-1500:]}\n{answered.stderr[-1500:]}"
     )
 
 

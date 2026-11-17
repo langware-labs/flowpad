@@ -1,5 +1,5 @@
-"""Seed the inbound-routing E2E on a disposable instance: a project of its own with three agents (A, B, C), each
-deployed locally and owning one WhatsApp channel on the waha stack's number (``waha_stack.py``). The channels are
+"""Seed the inbound-routing E2E on a disposable instance: three agents (A, B, C), each in a project of its own (a
+project has ONE local deployment, with one main agent), deployed locally as its main agent and owning one WhatsApp channel on the waha stack's number (``waha_stack.py``). The channels are
 RECEIVERS only — no hub claim is made for them here; the routing is configured in the Inbound UI by the spec.
 A group channel (C) is that number's group. Prints the ids as JSON; ``--cleanup <json>`` removes them.
 
@@ -36,14 +36,16 @@ async def seed(backend: str, control: str, group: str) -> dict:
     cfg = (await httpx.AsyncClient().get(f"{control}/ctl/config")).json()
     boot = await graph(api, "get", "bootstrap")
     user = boot.get("user") or {}
-    project = await graph(api, "post", f"user/{user['id']}/project", json={"name": f"{PREFIX}{uuid.uuid4().hex[:6]}"})
     env = Path(tempfile.mkdtemp(prefix="inbound-e2e-")) / "whatsapp.env"
     env.write_text(f"FLOW_WHATSAPP_TOKEN={cfg['token']}\nFLOW_WHATSAPP_SECRET={cfg['app_secret']}\nFLOW_WHATSAPP_WEBHOOK_URL=\n")
-    out = {"project_id": project["id"], "env_file": str(env), "agents": {}}
+    out = {"env_file": str(env), "agents": {}}
     for name in ("A", "B", "C"):
+        project = await graph(api, "post", f"user/{user['id']}/project",
+                              json={"name": f"{PREFIX}{name.lower()}-{uuid.uuid4().hex[:6]}"})
         agent = await graph(api, "post", f"project/{project['id']}/agent", json={
             "name": f"Inbound {name}", "worker_type": "claude", "system_prompt": PROMPT.format(name=name)})
-        deployed = await graph(api, "post", f"agent/{agent['id']}/deploy", json={"provider": "local"})
+        deployed = await graph(api, "post", f"project/{project['id']}/deploy",
+                               json={"provider": "local", "main_agent_id": agent["id"]})
         config = {"phone_number_id": cfg["phone_number_id"], "waba_id": cfg["waba_id"], "app_id": cfg["app_id"],
                   "base_url": cfg["base_url"], **({"group": group} if name == "C" and group else {})}
         source = await graph(api, "post", f"project/{project['id']}/data_source", json={
@@ -51,8 +53,9 @@ async def seed(backend: str, control: str, group: str) -> dict:
             "owner": f"agent-{agent['id']}", "open_to_all": True, "status": "active",
             "secret_store": {"type": "env_file", "config": {"env_file_path": str(env)}}})
         row = await graph(api, "get", f"data_source/{source['id']}")
-        out["agents"][name] = {"agent_id": agent["id"], "deployment_id": deployed["deployment"]["id"],
-                               "source_id": source["id"], "status": row.get("status")}
+        out["agents"][name] = {"project_id": project["id"], "agent_id": agent["id"],
+                               "deployment_id": deployed["deployment_id"], "source_id": source["id"],
+                               "status": row.get("status")}
     return out
 
 
@@ -62,11 +65,11 @@ async def cleanup(backend: str, seeded: dict) -> None:
         await api.post(f"/graph/deployment/{a['deployment_id']}/pause", json={})
         await api.delete(f"/graph/data_source/{a['source_id']}")
         await api.delete(f"/graph/agent/{a['agent_id']}")
-    project = await graph(api, "get", f"project/{seeded['project_id']}")
-    folder = Path(str(project.get("fs_storage_mount_path") or ""))
-    await api.delete(f"/graph/project/{seeded['project_id']}")
-    if folder.name.startswith(PREFIX) and folder.is_dir():
-        shutil.rmtree(folder)
+        project = await graph(api, "get", f"project/{a['project_id']}")
+        folder = Path(str(project.get("fs_storage_mount_path") or ""))
+        await api.delete(f"/graph/project/{a['project_id']}")
+        if folder.name.startswith(PREFIX) and folder.is_dir():
+            shutil.rmtree(folder)
 
 
 def main() -> None:

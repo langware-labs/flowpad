@@ -287,30 +287,44 @@ export const TabStrip: React.FC<TabStripProps> = ({
   // (unclipped) case does no work and the row never jumps while you are reading
   // it. `scrollLeft` is set directly rather than via `scrollIntoView`, which
   // would also scroll ancestor containers and can yank the whole page.
+  //
+  // Measured from an IntersectionObserver callback, never in the effect itself:
+  // the effect runs inside the tab switch's commit, where reading `scrollWidth`
+  // or a rect forced a full synchronous layout of the freshly re-rendered page
+  // (~16 ms per warm switch on the perf VM). The observer reports after the
+  // browser's own layout, so the same reads there cost nothing.
   useEffect(() => {
     const container = tabContainerRef.current;
     const chip = activeKey ? tabRefs.current[activeKey] : null;
-    if (!container || !chip) return;
-    if (container.scrollWidth <= container.clientWidth) return; // not clipped
+    if (!container || !chip || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      () => {
+        observer.disconnect();
+        if (container.scrollWidth <= container.clientWidth) return; // not clipped
 
-    // Measure the chip RELATIVE TO THE CONTAINER's content box. `offsetLeft` is
-    // relative to `offsetParent`, which is not this container (it is not
-    // positioned), so using it overshoots and pushes the chip off the other
-    // edge — rect deltas are correct regardless of the offset parent.
-    const containerRect = container.getBoundingClientRect();
-    const chipRect = chip.getBoundingClientRect();
-    const left = chipRect.left - containerRect.left + container.scrollLeft;
-    const right = left + chipRect.width;
-    const viewLeft = container.scrollLeft;
-    const viewRight = viewLeft + container.clientWidth;
-    // A little breathing room so the chip is not flush against the edge.
-    const pad = 24;
+        // Measure the chip RELATIVE TO THE CONTAINER's content box. `offsetLeft` is
+        // relative to `offsetParent`, which is not this container (it is not
+        // positioned), so using it overshoots and pushes the chip off the other
+        // edge — rect deltas are correct regardless of the offset parent.
+        const containerRect = container.getBoundingClientRect();
+        const chipRect = chip.getBoundingClientRect();
+        const left = chipRect.left - containerRect.left + container.scrollLeft;
+        const right = left + chipRect.width;
+        const viewLeft = container.scrollLeft;
+        const viewRight = viewLeft + container.clientWidth;
+        // A little breathing room so the chip is not flush against the edge.
+        const pad = 24;
 
-    if (left < viewLeft + pad) {
-      container.scrollLeft = Math.max(0, left - pad);
-    } else if (right > viewRight - pad) {
-      container.scrollLeft = right - container.clientWidth + pad;
-    }
+        if (left < viewLeft + pad) {
+          container.scrollLeft = Math.max(0, left - pad);
+        } else if (right > viewRight - pad) {
+          container.scrollLeft = right - container.clientWidth + pad;
+        }
+      },
+      { root: container },
+    );
+    observer.observe(chip);
+    return () => observer.disconnect();
   }, [activeKey, items.length, density]);
 
   // Rename editing — the strip owns the input UI; the owner owns validation

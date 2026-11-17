@@ -15,6 +15,16 @@ import { UnifiedTabStrip } from './content-panel/unified-tab-strip';
 import { useVibeOnlyAgent } from '@src/hooks/use-launching-agent';
 import { PageId } from '@sdk';
 import { TabFullScreenExit, useTabFullScreen } from '@src/tabs/tab-full-screen';
+import { memo } from 'react';
+
+// The page re-renders on every navigation (it reads the dock to pick the layout).
+// Its chrome takes no props from it: memoized, each piece re-renders only for what
+// it reads itself — not as a cascade of every tab switch (docs/navigation/dock-loading.md).
+const PageTopNavBar = memo(TopNavBar);
+const PageCollapsedSidebar = memo(CollapsedSidebar);
+const PageTabStrip = memo(UnifiedTabStrip);
+const PageFooter = memo(Footer);
+const PageContentPanel = memo(ContentPanel);
 
 export default function FlowPage() {
   const isVibe = useIsVibe();
@@ -57,17 +67,17 @@ export default function FlowPage() {
        runtime signal nor the back button may depend on where you navigated.
        One mount, one place. */
     <SidebarProvider defaultOpen={false} className="h-full !min-h-0 flex-col overflow-hidden bg-background">
-      <TopNavBar />
+      <PageTopNavBar />
       <div data-testid="flow-page" className="flex min-h-0 w-full flex-1 overflow-hidden">
         {/* Collapsed Icon Sidebar (~50px wide) */}
-        <CollapsedSidebar />
+        <PageCollapsedSidebar />
 
         {/* Main Content Area. min-w-0 is load-bearing: without it this
             flex-row child sizes to max-content and the unified tab strip
             (dozens of chips) blows the column out to thousands of px,
             pushing the right arrow / close-all / opener toolbar off-screen. */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {framedByStrip && <UnifiedTabStrip />}
+          {framedByStrip && <PageTabStrip />}
           <TabStripOwnedAbove.Provider value={framedByStrip}>
             <div
               data-testid="tab-content-area"
@@ -87,12 +97,12 @@ export default function FlowPage() {
               ) : layout === DockLayout.VIBE_NEW_CHAT ? (
                 <VibeNewChat />
               ) : (
-                <ContentPanel />
+                <PageContentPanel />
               )}
             </div>
           </TabStripOwnedAbove.Provider>
 
-          <Footer />
+          <PageFooter />
         </div>
       </div>
     </SidebarProvider>

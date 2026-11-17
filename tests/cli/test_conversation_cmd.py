@@ -39,13 +39,19 @@ def conv_server():
     """Start the real server (current code) once on a free port for this module.
 
     A dedicated free port avoids colliding with any stale/other server on the
-    default test port. Daemon thread — torn down with the process.
+    default test port. Stopped at module teardown: left running, the app's lifespan
+    work was killed mid-flight at interpreter exit and the process aborted
+    ("FATAL: exception not rethrown") after every test had passed.
     """
-    from flow_sdk.server.app import start_server
+    import uvicorn
+
+    from flow_sdk.server.app import app
     from tests.adjustable_timeout import adjusted
 
     port = _free_port()
-    threading.Thread(target=start_server, args=(port,), daemon=True).start()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
     base = f"http://127.0.0.1:{port}"
     # Readiness: poll the bootstrap endpoint until the server answers.
     deadline = time.time() + adjusted(15)
@@ -57,7 +63,9 @@ def conv_server():
             time.sleep(0.2)
     else:  # pragma: no cover
         pytest.fail("conv_server did not become ready")
-    return type("Srv", (), {"base_url": base, "port": port})()
+    yield type("Srv", (), {"base_url": base, "port": port})()
+    server.should_exit = True
+    thread.join()
 
 
 @pytest.fixture
@@ -370,29 +378,31 @@ def test_contacts_find_nobody_is_not_found(conv_cli, contacts):
     assert result.exit_code == 4
 
 
+@pytest.fixture
+def signed_in(monkeypatch):
+    monkeypatch.setattr(conversation_cmd, "_signed_in", lambda: True)
+
+
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_new_refuses_an_ambiguous_name_before_creating(conv_cli, contacts, monkeypatch):
-    monkeypatch.setattr(conversation_cmd, "_post_json", _no_auth_wrapper(conversation_cmd._post_json))
+def test_new_refuses_an_ambiguous_name_before_creating(conv_cli, contacts, signed_in):
     result = conv_cli.invoke(["conversation", "new", f"Nir {contacts}", "hi"])
     assert result.exit_code == 2 and "AMBIGUOUS" in result.output
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_new_refuses_when_signed_out(conv_cli, contacts, monkeypatch):
-    real = conversation_cmd._post_json
+    # The gate is the local sign-in check (``_signed_in``), before anything is posted.
+    monkeypatch.setattr(conversation_cmd, "_signed_in", lambda: False)
     monkeypatch.setattr(conversation_cmd, "_post_json",
-                        lambda url, payload, **kw: {"auth_required": True} if url.endswith("conversation-list")
-                        else pytest.fail(f"posted {url} while signed out"))
+                        lambda url, payload, **kw: pytest.fail(f"posted {url} while signed out"))
     result = conv_cli.invoke(["conversation", "new", f"gadi-{contacts}@example.com", "hi"])
     assert result.exit_code == 7 and "AUTH_REQUIRED" in result.output
-    assert real  # untouched
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_new_creates_with_the_contact_and_reports_the_id_when_invite_fails(conv_cli, contacts, monkeypatch):
+def test_new_creates_with_the_contact_and_reports_the_id_when_invite_fails(conv_cli, contacts, signed_in):
     """No hub in the test server, so the invite fails: the conversation must exist,
     carry the contact as member, and the error must name its id for a retry."""
-    monkeypatch.setattr(conversation_cmd, "_post_json", _no_auth_wrapper(conversation_cmd._post_json))
     result = conv_cli.invoke(["conversation", "new", f"gadi {contacts}", "hello"])
     assert result.exit_code == 7 and "SHARE_FAILED" in result.output, result.output
     cid = result.output.split("conversation ", 1)[1].split(" was created", 1)[0]
@@ -400,29 +410,15 @@ def test_new_creates_with_the_contact_and_reports_the_id_when_invite_fails(conv_
     assert [m.get("email") for m in conv["members"]] == [f"gadi-{contacts}@example.com"]
 
 
-def _no_auth_wrapper(real):
-    """The test server is signed out; pretend the listing says signed in."""
-    def wrapped(url, payload, **kw):
-        data = real(url, payload, **kw)
-        return {**data, "auth_required": False} if url.endswith("conversation-list") else data
-    return wrapped
-
-
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_new_takes_an_email_nobody_knows_yet(conv_cli, contacts, monkeypatch):
+def test_new_takes_an_email_nobody_knows_yet(conv_cli, contacts, signed_in):
     """Not in the address book: the email itself is the member and the invitee."""
-    monkeypatch.setattr(conversation_cmd, "_post_json", _no_auth_wrapper(conversation_cmd._post_json))
     stranger = f"stranger-{contacts}@example.com"
     result = conv_cli.invoke(["conversation", "new", stranger, "hello"])
     assert "SHARE_FAILED" in result.output and stranger in result.output, result.output
     cid = result.output.split("conversation ", 1)[1].split(" was created", 1)[0]
     conv = requests.get(f"{conv_cli.base}/api/v1/graph/conversation/{cid}", timeout=10).json()["data"]
     assert [m.get("email") for m in conv["members"]] == [stranger]
-
-
-@pytest.fixture
-def signed_in(monkeypatch):
-    monkeypatch.setattr(conversation_cmd, "_signed_in", lambda: True)
 
 
 def _conversation_with_a_host(conv_cli, host_user_id: str) -> str:

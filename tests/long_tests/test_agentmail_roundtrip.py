@@ -35,7 +35,10 @@ from flow_sdk.ingest.sync import sync_source
 from tests.test_settings import test_service_config
 
 KEY = os.environ.get("AGENTMAIL_API_KEY", "")
-PROBE = os.environ.get("AGENTMAIL_PROBE_INBOX", "")
+PROBE = os.environ.get("AGENTMAIL_PROBE_INBOX", "").strip()
+# An inbox id is its full address; a bare name is on AgentMail's own domain.
+if PROBE and "@" not in PROBE:
+    PROBE = f"{PROBE}@agentmail.to"
 BASE = "https://api.agentmail.to/v0"
 
 pytestmark = [
@@ -86,18 +89,26 @@ async def _until(predicate, *, budget_s: int, every_s: float = 3.0):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(240)  # approved: three live SES deliveries at ~30-60s each, measured 2026-09-01
-async def test_agentmail_roundtrip():
+async def test_agentmail_roundtrip(tmp_path):
     marker = f"am-e2e-{uuid.uuid4().hex[:8]}"
     created = _api("POST", "/inboxes", {"username": f"flowpad-rt-{marker[-8:]}"})
     watched = created.get("inbox_id") or created.get("address")
     assert watched, f"inbox create returned no address: {sorted(created)}"
     try:
+        # The key is never a config field (a config is value-free): it lives in a
+        # secret store under the driver's auth name. No project is current here,
+        # so the source is bound to a store of its own.
+        from flow_sdk.secrets import SecretStore  # noqa: PLC0415
+
+        store = await SecretStore.get("env_file", {"env_file_path": str(tmp_path / ".env")})
+        await store.save({"api_key": KEY})
         source = DataSource(
             name=f"AgentMail roundtrip {uuid.uuid4().hex[:8]}",
             provider="agentmail",
-            config={"inbox": watched, "api_key": KEY},
+            config={"inbox": watched},
         )
         await source.save()
+        await source.set_secret_store(store)
         assert source.channel == "agentmail", "channel must be stamped at create"
 
         # ── receive: probe → watched → SourceItem → reference FlowMessage ──

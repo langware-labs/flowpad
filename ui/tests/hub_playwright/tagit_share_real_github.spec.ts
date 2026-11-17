@@ -108,7 +108,9 @@ test.describe('tagit share → a reviewer opens the rules doc on the hub', () =>
     const login = await (await request.post(`${HUB}/api/v1/login`, {
       data: { email: HUB_EMAIL, password: HUB_PASSWORD },
     })).json();
-    hubKey = login?.data?.api_key ?? login?.api_key ?? '';
+    // The hub answers a password login with `token` (an API-key login with `api_key`); the desktop
+    // reads either (flow_sdk/cli/auth/credentials.py), and so does this.
+    hubKey = login?.data?.api_key ?? login?.data?.token ?? login?.api_key ?? '';
     expect(hubKey, 'hub login returned no api key').toBeTruthy();
     const hubUser = login?.data?.user?.id ?? login?.user?.id;
     await request.post(`${HUB}/api/v1/graph/user/${hubUser}/env-var`, {
@@ -167,6 +169,14 @@ test.describe('tagit share → a reviewer opens the rules doc on the hub', () =>
     markdownId = (indexed?.data?.typeids ?? []).find((t: string) => t.startsWith('markdown-'))?.split('-').slice(1).join('-');
     expect(markdownId, 'the rules doc did not index').toBeTruthy();
 
+    // Creating and indexing the project may write into the tree (ids, an index cache). That is the
+    // publish gate's "Commit & continue", not what this suite is about: carry it, as a user would.
+    if (git(clone, 'status', '--porcelain').trim()) {
+      git(clone, 'add', '-A');
+      git(clone, 'commit', '-m', `flowpad ids ${RUN_ID}`);
+      git(clone, 'push');
+    }
+
     // ── the preflight must be green before the UI can link ──
     const pre = await (await request.get(
       `${BACKEND}/api/v1/graph/project/${projectId}/git_share_preflight`)).json();
@@ -194,11 +204,16 @@ test.describe('tagit share → a reviewer opens the rules doc on the hub', () =>
     await expect(link).toHaveAttribute('data-state', 'published', { timeout: 60_000 });
 
     // ── the three canonical markers must survive a reload ──
-    const local = await (await request.get(`${BACKEND}/api/v1/graph/project/${projectId}`)).json();
+    // The control reads `published` from `remote`, which goes live while Project.share runs; the share
+    // action saves the publication (hub_published_at, origin) after that. Read once it has landed.
+    const readLocal = async () => (await (await request.get(`${BACKEND}/api/v1/graph/project/${projectId}`)).json());
+    await expect.poll(async () => (await readLocal())?.data?.hub_published_at ?? null, { timeout: 30_000 }).toBeTruthy();
+    const local = await readLocal();
     expect(local?.data?.remote).toBe(true);
     // Regression pin: this was null once because share_action skipped the save.
     expect(local?.data?.hub_published_at).toBeTruthy();
-    expect(local?.data?.git_origin).toBeTruthy();
+    // The local row names it `origin`; `git_origin` is only its name on the hub's wire (hub_name, e0030e6f8).
+    expect(local?.data?.origin?.kind).toBe('git');
 
     const onHub = await request.get(`${HUB}/api/v1/graph/project/${projectId}`, {
       headers: { Authorization: `Bearer ${hubKey}` },
@@ -224,6 +239,13 @@ test.describe('tagit share → a reviewer opens the rules doc on the hub', () =>
     // ── the payoff: a reviewer opens the link and sees the document ──
     const hubCtx = await browser.newContext({ baseURL: HUB_UI });
     await hubCtx.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    // The reviewer is the hub user whose GitHub token was seeded above: the hub clones as the
+    // viewer, and an anonymous context is refused the project outright (403, target_not_found).
+    // The hub's login answers with its session cookie, which this context's pages then carry.
+    const signedIn = await hubCtx.request.post(`${HUB}/api/v1/login`, {
+      data: { email: HUB_EMAIL, password: HUB_PASSWORD },
+    });
+    expect(signedIn.ok(), 'the reviewer could not sign in to the hub').toBe(true);
     const hubPage = await hubCtx.newPage();
     await hubPage.goto('/dock/hub/home');
     // Verify the RUNTIME, not the port — 4098 collides with the desktop UI.

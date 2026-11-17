@@ -989,9 +989,13 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
         rec = from_jsonl(default_jsonl_path(self.id), parent_id="", record_id=self.id, parent_type=RecordType.PROJECT)
+        # The conversation's rows in one read, not one per pointer: this runs on every send, so a
+        # read per pointer made each send O(messages). A pointer whose row is not filed under this
+        # conversation is still looked up on its own.
+        rows = {m.id: m for m in await FlowMessage.get_all({"conversation_id": self.id}) if m.id}
         owed = []
         for ptr in message_pointers(rec):
-            fm = await FlowMessage.get_one({"id": ptr.id})
+            fm = rows.get(ptr.id) or await FlowMessage.get_one({"id": ptr.id})
             if fm is None or not fm.owes_delivery:
                 continue
             refused = fm.delivery_failure is not None and not fm.delivery_failure.kind.stays_owed

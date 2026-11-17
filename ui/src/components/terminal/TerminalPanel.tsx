@@ -8,10 +8,11 @@ import { notify } from '@src/notifications';
 import { AlertTriangle, LoaderCircle, PlayCircle, RefreshCw } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
-import { SessionPaneViewMode } from '@src/contexts/view-mode-context';
+import { getEffectiveViewMode, SessionPaneViewMode, surfaceForViewMode } from '@src/contexts/view-mode-context';
 import { useProcessSurface } from './interactive-terminal/use-process-surface';
 import { retryFailedStart, TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
 import { estimateCols, estimateRows } from './interactive-terminal/terminalConfig';
+import { prefetchPtyReplay } from './interactive-terminal/pty-replay';
 import { allowRename, cleanTitle, isProgramIdentityTitle } from './rename-rules';
 import {
   classifyRuntimeFailure,
@@ -257,6 +258,10 @@ const TerminalPanelBody: React.FC<{
 
     let stale = false;
     setRuntimeStatus('starting');
+    // A terminal's recording is fetched and replayed while `/open` and the attach run, not after them.
+    if (activeProcess.shell_id && surfaceForViewMode(getEffectiveViewMode()) === 'terminal') {
+      prefetchPtyReplay(activeProcess.shell_id);
+    }
     const cols = estimateCols(window.innerWidth);
     const rows = estimateRows(window.innerHeight);
     void startProcessRuntime(activeProcess, cols, rows)

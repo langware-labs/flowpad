@@ -107,6 +107,53 @@ def _resolve_recipients(
     return recipients
 
 
+# The fields of a process's rename that its project's chat-history list shows. `session_id` and
+# `project_id` keep the row a member of the list's live query, which re-validates every update.
+_RENAME_FIELDS = ("id", "type", "name", "naming_state", "auto_rename", "session_id", "project_id")
+# Last name sent per process: only a change of it is a rename.
+_last_names: dict[str, str | None] = {}
+
+
+def _chat_list_rename(
+    op: str,
+    entity_type: str | None,
+    entity_id: str | None,
+    message: dict,
+    active_connections: dict,
+    already: set[str],
+) -> tuple[dict | None, set[str]]:
+    """The lightweight rename frame of a process, and the chat-history list subscribers to get it.
+
+    A process update goes only to its explicit watchers, and a history list is not one: it would
+    otherwise need a backend watch per row. Its rename (only that: a name change, not the
+    process's runtime churn) goes to every connection subscribed to the chat-history list of the
+    process's project, minus those that already get the full update.
+    """
+    if entity_type != "agentic_process" or not entity_id:
+        return None, set()
+    if op == "delete":
+        _last_names.pop(entity_id, None)
+    if op != "update":
+        return None, set()
+    data = message.get("data")
+    if not isinstance(data, dict) or "name" not in data:
+        return None, set()
+    name = data.get("name")
+    if entity_id in _last_names and _last_names[entity_id] == name:
+        return None, set()
+    _last_names[entity_id] = name
+    project_id = data.get("project_id")
+    if not project_id:
+        return None, set()
+    from flow_sdk.app.actions.watch_registry import chat_list_key, get_watched_by
+
+    recipients = {c for c in get_watched_by(chat_list_key(project_id)) if c in active_connections} - already
+    if not recipients:
+        return None, set()
+    frame = {**message, "data": {k: data[k] for k in _RENAME_FIELDS if k in data}}
+    return frame, recipients
+
+
 def _build_delete_flow_data_msg(type_id: str, entity_id: str) -> dict:
     """Build a flow_data_msg emitted before delete data_op."""
     timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -190,6 +237,18 @@ def _sync_handle_entity_op(op_message: Any):
             )
         ):
             explicit_watchers = {c for c in get_watched_by(f"{entity_type}:{entity_id}") if c in active_connections}
+
+        # A rename reaches the chat-history lists of the process's project, watched or not.
+        rename_frame, rename_recipients = _chat_list_rename(
+            op, entity_type, entity_id, message, active_connections, explicit_watchers
+        )
+        if rename_frame:
+            try:
+                loop = asyncio.get_running_loop()
+                for conn_id in rename_recipients:
+                    loop.create_task(_send_payloads(active_connections[conn_id], [rename_frame]))
+            except RuntimeError:
+                logger.debug("No running event loop, skipping rename frames")
 
         # Skip notifications for non-API-visible entity types UNLESS an explicit
         # watcher asked for this entity. The create / broadcast-to-all fallback

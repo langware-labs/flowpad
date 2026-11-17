@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   skip: vi.fn(() => Promise.resolve()),
   goBack: vi.fn(),
   goHome: vi.fn(),
+  openTab: vi.fn(),
   status: null as unknown,
 }));
 
@@ -20,7 +21,7 @@ vi.mock('@sdk', async (importOriginal) => {
   return { ...actual, llmSourcesService: { skip: h.skip } };
 });
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: { goBack: h.goBack, goHome: h.goHome }, windowMode: false }),
+  useDockNavigation: () => ({ navigation: { goBack: h.goBack, goHome: h.goHome, openTab: h.openTab }, windowMode: false }),
 }));
 vi.mock('@src/navigation/history-position-store', () => ({ getHistoryPosition: () => ({ canGoBack: true }) }));
 vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
@@ -86,9 +87,32 @@ describe('LlmSetupView', () => {
   });
 
   it('carries on by itself once a source is in place, without a Skip', () => {
+    h.status = { resolved: {}, default: { kind: 'harness.claude.cli', installed: true, source: null, reason: '' } };
+    const view = render(<LlmSetupView />);
+    expect(h.goBack).not.toHaveBeenCalled();
     h.status = FUNDED;
-    render(<LlmSetupView />);
+    view.rerender(<LlmSetupView />);
     expect(h.goBack).toHaveBeenCalledTimes(1);
     expect(h.skip).not.toHaveBeenCalled();
+  });
+
+  // Navigation sentences 118 / 119 ("set up my LLM", "connect an LLM"): opened on purpose on a box
+  // that is already funded, the screen says so and stays -- it does not bounce the person home.
+  it('opened on a box that is already funded, stays on "You\'re set up" and offers LLM sources', () => {
+    h.status = FUNDED;
+    render(<LlmSetupView />);
+    expect(screen.getByTestId('llm-setup-done')).toBeTruthy();
+    expect(h.goBack).not.toHaveBeenCalled();
+    expect(h.goHome).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('llm-setup-open-sources'));
+    expect(h.openTab).toHaveBeenCalledWith('llm-sources');
+  });
+
+  it('waits for the funding status before deciding: loading, then funded, is opened on purpose', () => {
+    const view = render(<LlmSetupView />);
+    h.status = FUNDED;
+    view.rerender(<LlmSetupView />);
+    expect(h.goBack).not.toHaveBeenCalled();
+    expect(screen.getByTestId('llm-setup-done')).toBeTruthy();
   });
 });

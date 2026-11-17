@@ -390,6 +390,9 @@ class ViewMeta:
     #: pointer starting ``?`` is the screen's options (``?creating=schedule``); one starting ``/``
     #: is a whole address of its own (``/hub/worldview/world``, a projection the hub renders).
     subplaces: tuple[tuple[str, str], ...] = ()
+    #: ``(pointer, aliases)``: what a person calls a subplace beside its whole name, as a screen's
+    #: ``aliases`` -- offered with it and a rule ("failed runs" is Automations > Runs that failed).
+    subplace_aliases: tuple[tuple[str, tuple[str, ...]], ...] = ()
     #: ``(entity type, pointer form, name)``: how this screen opens ON an entity in context when
     #: that is more than its bare id -- ``("agentic_process", "<harness>/transcript/<session>",
     #: "transcript")``. The form's placeholders are ``<id>``, ``<type>``, ``<path>`` and any field
@@ -553,6 +556,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         folds_pointer=True,
         label="Preferences",
         aliases=("my preferences", "appearance"),
+        # The bare address shows the first category (PreferencesView: ``categories[0]``).
+        default_tab="general",
         # The tabs of ``PREF_CATEGORIES`` (ts_sdk/src/preferences/prefRegistry.ts), named by what is in them.
         subplaces=tuple(
             (tab, f"Preferences > {name}")
@@ -591,12 +596,17 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
             ("?creating=file", "New file-watcher automation: runs when a file changes (an empty form)"),
             ("?creating=agent_hook", "New agent-hook automation (an empty form)"),
         ),
+        # The Runs screen's own "failed" badge is not in its address: this is the place that opens on
+        # only the failed ones.
+        subplace_aliases=(("runs?status=failed", ("failed runs",)),),
         open_forms=(("trigger", "?trigger=<id>", "page"), ("event", "?trigger=<id>", "page")),
     ),
     ViewType.EVENTS: _m(_NONE, addressable=False),
     ViewType.TRIGGERS: _m(_NONE, addressable=False),
     ViewType.CAPABILITIES: _m(_NONE, label="Capabilities", aliases=("checks", "system checks")),
-    ViewType.GRAPH_WORKFLOWS: _m(_OPT, label="Graph Workflows", aliases=("workflows",)),
+    # "workflows" alone are the dynamic workflows a person writes and runs (the Assets list,
+    # ``navigation.LIST_WORDS``); this dev-mode editor is called by its whole name.
+    ViewType.GRAPH_WORKFLOWS: _m(_OPT, label="Graph Workflows"),
     ViewType.SIGNALS: _m(_NONE, addressable=False),
     # Pointer `[drivers[/<driverName>]]`: the drivers live UNDER the sources, and all
     # three levels fold into one tab chip (ui/src/components/data-sources/data-sources-pointer.ts).
@@ -650,7 +660,11 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         pages=("desk", "hub"),
         provides=("entity",),
         # The per-type lists (``list/<type>``) come from the type registry: ``navigation.place_of``.
-        subplaces=(("project-home", "Project home: the current project's overview page"),),
+        subplaces=(
+            ("project-home", "Project home: the current project's overview page"),
+            # The list the screen opens on (``DockPointer.forAssetList('all')``).
+            ("list/all", "Assets > all my assets: the list of every asset, of every type"),
+        ),
     ),
     # Same: a bare project dock is the assets workspace (see the PROJECT arm in
     # `content-panel.tsx`, which documents exactly that and was unaddressable).
@@ -707,7 +721,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _OPT,
         folds_pointer=True,
         label="LLM Endpoints",
-        aliases=("endpoints",),
+        # The list shows each endpoint's usage today: with no endpoint named, it answers "endpoint usage".
+        aliases=("endpoints", "endpoint usage", "endpoints usage"),
         pages=("hub",),
         provides=("entity",),
         open_forms=(

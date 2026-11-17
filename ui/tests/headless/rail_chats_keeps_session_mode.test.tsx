@@ -59,7 +59,10 @@ describe('rail Chats keeps the session mode (no mocks)', () => {
     act(() => {
       fireEvent.click(rail('stream_inbox'));
     });
-    await waitFor(() => expect(router.state.location.pathname).toBe('/dock/stream_inbox'));
+    // The Stream Inbox route lands in 1.5-2.4 s on a slow 8-vCPU host; waitFor's implicit 1 s is not a budget.
+    await waitFor(() => expect(router.state.location.pathname).toBe('/dock/stream_inbox'), {
+      timeout: 10000, // do not increase timeout without approval
+    });
     act(() => {
       fireEvent.click(rail('chats'));
     });

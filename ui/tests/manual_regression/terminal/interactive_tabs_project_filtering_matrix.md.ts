@@ -113,40 +113,31 @@ function ownedInstance(): OwnedInstance {
 }
 
 async function restartOwnedInstance(instance: OwnedInstance): Promise<void> {
-  // `launch` scans UPWARD for a free port, so a port the dying backend still
-  // holds moves the instance — and this suite pins `API` at import, turning one
-  // restart into `ECONNREFUSED` for every test after it. Preventing that needs a
-  // fast backend-only restart that PRESERVES the DB (kill-then-wait blows the
-  // 60s test budget; `reset --backend-only` wipes the DB this test is proving
-  // survives), so until one exists we detect the drift rather than avoid it.
-  execFileSync(path.join(REPO_ROOT, 'scripts', 'instance_ctl.sh'), ['launch', instance.name], {
+  // A backend-only restart that keeps the instance's port, env and DB: `flow instance
+  // restart-backend` kills the backend tree and relaunches it from the launcher registry
+  // (what pty_recovery_after_restart uses). A full `instance_ctl.sh launch` scanned UPWARD for
+  // a free port and restarted vite too, so the pinned `API` talked to nothing afterwards.
+  execFileSync('uv', ['run', 'flow', 'instance', 'restart-backend', instance.name, '--json'], {
     cwd: REPO_ROOT,
     stdio: 'pipe',
   });
-  // Re-run the same ownership preflight the suite opened with: it re-reads the
-  // env file and launcher.json and re-checks identity, PID liveness and port
-  // agreement. Only the comparison against the port we were PINNED to is new.
-  const relaunched = ownedInstance();
-  if (relaunched.backendPort !== instance.backendPort) {
-    throw new Error(
-      `'${instance.name}' came back on backend port ${relaunched.backendPort}, but this run is pinned to ${instance.backendPort}`,
-    );
-  }
-  // `launch` waits for the BACKEND only, but it restarts vite too. Reloading
-  // the moment it returns hit a dev server that was not listening yet, so
-  // `terminal-panels` never appeared and every later test talked to a backend
-  // the page had never reconnected to. Gate on the frontend answering — a
-  // readiness probe, not a budget: it returns the instant the server responds.
-  const base = `http://localhost:${process.env.VITE_PORT ?? '4097'}`;
+  // Ready = the same ownership preflight the suite opened with (identity, PID liveness and port
+  // agreement), on the port we were PINNED to — a readiness probe, not a budget.
   const deadline = Date.now() + 90_000;
   for (;;) {
     try {
-      const r = await fetch(base, { method: 'GET' });
+      const relaunched = ownedInstance();
+      if (relaunched.backendPort !== instance.backendPort) {
+        throw new Error(
+          `'${instance.name}' came back on backend port ${relaunched.backendPort}, but this run is pinned to ${instance.backendPort}`,
+        );
+      }
+      const r = await fetch(`http://localhost:${instance.backendPort}/api/v1/graph/bootstrap`);
       if (r.ok) return;
-    } catch {
-      /* not listening yet */
+    } catch (e) {
+      if (String(e).includes('pinned to')) throw e;
     }
-    if (Date.now() > deadline) throw new Error(`frontend ${base} did not come back after restarting '${instance.name}'`);
+    if (Date.now() > deadline) throw new Error(`backend of '${instance.name}' did not come back after restart-backend`);
     await new Promise((r) => setTimeout(r, 250));
   }
 }
@@ -1041,11 +1032,30 @@ test.describe('Interactive tabs / project filtering matrix', () => {
       await expect(dialog.locator('[data-testid="switch-project-active-title"]')).toBeVisible();
       const recentTitle = dialog.locator('[data-testid="switch-project-recent-title"]');
       await expect(recentTitle).toBeVisible();
-      // A row is a <div> holding the open button (plus the info control), so
-      // the first Recent row is the next sibling div's row button.
-      const targetRow = recentTitle.locator(
-        'xpath=following-sibling::div[1]//button[starts-with(@data-testid,"switch-project-row-")]',
+      // A row is a <div> holding the open button (plus the info control). Recent also lists folders
+      // seen in the shared Claude history (other instances' workspaces); opening one whose name a project
+      // here already holds is refused (unique names, d0c2a3ee8) — a different subject. The switch under
+      // test targets the first Recent row that IS already a project on this instance (matched by path).
+      // Every row after the Recent title (each row is its own <div>).
+      const recentRows = recentTitle.locator(
+        'xpath=following-sibling::div//button[starts-with(@data-testid,"switch-project-row-")]',
       );
+      await expect(recentRows.first()).toBeVisible();
+      const knownPaths = new Set(
+        ((await beforeResponse.json()).data as Array<{ fs_storage_mount_path?: string }>)
+          .map((p) => (p.fs_storage_mount_path ?? '').replace(/\/+$/, ''))
+          .filter(Boolean),
+      );
+      let targetRow = recentRows.first();
+      for (let i = 0; i < (await recentRows.count()); i++) {
+        const row = recentRows.nth(i);
+        const id = ((await row.getAttribute('data-testid')) ?? '').replace('switch-project-row-', '');
+        const cwd = ((await dialog.getByTestId(`switch-project-path-${id}`).getAttribute('title')) ?? '').trim();
+        if (knownPaths.has(cwd.replace(/\/+$/, '')) && cwd.replace(/\/+$/, '') !== rootA.replace(/\/+$/, '')) {
+          targetRow = row;
+          break;
+        }
+      }
       await expect(targetRow).toBeVisible();
       const targetId = (await targetRow.getAttribute('data-testid'))!.replace('switch-project-row-', '');
       const targetName = (await targetRow.locator('span.font-medium').innerText()).trim();
@@ -1403,7 +1413,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let r = 0; r < 2; r++) {
       await clickHome(page);
       await waitForRootUrl(page);
-      await page.goto('/dock/shell');
+      // Re-enter the way gotoDockShell entered: a bare /dock/shell shows the UNSTATED mode (Vibe), whose
+      // strip lists no shell tabs, so the count read 0.
+      await page.goto(withViewMode('/dock/shell', 'advanced'));
       await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
       await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
       expect(await tabIds(page)).toEqual(before);

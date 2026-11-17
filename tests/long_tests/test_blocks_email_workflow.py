@@ -39,7 +39,10 @@ from flow_sdk.builtin.agent_registry import get_agent
 from tests.test_settings import test_service_config
 
 KEY = os.environ.get("AGENTMAIL_API_KEY", "")
-PROBE = os.environ.get("AGENTMAIL_PROBE_INBOX", "")
+PROBE = os.environ.get("AGENTMAIL_PROBE_INBOX", "").strip()
+# An inbox id is its full address; a bare name is on AgentMail's own domain (as test_agentmail_roundtrip).
+if PROBE and "@" not in PROBE:
+    PROBE = f"{PROBE}@agentmail.to"
 BASE = "https://api.agentmail.to/v0"
 
 pytestmark = [
@@ -70,10 +73,13 @@ def _probe_messages() -> list[dict]:
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_blocks_snippet_receives_and_replies(local_project):
+async def test_blocks_snippet_receives_and_replies(local_project, monkeypatch):
     # local_project seeds the @local Project a live instance owns at boot —
     # in-process there is no backend, and without it the deployment cannot
     # resolve a workdir (headless prompt FAILs with "workdir is not set").
+    # The snippet runs the way a user's script does: inside a project folder, whose secret store
+    # (`.env.local`) is where StreamInbox(api_key=...) saves the key -- configs are value-free.
+    monkeypatch.chdir(local_project.fs_storage_mount_path)
     t0 = time.perf_counter()
 
     def mark(label: str) -> None:

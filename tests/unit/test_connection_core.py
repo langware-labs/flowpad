@@ -444,7 +444,7 @@ def test_a_record_on_a_port_other_than_the_settings_default_is_still_borrowed():
     assert _strict_record_generation(foreign, info, Table()) is None
 
 
-def _adoption_rig(monkeypatch, *, held_after: bool):
+def _adoption_rig(monkeypatch, *, held_after: bool, first_test: dict | None = None):
     """A hub provider whose owner already holds a valid grant: the delegated probe
     passes on the FIRST call, while this machine holds nothing yet."""
     import flow_sdk.core.connections.orchestrator as orchestrator
@@ -488,7 +488,9 @@ def _adoption_rig(monkeypatch, *, held_after: bool):
             if path == "/api/v1/graph/secrets/is-enabled":
                 return SimpleNamespace(success=True, data={"enabled": True}, error_code=None, message=None)
             if path == "/api/v1/graph/oauth/linear/test":
-                return SimpleNamespace(success=True, data={"ok": True, "identity": "me"}, error_code=None, message=None)
+                tests_seen = sum(1 for call in self.calls if call[1] == path)
+                data = first_test if first_test is not None and tests_seen == 1 else {"ok": True, "identity": "me"}
+                return SimpleNamespace(success=True, data=data, error_code=None, message=None)
             if path == "/api/v1/graph/oauth/linear/auth":
                 data = {"provider": "linear", "oauth_request_id": "r1", "status": "success"}
                 return SimpleNamespace(success=True, data=data, error_code=None, message=None)
@@ -532,6 +534,32 @@ async def test_a_passing_probe_on_an_unheld_row_still_adopts_through_auth(monkey
         ("POST", "/api/v1/graph/oauth/linear/auth"),
         ("GET", "/api/v1/graph/oauth/linear/test"),
     ]
+
+
+async def test_a_grant_the_hub_does_not_hold_goes_on_to_auth(monkeypatch):
+    """The hub answers a provider it holds no grant for with a skipped test: ok None, no code,
+    "Not connected.". Connect read that as an unreachable verifier and stopped, so a provider
+    never connected could not be connected from the CLI or SDK at all."""
+    client, presenter = _adoption_rig(
+        monkeypatch, held_after=True, first_test={"ok": None, "detail": "Not connected.", "code": None}
+    )
+
+    result = await connect("linear", presenter)
+
+    assert result.spec.connected is True
+    assert ("POST", "/api/v1/graph/oauth/linear/auth") in client.calls
+
+
+async def test_an_unreachable_verifier_still_stops_the_connect(monkeypatch):
+    client, presenter = _adoption_rig(
+        monkeypatch, held_after=True, first_test={"ok": None, "code": "verification_unreachable"}
+    )
+
+    with pytest.raises(ConnectionConnectError) as caught:
+        await connect("linear", presenter)
+
+    assert caught.value.code == "verification_unreachable"
+    assert ("POST", "/api/v1/graph/oauth/linear/auth") not in client.calls
 
 
 async def test_connect_refuses_to_report_a_credential_it_does_not_hold(monkeypatch):
@@ -640,3 +668,34 @@ async def test_testing_the_account_row_reads_the_hub_login(monkeypatch):
     result = await test_connection("flowpad_account")
 
     assert (result.ok, result.code) == (False, "cloud_login_required")
+
+
+@pytest.mark.parametrize(
+    ("provider", "credential_ref", "hub_name"),
+    [
+        ("github", "github_credentials", "GITHUB_OAUTH_USER_TOKEN"),
+        ("slack", "slack_credentials", "SLACK_OAUTH_USER_TOKEN"),
+        ("notion", "NOTION_OAUTH_USER_TOKEN", "NOTION_OAUTH_USER_TOKEN"),
+    ],
+)
+async def test_token_falls_back_to_the_hub_under_the_hubs_own_name(monkeypatch, provider, credential_ref, hub_name):
+    """A grant the hub holds is read under ITS name: ``github_credentials`` is never a hub row."""
+    import flow_sdk.core.connections.specs as specs_module
+    import flow_sdk.core.oauth.hub_oauth as hub_oauth
+    from flow_sdk.core.connections.specs import _token_for_spec_local
+
+    asked: list[str] = []
+
+    async def no_local_user():
+        return None
+
+    async def hub_value(name, **_kwargs):
+        asked.append(name)
+        return "hub-token" if name == hub_name else None
+
+    monkeypatch.setattr(specs_module, "_connection_user", no_local_user)
+    monkeypatch.setattr(hub_oauth, "hub_credential_value", hub_value)
+    spec = ConnectionSpec(provider=provider, display_name=provider, connected=True, credential_ref=credential_ref)
+
+    assert await _token_for_spec_local(spec) == "hub-token"
+    assert asked == [hub_name]

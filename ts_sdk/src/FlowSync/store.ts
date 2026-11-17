@@ -263,6 +263,17 @@ export interface Manageable {
  */
 const loggedMissingCtorTypes = new Set<string>();
 
+
+/** `../lazy`, loaded once per module graph. Not at module scope: see refreshScanInfo(). */
+let lazyModule: Promise<typeof import('../lazy')> | null = null;
+function loadLazy(): Promise<typeof import('../lazy')> {
+  lazyModule ??= import('../lazy').catch((error) => {
+    lazyModule = null;
+    throw error;
+  });
+  return lazyModule;
+}
+
 export class DataManager<T extends Manageable> extends EventEmitter {
   entities: TypeIdMap<EntityRef<T>> = new TypeIdMap<EntityRef<T>>();
 
@@ -280,6 +291,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
   private _inFlightGets: Map<string, Promise<unknown>> = new Map();
   private watches: WatchMap = new WatchMap();
+  /** Holders per project of its chat-history list subscription (see `watchChatList`). */
+  private chatListWatches = new Map<string, number>();
   /** The `/watch` request open for a key, if any (see `postWatch`). */
   private watchPosts = new TypeIdMap<Promise<void>>();
   private readScope: string | undefined;
@@ -460,7 +473,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       // import would put the base class in a cycle with itself, which is what made
       // `class X extends APIEntity` see `undefined`. See
       // ui/tests/unit/sdk-module-layering.test.ts.
-      const { lazyAssets, LazyAsset } = await import('../lazy');
+      const { lazyAssets, LazyAsset } = await loadLazy();
       const raw = await lazyAssets.refresh(LazyAsset.IndexStatus);
       this.setScanInfo({
         total_indexed: raw?.per_type?.reduce((s: number, t: any) => s + (t.entity_count ?? 0), 0) ?? 0,
@@ -500,6 +513,10 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     try {
       const info = await this.callAction<null, BootstrapInfo>(actionInfo);
+      // Resolve `lazy` now, while this SDK's module graph is live: a fire-and-forget
+      // refreshScanInfo() that runs after its graph was discarded (a test realm torn
+      // down, a module reset) then reuses this module instead of evaluating a second copy.
+      void loadLazy().catch(() => undefined);
       if (info.scan_info) this.setScanInfo(info.scan_info);
       if (info.records_root) this.recordsRoot = info.records_root;
       return info;
@@ -528,6 +545,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // number of holders, and each holder still has its own release to call.
     for (const typeId of Array.from(this.watches.keys())) {
       void this.postWatch(typeId);
+    }
+    for (const projectId of Array.from(this.chatListWatches.keys())) {
+      void this.postChatList(projectId, 'watch');
     }
   }
 
@@ -1430,6 +1450,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   /** Register a created entity and splice it into every matching live query. */
   private applyCreate(typeId: TypeId, data: IEntity): void {
     const entity = this.castAndDeepAssign(data);
+    if (!data.expand?.expansions?.length && entity.remote !== true && !this.getSchema(typeId.type)?.hasBlobs) {
+      entity.markAsExpanded();
+    }
     this.register_new_entity(typeId, entity);
     // X5a: splice the already-delivered entity into every matching live
     // query locally (mirror of `removeEntityFromResults` for delete) instead
@@ -2186,6 +2209,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           continue;
         }
         const entity = this.castAndDeepAssign(entityJson);
+        // Local SQLite list queries (`DBEntity.get_all`, db_entity.py:865) do not
+        // compute role/permission expansions (`permissions`, `auth_scopes`), and
+        // `_query` already requests `expand=blobs` when `hasBlobs` is true (line 2177).
+        // Mark local query rows expanded so context setters (`_onAddedToContext`,
+        // `loadProject`) don't re-fetch a cached entity with a second GET on navigation.
+        if (!entityJson.expand?.expansions?.length && entity.remote !== true) {
+          entity.markAsExpanded();
+        }
         this.register_new_entity(entity.typeId, entity);
         const ref = this.getRef(entity.typeId);
         // A data-op that landed while the batch owned this ref was buffered.
@@ -2271,6 +2302,38 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         this.evictIfUnreferenced(typeId);
       }
     };
+  }
+
+  /**
+   * Subscribe this connection to one project's chat-history list: the backend then sends it the
+   * rename of every process in that project (a lightweight update), with no per-row watch.
+   * Counted per project; the last release unsubscribes.
+   */
+  watchChatList(projectId: string): () => void {
+    const holders = this.chatListWatches.get(projectId) ?? 0;
+    this.chatListWatches.set(projectId, holders + 1);
+    if (holders === 0) void this.postChatList(projectId, 'watch');
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const left = (this.chatListWatches.get(projectId) ?? 1) - 1;
+      if (left > 0) return void this.chatListWatches.set(projectId, left);
+      this.chatListWatches.delete(projectId);
+      void this.postChatList(projectId, 'unwatch');
+    };
+  }
+
+  private async postChatList(projectId: string, action: 'watch' | 'unwatch'): Promise<void> {
+    const connection_manager = ConnectionManager.getInstance();
+    if (!connection_manager.connected) return; // registered again on (re)connect
+    try {
+      await apiClient.post(`${config.API_PREFIXES.graph}/project/${projectId}/${action}/chats`, {
+        connection_id: connection_manager.id,
+      });
+    } catch (e) {
+      console.warn(`[Store] chat list ${action} failed for project ${projectId}:`, e);
+    }
   }
 
   /**
@@ -2450,6 +2513,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    */
   public updateEntityFromJson<U extends T>(entityJson: any): U {
     const entity = this.castAndDeepAssign<U>(entityJson);
+    if (!entityJson?.expand?.expansions?.length && entity.remote !== true && !this.getSchema(entity.typeId.type)?.hasBlobs) {
+      entity.markAsExpanded();
+    }
     // Register the entity in cache if it's not already there
     if (!this.getByTypeIdFromCache(entity.typeId)) {
       this.register_new_entity(entity.typeId, entity);

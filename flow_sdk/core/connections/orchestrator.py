@@ -340,7 +340,10 @@ async def connect(provider: str, presenter: AuthorizationPresenter, *, reauthori
                 # is where a valid hub grant is adopted without a browser.
                 if initial.ok is True and spec.connected and not reauthorize:
                     return ConnectionResult(spec=spec, test=initial)
-                if initial.ok is None:
+                # The hub skips the test of a grant it does not hold (ok None, no code, "Not
+                # connected."): nothing to verify yet, not an unreachable verifier. Raising here
+                # left a provider never connected from the CLI/SDK without any consent to give.
+                if initial.ok is None and (initial.code or spec.connected):
                     raise _error(
                         spec.provider,
                         ConnectionStage.VERIFICATION,

@@ -475,14 +475,20 @@ def async_context(func):
 
 @pytest.fixture(scope="session", autouse=True)
 def clean_claude_temp_projects():
-    """Remove temp-path Claude projects before and after the test session."""
+    """Remove temp-path Claude projects before and after the test session.
+
+    With ``FLOWPAD_CLAUDE_HOME`` the Claude home is a real one, shared with every other
+    test session and backend on the box: only this session's own temp tree is swept
+    there. Sweeping all of it deleted a live worker's transcript before its ``--resume``.
+    """
     import asyncio
 
     from flow_sdk.fs_store.operations.claude_project import clean_temp_projects
 
-    asyncio.get_event_loop().run_until_complete(clean_temp_projects())
+    within = _TEST_RUN_ROOT if os.environ.get("FLOWPAD_CLAUDE_HOME") else None
+    asyncio.get_event_loop().run_until_complete(clean_temp_projects(within))
     yield
-    asyncio.get_event_loop().run_until_complete(clean_temp_projects())
+    asyncio.get_event_loop().run_until_complete(clean_temp_projects(within))
 
 
 @pytest.fixture(scope="session", autouse=True)

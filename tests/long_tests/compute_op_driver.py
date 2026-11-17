@@ -134,7 +134,7 @@ async def wizard(names: list[str]) -> None:
     a bound value reaches the next step, and the whole thing reports into one
     Activity tree rather than one per call.
     """
-    from flow_sdk.activity import Activity
+    from flow_sdk.activity import monitor
     from flow_sdk.core.wizard.runner import Resolved, run_wizard
     from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
@@ -152,12 +152,19 @@ async def wizard(names: list[str]) -> None:
     })
     started = time.monotonic()
     address = "wizard/rig"
-    result = await run_wizard(
-        spec, subject_entity="rig", activity_path=address, trusted=True,
-        workdir=Path("/work"), platform="linux", resolve_op=resolve_op,
-    )
-    tree = Activity.get(address, subject_entity="rig")
-    node = tree.spec() if tree is not None else None
+    # A finished root is evicted from the monitor (``Activity.get`` would then mint a fresh, empty
+    # node), so the tree is read from what the run emitted -- as tests/unit/_activity_trees.py does.
+    roots: dict = {}
+    unsubscribe = monitor.subscribe(lambda root, _transition: roots.__setitem__((root.subject_entity, root.path), root))
+    try:
+        result = await run_wizard(
+            spec, subject_entity="rig", activity_path=address, trusted=True,
+            workdir=Path("/work"), platform="linux", resolve_op=resolve_op,
+        )
+    finally:
+        unsubscribe()
+    root = roots.get(("rig", address.split("/")[0]))
+    node = root.spec().find(address) if root is not None else None
     print("WIZARD " + json.dumps({
         "exit_code": int(result.exit_code),
         "detail": result.detail,

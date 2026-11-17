@@ -37,90 +37,118 @@ class ContextSubscriptionManager {
 // Single shared instance
 const contextSubscriptionManager = new ContextSubscriptionManager();
 
-/**
- * Hook to access dataContext reactively using useSyncExternalStore
- * Mirrors all dataContext properties and adds project and computeNode
- */
-export function useContext() {
-  const snapshotRef = useRef<{
-    user: typeof dataContext.user;
-    workspace: typeof dataContext.workspace;
-    activeEntity: typeof dataContext.activeEntity;
-    activeEntityTypeId: typeof dataContext.activeEntityTypeId;
-    workspaceTypeId: typeof dataContext.workspaceTypeId;
-    userTypeId: typeof dataContext.userTypeId;
-    localUser: typeof dataContext.localUser;
-    cloudUser: typeof dataContext.cloudUser;
-    currentUser: typeof dataContext.currentUser;
-    visitorTypeId: typeof dataContext.visitorTypeId;
-    someone: typeof dataContext.someone;
-    manifests: typeof dataContext.manifests;
-    plugins: typeof dataContext.plugins;
-    project: typeof dataContext.project;
-    computeNode: typeof dataContext.computeNode;
-    sandboxComputeNode: typeof dataContext.sandboxComputeNode;
-    visitor: typeof dataContext.visitor;
-    bootstrapError: typeof dataContext.bootstrapError;
-    isBootstrapping: typeof dataContext.isBootstrapping;
-    cloudApiUrl: typeof dataContext.cloudApiUrl;
-    cloudLoginAvailable: typeof dataContext.cloudLoginAvailable;
-    cloudConnectionStatus: typeof dataContext.cloudConnectionStatus;
-    desktopInfo: typeof dataContext.desktopInfo;
-    runtimeKind: typeof dataContext.runtimeKind;
-    isDesktop: typeof dataContext.isDesktop;
-    version: typeof dataContext.version;
-    instanceName: typeof dataContext.instanceName;
-    warnings: typeof dataContext.warnings;
-    agenticProcess: typeof dataContext.agenticProcess;
-    agenticProcessTypeId: typeof dataContext.agenticProcessTypeId;
-    activeShellId: typeof dataContext.activeShellId;
-    activeTerminalTargetTypeId: typeof dataContext.activeTerminalTargetTypeId;
-    workdir: typeof dataContext.workdir;
-    snifferEnabled: typeof dataContext.snifferEnabled;
-    snifferInstalled: typeof dataContext.snifferInstalled;
-    snifferReady: typeof dataContext.snifferReady;
-    terminalRuntimeError: typeof dataContext.terminalRuntimeError;
-    isConnected: typeof dataContext.isConnected;
-  }>({
-    user: dataContext.user,
-    workspace: dataContext.workspace,
-    activeEntity: dataContext.activeEntity,
-    activeEntityTypeId: dataContext.activeEntityTypeId,
-    workspaceTypeId: dataContext.workspaceTypeId,
-    userTypeId: dataContext.userTypeId,
-    localUser: dataContext.localUser,
-    cloudUser: dataContext.cloudUser,
-    currentUser: dataContext.currentUser,
-    visitorTypeId: dataContext.visitorTypeId,
-    someone: dataContext.someone,
-    manifests: dataContext.manifests,
-    plugins: dataContext.plugins,
-    project: dataContext.project,
-    computeNode: dataContext.computeNode,
-    sandboxComputeNode: dataContext.sandboxComputeNode,
-    visitor: dataContext.visitor,
-    bootstrapError: dataContext.bootstrapError,
-    isBootstrapping: dataContext.isBootstrapping,
-    cloudApiUrl: dataContext.cloudApiUrl,
-    cloudLoginAvailable: dataContext.cloudLoginAvailable,
-    cloudConnectionStatus: dataContext.cloudConnectionStatus,
-    desktopInfo: dataContext.desktopInfo,
-    runtimeKind: dataContext.runtimeKind,
-    isDesktop: dataContext.isDesktop,
-    version: dataContext.version,
-    instanceName: dataContext.instanceName,
-    warnings: dataContext.warnings,
-    agenticProcess: dataContext.agenticProcess,
-    agenticProcessTypeId: dataContext.agenticProcessTypeId,
-    activeShellId: dataContext.activeShellId,
-    activeTerminalTargetTypeId: dataContext.activeTerminalTargetTypeId,
-    workdir: dataContext.workdir,
-    snifferEnabled: dataContext.snifferEnabled,
-    snifferInstalled: dataContext.snifferInstalled,
-    snifferReady: dataContext.snifferReady,
-    terminalRuntimeError: dataContext.terminalRuntimeError,
-    isConnected: dataContext.isConnected,
+/** The `dataContext` fields `useContext()` exposes. */
+const CONTEXT_KEYS = [
+  'user',
+  'workspace',
+  'activeEntity',
+  'activeEntityTypeId',
+  'workspaceTypeId',
+  'userTypeId',
+  'localUser',
+  'cloudUser',
+  'currentUser',
+  'visitorTypeId',
+  'someone',
+  'manifests',
+  'plugins',
+  'project',
+  'computeNode',
+  'sandboxComputeNode',
+  'visitor',
+  'bootstrapError',
+  'isBootstrapping',
+  'cloudApiUrl',
+  'cloudLoginAvailable',
+  'cloudConnectionStatus',
+  'desktopInfo',
+  'runtimeKind',
+  'isDesktop',
+  'version',
+  'instanceName',
+  'warnings',
+  'agenticProcess',
+  'agenticProcessTypeId',
+  'activeShellId',
+  'activeTerminalTargetTypeId',
+  'workdir',
+  'snifferEnabled',
+  'snifferInstalled',
+  'snifferReady',
+  'terminalRuntimeError',
+  'isConnected',
+] as const;
+
+type ContextKey = (typeof CONTEXT_KEYS)[number];
+export type ContextSnapshot = { [K in ContextKey]: (typeof dataContext)[K] };
+
+const KEY_SET: ReadonlySet<string> = new Set(CONTEXT_KEYS);
+
+// TypeIds are rebuilt on every write: compare them by identity, not reference.
+const TYPE_ID_KEYS: ReadonlySet<ContextKey> = new Set([
+  'activeEntityTypeId',
+  'workspaceTypeId',
+  'userTypeId',
+  'visitorTypeId',
+  'agenticProcessTypeId',
+  'activeTerminalTargetTypeId',
+]);
+
+function sameValue(key: ContextKey, a: unknown, b: unknown): boolean {
+  if (TYPE_ID_KEYS.has(key)) {
+    const x = a as { type?: string; id: string } | null | undefined;
+    const y = b as { type?: string; id: string } | null | undefined;
+    return x?.type === y?.type && x?.id === y?.id;
+  }
+  if (key === 'terminalRuntimeError') {
+    const x = a as (typeof dataContext)['terminalRuntimeError'];
+    const y = b as (typeof dataContext)['terminalRuntimeError'];
+    return x?.kind === y?.kind && x?.processId === y?.processId;
+  }
+  return a === b;
+}
+
+interface Tracked {
+  /** The fields this component has read: the only ones that re-render it. */
+  keys: Set<ContextKey>;
+  values: Partial<ContextSnapshot>;
+  snapshot: ContextSnapshot;
+}
+
+/** A read-only view of `values` that records each field read and fills a field on its first read. */
+function trackedView(tracked: Tracked, values: Partial<ContextSnapshot>): ContextSnapshot {
+  const read = (key: ContextKey) => {
+    tracked.keys.add(key);
+    if (!(key in values)) (values as Record<string, unknown>)[key] = dataContext[key];
+    return values[key];
+  };
+  return new Proxy({} as ContextSnapshot, {
+    get: (_t, key) => (typeof key === 'string' && KEY_SET.has(key) ? read(key as ContextKey) : undefined),
+    has: (_t, key) => typeof key === 'string' && KEY_SET.has(key),
+    ownKeys: () => [...CONTEXT_KEYS],
+    getOwnPropertyDescriptor: (_t, key) =>
+      typeof key === 'string' && KEY_SET.has(key)
+        ? { value: read(key as ContextKey), enumerable: true, configurable: true, writable: false }
+        : undefined,
   });
+}
+
+/**
+ * Hook to access dataContext reactively using useSyncExternalStore.
+ *
+ * A component re-renders only when a field IT READ changes: the snapshot records
+ * which fields the component touched (destructuring counts) and `getSnapshot`
+ * compares just those. A tab switch writes the active shell, process and workdir;
+ * the dock chrome that reads only the user or the compute node no longer
+ * re-renders for it, and no consumer re-reads all ~40 getters on every write.
+ */
+export function useContext(): ContextSnapshot {
+  const trackedRef = useRef<Tracked | null>(null);
+  if (!trackedRef.current) {
+    const tracked = { keys: new Set<ContextKey>(), values: {} } as Tracked;
+    tracked.snapshot = trackedView(tracked, tracked.values);
+    trackedRef.current = tracked;
+  }
 
   // Subscribe to dataContext changes using the shared subscription manager
   // This ensures only ONE listener on the EventEmitter, regardless of how many components use this hook
@@ -129,107 +157,24 @@ export function useContext() {
   }, []);
 
   const getSnapshot = useCallback(() => {
-    // Read current values from dataContext
-    const current = {
-      user: dataContext.user,
-      workspace: dataContext.workspace,
-      activeEntity: dataContext.activeEntity,
-      activeEntityTypeId: dataContext.activeEntityTypeId,
-      workspaceTypeId: dataContext.workspaceTypeId,
-      userTypeId: dataContext.userTypeId,
-      localUser: dataContext.localUser,
-      cloudUser: dataContext.cloudUser,
-      currentUser: dataContext.currentUser,
-      visitorTypeId: dataContext.visitorTypeId,
-      someone: dataContext.someone,
-      manifests: dataContext.manifests,
-      plugins: dataContext.plugins,
-      project: dataContext.project,
-      computeNode: dataContext.computeNode,
-      sandboxComputeNode: dataContext.sandboxComputeNode,
-      visitor: dataContext.visitor,
-      bootstrapError: dataContext.bootstrapError,
-      isBootstrapping: dataContext.isBootstrapping,
-      cloudApiUrl: dataContext.cloudApiUrl,
-      cloudLoginAvailable: dataContext.cloudLoginAvailable,
-      cloudConnectionStatus: dataContext.cloudConnectionStatus,
-      desktopInfo: dataContext.desktopInfo,
-      runtimeKind: dataContext.runtimeKind,
-      isDesktop: dataContext.isDesktop,
-      version: dataContext.version,
-      instanceName: dataContext.instanceName,
-      warnings: dataContext.warnings,
-      agenticProcess: dataContext.agenticProcess,
-      agenticProcessTypeId: dataContext.agenticProcessTypeId,
-      activeShellId: dataContext.activeShellId,
-      activeTerminalTargetTypeId: dataContext.activeTerminalTargetTypeId,
-      workdir: dataContext.workdir,
-      snifferEnabled: dataContext.snifferEnabled,
-      snifferInstalled: dataContext.snifferInstalled,
-      snifferReady: dataContext.snifferReady,
-      terminalRuntimeError: dataContext.terminalRuntimeError,
-      isConnected: dataContext.isConnected,
-    };
-
-    // Only update snapshot if values have changed (to maintain stable reference)
-    // For TypeId objects, compare by id instead of reference to avoid race conditions
-    const prev = snapshotRef.current;
-    const typeIdChanged = (
-      a: { type?: string; id: string } | null | undefined,
-      b: { type?: string; id: string } | null | undefined,
-    ) => a?.type !== b?.type || a?.id !== b?.id;
-
-    if (
-      prev.user !== current.user ||
-      prev.localUser !== current.localUser ||
-      prev.cloudUser !== current.cloudUser ||
-      prev.currentUser !== current.currentUser ||
-      prev.workspace !== current.workspace ||
-      prev.activeEntity !== current.activeEntity ||
-      typeIdChanged(prev.activeEntityTypeId, current.activeEntityTypeId) ||
-      typeIdChanged(prev.workspaceTypeId, current.workspaceTypeId) ||
-      typeIdChanged(prev.userTypeId, current.userTypeId) ||
-      typeIdChanged(prev.visitorTypeId, current.visitorTypeId) ||
-      prev.someone !== current.someone ||
-      prev.manifests !== current.manifests ||
-      prev.plugins !== current.plugins ||
-      prev.project !== current.project ||
-      prev.computeNode !== current.computeNode ||
-      prev.sandboxComputeNode !== current.sandboxComputeNode ||
-      prev.visitor !== current.visitor ||
-      prev.bootstrapError !== current.bootstrapError ||
-      prev.isBootstrapping !== current.isBootstrapping ||
-      prev.cloudApiUrl !== current.cloudApiUrl ||
-      prev.cloudLoginAvailable !== current.cloudLoginAvailable ||
-      prev.cloudConnectionStatus !== current.cloudConnectionStatus ||
-      prev.desktopInfo !== current.desktopInfo ||
-      prev.runtimeKind !== current.runtimeKind ||
-      prev.isDesktop !== current.isDesktop ||
-      prev.version !== current.version ||
-      prev.instanceName !== current.instanceName ||
-      prev.warnings !== current.warnings ||
-      prev.agenticProcess !== current.agenticProcess ||
-      typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
-      prev.activeShellId !== current.activeShellId ||
-      typeIdChanged(prev.activeTerminalTargetTypeId, current.activeTerminalTargetTypeId) ||
-      prev.workdir !== current.workdir ||
-      prev.snifferEnabled !== current.snifferEnabled ||
-      prev.snifferInstalled !== current.snifferInstalled ||
-      prev.snifferReady !== current.snifferReady ||
-      prev.terminalRuntimeError?.kind !== current.terminalRuntimeError?.kind ||
-      prev.terminalRuntimeError?.processId !== current.terminalRuntimeError?.processId ||
-      prev.isConnected !== current.isConnected
-    ) {
-      snapshotRef.current = current;
+    const tracked = trackedRef.current!;
+    let changed = false;
+    for (const key of tracked.keys) {
+      if (!sameValue(key, tracked.values[key], dataContext[key])) {
+        changed = true;
+        break;
+      }
     }
-
-    // Always return the same object reference (snapshotRef.current)
-    // This is critical for useSyncExternalStore to work correctly
-    return snapshotRef.current;
+    if (changed) {
+      // A new object only when a field this component reads changed: a stable
+      // reference is what keeps useSyncExternalStore from re-rendering.
+      const values: Partial<ContextSnapshot> = {};
+      for (const key of tracked.keys) (values as Record<string, unknown>)[key] = dataContext[key];
+      tracked.values = values;
+      tracked.snapshot = trackedView(tracked, values);
+    }
+    return tracked.snapshot;
   }, []);
 
-  // Subscribe to dataContext using useSyncExternalStore
-  const contextData = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-
-  return contextData;
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

@@ -290,7 +290,11 @@ class PtyActionsMixin:
                         await entity.save()
                 except Exception:
                     pass
-                await pty_registry.close_session(evict_key)
+            # Together, not one after another: each close force-terminates its PTY
+            # (~0.4s of HUP/INT/KILL sleeps in a thread), and this launch waits for
+            # all of them — closed in turn, 10 of them stalled it 4.2s. Started in
+            # order, so the oldest still leaves first.
+            await asyncio.gather(*(pty_registry.close_session(k) for k in evict_keys))
 
         # Create output callback that sends data over WebSocket
         main_loop = asyncio.get_event_loop()

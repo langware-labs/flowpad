@@ -24,6 +24,26 @@ import type { Crumb } from './use-entity-breadcrumbs';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 
 /**
+ * Crumb widths as laid out, by what decides them: the trail's text and kind (a
+ * link is styled apart from plain text), the room the field has, and the mode's
+ * font (`data-view` on the root).
+ */
+const crumbWidthCache = new Map<string, number[]>();
+const CRUMB_WIDTH_CACHE_MAX = 64;
+
+function crumbWidthsKey(crumbs: Crumb[], available: number): string {
+  const font = typeof document === 'undefined' ? '' : (document.documentElement.getAttribute('data-view') ?? '');
+  return [available, font, ...crumbs.map((c) => `${c.kind}:${c.pointer ? 1 : 0}:${c.label}`)].join('\u0001');
+}
+
+function rememberCrumbWidths(key: string, widths: number[]): void {
+  // jsdom lays nothing out: a row of zeros is not a measurement worth keeping.
+  if (!widths.some((w) => w > 0)) return;
+  if (crumbWidthCache.size >= CRUMB_WIDTH_CACHE_MAX) crumbWidthCache.delete(crumbWidthCache.keys().next().value!);
+  crumbWidthCache.set(key, widths);
+}
+
+/**
  * The address bar: `Project / …ancestors… / current`.
  *
  * Navigation stays URL-first. A crumb click calls `openDock` and NOTHING else —
@@ -69,14 +89,28 @@ export function AddressField({
 
   // Measure the crumbs as laid out. jsdom reports 0 for everything, which
   // `selectVisibleCrumbs` detects and answers with its count rule.
+  //
+  // Reading `offsetWidth` here forces a synchronous layout of the whole freshly
+  // committed page — ~10 ms inside every tab switch on the perf VM. A warm switch
+  // comes back to crumbs measured before, so the measurement is remembered by what
+  // decides it; and a trail of two or fewer is never collapsed, so it needs none.
   useLayoutEffect(() => {
-    const items = listRef.current?.querySelectorAll('[data-crumb]');
-    if (!items) return;
-    const next = Array.from(items, (el) => (el as HTMLElement).offsetWidth);
+    if (crumbs.length <= 2) return;
+    const key = crumbWidthsKey(crumbs, available);
+    let next = crumbWidthCache.get(key);
+    if (!next) {
+      const items = listRef.current?.querySelectorAll('[data-crumb]');
+      if (!items) return;
+      next = Array.from(items, (el) => (el as HTMLElement).offsetWidth);
+      rememberCrumbWidths(key, next);
+    }
+    const measured = next;
     // Bail out when nothing actually moved. A fresh array would re-render on
     // every observer tick — ~60/s while a window edge is being dragged — each
     // one preceded by the forced layout these reads cause.
-    setWidths((prev) => (prev.length === next.length && prev.every((w, i) => w === next[i]) ? prev : next));
+    setWidths((prev) =>
+      prev.length === measured.length && prev.every((w, i) => w === measured[i]) ? prev : measured,
+    );
   }, [crumbs, available]);
 
   const { visible, hidden } = selectVisibleCrumbs(crumbs, widths, available);

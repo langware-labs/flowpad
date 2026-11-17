@@ -222,11 +222,200 @@ def test_a_clear_lead_acts_below_the_confidence_bar():
     assert navigator._acted_on(_result({"view:a": 0.6, "view:b": 0.2, "agentic": 0.2})) == "view:a"
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
+def test_a_search_match_that_only_leads_on_a_plain_request_is_not_a_place_to_open():
+    # Live: "open the README" (no README in the project) opened the doc 'Markdown documents' at 0.57
+    # on PLAIN_LEAD. A full-text match is a guess at the thing, not a place on the map.
+    doc = "entity:markdown-145bc443-e7dc-4971-ae46-8844c5721b4a"
+    plain = _result({doc: 0.48, "agentic": 0.25, "view:markdown": 0.09}, {"only": 1.0, "more": 0.0})
+    assert navigator._acted_on(plain) == doc
+    assert navigator._acted_on(plain, frozenset({doc})) is None
+    # ...while a match picked confidently, or clearly ahead, still opens.
+    assert navigator._acted_on(_result({doc: 0.62, "agentic": 0.2}), frozenset({doc})) == doc
+
+
+def test_the_search_matches_are_told_apart_from_what_the_context_offers():
+    proj = "project-96893382-586c-5655-a216-e228121ab1a5"
+    here = navigation.kind("navigation.here").model_validate({"project": {"typeid": proj}})
+    keys = navigator._match_keys(here, [{"typeid": TASK, "type": "task", "title": "Zoom OAuth on dev"},
+                                        {"typeid": proj, "type": "project", "title": "p"}])
+    assert f"entity:{TASK}" in keys and f"entity:{proj}" not in keys
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
+async def test_the_target_question_agrees_with_scope_on_where_a_thing_is_changed_or_shown(hub):
+    # SCOPE already said a question a screen answers, or a change made on a screen, is no detail; the
+    # target question did not, so "change the view mode" split 0.40 / agentic 0.42 and was handed on.
+    # Live with this: 0.60-0.66 on Preferences > Interface; "manage my API keys" 0.62-0.64 (was 0.48).
+    hub["answer"] = ("view:preferences/ui", 0.9, "show")
+    await navigator.route("change the view mode", here={"view": "home"})
+    said = hub["specs"][-1].questions["target"].instructions
+    assert "change, manage or set something on the listed screen where that is done" in said
+    assert "a question a listed screen shows the answer to" in said
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
+def test_a_screens_default_tab_is_offered_once_as_the_screen():
+    # Live: "general preferences" split 0.33 / 0.33 between Preferences and Preferences > General --
+    # one place (the bare address shows General) -- and neither cleared the bar.
+    options = navigator.static_options()[0]
+    assert "view:preferences/general" not in options
+    assert options["view:preferences"].endswith("open on Preferences > General: show system skills")
+    assert "view:preferences/i18n" in options
+
+
 def test_a_type_name_opens_its_list_and_a_screen_name_still_wins():
     assert navigator.rule_hit("show specs").value == "assets/list/spec"
     assert navigator.rule_hit("open the project manifest").value == "assets/list/project_manifest"
     assert navigator.rule_hit("show my tasks").value == "assets/list/task", "the task list owns the word"
     assert navigator.rule_hit("open the help desk") is None, "a screen that needs a pointer owns its name too"
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
+def test_a_display_name_two_types_share_opens_the_type_with_a_section_of_its_own():
+    # markdown and document_file are both "Documents"; document files are listed inside the markdown
+    # tree (browseable_by=None), so "my documents" is the markdown list -- not the alphabetically first.
+    assert navigator.rule_hit("show my documents").value == "assets/list/markdown"
+    assert navigator.rule_hit("show my document files").value == "assets/list/document_file"
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
+def test_a_retired_screens_name_opens_where_it_forwards():
+    # /dock/signals forwards to the event bus (RETIRED_DOCK_VIEWS): the word does too.
+    assert navigator.rule_hit("show signals").value == "automations/bus"
+    assert navigator.rule_hit("open events").value == "automations"
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
+def test_the_list_of_every_asset_is_a_place_on_the_map():
+    # Live: without it "show all my assets" opened the Assets tree at 0.45; offered, 0.94 x3.
+    assert "view:assets/list/all" in navigator.static_options()[0]
+    assert parse_dock_url("/dock/assets/list/all") is not None
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
+def test_a_search_match_is_offered_as_what_it_is_not_only_its_name():
+    # Live: compute op 'automation-activate' alone was opened for "open the nightly report automation"
+    # (0.47); described ("Turns an automation on"), the model handed it on (0.29-0.32).
+    ref = {"typeid": "compute_op-34ac81bb-d12f-4be1-89a6-f67dfe8838da", "title": "automation-activate",
+           "about": navigator._about("Turns an automation on. It is called by the Automations screen.")}
+    assert ref["about"] == "Turns an automation on."
+    text = navigator._entity_options(ref, "search match")[f"entity:{ref['typeid']}"]
+    assert text == "Open the compute op 'automation-activate': Turns an automation on. (search match)"
+    assert navigator._about("x" * 300).endswith("…") and len(navigator._about("x" * 300)) == navigator.ABOUT_CHARS
+
+
+async def test_a_search_match_is_titled_by_its_label_and_carries_its_description(monkeypatch):
+    # Live: wizard 'llm-setup-opencode' (it installs OpenCode) won "connect an LLM" on its name (0.67);
+    # with what it does beside it, the Set up LLM screen did (0.77).
+    from types import SimpleNamespace
+
+    from flow_sdk.core.entity.entity_model import Entity
+
+    wizard = SimpleNamespace(type="wizard", id="40b630c9", name="llm-setup", label="Finish setting up Flowpad",
+                             description="Flowpad works best with a few tools. We check what is there.", get_type=lambda: "wizard")
+
+    async def search(**kwargs):
+        return [wizard]
+
+    monkeypatch.setattr(Entity, "search", staticmethod(search))
+    [found] = await navigator._candidates("set up my LLM")
+    assert found == {"typeid": "wizard-40b630c9", "type": "wizard", "title": "Finish setting up Flowpad",
+                     "about": "Flowpad works best with a few tools."}
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
+def test_the_or_my_inside_a_screens_name_still_names_it_but_a_new_one_does_not():
+    # Live: "set up my LLM" went to the model, which opened the setup wizard (0.60-0.77) -- the
+    # screen's own label is "Set up LLM".
+    assert navigator.rule_hit("set up my LLM").value == "llm-setup"
+    assert navigator.rule_hit("open a terminal") is None, "'a terminal' is a new one, not the Worker screen"
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_option_space.rules: FAILING? read this tag's rules before
+#       changing the navigator's options, rules or thresholds
+# flowpad:endcapsule tag
+def test_a_screen_that_opens_on_a_project_named_with_one_in_context_opens_on_it():
+    # Live: "open the help desk" on Home went to the model, which picked the data driver "Help desk"
+    # (no address, so it asked) at 0.73-0.83; the help desk of the current project was at 0.07-0.15.
+    proj = "project-96893382-586c-5655-a216-e228121ab1a5"
+    here = navigation.kind("navigation.here").model_validate({"view": "home", "project": {"typeid": proj}})
+    assert navigator.context_rule("open the help desk", here).value == f"helpdesk/{proj[8:]}"
+    assert navigator.context_rule("open the help desk", navigation.kind("navigation.here").model_validate({})) is None
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_subplace_names.rules: FAILING? read this tag's rules before
+#       editing a subplace's names or the navigator's rules
+# flowpad:endcapsule tag
+def test_a_subplace_is_called_what_people_call_it_and_that_name_is_a_rule():
+    # Live: "show failed runs" split between Runs (agent runs, 0.29-0.39) and Automations > Runs that
+    # failed (0.35-0.48) and was handed on 2 of 3 times: the subplace had no name a person uses -- a
+    # screen's aliases are offered with it and are rules, a subplace had none.
+    options, names = navigator.static_options()
+    key = "view:automations/runs?status=failed"
+    assert "(also called: failed runs)" in options[key] and names["failed runs"] == key
+    hit = navigator.rule_hit("show failed runs")
+    assert (hit.kind, hit.value) == ("view", "automations/runs?status=failed")
+    # The bare word is still the Runs screen ("open runs", "show my run history").
+    assert navigator.rule_hit("open runs").value == "process-runs"
+    sub = next(s for p in navigation.navigation_map().places if p.view == "automations" for s in p.subplaces if s.pointer == "runs?status=failed")
+    assert sub.aliases == ["failed runs"]
 
 
 def test_this_projects_or_sessions_thing_is_the_screen_that_opens_on_it():
@@ -310,3 +499,34 @@ def test_a_literal_acts_alone_only_when_it_is_the_whole_request():
     for text, key in inside.items():
         assert navigator.rule_hit(text) is None, text
         assert key in navigator.literal_option(text), "inside a sentence it is one option for the model"
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.nav_owner_decisions.rules: FAILING? read this tag's rules before
+#       changing these names -- each is an owner decision (navigation sentences 58, 121, 191)
+# flowpad:endcapsule tag
+def test_workflows_are_the_workflow_list_and_graph_workflows_keep_their_own_name():
+    # Sentence 58: "workflows" are the dynamic workflows (the .claude/workflows family a person
+    # writes and runs); the dev-mode Graph Workflows editor is called by its whole name.
+    assert navigator.rule_hit("show workflows").value == "assets/list/dynamic_workflow"
+    assert navigator.rule_hit("open my workflows").value == "assets/list/dynamic_workflow"
+    assert navigator.rule_hit("open graph workflows").value == "graph-workflows"
+
+
+def test_endpoint_usage_with_no_endpoint_named_is_the_endpoints_list():
+    # Sentence 121: the LLM Endpoints list shows each endpoint's usage today; with no endpoint in
+    # context it is the place that answers. Live, without the name: a usage-report app, 0.50-0.63.
+    assert navigator.rule_hit("show endpoint usage").value == "hub/llm-endpoints"
+    assert navigator.rule_hit("show endpoints usage").value == "hub/llm-endpoints"
+
+
+def test_the_question_an_alias_states_names_its_screen():
+    # Sentence 191: "what we delivered" is the Artifacts screen's alias; asked as a question it
+    # names the same screen. Live, without it: SCOPE "more" 0.63-0.71, the assistant was asked.
+    assert navigator.rule_hit("what did we deliver?").value == "artifacts"
+    assert navigator.rule_hit("what have we delivered").value == "artifacts"
+    # Only a question whose statement IS a name: anything else stays the model's.
+    assert navigator.rule_hit("what did we decide") is None

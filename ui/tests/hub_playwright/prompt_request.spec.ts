@@ -47,10 +47,13 @@ function anchor(page: Page, sid: string) {
 /** Ground truth from bob's backend, not the UI: the host owns the session. */
 async function expectEnded(sid: string, used: number) {
   await expect
-    .poll(async () => {
-      const s = await sessionRow(BOB.backendUrl, sid);
-      return s ? `${s.status}/${s.prompts_used}` : 'none';
-    }, { timeout: TURN_BUDGET_MS })
+    .poll(
+      async () => {
+        const s = await sessionRow(BOB.backendUrl, sid);
+        return s ? `${s.status}/${s.prompts_used}` : 'none';
+      },
+      { timeout: TURN_BUDGET_MS },
+    )
     .toBe(`ended/${used}`);
 }
 
@@ -68,10 +71,22 @@ test('Run & Update: bob runs it, alice gets the update, the session ends', async
   test.skip(!HOST_PROJECT_ID, 'HOST_PROJECT_ID is required');
   const { alice, bob, convId } = await setupLiveConversation(browser);
   const token = `PR-UPD-${Date.now()}`;
-  const sid = await sendPrompt(convId, 'Run this when you can.', `Reply with exactly the text ${token} and nothing else.`);
+  const sid = await sendPrompt(
+    convId,
+    'Run this when you can.',
+    `Reply with exactly the text ${token} and nothing else.`,
+  );
 
   await expect(row(alice.page, sid)).toHaveAttribute('data-kind', 'prompt-request', { timeout: 10_000 });
-  await expect(row(alice.page, sid).getByTestId('session-card-name')).toHaveText('Prompt request · prb-2');
+  // The card names the host as bob's machine records the session, whatever the rig calls it.
+  let hostName = '';
+  await expect
+    .poll(async () => (hostName = String((await sessionRow(BOB.backendUrl, sid))?.host_name ?? '').trim()), {
+      timeout: 10_000,
+      message: 'bob records the session with its host name',
+    })
+    .not.toBe('');
+  await expect(row(alice.page, sid).getByTestId('session-card-name')).toHaveText(`Prompt request · ${hostName}`);
   await expect(row(alice.page, sid).getByTestId('session-card-status')).toHaveText(/waiting for/);
   await expect(alice.page.getByText('Run this when you can.')).toBeVisible(); // the sender's text stays
   await expect(row(bob.page, sid).getByTestId('session-card-run-update')).toBeVisible({ timeout: 10_000 });

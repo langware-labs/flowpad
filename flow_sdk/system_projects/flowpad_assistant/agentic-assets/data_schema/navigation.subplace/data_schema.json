@@ -10,6 +10,12 @@
     "label": {
       "shape": "string",
       "description": "Its whole name, e.g. Assets filtered to skills -- what a request is matched against."
+    },
+    "aliases": {
+      "shape": [
+        "string"
+      ],
+      "description": "Other words a person uses for it, e.g. failed runs."
     }
   }
 }

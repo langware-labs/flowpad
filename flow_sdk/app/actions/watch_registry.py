@@ -29,6 +29,15 @@ def remove_watch(connection_id: str, entity_key: str):
     logger.debug(f"Watch removed: {entity_key} <- {connection_id}")
 
 
+def chat_list_key(project_id: str) -> str:
+    """The watch key of one project's chat-history list (the Chats navigator).
+
+    A list-level subscription: one per list, not one per row. It carries only the
+    lightweight rename of a process in that project (resource_tracker), never its churn.
+    """
+    return f"chat_history:{project_id}"
+
+
 def get_watched_by(entity_key: str) -> Set[str]:
     """Get all connections watching a specific entity."""
     watchers = set()
@@ -98,6 +107,12 @@ async def create_watch(connection_id: str, target_typeid):
     except Exception:
         logger.debug("recovered-on-watch emit skipped", exc_info=True)
 
+    return ApiSuccessResponse[bool](data=True)
+
+
+async def watch_chat_list(connection_id: str, project_id: str, on: bool):
+    """Subscribe a connection to (or release it from) one project's chat-history list."""
+    (add_watch if on else remove_watch)(connection_id, chat_list_key(project_id))
     return ApiSuccessResponse[bool](data=True)
 
 

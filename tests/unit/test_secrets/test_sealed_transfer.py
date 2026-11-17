@@ -186,6 +186,32 @@ async def test_alice_shares_and_bob_fills_in_one_click_each(world, monkeypatch):
         assert not any(leak in body for body in hub.wire), leak
 
 
+async def test_the_receivers_answered_card_stays_after_the_sender_clears_the_envelope(world, monkeypatch):
+    """Once every recipient answered, the sender's next read deletes the envelope from the hub. The receiver's card
+    came only from that envelope, so Bob's "Filled in" vanished on his next read — at once, now that an open
+    conversation re-reads on every push. The receiver keeps what it answered, as the sender keeps ``sent.json``."""
+    hub, inst = world
+    for who in ("alice", "bob", "carol"):
+        await publish(inst[who], monkeypatch)
+    await share(world, monkeypatch, recipients=("bob", "carol"))
+    with inst["bob"].acting(monkeypatch):
+        card = (await st.incoming(CONV))[0]
+        await st.fill(CONV, card["message_id"], project_id=inst["bob"].project.id)
+    with inst["carol"].acting(monkeypatch):
+        await st.decline(CONV, (await st.incoming(CONV))[0]["message_id"])
+    with inst["alice"].acting(monkeypatch):
+        assert (await st.sent_status(CONV))[0]["recipients"] == {"bob": "filled", "carol": "declined"}
+    assert not [m for m in hub.messages[CONV] if m["kind"] == st.SEALED_KIND]  # the envelope is gone
+
+    with inst["bob"].acting(monkeypatch):
+        cards = await st.incoming(CONV)
+    assert [(c["state"], c["transfer_id"]) for c in cards] == [("filled", card["transfer_id"])]
+    assert cards[0]["credential_title"] == "Acme Gmail" and cards[0]["test"] == "untested"
+    assert SECRET not in json.dumps(cards)
+    with inst["carol"].acting(monkeypatch):
+        assert [c["state"] for c in await st.incoming(CONV)] == ["declined"]
+
+
 async def test_a_member_without_a_key_gets_no_values(world, monkeypatch):
     hub, inst = world
     await publish(inst["alice"], monkeypatch)
@@ -227,7 +253,9 @@ async def test_decline_writes_nothing_and_tells_the_sender(world, monkeypatch):
     with inst["alice"].acting(monkeypatch):
         assert (await st.sent_status(CONV))[0]["recipients"] == {"bob": "declined"}
     with inst["bob"].acting(monkeypatch):
-        assert await st.incoming(CONV) == []  # answered by everyone: the sender removed the envelope
+        # answered by everyone: the sender removed the envelope — Bob's card stays, from what he answered
+        assert [c["state"] for c in await st.incoming(CONV)] == ["declined"]
+    assert not [m for m in hub.messages[CONV] if m["kind"] == st.SEALED_KIND]
 
 
 async def test_a_replayed_envelope_is_not_filled_twice(world, monkeypatch):

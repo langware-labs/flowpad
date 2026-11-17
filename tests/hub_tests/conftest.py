@@ -16,6 +16,8 @@ from tests.hub_tests._local_login import login_as
 from tests.hub_tests._real_cli import real_claude_turn  # noqa: F401 — a fixture every real-turn hub test requests
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# Opt-in: run the tier against a deployed (non-local) hub, signed in with this API key.
+ENV_HUB_TESTS_API_KEY = "HUB_TESTS_API_KEY"
 _LOCAL_HUB_STATUS: tuple[bool, str] | None = None
 
 
@@ -34,7 +36,7 @@ def _check_local_hub_available(base_url: str) -> tuple[bool, str]:
         return False, "FLOWPAD_HUB_URL is not configured"
 
     parsed = urlparse(base_url)
-    if parsed.hostname not in LOCAL_HOSTS:
+    if parsed.hostname not in LOCAL_HOSTS and not os.environ.get(ENV_HUB_TESTS_API_KEY):
         return False, f"configured hub is not local: {base_url}"
 
     health_url = f"{base_url}/api/v1/health/status"
@@ -207,6 +209,21 @@ def isolated_hub_keyring(monkeypatch):
 
 
 def _login(hub_base_url: str, *, expires_in_seconds: int | None = None) -> dict:
+    api_key = os.environ.get(ENV_HUB_TESTS_API_KEY)
+    if api_key:
+        # A deployed hub (staging) refuses password login ("Use Auth0"): sign in with
+        # the account's API key instead. The key is fixed, so expires_in_seconds has no say.
+        response = httpx.get(
+            f"{hub_base_url}/api/v1/current-user", headers={"Authorization": f"Bearer {api_key}"}, timeout=10.0
+        )
+        if response.status_code != 200:
+            pytest.skip(f"hub API-key sign-in failed with HTTP {response.status_code}")
+        body = response.json()
+        user = body.get("data", body) if isinstance(body, dict) else None
+        if not isinstance(user, dict) or not user.get("id"):
+            pytest.skip("hub API-key sign-in returned no user")
+        return {"api_key": api_key, "user": user}
+
     email = os.environ.get("FLOWPAD_CLOUD_USER_EMAIL")
     password = os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD")
 

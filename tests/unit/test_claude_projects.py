@@ -285,6 +285,27 @@ async def test_temp_cleanup_preserves_home_source_and_removes_only_temp(
     assert not temp_source.exists()
 
 
+@pytest.mark.asyncio
+async def test_temp_cleanup_within_a_root_keeps_other_temp_sessions(tmp_path, monkeypatch) -> None:
+    """A shared Claude home holds OTHER live sessions under temp workdirs: a sweep scoped to
+    one test session's root removes its own temp projects and leaves theirs (a worker's
+    transcript a ``--resume`` is about to read)."""
+    import flow_sdk.fs_store.operations.claude_project as operations
+    import flow_sdk.fs_store.record_paths as record_paths
+
+    projects_root = tmp_path / ".claude" / "projects"
+    mine = _make_project_dir(projects_root, "-tmp-mine", real_cwd=str(tmp_path / "session-a" / "work"))
+    theirs = _make_project_dir(projects_root, "-tmp-theirs", real_cwd=str(tmp_path / "session-b" / "work"))
+    monkeypatch.setattr(operations, "_claude_projects_dir", lambda: projects_root)
+    monkeypatch.setattr(record_paths, "get_default_records_root", lambda: tmp_path / "records")
+
+    removed = await operations.clean_temp_projects(tmp_path / "session-a")
+
+    assert removed == 1
+    assert not mine.exists()
+    assert theirs.is_dir()
+
+
 def test_falls_back_to_decode_when_no_jsonl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Falls back to hyphen-decode when _real_path_from_jsonl returns None.
 

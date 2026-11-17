@@ -12,9 +12,9 @@ POST /api/v1/graph/help-requests       — my requests, both kinds, one row shap
 POST /api/v1/graph/conversation/<id>/resend — the person's Retry: deliver it again, refusals included
 POST /api/v1/graph/conversation/<id>/help-request-report — Report it: a private request becomes a desk ticket
 
-The diagnosis never holds the request up: the conversation and the person's message are written at once,
-the diagnosis runs in the background and lands as a ``diagnosis`` message of its own (its text the bottom
-line, ``diagnosis.value.json`` the details), and only then is the request delivered. "Diagnose & fix" is the
+The diagnosis never holds the request up: the conversation and the person's message are written and
+delivered at once; the diagnosis runs in the background and follows, when ready, as a ``diagnosis`` message
+of its own (its text the bottom line, ``diagnosis.value.json`` the details), delivered in its turn. "Diagnose & fix" is the
 same request with nobody asked and ``purpose=repair``: private, repairs what it can, and offers Report it
 when someone else owns the fix (``DiagnosisSpec.reportable``).
 """
@@ -145,16 +145,16 @@ async def ask_for_help() -> ApiResponse:
             opening = await FlowMessage.get_one({"id": sent.data["id"]})
         answers.append((conv, task, opening))
 
+    # The request goes out at once; a diagnosis follows when it is ready (``_diagnose_then_deliver``).
+    for conv, _task, _opening in answers:
+        if conv.hub_bound:
+            await _first_delivery(conv, "ask-for-help")
     if background:
         run = asyncio.create_task(
             _diagnose_then_deliver([c.id for c, _t, _o in answers], ask, someone), name=answers[0][0].id
         )
         _DIAGNOSING.add(run)
         run.add_done_callback(_DIAGNOSING.discard)
-    else:
-        for conv, _task, _opening in answers:
-            if conv.hub_bound:
-                await _first_delivery(conv, "ask-for-help")
     conv, task, opening = answers[0]
     opening = await FlowMessage.get_one({"id": opening.id})
     return ApiSuccessResponse(
@@ -323,7 +323,7 @@ async def _write_request(
         await asyncio.to_thread(_hold, conv.id, context)
     chips = [*ask.context, *([str(task.typeid)] if task else [])]
     text = ask.text.strip()
-    asked_title = ask.title.strip()
+    asked_title = _task_base_title(ask)
     if task and asked_title and task.title != asked_title and text.startswith(asked_title):
         # The task took the next free title ("… (2)"): the message names the task it carries.
         text = task.title + text[len(asked_title) :]
@@ -421,8 +421,9 @@ async def _diagnose(ask: AskForHelpRequest):
 
 
 async def _diagnose_then_deliver(conv_ids: list[str], ask: AskForHelpRequest, someone) -> None:
-    """Diagnose, post the diagnosis into each of the request's conversations, then deliver them. The
-    diagnosis goes with the request only when the person shares the context; otherwise it waits here."""
+    """Diagnose, post the diagnosis into each of the request's conversations, then deliver it -- the request
+    itself went out already. The diagnosis's details go only when the person shares the context; otherwise
+    they wait here."""
     try:
         diagnosis, diagnosis_id = await _diagnose(ask)
     except Exception:  # noqa: BLE001 — the request stands without its diagnosis
@@ -752,6 +753,12 @@ async def _task_of(conv_id: str) -> Optional[Task]:
     return rows[0] if rows else None
 
 
+def _task_base_title(ask: AskForHelpRequest) -> str:
+    """The title a request's task is asked under: its title, else its text's first line (the dialog sends no
+    title). The request message names the task only by comparing against this same base."""
+    return (ask.title or (ask.text.splitlines() or [""])[0]).strip()[:80]
+
+
 async def _write_task(ask: AskForHelpRequest, conv_id: str, someone) -> Task:
     """The task a person is asked to do, in the project the asker was in — under the title asked,
     or the next free one ("… (2)") when a task already has it."""
@@ -760,7 +767,7 @@ async def _write_task(ask: AskForHelpRequest, conv_id: str, someone) -> Task:
 
     project = await Project.get_by_id(ask.project_id) if ask.project_id else None
     mount = getattr(project, "fs_storage_mount_path", None) if project else None
-    base = (ask.title or ask.text.splitlines()[0]).strip()[:80] or "Help request"
+    base = _task_base_title(ask) or "Help request"
     recipient = ask.people[0]
     for n in range(1, 21):
         task = Task(

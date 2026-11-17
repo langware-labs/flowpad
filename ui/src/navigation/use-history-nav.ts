@@ -1,5 +1,5 @@
-import { useCallback, useSyncExternalStore } from 'react';
-import { useDockNavigation } from './useDockNavigation';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
+import { useNavigationActions } from './useNavigationActions';
 import { getHistoryPosition, subscribeHistoryPosition } from './history-position-store';
 
 /**
@@ -26,17 +26,27 @@ export interface HistoryNav {
   reload: () => void;
 }
 
-export function useHistoryNav(): HistoryNav {
-  const { navigation } = useDockNavigation();
-  const position = useSyncExternalStore(subscribeHistoryPosition, getHistoryPosition, getHistoryPosition);
+const readCanGoBack = () => getHistoryPosition().canGoBack;
+const readCanGoForward = () => getHistoryPosition().canGoForward;
 
-  const goBack = useCallback(() => navigation.goBack(), [navigation]);
-  const goForward = useCallback(() => navigation.goForward(), [navigation]);
+export function useHistoryNav(): HistoryNav {
+  const navigation = useNavigationActions();
+  // The two answers, not the position: every push moves `idx`, and re-rendering
+  // the nav bar for a Back button that looks the same was part of each tab switch.
+  const canGoBack = useSyncExternalStore(subscribeHistoryPosition, readCanGoBack, readCanGoBack);
+  const canGoForward = useSyncExternalStore(subscribeHistoryPosition, readCanGoForward, readCanGoForward);
+
+  // Stable across navigations (the actions object is rebuilt on each), so the
+  // buttons holding them can stay memoized.
+  const navigationRef = useRef(navigation);
+  navigationRef.current = navigation;
+  const goBack = useCallback(() => navigationRef.current.goBack(), []);
+  const goForward = useCallback(() => navigationRef.current.goForward(), []);
   const reload = useCallback(() => window.location.reload(), []);
 
   return {
-    canGoBack: position.canGoBack,
-    canGoForward: position.canGoForward,
+    canGoBack,
+    canGoForward,
     goBack,
     goForward,
     reload,

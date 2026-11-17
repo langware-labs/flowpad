@@ -38,6 +38,8 @@ import pytest
 _REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
 _SANDBOX_HOME = os.environ["HOME"]
 _SANDBOX_USERPROFILE = os.environ["USERPROFILE"]
+# The runner's own FLOW_HOME (None: derived from the real HOME), read before any fixture pins it.
+_RUNNER_FLOW_HOME = os.environ.get("FLOW_HOME")
 
 
 @dataclass(frozen=True)
@@ -92,7 +94,7 @@ def resolve_live_e2e_instance() -> Callable[[str], LiveE2EInstance]:
             pytest.fail(f"unsafe {env_key}={name!r}: {exc}", pytrace=False)
 
         real_home = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or _REAL_HOME
-        flow_home = os.environ.get("FLOW_HOME") or str(Path(real_home) / ".flow")
+        flow_home = _RUNNER_FLOW_HOME or str(Path(real_home) / ".flow")
         with patch.dict(os.environ, {"FLOW_HOME": flow_home}):
             try:
                 status = manager.resolve(name)
@@ -217,6 +219,8 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_artifact_real_worker",
         "test_call_returns_live",
         "test_parked_worker_messages",
+        # Guards the FLOW_HOME pin of the fixture below.
+        "test_real_home_flow_state",
         # Not a CLI test: reads the real ``~/.flow/instances/*`` rig (ports,
         # pids) of two running instances, which the sandbox HOME hides.
         "test_ws_reconnect_message_catchup",
@@ -260,6 +264,13 @@ async def _real_home_for_cli_subprocess_tests(request, _rebind_session_db_driver
     """
     module_stem = request.path.stem
     if module_stem in _REAL_HOME_TEST_MODULES:
+        # Pin flow_sdk's own root to the sandbox before HOME moves: it resolves ``~/.flow`` per call,
+        # so under the real HOME this process would read and write the REAL instance named by
+        # FLOW_INSTANCE -- its secret store included, with this process's in-memory keyring key,
+        # which no later process holds (``cryptography.fernet.InvalidToken`` on the next run).
+        pinned_flow_home = _RUNNER_FLOW_HOME is None
+        if pinned_flow_home:
+            os.environ["FLOW_HOME"] = str(Path(_SANDBOX_HOME) / ".flow")
         os.environ["HOME"] = _REAL_HOME
         os.environ["USERPROFILE"] = _REAL_HOME
         await _forget_login_verdicts()
@@ -268,6 +279,8 @@ async def _real_home_for_cli_subprocess_tests(request, _rebind_session_db_driver
         finally:
             os.environ["HOME"] = _SANDBOX_HOME
             os.environ["USERPROFILE"] = _SANDBOX_USERPROFILE
+            if pinned_flow_home:
+                os.environ.pop("FLOW_HOME", None)
             await _forget_login_verdicts()
     else:
         yield

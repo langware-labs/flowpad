@@ -245,7 +245,13 @@ def test_set_runtime_accepts_the_end_of_options_separator():
 def _configure(*extra: str):
     import json
 
-    result = runner.invoke(app, ["auth", "configure-box", "--cookie-gate=-9tNyP6uJ6GaI", "--runtime=sandbox", *extra])
+    # A hub-made box exports FLOWPAD_NODE_SIZE; these steps are about the other flags, so never inherit it
+    # (tests/cli/test_configure_box_node_size.py covers the node size).
+    result = runner.invoke(
+        app,
+        ["auth", "configure-box", "--cookie-gate=-9tNyP6uJ6GaI", "--runtime=sandbox", *extra],
+        env={"FLOWPAD_NODE_SIZE": None},
+    )
     report = json.loads(result.output.strip().splitlines()[-1])
     return result, report
 

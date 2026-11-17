@@ -92,6 +92,11 @@ export default defineConfig(({ mode }) => {
     // shared checkout cannot delete the chunks this one is serving.
     ...(env.VITE_CACHE_DIR ? { cacheDir: env.VITE_CACHE_DIR } : {}),
     build: {
+      // Not Vite's default ('modules' = es2020): lowering `x ||= {}` to es2020, esbuild 0.25's minifier
+      // keeps the assignment but drops its `let`, and @xterm/headless's requestMode (a DECRQM query,
+      // which opencode's TUI sends first) then throws "ReferenceError: n is not defined" in the
+      // production bundle, so the terminal never paints. Electron 40 and supported browsers run ES2021.
+      target: 'es2021',
       sourcemap: true,
       outDir: 'dist',
     },

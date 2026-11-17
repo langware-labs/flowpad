@@ -18,6 +18,10 @@
     "path": {
       "shape": "?string",
       "description": "Its file, when it is one."
+    },
+    "about": {
+      "shape": "?string",
+      "description": "What it is or does, in its own words: the first sentence of its description."
     }
   }
 }

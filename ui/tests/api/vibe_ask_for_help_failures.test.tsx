@@ -29,6 +29,13 @@ import { getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
 
 const HELPER = 'helper@local.test';
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.help_request_title.rules: FAILING? read this tag's rules before
+//       touching _task_base_title, _write_task or _write_request's title rename
+// flowpad:endcapsule tag
 describe('Ask someone for help — stress-run failures', () => {
   const signupInfo = getTestSignupInfo();
   const projectDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'askfail'));
@@ -98,9 +105,12 @@ describe('Ask someone for help — stress-run failures', () => {
     );
     // The request's files ride its opening message — the one carrying the task — and it names the task.
     const opening = messages.find((m) => m.attachment?.some((a) => a.data === `task-${taskId}`));
-    expect(opening?.attachment?.filter((a) => a.attachment_type === 'file').map((a) => a.data)).toEqual([
-      'data/shot.png',
-    ]);
+    const files = opening?.attachment?.filter((a) => a.attachment_type === 'file').map((a) => a.data) ?? [];
+    // Beside the picked file, a help request message carries its own context files (help_request.value.json,
+    // the screen/session context when shared, and the recent logs.txt) — CONTEXT_FILES in
+    // flow_sdk/app/actions/ask_for_help_action.py.
+    expect(files.filter((f) => !f.endsWith('.value.json') && f !== 'data/logs.txt')).toEqual(['data/shot.png']);
+    expect(files).toContain('data/help_request.value.json');
     expect(opening?.text).toContain(task.title);
   });
 });

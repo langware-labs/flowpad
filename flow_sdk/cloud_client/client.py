@@ -240,13 +240,19 @@ class FlowpadClient:
         return response.content if raw else self._unwrap(response)
 
     async def get_user(self) -> Dict[str, Any]:
-        """Get the current user information.
+        """Get the signed-in principal: the person, or the Identity a deployed agent's box signs in as.
+
+        A hub that splits the two (FLOWPAD-2353) answers ``/current-user`` with empty data for an
+        Identity and names it at ``/current-principal``; an older hub dresses the Identity as a user
+        on ``/current-user`` itself, so that is asked first.
 
         Raises:
             ValueError: If the response is missing the 'id' field.
         """
         user_data = await self.get("/current-user")
-        if "id" not in user_data:
+        if not user_data:
+            user_data = await self.get("/current-principal")
+        if not isinstance(user_data, dict) or "id" not in user_data:
             import json
 
             raise ValueError(f"Invalid user data: missing 'id' field. Got:\n{json.dumps(user_data, indent=2)}")

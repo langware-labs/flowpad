@@ -223,11 +223,24 @@ function notifyLinkError(error: unknown): void {
  */
 
 export class NavigationActions {
+  private readonly readDock: () => DockPointer | null;
+
+  /**
+   * `currentDock`: the committed dock, or a reader of it. A reader lets ONE
+   * instance outlive navigations (`useNavigationActions`), so a component that
+   * only navigates never has to re-render when the URL changes.
+   */
   constructor(
     private navigate: NavigateFunction,
-    private currentDock: DockPointer | null = null,
+    currentDock: DockPointer | null | (() => DockPointer | null) = null,
   ) {
+    this.readDock = typeof currentDock === 'function' ? currentDock : () => currentDock;
     NavigationActions.clearCommittedPendingNavigation();
+  }
+
+  /** The committed dock (the mirror `openDock` de-duplicates against). */
+  private get currentDock(): DockPointer | null {
+    return this.readDock();
   }
 
   private static getCurrentBrowserUrl(): string {
@@ -288,7 +301,7 @@ export class NavigationActions {
     return mode ? target.withViewMode(mode) : target;
   }
 
-  private static clearCommittedPendingNavigation(): void {
+  static clearCommittedPendingNavigation(): void {
     if (!pendingDockNavigation) return;
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
     // A loader may redirect the requested URL to a canonical destination (for

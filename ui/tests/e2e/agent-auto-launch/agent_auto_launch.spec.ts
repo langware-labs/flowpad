@@ -2,11 +2,12 @@
  * Browser scenario — project agent auto-launch + agent intro.
  *
  *   1. Seed a fresh project with TWO agents that set `auto_launch` (via the
- *      real authoring route, so `agent.md` lands under the project).
+ *      real authoring route, so the agent lands under the project). Authoring
+ *      keeps ONE selection per project: flagging the second clears the first.
  *   2. Open the project in the browser: the dock loader's redirect must land
- *      in the Vibe workspace of the OLDEST agent's session, the intro row is
- *      the first thing in the pane, the auto-launch prompt is queued or already
- *      the first user turn, and the cancelled agent is named in a warning.
+ *      in the Vibe workspace of the selected (last flagged) agent's session, the
+ *      intro row is the first thing in the pane, the auto-launch prompt is
+ *      queued or already the first user turn.
  *   3. Open the project again: no second launch — the URL stays on the project.
  *
  * Backend seeding uses the HTTP graph API directly.
@@ -44,8 +45,8 @@ test.beforeAll(async () => {
   projectId = created?.data?.id;
   if (!projectId) throw new Error(`project create failed: ${JSON.stringify(created).slice(0, 200)}`);
 
-  // Saved FIRST → oldest → the one that launches. Names chosen so alphabetical
-  // order would pick the OTHER one: the test pins age, not name order.
+  // Flagged LAST → the project's single selection → the one that launches; the first
+  // is cleared by the authoring policy (agent_document_edit).
   firstAgentTitle = `Zed Greeter ${stamp}`;
   secondAgentTitle = `Abe Helper ${stamp}`;
   for (const title of [firstAgentTitle, secondAgentTitle]) {
@@ -81,17 +82,17 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('opening the project auto-launches the oldest agent once, with its intro and prompt', async ({ page }) => {
+test('opening the project auto-launches the selected agent once, with its intro and prompt', async ({ page }) => {
   await page.goto(`/dock/project/${projectId}`);
 
   // 1. Load-time redirect into the session, in Vibe.
   // Shown in Vibe, the session is its Vibe host tab (`/dock/vibe/…`).
   await expect(page).toHaveURL(/\/dock\/vibe\/agentic_process-[0-9a-f-]+/);
 
-  // 2. The intro row is the first thing in the pane, signed by the OLDEST agent.
+  // 2. The intro row is the first thing in the pane, signed by the SELECTED agent.
   const intro = page.getByTestId('agent-intro-message');
   await expect(intro).toHaveCount(1);
-  await expect(intro).toContainText(`Hello from ${firstAgentTitle}`);
+  await expect(intro).toContainText(`Hello from ${secondAgentTitle}`);
 
   // 3. The prompt rode the queue: it is either still queued (chip) or already
   //    drained into the first user turn. Either proves delivery through the queue
@@ -100,19 +101,16 @@ test('opening the project auto-launches the oldest agent once, with its intro an
   const userTurn = page.locator('[data-testid="execution-message"][data-role="user"]').filter({ hasText: 'AUTO LAUNCH OK' });
   await expect(queued.or(userTurn).first()).toBeVisible();
 
-  // 4. The cancelled agent is named in the warning (forced toast).
-  await expect(page.getByText(secondAgentTitle, { exact: false }).first()).toBeVisible();
-
-  // 5. Backend agrees: both agents are marked, a second call has nothing to launch.
+  // 4. Backend agrees: the one flagged agent is marked, a second call has nothing to launch.
   const again = await post(`${BE}/api/v1/agents/auto-launch`, { project_id: projectId });
   expect(again?.data?.agent_id).toBeNull();
   const marks = await (await fetch(`${BE}/api/v1/agents/auto-launch?project_id=${projectId}`)).json();
-  expect(marks?.data?.auto_launched_agent_ids?.length).toBe(2);
+  expect(marks?.data?.auto_launched_agent_ids?.length).toBe(1);
 });
 
 test('opening the project again does not launch a second session', async ({ page }) => {
   await page.goto(`/dock/project/${projectId}`);
   // The project view renders and the URL stays put: no redirect this time.
-  await expect(page.getByText('Dependencies', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Packages', { exact: true }).first()).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/dock/project/${projectId}`));
 });

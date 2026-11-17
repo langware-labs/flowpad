@@ -41,6 +41,14 @@ import { adjusted, adjustedBudget, ADJUSTABLE_PERF_FACTOR } from '../../adjustab
 
 test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a production build only (FLOWPAD_PERF_GATE=1)');
 
+// No Playwright trace while measuring. The shared config records one for every test
+// ('retain-on-first-failure' records always, keeps it on failure), and its snapshotter
+// serializes the WHOLE DOM on the page's main thread right after each click — inside the
+// windows this spec times. With the long chat pooled (~99k nodes) each snapshot is a
+// 120-150 ms task: the long-chat leave measured p90 2387 ms with it and 611 ms without, the
+// warm terminal switch 365 vs 291 (same host, same build, back to back). Budgets unchanged.
+test.use({ trace: 'off' });
+
 const BUDGET = { warmMs: 150, projectMs: 300, coldTerminalMs: 1000 };
 
 /**
@@ -339,6 +347,14 @@ function requestCounts(page: Page, sinceMs: number): Promise<Record<string, numb
   }, sinceMs);
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.warm_tab_switch_perf.rules: FAILING? warm switch re-fetches local
+//       entities, re-renders chrome on unrelated context keys, or forces layout - read
+//       this tag's rules first
+// flowpad:endcapsule tag
 test('warm tab switches: content visible within budget', async ({ page }) => {
   const { toplog: trail } = await installObservers(page);
 
@@ -406,6 +422,14 @@ test('warm tab switches: content visible within budget', async ({ page }) => {
   if (loaderShaped.length) console.log('[perf] loader-shaped requests inside warm switches', loaderShaped.join(', '));
 });
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.warm_tab_switch_perf.rules: FAILING? warm switch re-fetches local
+//       entities, re-renders chrome on unrelated context keys, or forces layout - read
+//       this tag's rules first
+// flowpad:endcapsule tag
 test('project switch between visited projects: content visible within budget', async ({ page }) => {
   const { toplog } = await installObservers(page);
   await page.goto('/dock/desktop?viewMode=advanced');
@@ -545,9 +569,10 @@ test(
               page
                 .locator(`[data-session-id="agentic_process-${chat.processId}"] [data-testid="execution-message"]`)
                 .count(),
-            { timeout: adjusted(30_000), message: 'a long chat never rendered its history' },
+            { timeout: adjusted(30_000), message: 'a long chat never rendered its recent window' },
           )
-          .toBeGreaterThan(300);
+          // A long chat opens on its recent turns (useRecentWindow's RECENT_WINDOW = 40), not every row.
+          .toBeGreaterThanOrEqual(40);
       }
       await networkQuiet(page);
 
@@ -622,6 +647,13 @@ async function coldOpen(page: Page, w: World): Promise<{ ms: number; line: strin
   return { ms: sw.ready!, line: line.slice(line.indexOf('ready')) };
 }
 
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.terminal_cold_open.rules: FAILING? a cold open waits serially
+//       or replays a checkpoint it need not - read this tag's rules first
+// flowpad:endcapsule tag
 test('cold open of a terminal with a large recording: from its checkpoint, within budget', async ({ browser }) => {
   // Its own session: an earlier spec opens `a` in Standard, which turns its terminal into a chat
   // (chat and the terminal are mutually exclusive), so `a` has no PTY left to flood.

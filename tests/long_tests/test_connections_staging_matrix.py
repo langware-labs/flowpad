@@ -15,11 +15,15 @@ from __future__ import annotations
 
 import pytest
 
-from tests.utils.connections_channels import connections_cli, last_json, sdk_probe
+from flow_sdk.schema.data_spec.connection_spec import FLOWPAD_ACCOUNT_PROVIDER
+from tests.utils.connections_channels import account_probe, connections_cli, last_json, sdk_probe
 
 ENV_KEY = "FLOWPAD_STAGING_MATRIX_INSTANCE"
 STAGING_HOST = "staging.flowpad.ai"
-PROVIDERS = ["anthropic", "atlassian", "flowpad", "github", "gitlab", "linear", "notion", "slack"]
+#: The providers whose grant the hub holds (flowpad-hub docs/connections.md). Not anthropic: a desktop
+#: PKCE grant, n/a on every hub. Not flowpad: the hub login is no OAuth plugin (``flowpad_cloud``) —
+#: it is the account row, checked by the hub-login tests below.
+PROVIDERS = ["atlassian", "github", "gitlab", "linear", "notion", "slack"]
 
 
 @pytest.fixture(autouse=True)
@@ -41,6 +45,23 @@ def test_the_flowpad_account_is_signed_in_to_staging(staging_instance):
     account = next(row for row in _connections(staging_instance) if row["kind"] == "flowpad")
 
     assert account["state"] == "connected", account
+
+
+def test_cli_connects_the_flowpad_hub_login(staging_instance):
+    connected = connections_cli(staging_instance.subprocess_env(), "connect", FLOWPAD_ACCOUNT_PROVIDER, "--json")
+
+    assert connected.returncode == 0, connected.stderr
+    assert last_json(connected.stdout)["connected"] is True
+
+
+def test_sdk_requires_and_tests_the_flowpad_hub_login(staging_instance):
+    run = account_probe(staging_instance.subprocess_env())
+
+    assert run.returncode == 0, run.stderr
+    result = last_json(run.stdout)
+    assert result["connected"] is True
+    assert result["ok"] is True, result
+    assert result["identity"]
 
 
 @pytest.mark.parametrize("provider", PROVIDERS)

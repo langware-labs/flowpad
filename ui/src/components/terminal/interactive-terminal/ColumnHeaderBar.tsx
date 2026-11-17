@@ -75,8 +75,8 @@ export function ColumnHeaderBar({
             <HideButton
               label={
                 totalTraceEvents === 0
-                  ? 'Hide Trace — no events yet'
-                  : `Hide Trace — ${historicalCount > 0 ? `${historicalCount}+${liveCount}` : totalTraceEvents} event${totalTraceEvents === 1 ? '' : 's'}`
+                  ? 'Trace — no events yet'
+                  : `Trace — ${historicalCount > 0 ? `${historicalCount}+${liveCount}` : totalTraceEvents} event${totalTraceEvents === 1 ? '' : 's'}`
               }
               onClick={onToggleTrace}
             />
@@ -124,8 +124,8 @@ export function ColumnHeaderBar({
             <HideButton
               label={
                 annotationElements.length === 0
-                  ? 'Hide Annotations — none yet'
-                  : `Hide Annotations — ${annotationElements.length} annotation${annotationElements.length === 1 ? '' : 's'}`
+                  ? 'Annotations — none yet'
+                  : `Annotations — ${annotationElements.length} annotation${annotationElements.length === 1 ? '' : 's'}`
               }
               onClick={onToggleAnnotations}
             />

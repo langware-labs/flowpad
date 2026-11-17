@@ -116,6 +116,36 @@ class DataContext extends EventEmitter {
    */
   resendBrowserContext: () => void = () => {};
 
+  private _batchDepth = 0;
+  private _batchedContextChange = false;
+
+  /**
+   * Run synchronous context writes as ONE change: one mobx action and one
+   * CONTEXT_CHANGED at the end instead of one per setter. A route loader sets the
+   * active shell, the terminal target and the workdir together; each separate
+   * emit made every `useContext` subscriber re-check its snapshot. Writes that
+   * change nothing still emit nothing.
+   */
+  batch(fn: () => void): void {
+    this._batchDepth++;
+    try {
+      runInAction(fn);
+    } finally {
+      if (--this._batchDepth === 0 && this._batchedContextChange) {
+        this._batchedContextChange = false;
+        super.emit(ContextEventType.CONTEXT_CHANGED);
+      }
+    }
+  }
+
+  override emit(event: string | symbol, ...args: unknown[]): boolean {
+    if (event === ContextEventType.CONTEXT_CHANGED && this._batchDepth > 0) {
+      this._batchedContextChange = true;
+      return true;
+    }
+    return super.emit(event, ...args);
+  }
+
   /** Mirror of cloudManager.isLoggedIn — only cloudManager should call setCloudLoggedIn. */
   _cloudLoggedIn = false;
   setCloudLoggedIn(v: boolean) {

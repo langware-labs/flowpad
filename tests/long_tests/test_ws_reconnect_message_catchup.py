@@ -129,6 +129,9 @@ def rig(resolve_live_e2e_instance) -> dict:
     }
 
 
+# exception to the 30 s policy, approved 2026-11-13 (QA cycle qa-20261112-225208, via the QA manager): the test
+# waits by design up to SOCKET_DEATH_LIMIT_S (120 s) for the hub to drop the frozen socket, then DELIVERY_LIMIT_S (90 s).
+@pytest.mark.timeout(240)
 def test_message_sent_during_a_socket_gap_arrives_after_reconnect(rig):
     sender = rig["sender"]
     recipient = rig["recipient"]

@@ -83,6 +83,11 @@ function canonicalIdentity(name: string): { email: string; password: string } | 
  * Resolve a launcher-owned instance synchronously. No launch, network probe,
  * retry, poll, or wait occurs here; a stale/mismatched identity fails closed.
  */
+/** A launched instance's data dir: `$FLOW_HOME/instances/<name>` (FLOW_HOME defaults to `~/.flow`, as the launcher's). */
+export function instanceDataDir(name: string): string {
+  return path.join(path.resolve(process.env.FLOW_HOME || path.join(homedir(), '.flow')), 'instances', name);
+}
+
 export function resolveLaunchedInstance(name: string): LaunchedInstance | null {
   const identity = canonicalIdentity(name);
   if (!identity || !HUB_URL || HUB_INST_1 === HUB_INST_2) return null;
@@ -102,11 +107,10 @@ export function resolveLaunchedInstance(name: string): LaunchedInstance | null {
     return null;
   }
 
-  const flowHome = path.resolve(process.env.FLOW_HOME || path.join(homedir(), '.flow'));
   let launcher: LauncherRegistry;
   try {
     launcher = JSON.parse(
-      readFileSync(path.join(flowHome, 'instances', name, 'launcher.json'), 'utf-8'),
+      readFileSync(path.join(instanceDataDir(name), 'launcher.json'), 'utf-8'),
     ) as LauncherRegistry;
   } catch {
     return null;

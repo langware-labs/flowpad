@@ -570,8 +570,26 @@ class AgentMailbox(Entity):
         # error this whole change replaced. The real fix is a typed `HubError` out
         # of `_unwrap`; that is a cross-cutting change to every FlowpadClient
         # caller, so it stays a follow-up.
-        with contextlib.suppress(ValueError, RuntimeError):
-            await agent.share()
+        from flow_sdk.cloud_client.shared.errors import HubError, HubErrorCode  # noqa: PLC0415
+
+        foreign = AgentMailboxError(
+            403,
+            "this agent already exists on the hub under another account, so its "
+            "mailbox cannot be allocated from here — allocate it from the account "
+            "that owns the agent, or use an agent of your own",
+            code=AgentMailboxErrorCode.FOREIGN_TARGET,
+        )
+        try:
+            with contextlib.suppress(ValueError, RuntimeError):
+                await agent.share()
+        except HubError as refused:
+            # A publish whose 409 the client already resolved as "the row at this id is not
+            # ours" (``Entity.confirm_hub_row_is_ours``) is the same answer the probe below
+            # would reach: someone else's agent. Anything else is its own failure.
+            if refused.code != HubErrorCode.ID_TAKEN:
+                raise
+            agent.remote = False
+            raise foreign from refused
         agent.remote = True
         try:
             return await driver.get_mailbox(agent.id)
@@ -581,13 +599,7 @@ class AgentMailbox(Entity):
             # is its own failure and must reach the caller as itself.
             if still_hidden.code != AgentMailboxErrorCode.TARGET_NOT_FOUND:
                 raise
-            raise AgentMailboxError(
-                403,
-                "this agent already exists on the hub under another account, so its "
-                "mailbox cannot be allocated from here — allocate it from the account "
-                "that owns the agent, or use an agent of your own",
-                code=AgentMailboxErrorCode.FOREIGN_TARGET,
-            ) from still_hidden
+            raise foreign from still_hidden
 
     async def disable(self) -> "AgentMailbox":
         """Turn the mailbox off, keeping the address and the source's cursor.

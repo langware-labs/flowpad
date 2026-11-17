@@ -91,15 +91,30 @@ def _asset_lists() -> list[tuple[str, str]]:
     return out
 
 
+#: A type's list called by a word beside its own names: dynamic workflows are THE workflows (their
+#: family, ``.claude/workflows``) -- "show workflows" (navigation sentence 58).
+LIST_WORDS: dict[str, tuple[str, ...]] = {"dynamic_workflow": ("workflow",)}
+
+
 def asset_list_names() -> dict[str, str]:
     """``{name: "list/<type>"}``: the words that name a type's list on the Assets screen -- its display
     name and its type, singular and plural ("specs", "project manifest"). A request that is exactly
-    one of them opens the list with no model (``navigator.rule_hit``)."""
+    one of them opens the list with no model (``navigator.rule_hit``).
+
+    A display name two types share belongs to the one with a section of its own: "Documents" is the
+    markdown tree, and document files (``browseable_by=None``) are listed inside it."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    own_section = set(SchemaRegistry.browseable_type_names())
     out: dict[str, str] = {}
-    for t in _listed_types():
+    for t in sorted(_listed_types(), key=lambda t: t not in own_section):
         for word in _type_words(t):
             singular = _singular(word.lower())
             for name in (singular, f"{singular}s"):
+                out.setdefault(name, f"list/{t}")
+    for t, words in LIST_WORDS.items():
+        for word in words:
+            for name in (word, f"{word}s"):
                 out.setdefault(name, f"list/{t}")
     return out
 
@@ -172,6 +187,7 @@ def place_of(view: ViewType) -> dict[str, Any]:
     """One ``VIEW_META`` row as a ``navigation.place`` value."""
     meta = VIEW_META[view]
     subplaces = [*meta.subplaces, *(_GENERATED_SUBPLACES[view]() if view in _GENERATED_SUBPLACES else ())]
+    aka = dict(meta.subplace_aliases)
     return {
         "view": view.value,
         "label": meta.label,
@@ -181,7 +197,7 @@ def place_of(view: ViewType) -> dict[str, Any]:
         "pointer_form": meta.pointer_form if meta.pointer.value != "none" else None,
         "provides": list(meta.provides),
         "opens": list(meta.opens),
-        "subplaces": [{"pointer": p, "label": label} for p, label in subplaces],
+        "subplaces": [{"pointer": p, "label": label, "aliases": list(aka.get(p, ()))} for p, label in subplaces],
     }
 
 

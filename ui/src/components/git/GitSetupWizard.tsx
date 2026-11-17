@@ -15,7 +15,8 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { useEntity } from '@src/hooks/entity-hooks';
-import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
+import { fetchGitSharePreflight, invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
+import { gitShareGateState } from '@src/components/share-to-conversation/git-share-gate-state';
 import { notify } from '@src/notifications';
 
 type WizardStep = 'where' | 'setup' | 'done';
@@ -29,7 +30,7 @@ type WizardStep = 'where' | 'setup' | 'done';
  */
 async function runProjectGitSetup(project: Project, target: Exclude<GitTarget, { mode: 'flowpad' }>): Promise<boolean> {
   const path = project.fs_storage_mount_path;
-  if (!path) return false;
+  if (!path) throw new Error(tCore`This project has no folder on this computer.`);
   const result = await launchWizard('git-dependency', {
     title: tCore`Set up Git for project sharing`,
     targetTypeId: project.typeId.toString(),
@@ -49,7 +50,19 @@ async function runProjectGitSetup(project: Project, target: Exclude<GitTarget, {
   // filesystem changes — tell every mounted preflight to ask again.
   invalidateGitPreflight(project.typeId);
   if (result.status === 'error') throw new Error(result.errorStr ?? 'Git setup failed');
-  return result.status === 'done';
+  if (result.status !== 'done') return false;
+  // The agent's 'done' is its own report, not the repo's state — it can end
+  // asking for a remote URL. Success is the preflight no longer needing setup.
+  const code = (await fetchGitSharePreflight(project.typeId))?.code ?? null;
+  if (gitShareGateState(code) === 'setup') throw new Error(setupLeft(code));
+  return true;
+}
+
+/** What a needs-setup preflight code still leaves undone, for the notice. */
+function setupLeft(code: string | null): string {
+  if (code === 'not-in-repo') return tCore`Git setup did not finish: the folder is not a git repository yet.`;
+  if (code === 'missing-remote') return tCore`Git setup did not finish: the folder has no remote yet.`;
+  return tCore`Git setup did not finish: the folder's remote is not a supported host.`;
 }
 
 export interface GitSetupWizardProps {

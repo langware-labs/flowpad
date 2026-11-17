@@ -139,14 +139,14 @@ async def test_the_request_is_written_at_once_and_the_diagnosis_follows_as_its_o
     assert request.kind == FlowMessageKind.HELP_REQUEST
     assert afh.DIAGNOSIS_FILE not in _files(request), "the request never waits for the diagnosis"
     assert json.loads(_files(request)[HELP_REQUEST_FILE])["diagnosing"] is True
-    hub.assert_not_awaited()
+    hub.assert_awaited_once()  # the request is delivered at once: the helper never waits on the diagnosis
 
     await _settle()
 
     _request, diagnosis = await _messages(body["conversation_id"])
     assert diagnosis.kind == FlowMessageKind.DIAGNOSIS
     assert json.loads(_files(diagnosis)[afh.DIAGNOSIS_FILE])["title"] == "Backend down"
-    hub.assert_awaited()
+    assert hub.await_count == 2, "the diagnosis follows as an update of the same conversation"
 
 
 @pytest.mark.parametrize(

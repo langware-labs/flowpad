@@ -12,34 +12,26 @@ The endpoint is shared by all four workers on purpose: usage is measured as a DE
 turn, so every worker is checked against its own spend on the same ledger. Absolute totals would
 pass on a stale row.
 
-Gated on ``DEEP_TESTING`` (real CLIs, real tokens), a reachable hub, and a hub login. Skips per
-worker when that CLI is not installed.
+The budget is the one a new Flowpad user gets: this box signs up to the LOCAL hub as a fresh user,
+whose default allowance draws on the hub's own (Vertex-funded) root. No provider key lives on this
+box. Every worker runs the endpoint's ``sm`` size, and the slug the hub reports for that size is the
+one each turn must be billed as -- priced from Google's list, the table the hub prices Vertex from.
 
-    DEEP_TESTING=true FLOWPAD_HUB_URL=http://localhost:8002 OPENROUTER_API_KEY=... \
-        uv run pytest tests/long_tests/test_llm_endpoint_workers.py -v
+Gated on ``DEEP_TESTING`` (real CLIs, real tokens) and a reachable LOCAL hub. Skips per worker when
+that CLI is not installed.
 
-The hub it points at must be a DEDICATED instance with its OWN secret file:
-
-    PORT=8002 NEO4J_DATABASE=<fresh> SOD_FILE_NAME=/abs/path/sod.dedicated \
-        python -m flowpad.run
-
-``SOD_FILE_NAME`` is not optional and not cosmetic. The file-backed secret store keeps every secret
-in ONE file, read-modify-written with no locking, and it defaults to ``<repo>/sod.local`` -- so two
-hubs started from the same checkout share it and silently drop each other's entries. The symptom is
-vicious: an endpoint keeps its ``****last4`` hint and starts refusing every call with "no root with
-a credential" a minute or so later, so a fast run passes and a slow one fails whichever workers
-happen to run last.
+    DEEP_TESTING=true FLOWPAD_HUB_URL=http://localhost:8495 \
+        uv run pytest tests/long_tests/test_llm_endpoint_workers.py --long -v
 """
 
 from __future__ import annotations
 
 import asyncio
+import importlib.metadata
 import json
-import os
 import shutil
 import time
 from decimal import Decimal
-from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -49,6 +41,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker
 from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
 from flow_sdk.flowpad_types.enums import WorkerType
 from tests.long_tests._transcript_helpers import assert_prompt_ok, fail_no_transcript, safe_exit
+from tests.long_tests._vertex_hub import allocate, graph_path, hub_client, sign_up_and_fund
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -56,20 +49,17 @@ pytestmark = [
     pytest.mark.asyncio,
 ]
 
-HUB_URL = (os.environ.get("FLOWPAD_HUB_URL") or "").rstrip("/")
-
-#: ``(WorkerType, cli binary, model as that CLI names it, slug the hub will meter)``.
-#:
-#: One ENDPOINT for all four; only the model differs, because claude speaks the Anthropic Messages
-#: skin, codex and copilot speak OpenAI skins, and opencode namespaces its slugs by provider. Every
-#: slug is in the hub's price table -- the allocation carries a cost limit, and the hub refuses a
-#: model it cannot price where a cost limit could not meter it.
+#: ``(WorkerType, cli binary)``. One ENDPOINT for all four, one SIZE for all four: ``sm`` resolves
+#: through the endpoint's own tiers, so the slug each harness asks for -- and the slug the hub must
+#: meter -- is the one the hub reports for ``sm`` on this chain (``budget.tiers``), not one named
+#: here. The allocation carries a cost limit, so that slug must be one the hub can price.
 WORKERS = [
-    (WorkerType.CLAUDE_CODE, "claude", "anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4.5"),
-    (WorkerType.CODEX, "codex", "openai/gpt-4o-mini", "openai/gpt-4o-mini"),
-    (WorkerType.COPILOT, "copilot", "openai/gpt-4o-mini", "openai/gpt-4o-mini"),
-    (WorkerType.OPENCODE, "opencode", "openrouter/openai/gpt-4o-mini", "openai/gpt-4o-mini"),
+    (WorkerType.CLAUDE_CODE, "claude"),
+    (WorkerType.CODEX, "codex"),
+    (WorkerType.COPILOT, "copilot"),
+    (WorkerType.OPENCODE, "opencode"),
 ]
+SIZE = "sm"
 
 PROMPT = 'Reply with exactly the single word "pong" and nothing else.'
 EXPECTED = "pong"
@@ -77,109 +67,83 @@ EXPECTED = "pong"
 
 @pytest.fixture(scope="module", autouse=True)
 def _hub_session():
-    """Point the SDK at the hub and log this box in -- synchronously, on purpose.
+    """Sign this box in to the LOCAL hub as a new user -- synchronously, on purpose.
 
-    Both halves matter: the client is how the test creates the endpoint, and ``flowpad_hub_url`` is
-    what ``hub_origin()`` reads when a worker's spawn env is built. Point them at different hubs and
-    a turn would authenticate here and spend there.
+    ``flowpad_hub_url`` (set by ``sign_up_and_fund``) is what ``hub_origin()`` reads when a worker's
+    spawn env is built, and the same login is what the test reads the ledger with: point them at
+    different hubs and a turn would authenticate here and spend there.
 
     Sync because pytest gives every test its own event loop: anything async held at module scope
-    (an httpx pool, for one) is bound to the loop that made it and blows up in the next test. The
-    login is ``/login/local``, the same funnel the hub tier uses -- nothing here reaches for a
-    credential belonging to a person.
+    (an httpx pool, for one) is bound to the loop that made it and blows up in the next test.
     """
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
     from flow_sdk.config import default_service_config
-    from tests.hub_tests._local_login import login_as
-
-    if not HUB_URL:
-        pytest.skip("FLOWPAD_HUB_URL is not set -- point this at a DEDICATED hub, never production")
-    if urlparse(HUB_URL).hostname not in {"localhost", "127.0.0.1", "::1"}:
-        pytest.skip(f"refusing to run against a non-local hub: {HUB_URL}")
 
     previous = default_service_config.flowpad_hub_url
-    default_service_config.flowpad_hub_url = HUB_URL
     try:
-        with httpx.Client(base_url=HUB_URL, timeout=30.0) as anon:
-            try:
-                health = anon.get("/api/v1/health/status")
-            except httpx.ConnectError:
-                pytest.skip(f"hub not reachable at {HUB_URL}")
-            if health.status_code != 200:
-                pytest.skip(f"hub health {health.status_code}")
-            login = anon.post("/api/v1/login/local")
-            if login.status_code != 200:
-                pytest.skip(f"local hub login failed: {login.status_code} {login.text[:200]}")
-            login_as(login.json()["data"])
+        funded = sign_up_and_fund("worker matrix")
         assert resolve_hub_api_key(), "login_as did not leave this box logged in"
-        yield
+        yield funded
     finally:
         default_service_config.flowpad_hub_url = previous
 
 
-def _sync_hub() -> httpx.Client:
+def _sync_hub(hub_url: str) -> httpx.Client:
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
 
-    return httpx.Client(base_url=HUB_URL, headers={"Authorization": f"Bearer {resolve_hub_api_key()}"}, timeout=60.0)
+    return httpx.Client(base_url=hub_url, headers={"Authorization": f"Bearer {resolve_hub_api_key()}"}, timeout=60.0)
 
 
 @pytest.fixture
 def hub(_hub_session) -> httpx.Client:
     """A fresh client per test -- see ``_hub_session`` for why nothing is shared."""
-    with _sync_hub() as client:
+    with _sync_hub(_hub_session.hub_url) as client:
         yield client
 
 
 @pytest.fixture(scope="module")
 def budget(_hub_session) -> str:
-    """The ROOT every worker's budget draws on. Returns its typeid.
+    """The budget every worker's allocation draws on: the new user's default allowance. Its typeid.
 
-    One root, funded once: that is the "same endpoint" all four workers spend. Each worker then gets
-    its own allocation off it (see ``endpoint``) -- not because they need separate budgets, but
-    because a SHARED counter cannot attribute per-worker spend. The ledger is written after a turn
-    finishes and buffered before it is readable, so on one shared endpoint a late booking from the
-    previous worker lands inside the next worker's delta window. That is not a theoretical race: it
-    made an earlier version of this test report success for a worker that had booked nothing.
+    One allowance, on the hub's Vertex root: that is the "same endpoint" all four workers spend.
+    Each worker then gets its own allocation off it (see ``endpoint``) -- not because they need
+    separate budgets, but because a SHARED counter cannot attribute per-worker spend. The ledger is
+    written after a turn finishes and buffered before it is readable, so on one shared endpoint a
+    late booking from the previous worker lands inside the next worker's delta window. That is not
+    a theoretical race: it made an earlier version of this test report success for a worker that
+    had booked nothing.
     """
-    with _sync_hub() as c:
-        made = c.post("/api/v1/graph/llm_endpoint", json={"name": "worker matrix root"})
-        assert made.status_code == 200, made.text
-        root_id = made.json()["data"]["id"]
-        keyed = c.post(f"/api/v1/graph/llm_endpoint/{root_id}/credential", json={"key": _openrouter_key()})
-        assert keyed.status_code == 200, keyed.text
-        # A hint alone does not mean the key is readable: with a file-backed secret store it does not
-        # survive a hub restart, leaving an endpoint that LOOKS configured and refuses every call.
-        chain = c.get(f"/api/v1/graph/llm_endpoint/{root_id}/chain")
-        hops = chain.json()["data"]["hops"]
-        assert hops and hops[0]["has_credential"], (
-            "the root has no readable credential -- if it carries a hint, the secret store lost the "
-            "key (a hub restart does that with sod_provider=file); re-set it"
-        )
-        return f"llm_endpoint-{root_id}"
+    return _hub_session.allowance
+
+
+@pytest.fixture(scope="module")
+def sized_slug(_hub_session) -> str:
+    """The slug the hub runs ``SIZE`` as on this chain -- what every worker must be billed as."""
+    slug = _hub_session.tiers.get(SIZE)
+    assert slug, f"the allowance's chain reports no {SIZE!r} model: {_hub_session.tiers}"
+    return slug
 
 
 @pytest.fixture
-def endpoint(budget, binary) -> str:
-    """This worker's own allocation off the shared root, so its counters are unambiguous."""
-    with _sync_hub() as c:
-        allocated = c.post(
-            f"/api/v1/graph/{_graph_path(budget)}/allocate",
-            json={"name": f"{binary} budget", "limits": {"cost_usd_total": 1.0}},
-        )
-        assert allocated.status_code == 200, allocated.text
-        return f"llm_endpoint-{allocated.json()['data']['id']}"
+def claude_home_is_flowpads(monkeypatch):
+    """Make the claude CLI write its transcript where Flowpad reads it.
+
+    The test settings put Flowpad's Claude home in the sandbox (``<sandbox>/.claude``), but leave it
+    implicit, and a spawn pins ``CLAUDE_CONFIG_DIR`` only for an EXPLICIT non-native root -- so the
+    CLI wrote under ``$HOME/.claude`` and ``load_history`` found no transcript for a turn the hub had
+    already answered and billed. Naming the root makes the spawn pin it; an api-funded claude needs
+    no login from that home.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+
+    monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", str(get_instance_settings().claude_home))
 
 
-def _openrouter_key() -> str:
-    key = os.environ.get("OPENROUTER_API_KEY")
-    if not key:
-        pytest.skip("OPENROUTER_API_KEY is not set; the endpoint would have no credential")
-    return key
-
-
-def _graph_path(typeid: str) -> str:
-    """``"llm_endpoint-<uuid>"`` -> ``"llm_endpoint/<uuid>"``, the shape graph routes take."""
-    return typeid.replace("-", "/", 1)
+@pytest.fixture
+def endpoint(_hub_session, budget, binary) -> str:
+    """This worker's own allocation off the shared allowance, so its counters are unambiguous."""
+    with hub_client(_hub_session.hub_url) as c:
+        return allocate(c, budget, f"{binary} budget", 1.0)
 
 
 def _entity_id(typeid: str) -> str:
@@ -192,7 +156,7 @@ def _usage(hub: httpx.Client, typeid: str, by: str | None = None) -> dict:
     params: dict = {"from": now - 7200, "to": now + 60}
     if by:
         params["by"] = by
-    response = hub.get(f"/api/v1/graph/{_graph_path(typeid)}/usage", params=params)
+    response = hub.get(f"/api/v1/graph/{graph_path(typeid)}/usage", params=params)
     assert response.status_code == 200, response.text
     data = response.json()["data"]
     return (data.get("breakdown") or {}) if by else data["totals"]
@@ -234,10 +198,10 @@ def _price_bracket(model: str, delta: dict) -> tuple[int, int]:
     """
     import genai_prices
 
-    # The same reconciliation the hub makes: OpenRouter is supposed to report ``input_tokens``
-    # inclusive of cache, but an Anthropic model served through it reports them EXCLUSIVE, so a
-    # sum would double-count and a bare input would miss most of the prompt. ``max`` is right
-    # either way, and using anything else here is what put this bracket below the real charge.
+    # The same reconciliation the hub makes: Vertex's OpenAI surface reports ``input_tokens``
+    # inclusive of cache, but Claude on its Anthropic surface reports them EXCLUSIVE, so a sum
+    # would double-count and a bare input would miss most of the prompt. ``max`` is right either
+    # way, and using anything else here is what put this bracket below the real charge.
     prompt = max(delta["input_tokens"], delta["cache_read_tokens"] + delta["cache_write_tokens"])
 
     def price(cache_read: int, cache_write: int) -> int:
@@ -247,7 +211,16 @@ def _price_bracket(model: str, delta: dict) -> tuple[int, int]:
             cache_write_tokens=cache_write,
             output_tokens=delta["output_tokens"],
         )
-        calc = genai_prices.calc_price(usage, model_ref=model, provider_id="openrouter")
+        # A Vertex root is priced from Google's own list, under the bare model name (no publisher,
+        # no ``@date`` pin, no ``-maas``) -- the hub's own first Vertex lookup.
+        bare = model.rpartition("/")[2].split("@", 1)[0].removesuffix("-maas")
+        try:
+            calc = genai_prices.calc_price(usage, model_ref=bare, provider_id="google")
+        except LookupError:
+            pytest.fail(
+                f"this env's price table (genai-prices {importlib.metadata.version('genai-prices')}) has no "
+                f"Google price for {bare!r}, which the hub bills -- the bracket cannot be checked against it"
+            )
         return int(Decimal(calc.total_price) * 1_000_000)
 
     # Which of the two is actually larger is a property of the price table, not something to assume.
@@ -277,20 +250,20 @@ async def _settled_delta(hub: httpx.Client, typeid: str, before: dict, deadline_
 
 
 @pytest.mark.timeout(600)  # do not increase without approval
-@pytest.mark.parametrize("worker_type, binary, model, billed_as", WORKERS, ids=[w[1] for w in WORKERS])
+@pytest.mark.parametrize("worker_type, binary", WORKERS, ids=[w[1] for w in WORKERS])
 async def test_worker_answers_through_the_endpoint_it_was_given(
-    hub, endpoint, tmp_path, worker_type, binary, model, billed_as
+    hub, endpoint, sized_slug, claude_home_is_flowpads, tmp_path, worker_type, binary
 ):
+    billed_as = sized_slug
     if shutil.which(binary) is None:
         pytest.skip(f"{binary} CLI not installed")
 
     before = _usage(hub, endpoint)
-    before_by_model = _usage(hub, endpoint, by="model")
 
     process = await AgenticProcess(
         worker_type=worker_type,
         workdir=str(tmp_path),
-        cli_config={"model": model},
+        cli_config={"model": SIZE},
         visible=False,
         # Print mode: one spawn, one turn, then done. A PTY process holds a long-lived worker whose
         # answer only ever lands in a transcript, which is a slower and less direct thing to assert
@@ -336,9 +309,9 @@ async def test_worker_answers_through_the_endpoint_it_was_given(
     assert not delta["errors"], f"{binary}: {delta['errors']} upstream error(s)"
     # A harness turn is a system prompt plus tools, never a handful of tokens. A counter that moved
     # by 1 would satisfy "> 0" while meaning the accounting is broken.
-    # Measured on the prompt, not on ``input_tokens`` alone: an Anthropic model served through
-    # OpenRouter reports input EXCLUSIVE of cache (a claude turn is ~10 in + ~23k cache), so the
-    # same ``max`` reconciliation as ``_price_bracket`` is the honest size of the turn.
+    # Measured on the prompt, not on ``input_tokens`` alone: a provider that reports input EXCLUSIVE
+    # of cache (a claude turn can be ~10 in + ~23k cache), so the same ``max`` reconciliation as
+    # ``_price_bracket`` is the honest size of the turn.
     prompt_tokens = max(delta["input_tokens"], delta["cache_read_tokens"] + delta["cache_write_tokens"])
     assert prompt_tokens >= 20, (
         f"{binary}: {prompt_tokens} prompt tokens ({delta['input_tokens']} in, "
@@ -349,6 +322,11 @@ async def test_worker_answers_through_the_endpoint_it_was_given(
     # the hub bills from, so this catches a mis-priced model, a dropped cache field, or a rounding
     # regression -- none of which a "cost > 0" check would notice.
     # The charge must be defensible for the tokens that were counted -- see ``_price_bracket``.
+    #
+    # This is also the check that the turn was billed AS ``billed_as``: the hub's per-model
+    # breakdown (``usage?by=model``) is admin-only, and a new user only spends its allowance, so the
+    # slug is pinned by price instead. With no cache tokens the bracket collapses to one figure, and
+    # another size of the same family is priced several times over.
     low, high = _price_bracket(billed_as, delta)
     slack = max(delta["requests"], 1)  # per-request rounding to micro-USD
     assert low - slack <= delta["cost_micro_usd"] <= high + slack, (
@@ -362,12 +340,3 @@ async def test_worker_answers_through_the_endpoint_it_was_given(
         f"{delta['input_tokens']:6d} in  {delta['output_tokens']:5d} out  "
         f"{delta['cache_read_tokens']:5d} cache  ${delta['cost_micro_usd'] / 1_000_000:.6f}  [{billed_as}]"
     )
-
-    # The slug IS the price lookup, so billing the wrong one silently bills the wrong amount.
-    after_by_model = _usage(hub, endpoint, by="model")
-    charged = {
-        slug
-        for slug, totals in after_by_model.items()
-        if totals.get("requests", 0) > before_by_model.get(slug, {}).get("requests", 0)
-    }
-    assert charged == {billed_as}, f"{binary}: billed as {sorted(charged)}, expected {billed_as!r}"

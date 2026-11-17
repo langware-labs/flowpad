@@ -134,8 +134,12 @@ export async function loadShell(shellId: string): Promise<Shell> {
     await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
   }
 
-  dataContext.setActiveShellId(shell.id);
-  dataContext.setActiveTerminalTargetTypeId(shell.typeId);
+  // One context change, not three: see `dataContext.batch`.
+  dataContext.batch(() => {
+    dataContext.setActiveShellId(shell.id);
+    dataContext.setActiveTerminalTargetTypeId(shell.typeId);
+    dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
+  });
   // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
   // must stay fast; the in-cache bump above is the synchronous seed.
   void shell.activate().catch(() => {});
@@ -143,7 +147,6 @@ export async function loadShell(shellId: string): Promise<Shell> {
   // not the Shell row, so without this close-to-most-recently-active falls back
   // to tab_order.
   tabManager.stampTargetRecency(Shell.type, shell.id);
-  dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   return shell;
 }

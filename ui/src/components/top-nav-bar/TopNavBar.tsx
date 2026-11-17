@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw } from 'lucide-react';
 import { useContext } from '@src/hooks/useContext';
@@ -21,46 +21,29 @@ import { TopBarAskForHelp } from './TopBarAskForHelp';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
 import { NewWorkspaceDialogHost } from '@src/components/workspace/workspace-switcher';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
+import type { Project, RuntimeKind } from '@sdk';
 
 /**
- * The app's navigation bar — full window width, above the rail and the content
- * column, mounted once in `FlowPage`.
- *
- * It is a browser navigation bar in the literal sense: history controls, then a
- * chip saying which machine is serving this UI and which project you are in
- * (its name opens the project's home, its chevron the project list), then an
- * address (a breadcrumb of where the current entity lives), then the actions
- * for it.
- *
- * The root is a `div`, not a button: it holds many independent controls, and a
- * button inside a button is invalid HTML that React warns about and screen
- * readers mis-announce. A unit test pins that.
+ * The bar's fixed controls — history, home, help, files, the app and runtime
+ * chips. Memoized apart from the address: a tab switch changes the address and
+ * the actions, and re-rendering these (a tooltip and popover tree each) with it
+ * was a third of the bar's cost on every switch.
  */
-export function TopNavBar() {
+const TopNavControls = memo(function TopNavControls({
+  project,
+  runtimeKind,
+  onHome,
+  onFiles,
+}: {
+  project: Project | null;
+  runtimeKind: RuntimeKind;
+  onHome: () => void;
+  onFiles: () => void;
+}) {
   const { t } = useLingui();
-  // The address slot's mode: where you are, where you'd rather be, or what you want done.
-  const [mode, setMode] = useState<'address' | 'search' | 'ask'>('address');
-  const assistant = useOptionalFloatingChat();
-  const { currentDock, navigation } = useDockNavigation();
-  const { runtimeKind, project: contextProject } = useContext();
-  // A project of another workspace is not shown as current: a new workspace starts
-  // with none. Display-only — the context is the loader's to write.
-  const { contains } = useActiveWorkspace();
-  const project = contextProject && contains(contextProject.fs_storage_mount_path) ? contextProject : null;
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
-  // Resolved ONCE per navigation and shared: the address and the actions both
-  // need the dock's target, and resolving it twice would double the work on
-  // every click.
-  const { crumbs, targetTypeId, targetTitle } = useEntityBreadcrumbs(currentDock);
-  // The OS window title mirrors the address — same crumbs, no second resolve.
-  useDocumentTitle(windowTitleFor(crumbs));
-
   return (
-    <div
-      data-testid="top-nav-bar"
-      data-runtime={runtimeKind}
-      className="flex w-full shrink-0 items-center gap-2 border-b bg-muted/40 px-2.5 py-2"
-    >
+    <>
       {/* Back/forward are the only glyphs in this cluster that encode a
           direction, so they are the only ones that mirror — see `mirrorInRtl`. */}
       <NavIconButton
@@ -83,21 +66,63 @@ export function TopNavBar() {
           gesture and no soft variant. Anything less does not reload. */}
       <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
       {/* Home is Flowpad's own home page, never a project's home page. */}
-      <NavIconButton icon={Home} label={t`Home`} onClick={() => navigation.goHome()} testId="top-nav-home" />
+      <NavIconButton icon={Home} label={t`Home`} onClick={onHome} testId="top-nav-home" />
       {/* Right after Home, where it is found, rather than at the far edge of the bar. */}
       <TopBarAskForHelp projectId={project?.id ?? null} />
       {/* Files sat on the rail; same destination, same one-liner, just beside
           the other place-buttons instead of below them. */}
-      <NavIconButton
-        icon={FolderOpen}
-        label={t`Files`}
-        onClick={() => navigation.openTab(ViewType.EXPLORER)}
-        testId="top-nav-files"
-      />
+      <NavIconButton icon={FolderOpen} label={t`Files`} onClick={onFiles} testId="top-nav-files" />
       <AppButton project={project} />
       <RuntimeChip kind={runtimeKind} project={project} />
       <ProjectSetupButton project={project} />
       <NewWorkspaceDialogHost />
+    </>
+  );
+});
+
+/**
+ * The app's navigation bar — full window width, above the rail and the content
+ * column, mounted once in `FlowPage`.
+ *
+ * It is a browser navigation bar in the literal sense: history controls, then a
+ * chip saying which machine is serving this UI and which project you are in
+ * (its name opens the project's home, its chevron the project list), then an
+ * address (a breadcrumb of where the current entity lives), then the actions
+ * for it.
+ *
+ * The root is a `div`, not a button: it holds many independent controls, and a
+ * button inside a button is invalid HTML that React warns about and screen
+ * readers mis-announce. A unit test pins that.
+ */
+export function TopNavBar() {
+  // The address slot's mode: where you are, where you'd rather be, or what you want done.
+  const [mode, setMode] = useState<'address' | 'search' | 'ask'>('address');
+  const assistant = useOptionalFloatingChat();
+  const { currentDock, navigation } = useDockNavigation();
+  const { runtimeKind, project: contextProject } = useContext();
+  // A project of another workspace is not shown as current: a new workspace starts
+  // with none. Display-only — the context is the loader's to write.
+  const { contains } = useActiveWorkspace();
+  const project = contextProject && contains(contextProject.fs_storage_mount_path) ? contextProject : null;
+  // Resolved ONCE per navigation and shared: the address and the actions both
+  // need the dock's target, and resolving it twice would double the work on
+  // every click.
+  const { crumbs, targetTypeId, targetTitle } = useEntityBreadcrumbs(currentDock);
+  // The OS window title mirrors the address — same crumbs, no second resolve.
+  useDocumentTitle(windowTitleFor(crumbs));
+  // Stable handlers for the memoized controls: the actions object is rebuilt on every navigation.
+  const navigationRef = useRef(navigation);
+  navigationRef.current = navigation;
+  const onHome = useCallback(() => navigationRef.current.goHome(), []);
+  const onFiles = useCallback(() => navigationRef.current.openTab(ViewType.EXPLORER), []);
+
+  return (
+    <div
+      data-testid="top-nav-bar"
+      data-runtime={runtimeKind}
+      className="flex w-full shrink-0 items-center gap-2 border-b bg-muted/40 px-2.5 py-2"
+    >
+      <TopNavControls project={project} runtimeKind={runtimeKind} onHome={onHome} onFiles={onFiles} />
       {/* One slot, three modes — the address is where you are, search is
           where you'd rather be, and ask (a click on the pill's dead space) is
           what you want done, handed to the Flowpad Assistant. Same pill, same

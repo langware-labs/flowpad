@@ -17,7 +17,13 @@ import { parse } from 'dotenv';
 
 const cwd = process.cwd();
 const ROOT = existsSync(path.resolve(cwd, 'ui/package.json')) ? cwd : path.resolve(cwd, '..');
-const localEnv = parse(readFileSync(path.resolve(ROOT, '.env.local')));
+// The running instance's env file (`.env.<FLOW_INSTANCE>.local`, what instance_ctl writes), else the classic
+// `.env.local`. Neither present is not a crash at import — that took the whole conversation area down with
+// ENOENT — but "no credentials": the skip below says so.
+const envFile = [`.env.${process.env.FLOW_INSTANCE ?? ''}.local`, '.env.local']
+  .map((name) => path.resolve(ROOT, name))
+  .find((file) => !file.endsWith('.env..local') && existsSync(file));
+const localEnv = envFile ? parse(readFileSync(envFile)) : {};
 // The dedicated test mailbox when one is configured, else the general one.
 const GMAIL = {
   GMAIL_ADDRESS: localEnv.TEST_GMAIL_ADDRESS || localEnv.GMAIL_ADDRESS,
@@ -271,14 +277,15 @@ test('enable email, receive Gmail, and show the pirate reply in UI and Gmail', a
     fallbackEnv = childEnv;
     await openAgentStreamInbox(page, ready.agent_id);
 
-    await page.getByRole('button', { name: 'Create email for agent', exact: true }).click();
+    await page.getByTestId('agent-email-create-cta').click();
     await expect(page.getByTestId('agent-mailbox-address')).toBeVisible();
     const mailboxAddress = (await page.getByTestId('agent-mailbox-address').textContent())?.trim() ?? '';
     expect(mailboxAddress).toContain('@');
 
-    await page.getByTestId('agent-email-allowed-senders-add-input').fill(ready.gmail_address);
-    await page.getByTestId('agent-email-allowed-senders-add').click();
-    await expect(page.getByTestId('agent-email-allowed-senders-senders')).toContainText(ready.gmail_address);
+    // Receiving is the lists editor's default tab: who the agent reads and answers.
+    await page.getByTestId('mailbox-receiving-allowed-add-input').fill(ready.gmail_address);
+    await page.getByTestId('mailbox-receiving-allowed-add').click();
+    await expect(page.getByTestId('mailbox-receiving-allowed-entries')).toContainText(ready.gmail_address);
 
     harness.send(`SEND ${mailboxAddress}`);
     expect((await harness.next()).kind).toBe('deployed');

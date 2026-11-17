@@ -1,8 +1,8 @@
 ---
 id: 145bc443-e7dc-4971-ae46-8844c5721b4a
 title: Markdown documents
+version: 2
 ---
-
 # Markdown documents
 
 A **markdown document** is a plain `.md` file — notes, a design doc, a README,
@@ -38,3 +38,4 @@ other page in this wiki.
 - **It's a real file.** Commit it, move it, open it in any other tool. Sharing
   one into a conversation works like any other asset, including [[Git sharing]]
   when it lives in a repository.
+

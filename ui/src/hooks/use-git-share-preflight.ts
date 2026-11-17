@@ -79,6 +79,14 @@ function toOrigin(raw: Record<string, unknown> | null | undefined): GitOrigin | 
 type PreflightState = Omit<GitSharePreflight, 'refetch'>;
 
 /**
+ * Ask the backend once, outside React — for a remediation that must confirm
+ * the state it just changed (the git setup wizard), not trust its own report.
+ */
+export function fetchGitSharePreflight(ref: TypeId): Promise<PreflightResponse | null | undefined> {
+  return dataManager.callAction<unknown, PreflightResponse>(new ActionInfo('git_share_preflight', ref.type, ref.id, 'GET'));
+}
+
+/**
  * Live preflight subscribers, keyed by the ref they are asking about.
  *
  * Git state is FILESYSTEM state, so no entity update announces it — a wizard
@@ -160,9 +168,7 @@ export function useGitSharePreflight(
       };
     }
     setState((s) => ({ ...s, loading: true }));
-    const action = new ActionInfo('git_share_preflight', ref.type, ref.id, 'GET');
-    void dataManager
-      .callAction<unknown, PreflightResponse>(action)
+    void fetchGitSharePreflight(ref)
       .then((res) => {
         if (!mountedRef.current) return;
         if (!res) {

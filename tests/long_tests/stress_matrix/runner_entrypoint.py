@@ -51,6 +51,10 @@ async def _drive(prompt: str, workdir: str) -> dict:
         cli_config={"permission_mode": "bypassPermissions"},
         workdir=workdir,
         visible=False,
+        # Headless is ``pty_mode=False``: routing keys on it, never on ``visible`` (tab chrome only).
+        # Left at its default (True) the turn spawns the interactive TUI, which a fresh HOME parks on
+        # Claude's first-run theme picker, so no transcript is ever written.
+        pty_mode=False,
     )
     # Stress cells can opt out of the pre-save to exercise the
     # exist_in_db gate at agentic_process.py:1088 (B1 / "no AP record").

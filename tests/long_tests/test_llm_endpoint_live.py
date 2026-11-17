@@ -13,6 +13,11 @@ Run one with, e.g.::
 The key is read straight from the environment, which is the same path
 ``LLMEndpoint(provider=...)`` uses when nothing is stored — so a pass here also proves the
 snippet form in ``docs/snippets/llm-endpoints.md``.
+
+The ``hub`` row is the endpoint a new Flowpad user's box spends instead of a key: a sign-in
+to the LOCAL hub (``FLOWPAD_HUB_URL``) as a brand-new user, whose default allowance draws on
+the hub's own root (Vertex on the QA hub). It needs no provider key at all. The probe and
+model-catalog tests stay per-provider: their subject is a provider's own key and catalog.
 """
 
 from __future__ import annotations
@@ -30,22 +35,47 @@ pytestmark = pytest.mark.timeout(120)  # do not increase timeout without approva
 COMPLETION_PROVIDERS = ["openrouter", "openai", "anthropic"]
 #: Providers with an embeddings endpoint.
 EMBEDDING_PROVIDERS = ["openrouter", "openai"]
+# No [hub] row for embeddings: a hub allowance carries only sm/md/lg tiers (the hub's TIER_NAMES), so there is
+# no embedding model to call through it (QA cycle qa-20261112-225208: product gap, reported, not tested here).
+#: The row funded by a hub allowance rather than a provider key.
+HUB = "hub"
 
 
 def _endpoint_or_skip(provider: str) -> LLMEndpoint:
     dialect = get_dialect(provider)
     if not os.environ.get(dialect.env_var):
-        pytest.skip(f"{dialect.env_var} is not set")
+        pytest.skip(
+            f"{dialect.env_var} is not set -- this row's subject is a direct {provider} key; "
+            "the QA program funds LLM tests only through a (Vertex) hub endpoint"
+        )
     endpoint = LLMEndpoint(provider=provider)
     assert endpoint.kind == LLMEndpointKind.API_KEY
     return endpoint
 
 
+async def _any_endpoint_or_skip(provider: str) -> LLMEndpoint:
+    """``provider``'s local key endpoint, or for ``hub`` a new user's hub allowance."""
+    if provider != HUB:
+        return _endpoint_or_skip(provider)
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+    from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
+    from tests.long_tests.conftest import _sign_in_to_the_local_hub
+
+    await _sign_in_to_the_local_hub("llm endpoint live")
+    await HubProxy.try_call("GET", "bootstrap")  # mints the default allowance on first contact
+    endpoints = await fetch_hub_llm_endpoints()
+    if not endpoints:
+        pytest.skip("the local hub offered this box no LLM endpoint to spend")
+    endpoint = endpoints[0]
+    assert endpoint.kind == LLMEndpointKind.HUB
+    return endpoint
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("provider", COMPLETION_PROVIDERS)
+@pytest.mark.parametrize("provider", [*COMPLETION_PROVIDERS, HUB])
 async def test_a_local_endpoint_completes(provider):
     """The small tier answers a question with a checkable answer."""
-    endpoint = _endpoint_or_skip(provider)
+    endpoint = await _any_endpoint_or_skip(provider)
     reply = await endpoint.create_completion(
         "You answer with a single digit and nothing else.",
         "What is four minus one?",
@@ -59,7 +89,7 @@ async def test_a_local_endpoint_completes(provider):
 @pytest.mark.parametrize("provider", EMBEDDING_PROVIDERS)
 async def test_a_local_endpoint_embeds(provider):
     """Vectors come back one per input, in order, all the same width."""
-    endpoint = _endpoint_or_skip(provider)
+    endpoint = await _any_endpoint_or_skip(provider)
     vectors = await endpoint.create_embeddings(["a hot day in July", "a cold night in January"])
     assert len(vectors) == 2
     assert len({len(v) for v in vectors}) == 1
@@ -73,7 +103,7 @@ async def test_a_local_endpoint_embeds(provider):
 @pytest.mark.parametrize("provider", EMBEDDING_PROVIDERS)
 async def test_embeddings_place_like_with_like(provider):
     """A real embedding puts the two summer sentences nearer each other than the winter one."""
-    endpoint = _endpoint_or_skip(provider)
+    endpoint = await _any_endpoint_or_skip(provider)
     summer_a, summer_b, winter = await endpoint.create_embeddings(
         ["the beach was hot and sunny", "we swam in the warm sea all afternoon", "the blizzard closed the mountain road"]
     )

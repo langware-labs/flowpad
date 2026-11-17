@@ -103,6 +103,23 @@ class _OutputFeed:
             return b""
         return chunk
 
+    def pending(self) -> bytes:
+        """Every chunk already queued, joined, without waiting: a reader that fell behind a flood of
+        output catches up in one step instead of doing its per-chunk work once per chunk."""
+        chunks: list[bytes] = []
+        while not self.closed:
+            try:
+                item = self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if item is None:
+                self.closed = True
+                break
+            seq, chunk = item
+            if seq > self._snapshot_max_seq:
+                chunks.append(chunk)
+        return b"".join(chunks)
+
 
 class ShellStatus(StrEnum):
     IDLE = "idle"
@@ -805,15 +822,19 @@ class Shell(Entity):
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
 
-        # wait_procs is blocking; offload so we don't stall the event loop.
-        gone, alive = await asyncio.to_thread(psutil.wait_procs, victims, 3.0)
+        # The wait that survives psutil's pidfd_open refusing a worker caught mid-exit (EINVAL):
+        # raised here, it aborted ``exit`` after the signals went out, so a switch back to
+        # headless (or a close) failed with the worker already gone. Blocking; offloaded.
+        from flow_sdk.instances.procs import _wait_procs  # noqa: PLC0415
+
+        gone, alive = await asyncio.to_thread(_wait_procs, victims, 3.0)
         if alive:
             for p in alive:
                 try:
                     p.kill()
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
-            await asyncio.to_thread(psutil.wait_procs, alive, 2.0)
+            await asyncio.to_thread(_wait_procs, alive, 2.0)
 
     # ── I/O ───────────────────────────────────────────────────────────────────
 

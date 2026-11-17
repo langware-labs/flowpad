@@ -40,6 +40,9 @@ stressDescribe('PTY launch readiness under load', () => {
         activeRealm = await prepareCleanRealm(port);
         const { sdk, main } = activeRealm;
         await main.initSdk();
+        // initSdk() no longer opens the WebSocket (the app does it after first paint, in
+        // asyncSdkInit); attachPty() streams over it, so connect it here.
+        if (!sdk.connectionManager.connected) await sdk.connectionManager.connect();
         const cn = await sdk.ComputeNode.getById<InstanceType<SdkRealm['ComputeNode']>>('@local');
         if (!cn) throw new Error('No @local compute node after initSdk');
 

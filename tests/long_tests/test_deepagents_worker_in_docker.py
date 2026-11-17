@@ -2,19 +2,19 @@
 
 A clean container of ``docker/Dockerfile.bare`` — no Node, no npm, none of the four harness
 CLIs (the image asserts that at build time), no volumes, no keychain, no vendor login. The only
-funding is an OpenRouter key stored through the product's own two routes (``lm_keys`` →
-``llm-endpoint/select``), pinned to ``z-ai/glm-5.3``. So a turn that completes can only have been
+funding is a capped PUBLIC endpoint of the LOCAL hub, funded by Vertex and bound the loginless way
+(``flow llm user use <id> --hub``), pinned to ``MODEL`` (a non-Anthropic model Vertex serves). So a turn that completes can only have been
 run by the hidden ``deepagents`` vendor, and a claude-funded run cannot be mistaken for it: there
 is no claude.
 
 Two claims, weakest to strongest:
 
 1. A plain ``AgenticProcess(worker_type="deepagents")`` answers a prompt that needs a real tool
-   call, and its transcript names GLM.
+   call, and its transcript names the pinned model.
 2. The BUILTIN path needs no one to choose it: with no harness installed, a capability install
    resolves to the bootstrap worker on its own (``resolve_builtin_worker_type``).
 
-Needs docker and ``OPENROUTER_API_KEY`` (env or ``.env.local``); skips otherwise.
+Needs docker and a local Vertex-funded hub (``FLOWPAD_HUB_URL``, ``VERTEX_ROOT_ID``); skips otherwise.
 """
 
 from __future__ import annotations
@@ -31,11 +31,13 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tests.long_tests.conftest import _openrouter_key
 
 REPO = Path(__file__).resolve().parents[2]
 IMAGE = os.environ.get("FLOWPAD_BARE_DOCKER_IMAGE", "flowpad-backend:bare-test")
-MODEL = "z-ai/glm-5.3"
+#: Gemini 3.1 Pro on Vertex, the hub's own ``lg`` tier: the worker sends each call's thought_signature
+#: back (``deepagents/models.py``), so tool calls round-trip. gpt-oss-120b was unreliable on the 3-step
+#: bootstrap (tool calls printed as text, runs past the budget); GLM is not enabled on the QA project.
+MODEL = os.environ.get("FLOWPAD_BARE_MODEL", "google/gemini-3.1-pro-preview")
 pytestmark = [pytest.mark.timeout(900)]  # a cold image build + a fresh container's first turn; do not increase without approval
 
 
@@ -60,15 +62,18 @@ def _py(name: str, script: str) -> str:
 def container():
     if shutil.which("docker") is None or _sh("docker", "info", check=False).returncode != 0:
         pytest.skip("docker is not available")
-    key = _openrouter_key()
-    if not key:
-        pytest.skip("OPENROUTER_API_KEY is not set (env or .env.local)")
+    from tests.long_tests._vertex_hub import public_endpoint_for_containers
+
+    endpoint_id, hub_in_container = public_endpoint_for_containers("bare box", cost_usd_total=5.0)
     if os.environ.get("FLOWPAD_BARE_DOCKER_REBUILD") or _sh("docker", "image", "inspect", IMAGE, check=False).returncode != 0:
         build = _sh("docker", "build", "-f", "docker/Dockerfile.bare", "-t", IMAGE, ".", cwd=REPO, check=False)
         assert build.returncode == 0, f"image build failed:\n{build.stdout[-1500:]}\n{build.stderr[-3000:]}"
     name, port = f"flowpad-bare-{uuid.uuid4().hex[:6]}", _free_port()
-    _sh("docker", "run", "-d", "--name", name, "-p", f"{port}:{port}", "-e", f"LOCAL_SERVER_PORT={port}",
-        "-e", "IS_SANDBOX=1", "-e", "MINIHUB_RELOAD=False", IMAGE)
+    # A throwaway box the host-side test calls over the port map: it holds no cookie-gate token,
+    # so the gate is off (FLOWPAD_COOKIE_GATE=off), as CI runs its test backends.
+    _sh("docker", "run", "-d", "--name", name, "-p", f"{port}:{port}", "--add-host=host.docker.internal:host-gateway",
+        "-e", f"LOCAL_SERVER_PORT={port}",
+        "-e", "IS_SANDBOX=1", "-e", "MINIHUB_RELOAD=False", "-e", "FLOWPAD_COOKIE_GATE=off", IMAGE)
     try:
         base = f"http://localhost:{port}"
         deadline = time.monotonic() + 120
@@ -81,32 +86,30 @@ def container():
             time.sleep(1)
         else:
             pytest.fail(f"backend in {name} did not come up:\n{_sh('docker', 'logs', name, check=False).stderr[-2500:]}")
-        yield {"name": name, "base": base, "port": port, "key": key}
+        yield {"name": name, "base": base, "port": port, "endpoint_id": endpoint_id, "hub": hub_in_container}
     finally:
         _sh("docker", "rm", "-f", name, check=False)
 
 
 @pytest.fixture(scope="module")
 def funded(container):
-    """The product's own two routes, then GLM 5.3 for every tier (``Capability.model_map``)."""
+    """The loginless bind on the public endpoint, then MODEL for every tier (``Capability.model_map``)."""
     c = container
-    r = httpx.post(f"{c['base']}/api/v1/graph/compute_node/@local/lm_keys", json={"provider": "openrouter", "key": c["key"]}, timeout=60)
-    assert r.status_code == 200 and (r.json().get("data") or {}).get("valid") is True, r.text[:300]
-    r = httpx.post(f"{c['base']}/api/v1/graph/compute_node/@local/llm-endpoint/select",
-                   json={"harness": "deepagents", "kind": "api_key", "provider": "openrouter"}, timeout=60)
-    assert r.status_code == 200, r.text[:400]
+    bound = _sh("docker", "exec", c["name"], "sh", "-c",
+                f"flow llm user use {c['endpoint_id']} deepagents --hub {c['hub']}", check=False)
+    assert bound.returncode == 0, f"{bound.stdout[-800:]}\n{bound.stderr[-800:]}"
     out = _py(c["name"], f'''
 import asyncio
 from flow_sdk.builtin.capability import Capability
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
 async def main():
     cap = await Capability.get_by_kind(worker_capability_kind("deepagents"))
-    cap.model_map = {{"openrouter": {{t: "{MODEL}" for t in ("sm", "md", "lg")}}}}
+    cap.model_map = {{"flowpad": {{t: "{MODEL}" for t in ("sm", "md", "lg")}}}}
     await cap.save()
     print(cap.auth_mode, cap.api_provider)
 asyncio.run(main())
 ''')
-    assert out.split()[-2:] == ["api", "openrouter"], out
+    assert out.split()[-2:] == ["api", "flowpad"], out
     return c
 
 
@@ -158,7 +161,7 @@ asyncio.run(main())
 ''')
     result = json.loads(next(line for line in out.splitlines() if line.startswith("RESULT "))[7:])
     assert "deepagents" in result["worker_type"].lower()
-    assert result["model"] == MODEL, "the turn must have run on GLM 5.3 through the stored OpenRouter endpoint"
+    assert result["model"] == MODEL, f"the turn must have run on {MODEL} through the hub endpoint"
     assert "execute" in result["tools"], f"no real shell tool call: {result['types']}"
     assert token in result["text"], f"the answer did not come from the file: {result['text'][:300]}"
     assert result["types"][-1] == "result" and result["is_error"] is False
@@ -196,8 +199,9 @@ watching and nobody will answer a question.
    a. Make FlowPad notice the install: GET /api/v1/graph/capability?include_system=true, find the
       row whose kind is "harness.claude.cli", then POST /api/v1/graph/capability/<its id>/test and
       confirm it now reports available.
-   b. Fund it from this box's LLM endpoint: `flow llm list` shows the sources; make the OpenRouter
-      key source the claude harness's funding with `flow llm user use <row number> claude`.
+   b. Fund it from this box's LLM endpoint: `flow llm list` shows the sources; make the hub
+      endpoint that funds this box (the one the deepagents harness spends) the claude harness's
+      funding with `flow llm user use <row number> claude`.
 
 3. LAUNCH a FlowPad agentic process that runs on the claude worker, as proof the install works:
        POST /api/v1/graph/agentic_process
@@ -213,7 +217,7 @@ Finish with a short report of what you did and the id of the claude process.
 
 def test_the_builtin_worker_installs_claude_funds_it_and_launches_a_claude_process(funded):
     """The whole reason the builtin worker exists, end to end and with nobody helping it:
-    a deepagents process on GLM is TOLD to install Claude Code, enable it against this box's LLM
+    a deepagents process on MODEL is TOLD to install Claude Code, enable it against this box's LLM
     endpoint, and launch a claude-based agentic process — which can only work because of its own
     install. The test then checks evidence the agent cannot talk its way to."""
     c = funded
@@ -274,7 +278,7 @@ asyncio.run(main())
 ''')
     result = json.loads(next(line for line in proof.splitlines() if line.startswith("PROOF "))[6:])
     assert result["installed"] is True, "FlowPad's own install gate does not see claude"
-    assert (result["auth_mode"], result["api_provider"]) == ("api", "openrouter"), f"claude is not funded by the endpoint: {result}"
+    assert (result["auth_mode"], result["api_provider"]) == ("api", "flowpad"), f"claude is not funded by the endpoint: {result}"
     answered = [p for p in result["claude_processes"] if p["has_token"]]
     assert answered, f"no claude-worker ASSISTANT message carries the token — the install did not yield a working worker: {result}"
     # It ran as the real claude CLI (its transcript lives under ~/.claude) on the endpoint's model.

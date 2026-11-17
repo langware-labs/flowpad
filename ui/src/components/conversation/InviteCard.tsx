@@ -9,7 +9,10 @@ import {
   type IMessageInvite,
   type Invitation,
   type InvitationState,
+  Project,
+  TypeId,
 } from '@sdk';
+import { ProjectInstallAction } from '@src/components/conversation/asset-review/ProjectInstallAction';
 import { COMPACT } from '@src/components/conversation/CategoryChips';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
@@ -182,51 +185,80 @@ export function InviteCard({
   const pending = state === 'pending';
   const dim = state === 'declined' || state === 'revoked';
 
-  const actions = pending && mine ? null : pending ? (
-    <>
+  const actions =
+    pending && mine ? null : pending ? (
+      <>
+        <button
+          type="button"
+          className={OUTLINE}
+          disabled={busy !== null}
+          onClick={() => void answer('decline')}
+          data-testid="invite-decline"
+        >
+          {busy === 'decline' && <Loader2 className="me-1 inline h-3 w-3 animate-spin" />}
+          <Trans>Decline</Trans>
+        </button>
+        <button
+          type="button"
+          className={PRIMARY}
+          disabled={busy !== null}
+          onClick={() => void answer('accept')}
+          data-testid="invite-accept"
+        >
+          {busy === 'accept' ? t`Accepting…` : t`Accept`}
+        </button>
+      </>
+    ) : state === 'declined' ? null : (
       <button
         type="button"
-        className={OUTLINE}
-        disabled={busy !== null}
-        onClick={() => void answer('decline')}
-        data-testid="invite-decline"
+        className={state === 'accepted' ? PRIMARY : OUTLINE}
+        disabled={state !== 'accepted' || !target}
+        title={
+          state === 'revoked'
+            ? t`${sender} stopped sharing this ${typeNoun}`
+            : !target
+              ? t`This ${typeNoun} has no page to open here`
+              : undefined
+        }
+        onClick={(e) => {
+          e.stopPropagation();
+          if (target) navigation.openDock(target);
+        }}
+        data-testid="invite-open"
       >
-        {busy === 'decline' && <Loader2 className="me-1 inline h-3 w-3 animate-spin" />}
-        <Trans>Decline</Trans>
+        <Trans>Open</Trans>
       </button>
-      <button
-        type="button"
-        className={PRIMARY}
-        disabled={busy !== null}
-        onClick={() => void answer('accept')}
-        data-testid="invite-accept"
-      >
-        {busy === 'accept' ? t`Accepting…` : t`Accept`}
-      </button>
-    </>
-  ) : state === 'declined' ? null : (
-    <button
-      type="button"
-      className={state === 'accepted' ? PRIMARY : OUTLINE}
-      disabled={state !== 'accepted' || !target}
-      title={
-        state === 'revoked'
-          ? t`${sender} stopped sharing this ${typeNoun}`
-          : !target
-            ? t`This ${typeNoun} has no page to open here`
-            : undefined
-      }
-      onClick={(e) => {
-        e.stopPropagation();
-        if (target) navigation.openDock(target);
-      }}
-      data-testid="invite-open"
-    >
-      <Trans>Open</Trans>
-    </button>
-  );
+    );
 
   const chip = <InviteStateChip state={state} resolvedAt={resolvedAt} busy={busy === 'accept'} mine={mine} />;
+
+  // A project shared with me has no files here until it is installed: in the thread the card offers
+  // the review popup's project action (Install project, then Open project), not a bare Open onto an
+  // empty project home. Since shares stopped sending a message of their own (b5658b756) this card is
+  // the only place the invitee meets the project.
+  if (layout === 'card' && invite.targetType === Project.type && state === 'accepted' && !mine) {
+    return (
+      <div
+        data-testid="invite-card"
+        data-invite-state={state}
+        className="mt-2 flex max-w-2xl items-start gap-3 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+          <Icon className="h-4 w-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium text-foreground">{name}</span>
+          <span className="block truncate text-xs text-muted-foreground">
+            <Trans>
+              {typeLabel} · shared by {sender}
+            </Trans>
+          </span>
+        </span>
+        {chip}
+        <ProjectInstallAction typeId={new TypeId(Project.type, invite.targetId)} entityUnavailable={false} />
+      </div>
+    );
+  }
 
   if (layout === 'card') {
     return (

@@ -192,7 +192,9 @@ async def list_schema_views():
             "pointer_form": meta.pointer_form,
             "provides": list(meta.provides),
             "opens": list(meta.opens),
-            "subplaces": [{"pointer": p, "label": label} for p, label in meta.subplaces],
+            "subplaces": [
+                {"pointer": p, "label": label, "aliases": list(dict(meta.subplace_aliases).get(p, ()))} for p, label in meta.subplaces
+            ],
         }
         for view, meta in da.VIEW_META.items()
         if meta.addressable

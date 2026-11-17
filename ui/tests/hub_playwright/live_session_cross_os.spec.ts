@@ -17,7 +17,7 @@ import { execSync } from 'node:child_process';
 import { expect, test, type Page } from '@playwright/test';
 
 import { ALICE, BOB, gotoConversation, openInstance, startConversationViaUi } from './helpers';
-import { BOB_EMAIL } from './_live_session_setup';
+import { BOB_EMAIL, openSessionCard } from './_live_session_setup';
 
 const SHOTS = process.env.CROSSOS_SHOTS || '/tmp';
 const GUEST_RESTART = process.env.GUEST_RESTART || '';
@@ -29,14 +29,20 @@ const ask = (i: number | string) => `Reply with exactly this word and nothing el
 const TURN_BUDGET = 240_000;
 
 type Row = Record<string, unknown>;
-const get = async (url: string) => ((await (await fetch(url)).json()) as { data: Row[] }).data;
+const get = async (url: string) => {
+  const body = (await (await fetch(url)).json()) as { status?: string; message?: string; data: Row[] };
+  if (!Array.isArray(body.data)) throw new Error(`${url}: ${body.status} ${body.message}`);
+  return body.data;
+};
+// A list's paging lives inside ``filter``, next to a ``match`` (a bare ``?limit=`` is refused with 400).
+const inConversation = (convId: string, limit: number) =>
+  `filter=${encodeURIComponent(JSON.stringify({ match: { op: '$EQ', operands: ['conversation_id', convId] }, limit }))}`;
 const sessionsOn = async (backend: string, convId: string) =>
-  (await get(`${backend}/api/v1/graph/remote_worker_session?limit=500`))
-    .filter((r) => r.conversation_id === convId)
+  (await get(`${backend}/api/v1/graph/remote_worker_session?${inConversation(convId, 500)}`))
     .sort((a, b) => String(a.started_at).localeCompare(String(b.started_at)));
 const latest = async (backend: string, convId: string) => (await sessionsOn(backend, convId)).at(-1);
 const guestMessages = async (convId: string) =>
-  (await get(`${ALICE.backendUrl}/api/v1/graph/flow_message?limit=5000`)).filter((m) => m.conversation_id === convId);
+  get(`${ALICE.backendUrl}/api/v1/graph/flow_message?${inConversation(convId, 5000)}`);
 const replies = async (convId: string) =>
   (await guestMessages(convId))
     .filter((m) => String(m.text ?? '').startsWith('Prompt response'))
@@ -133,7 +139,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
 
   // 04 — burst: 10 rapid follow-ups from the view + 3 prompts from the chat, all in the one session
   await gotoConversation(alice, convId);
-  await alice.getByTestId('session-card').last().click();
+  await openSessionCard(alice.getByTestId('session-card').last());
   await alice.waitForURL(/\/dock\/live_session\//);
   for (let i = 1; i <= 10; i++) await sendInView(alice, ask(`b${i}`));
   await gotoConversation(alice, convId);
@@ -157,7 +163,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await gotoConversation(alice, convId);
   await expect(alice.getByTestId('session-card')).toHaveCount(2);
   await both(alice, bob, convId, '04-burst-one-line');
-  await alice.getByTestId('session-card').last().click();
+  await openSessionCard(alice.getByTestId('session-card').last());
   await alice.waitForURL(/\/dock\/live_session\//);
   // The view lists every burst reply, in send order (wait for them to render first).
   const burstReplies = alice.getByTestId('live-session-reply').filter({ hasText: /XOb\d+-/ });
@@ -177,7 +183,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
 
   // 06 — a file comes back from the host
   await gotoConversation(alice, convId);
-  await alice.getByTestId('session-card').last().click();
+  await openSessionCard(alice.getByTestId('session-card').last());
   await alice.waitForURL(/\/dock\/live_session\//);
   const fname = `crossos-${T}.txt`;
   await sendInView(
@@ -208,7 +214,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
     });
   expect((await put(BAD_WORKDIR)).ok).toBe(true);
   await gotoConversation(alice, convId);
-  await alice.getByTestId('session-card').last().click();
+  await openSessionCard(alice.getByTestId('session-card').last());
   await alice.waitForURL(/\/dock\/live_session\//);
   await sendInView(alice, ask('fail'));
   await until('the prompt fails on the host', async () => (await latest(BOB.backendUrl, convId))?.status === 'error');
@@ -224,7 +230,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await both(alice, bob, convId, '07-after-retry');
 
   // 08 — host backend restarts with prompts queued: each runs exactly once after
-  await alice.getByTestId('session-card').last().click();
+  await openSessionCard(alice.getByTestId('session-card').last());
   await alice.waitForURL(/\/dock\/live_session\//);
   for (const k of ['h1', 'h2', 'h3']) await sendInView(alice, ask(k));
   restart(HOST_RESTART, 'host');
@@ -242,7 +248,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
 
   // 09 — guest backend restarts mid-turn: the reply still lands on the guest
   await gotoConversation(alice, convId);
-  await alice.getByTestId('session-card').last().click();
+  await openSessionCard(alice.getByTestId('session-card').last());
   await alice.waitForURL(/\/dock\/live_session\//);
   await sendInView(alice, ask('g1'));
   restart(GUEST_RESTART, 'guest');
@@ -256,7 +262,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await both(alice, bob, convId, '09-after-guest-restart');
 
   // 10 — host Disconnect mid-turn: ended on both
-  await alice.getByTestId('session-card').last().click();
+  await openSessionCard(alice.getByTestId('session-card').last());
   await alice.waitForURL(/\/dock\/live_session\//);
   await sendInView(alice, 'Count slowly from 1 to 30, one number per line, then reply END.');
   await until('the turn is running', async () => (await latest(BOB.backendUrl, convId))?.status === 'running', 120_000);

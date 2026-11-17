@@ -64,7 +64,13 @@ function draftOf(t: ITrigger): Draft {
 export function MessageRulePage({ route }: { route: AutomationsRoute }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const triggerId = route.trigger ?? null;
+  // A new rule's page stays mounted (and clickable) while Save opens the saved rule's page and its row is
+  // read: the id it just created is this page's id from then on, so a Try or a second Save in that window
+  // acts on that rule instead of creating another one. Kept per new-rule address, so starting another new
+  // rule here starts clean.
+  const newKey = `new:${route.recipe ?? ''}:${route.source ?? ''}`;
+  const [created, setCreated] = useState<{ key: string; id: string } | null>(null);
+  const triggerId = route.trigger ?? (route.creating && created?.key === newKey ? created.id : null);
   const isNew = !triggerId;
   // The row is the rule. The list is read once, for the one thing only it knows (whether Flowpad owns the
   // rule) — this page holds no poll of every automation.
@@ -81,7 +87,7 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
   const { data: sources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
   const channels = useMemo(() => sources.filter((s) => !!s.channel), [sources]);
 
-  const loadKey = isNew ? `new:${route.recipe ?? ''}:${route.source ?? ''}` : `id:${triggerId}`;
+  const loadKey = isNew ? newKey : `id:${triggerId}`;
   const [loaded, setLoaded] = useState<{ key: string; base: Draft; draft: Draft } | null>(null);
   useEffect(() => {
     if (loaded?.key === loadKey) return;
@@ -149,7 +155,10 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
     try {
       const saved = await save.mutateAsync({ triggerId, fields });
       setLoaded((l) => (l ? { ...l, base: l.draft } : l));
-      if (isNew && saved.id) navigation.openDock(DockPointer.forAutomations({ trigger: saved.id }));
+      if (isNew && saved.id) {
+        setCreated({ key: newKey, id: saved.id });
+        navigation.openDock(DockPointer.forAutomations({ trigger: saved.id }));
+      }
       notify.success({ title: isNew ? t`Rule created` : t`Saved`, message: fields.name });
       return saved.id ?? triggerId;
     } catch (e) {

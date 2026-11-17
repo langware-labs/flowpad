@@ -1,6 +1,7 @@
 import { adjusted } from '../../adjustableTimeout';
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, gotoShell, openTabViaMenu } from './helpers';
+import { dismissSetupModal, gotoShell, openTabViaMenu, waitForOutput } from './helpers';
+import { apiBase } from '../_shared/api';
 
 /**
  * Shell Tab Title & Switch Regression
@@ -14,23 +15,33 @@ import { dismissSetupModal, gotoShell, openTabViaMenu } from './helpers';
  * relying on Claude CLI /rename which may be overwritten on reconnect.
  */
 
+/**
+ * Every tab chip with its name and active flag. The strip drops each chip's title once chips are
+ * narrower than 64px (TabStrip density 'icon': ~18+ tabs on a 1280px page), so the name is read off
+ * the chip's Tab row (keyed by its `data-terminal-target`), not off a label span that may be absent.
+ */
+async function getTabs(page: Page): Promise<Array<{ testId: string; name: string; active: boolean }>> {
+  const chips = await page.locator('[data-testid^="tab-"][data-terminal-target]').evaluateAll((els) =>
+    els.map((el) => ({
+      testId: el.getAttribute('data-testid') || '',
+      key: el.getAttribute('data-terminal-target') || '',
+      active: el.getAttribute('data-active') === 'true',
+    })),
+  );
+  const res = await page.request.get(`${apiBase()}/api/v1/graph/tab/list_all`);
+  const tabs: Array<{ pointer: string; name: string | null }> = (await res.json()).data.tabs;
+  const byPointer = new Map(tabs.map((t) => [JSON.parse(t.pointer || '{}').pointer as string, t.name || '']));
+  return chips.map((c) => ({ testId: c.testId, name: byPointer.get(c.key.split('|')[1]) || '', active: c.active }));
+}
+
 /** Get the text of all tab labels, in order */
 async function getTabNames(page: Page): Promise<string[]> {
-  return page.locator('[data-testid^="tab-"]').evaluateAll((els) =>
-    els.map((el) => (el.querySelector('span.font-medium')?.textContent ?? '').trim()),
-  );
+  return (await getTabs(page)).map((t) => t.name);
 }
 
 /** Get the name of the currently active (selected) tab */
 async function getActiveTabName(page: Page): Promise<string> {
-  return page.locator('[data-testid^="tab-"]').evaluateAll((els) => {
-    for (const el of els) {
-      if (el.getAttribute('data-active') === 'true') {
-        return (el.querySelector('span.font-medium')?.textContent ?? '').trim();
-      }
-    }
-    return '';
-  });
+  return (await getTabs(page)).find((t) => t.active)?.name ?? '';
 }
 
 /**
@@ -42,23 +53,7 @@ function tabNameMatches(actual: string, expected: string): boolean {
 
 /** Click a tab whose name ends with the given text */
 async function clickTabByName(page: Page, tabName: string) {
-  // Read all tab names + testids in a single DOM evaluation — iterating with
-  // playwright locators on a crowded tab strip stalls when one tab lacks the
-  // expected `span.font-medium` and the per-tab textContent locator hangs
-  // until the per-test timeout.
-  const matched = await page.locator('[data-testid^="tab-"]').evaluateAll((els, expected) => {
-    function matches(actual: string): boolean {
-      return actual === expected || actual.endsWith(' ' + expected) || actual.endsWith(expected);
-    }
-    for (const el of els) {
-      const span = el.querySelector('span.font-medium');
-      const text = (span?.textContent ?? '').trim();
-      if (text && matches(text)) {
-        return el.getAttribute('data-testid');
-      }
-    }
-    return null;
-  }, tabName);
+  const matched = (await getTabs(page)).find((t) => t.name && tabNameMatches(t.name, tabName))?.testId ?? null;
   if (!matched) {
     throw new Error(`Tab "${tabName}" not found. Available tabs: ${await getTabNames(page)}`);
   }
@@ -117,6 +112,11 @@ test.describe('Shell Tab Title and Switching', () => {
       }).toPass({ timeout: adjusted(10_000) });
 
       const tab = page.locator(`[data-testid="${newTestId}"]`);
+      // Rename only once the new shell is up, as a person would: when its terminal finishes booting it
+      // takes focus, which blurs an open rename input — and blur COMMITS and closes the editor
+      // (TabStrip handleNameBlur), so a press('Enter') right after fill() found no input on a slower host.
+      // The shell is the user's login $SHELL: bash ends its prompt in '$', zsh in '%', root in '#'.
+      await waitForOutput(page, /[$%#>]\s*$/, adjusted(15_000));
       // Open rename via the tab's ContextMenu "Rename" item (same handler as the
       // span dblclick — handleTabDoubleClick). The synthetic dblclick raced the
       // selectTab re-render and dropped the event under load; the context menu is

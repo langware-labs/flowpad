@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test';
+import { adjusted } from '../../adjustableTimeout';
 import { apiContext } from '../_shared/api';
 import { selectViewMode, withViewMode } from '../_shared/view-mode';
 
@@ -16,11 +17,16 @@ const workers = [
   // account rejects. Use the model verified by the isolated Codex CLI lab.
   { type: 'codex', model: 'gpt-5.6-terra', harness: 'harness.codex.cli' },
   { type: 'copilot', model: 'auto', harness: 'harness.copilot.cli' },
-  { type: 'opencode', model: 'opencode/big-pickle', harness: 'harness.opencode.cli' },
+  // `composer`: the TUI's composer-ready marker (its driver's `pty_composer_ready_pattern`). Keys typed
+  // before it shows are dropped: the head of the prompt is lost while the PTY already reads as ready.
+  { type: 'opencode', model: 'opencode/big-pickle', harness: 'harness.opencode.cli', composer: /Ask anything/ },
 ];
 const workspaceRoot = process.env.NAMING_WORKSPACE_ROOT;
 const selected = process.env.NAMING_WORKER;
 const AP = '/api/v1/graph/agentic_process';
+// A real model's first reply. The committed budget is 20 s; a slower host widens it with
+// ADJUSTABLE_TIMEOUT, never by editing this.
+const FIRST_REPLY_MS = adjusted(20_000);
 
 async function processData(api: APIRequestContext, id: string) {
   const response = await api.get(`${AP}/${id}`);
@@ -162,13 +168,14 @@ for (const worker of workers.filter((candidate) => !selected || candidate.type =
 
       test('a real first turn names the tab, header and sidebar without refresh', async ({ page }, testInfo) => {
         const prompt = `Ref ${id.slice(0, 6)}. Why is the ocean blue? One sentence.`;
+        if (pty && worker.composer) await expect(panel(page).locator('.xterm-rows')).toContainText(worker.composer);
         await sendPrompt(page, prompt, pty);
         await expect.poll(async () => (await processData(api, id)).name).toBeTruthy();
         await expect.poll(async () => {
           const response = await api.post(`${AP}/${id}/transcript/full`, { data: {} });
           const transcript = (await response.json()).data;
           return transcript.entries.some((entry: { kind?: string }) => entry.kind === 'assistant_message');
-        }).toBe(true);
+        }, { message: 'an assistant_message from the real model', timeout: FIRST_REPLY_MS }).toBe(true);
         if (worker.type === 'claude_code') {
           // Both Claude transports emit native ai-title metadata. Equality on
           // the immediate fallback alone cannot prove that import is alive.
@@ -221,7 +228,10 @@ for (const worker of workers.filter((candidate) => !selected || candidate.type =
         await expect(page).toHaveURL(new RegExp(`/project/${projectId}`));
         await chip(page, id).getByRole('button', { name: 'Close tab', exact: true }).click();
         await expect(chip(page, id)).toHaveCount(0);
-        await page.goto('/dock/shell');
+        // State the project like every address here does its mode: URL-first, a bare /dock/shell names
+        // no project, so the chats navigator scopes to user assets only ('No current project') and this
+        // project's session row is not listed.
+        await page.goto(withViewMode(`/dock/shell?scope-mode=project&scope-activeProjectId=${projectId}`, mode));
         await historyRow(page, id).click();
         await expectNames(page, id, chosenName);
         await selectViewMode(page, pty ? 'standard' : 'advanced');

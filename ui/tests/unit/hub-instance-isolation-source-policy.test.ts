@@ -58,7 +58,9 @@ describe('hub launched-instance isolation source policy', () => {
     expect(INSTANCES).toContain('process.env.BOB_EMAIL');
     expect(INSTANCES).toContain('process.env.BOB_PW');
     expect(INSTANCES).toContain('env.FLOW_INSTANCE !== name');
-    expect(INSTANCES).toContain("path.join(flowHome, 'instances', name, 'launcher.json')");
+    // The launcher registry lives in the instance's data dir under FLOW_HOME (instanceDataDir, ea03b35c7).
+    expect(INSTANCES).toContain("path.join(path.resolve(process.env.FLOW_HOME || path.join(homedir(), '.flow')), 'instances', name)");
+    expect(INSTANCES).toContain("path.join(instanceDataDir(name), 'launcher.json')");
     expect(INSTANCES).toContain('launcher.name !== name');
     expect(INSTANCES).toContain('Number(launcher.backend_port) !== Number(backendPort)');
     expect(INSTANCES).toContain('Number(launcher.frontend_port) !== Number(frontendPort)');

@@ -120,7 +120,9 @@ export async function resolveProcessIdentity(processId: string): Promise<Agentic
   if (cached) return cached;
   let process: AgenticProcess | null;
   try {
-    process = await perfTime('AgenticProcess.getById (network)', () => AgenticProcess.getById<AgenticProcess>(processId));
+    process = await perfTime('AgenticProcess.getById (network)', () =>
+      AgenticProcess.getById<AgenticProcess>(processId, AgenticProcess.getLoadingExpansions()),
+    );
   } catch (cause) {
     throw new ProcessLoadError(errorStatus(cause) === 404 ? 'entity_not_found' : 'network_error', processId, null, cause);
   }
@@ -180,9 +182,13 @@ export async function loadProcess(processId: string): Promise<{ process: Agentic
   // Tab. No imperative strip fetch needed.
 
   await perfTime('dataContext sync setters (shellId/target/workdir)', () => {
-    // Headless: '' clears any stale active shell (same sentinel as load-shell).
-    dataContext.setActiveShellId(process.pty_mode === false ? '' : (process.shell_id ?? ''));
-    dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
+    // One context change, not three: see `dataContext.batch`.
+    dataContext.batch(() => {
+      // Headless: '' clears any stale active shell (same sentinel as load-shell).
+      dataContext.setActiveShellId(process.pty_mode === false ? '' : (process.shell_id ?? ''));
+      dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
+      dataContext.setWorkdir(process.workdir ?? shell?.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
+    });
     // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
     // must stay fast; the in-cache bump above is the synchronous seed.
     void process.activate().catch(() => {});
@@ -190,7 +196,6 @@ export async function loadProcess(processId: string): Promise<{ process: Agentic
     // not the AgenticProcess row, so without this close-to-most-recently-active
     // falls back to tab_order.
     tabManager.stampTargetRecency(AgenticProcess.type, processId);
-    dataContext.setWorkdir(process.workdir ?? shell?.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   });
   await perfTime('setContextEntityTypeId(CurrentProcessTypeId)', () =>
     dataContext.setContextEntityTypeId(
