@@ -4083,7 +4083,13 @@ class AgenticProcess(Entity):
             return turn_task is not None and turn_task.done() and not prompt_worker_active(self.id)
 
         def _unfinished_turn() -> RuntimeError:
-            return RuntimeError(getattr(self, "start_failure", None) or "the worker exited without finishing its turn")
+            # The worker's own error line (a refusal, a 429) is the reason every caller needs.
+            said = self._worker_status_detail(_WS.ERROR)
+            return RuntimeError(
+                getattr(self, "start_failure", None)
+                or (said.text if said else "")
+                or "the worker exited without finishing its turn"
+            )
 
         transcript_path: Path | None = None
         while transcript_path is None:
