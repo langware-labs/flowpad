@@ -51,6 +51,7 @@ import {
   channelOffers,
   isListedChannel,
   isMessageDriverSpec,
+  messageChannelChoices,
   sourcesQuery,
   useSourceSpecs,
 } from '@src/components/data-sources/use-source-specs';
@@ -101,9 +102,13 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
     () => (ownerKey ? channelOffers(specs, rows, forAgent) : NO_OFFERS),
     [specs, rows, ownerKey, forAgent],
   );
+  const choices = useMemo(
+    () => (ownerKey ? messageChannelChoices(specs, forAgent) : NO_OFFERS),
+    [specs, ownerKey, forAgent],
+  );
   const builtInOffered = useBuiltInEmailOffered(forAgent && offers.some((o) => o.spec.provisioned) ? owner : null);
   // Until both lists land, `rows` is empty for want of data, not for want of channels.
-  return { rows, specFor, offers, builtInOffered, loading: specsLoading || sourcesLoading };
+  return { rows, specFor, offers, choices, builtInOffered, loading: specsLoading || sourcesLoading };
 }
 
 /** Whether the hub can give this agent a provisioned channel (its built-in email): asked once, when one is on offer.
@@ -664,13 +669,21 @@ function ChannelOfferMark({
 
 /** The channels still to connect, as the empty list offers them: one button each, and the add
  *  dialog it opens. Draws nothing when there is none to offer. */
-export function ConnectChannelPrompt({ owner, offers }: { owner: TypeId; offers: ChannelOffer[] }) {
+export function ConnectChannelPrompt({
+  owner,
+  offers,
+  title,
+}: {
+  owner: TypeId;
+  offers: ChannelOffer[];
+  title?: string;
+}) {
   const { t } = useLingui();
   const [initial, setInitial] = useState<DataDriver | null>(null);
   if (offers.length === 0) return null;
   return (
     <div className="flex flex-col items-center gap-2" data-testid="connect-channel-prompt">
-      <span className="text-sm text-foreground">{t`Get your messages here`}</span>
+      <span className="text-sm text-foreground">{title ?? t`Get your messages here`}</span>
       <div className="flex flex-wrap justify-center gap-2">
         {offers.map((offer) => {
           const Glyph = lucideByName(offer.iconName);

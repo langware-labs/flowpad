@@ -122,13 +122,26 @@ export function sourceChoices(specs: DataDriver[]): SourceChoice[] {
     }));
 }
 
+/** Every message channel a person may add (one per group), internal plumbing left out: what an empty
+ *  stream inbox offers under "Add a message channel". */
+export const messageChannelChoices = (specs: DataDriver[], forAgent: boolean): SourceChoice[] =>
+  sourceChoices(
+    offeredSpecs(specs, forAgent).filter(
+      (s) => isMessageDriverSpec(s) && !(s.kind ?? '').startsWith(INTERNAL_KIND_PREFIX),
+    ),
+  ).sort((a, b) => a.label.localeCompare(b.label));
+
 /** A channel still to connect, as a stream inbox draws it by default. */
 export type ChannelOffer = SourceChoice;
 
 /** The channels a stream inbox draws by default for an owner who has connected none of them: every
  *  offered message driver that declares `featured` (one per group). Empty once the owner has a source of
  *  ANY featured channel, whatever its status — from then on the + button is the way to more. */
-export function channelOffers(specs: DataDriver[], rows: Pick<DataSource, 'provider'>[], forAgent: boolean): ChannelOffer[] {
+export function channelOffers(
+  specs: DataDriver[],
+  rows: Pick<DataSource, 'provider'>[],
+  forAgent: boolean,
+): ChannelOffer[] {
   const offered = offeredSpecs(specs, forAgent).filter(isMessageDriverSpec);
   const featured = new Set(offered.filter((s) => s.featured).map(choiceKey));
   const connected = new Set(rows.map((r) => r.provider));

@@ -822,6 +822,7 @@ export function StreamInboxView({
     rows: ownerChannels,
     specFor,
     offers: channelOffers,
+    choices: channelChoices,
     builtInOffered,
     loading: channelsLoading,
   } = useAttachedChannels(channelsOwner);
@@ -1833,13 +1834,18 @@ export function StreamInboxView({
           </div>
         )}
 
-        {initialLoading && (
+        {(initialLoading || (!rowsReady.current && sorted.length > 0)) && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             <Trans>Loading…</Trans>
           </div>
         )}
 
-        {!initialLoading && visibleCount === 0 && membershipPendingCount === 0 && (
+        {/* Rows mount only once their messages land (`rowsReady`); until then a non-empty page has
+            visibleCount 0 and must still read as loading, not as "No conversations". */}
+        {!initialLoading &&
+          (rowsReady.current || sorted.length === 0) &&
+          visibleCount === 0 &&
+          membershipPendingCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
               {searchActive || columnFilterActive
@@ -1871,7 +1877,9 @@ export function StreamInboxView({
                 // Narrowed to one channel, the list is empty for want of mail on IT: offering other channels
                 // here answers a question nobody asked.
                 channelsOwner &&
-                channelFilter.size === 0 && <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
+                channelFilter.size === 0 && (
+                  <ConnectChannelPrompt owner={channelsOwner} offers={channelChoices} title={t`Add a message channel`} />
+                )
               ))}
             {!inArchivedView && !searchActive && !columnFilterActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
