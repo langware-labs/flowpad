@@ -41,6 +41,8 @@ class QATestFileSpec(_QADocument):
     path: str = ""
     runner: Optional[str] = None
     test_count: Optional[int] = None
+    commit_sha: Optional[str] = None
+    blob_sha: Optional[str] = None
     removed: bool = False
     assigned_by: str = "mapper"
     created_at: Optional[str] = None
@@ -51,6 +53,7 @@ class QATestCaseSpec(_QAChildDocument):
 
     phase: str = ""
     test_file: str = ""
+    commit_sha: Optional[str] = None
     removed: bool = False
     assigned_by: str = "mapper"
     created_at: Optional[str] = None

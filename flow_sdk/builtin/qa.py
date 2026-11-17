@@ -23,8 +23,10 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.types import EntityType
 
 
-class _FoundByNaturalKey:
+class _FoundByNaturalKey(Entity):
     """A create for a natural key a stored row already holds answers with that row (the graph create route's hook)."""
+
+    _abstract: ClassVar[bool] = True
 
     async def find_existing_for_create(self) -> "Entity | None":
         key = {name: getattr(self, name) for name in SchemaRegistry.get(self.get_type()).natural_key}
@@ -35,6 +37,8 @@ class _FoundByNaturalKey:
 
 class _NestedInParent(_FoundByNaturalKey):
     """A row whose document nests in its parent's folder: ``parent_type_id`` is taken from the field naming the parent."""
+
+    _abstract: ClassVar[bool] = True
 
     #: The field holding the parent's id, and the parent's type.
     nests_in: ClassVar[tuple[str, EntityType]]
@@ -47,7 +51,7 @@ class _NestedInParent(_FoundByNaturalKey):
         return await super()._prepare_for_storage(scope_root)
 
 
-class QAPhase(_FoundByNaturalKey, Entity):
+class QAPhase(_FoundByNaturalKey):
     """A phase of the plan: a group of test files run together (e.g. "pytest unit", "Playwright")."""
 
     type: str = APIField(default=EntityType.QA_PHASE.value)
@@ -60,7 +64,7 @@ class QAPhase(_FoundByNaturalKey, Entity):
     created_at: Optional[str] = APIField(default=None, description="When it was defined, ISO-8601 UTC")
 
 
-class QATestFile(_FoundByNaturalKey, Entity):
+class QATestFile(_FoundByNaturalKey):
     """A test file of the plan, in exactly one phase."""
 
     type: str = APIField(default=EntityType.QA_TEST_FILE.value)
@@ -76,6 +80,11 @@ class QATestFile(_FoundByNaturalKey, Entity):
     runner: Optional[str] = APIField(default=None)
     #: How many test cases the mapper counted in it, when it knows.
     test_count: Optional[int] = APIField(default=None)
+    #: The commit it was mapped at.
+    commit_sha: Optional[str] = APIField(default=None)
+    #: Its git blob id (the hash of its content) at ``commit_sha``. The same blob id at another commit: the file is unchanged
+    #: there and its mapping holds; a different one: it changed since it was mapped.
+    blob_sha: Optional[str] = APIField(default=None)
     #: True once the file is gone from the repository: it stays, with its executions, and is no longer planned.
     removed: bool = APIField(default=False)
     #: ``"mapper"`` | ``"tester"``: who put it in its phase.
@@ -83,7 +92,7 @@ class QATestFile(_FoundByNaturalKey, Entity):
     created_at: Optional[str] = APIField(default=None, description="When it was defined, ISO-8601 UTC")
 
 
-class QATestCase(_NestedInParent, Entity):
+class QATestCase(_NestedInParent):
     """A test case of the plan, in one test file. ``name`` is the test case as its runner names it."""
 
     nests_in: ClassVar[tuple[str, EntityType]] = ("test_file", EntityType.QA_TEST_FILE)
@@ -95,6 +104,8 @@ class QATestCase(_NestedInParent, Entity):
     phase: str = APIField(default="")
     #: The ``QATestFile`` it is in, by id.
     test_file: str = APIField(default="")
+    #: The commit it was registered at. Whether it changed since is its test file's ``blob_sha``.
+    commit_sha: Optional[str] = APIField(default=None)
     #: True once the test case is gone from the repository: it stays, with its executions, and is no longer planned.
     removed: bool = APIField(default=False)
     #: ``"mapper"`` | ``"tester"``: who registered it.
@@ -102,7 +113,7 @@ class QATestCase(_NestedInParent, Entity):
     created_at: Optional[str] = APIField(default=None, description="When it was registered, ISO-8601 UTC")
 
 
-class QACycle(_FoundByNaturalKey, Entity):
+class QACycle(_FoundByNaturalKey):
     """One QA cycle: the plan run on a repository's branch, in iterations. ``name`` says what it is."""
 
     type: str = APIField(default=EntityType.QA_CYCLE.value)
@@ -124,7 +135,7 @@ class QACycle(_FoundByNaturalKey, Entity):
     notes: Optional[str] = APIField(default=None)
 
 
-class QAIteration(_NestedInParent, Entity):
+class QAIteration(_NestedInParent):
     """One pass over the plan within a cycle; fixes land between iterations."""
 
     nests_in: ClassVar[tuple[str, EntityType]] = ("cycle", EntityType.QA_CYCLE)
@@ -156,7 +167,7 @@ class QAIteration(_NestedInParent, Entity):
     request: Optional[str] = APIField(default=None)
 
 
-class QATestExecution(_NestedInParent, Entity):
+class QATestExecution(_NestedInParent):
     """One attempt at one test case in an iteration: the one record test-file and phase verdicts are inferred from."""
 
     nests_in: ClassVar[tuple[str, EntityType]] = ("iteration", EntityType.QA_ITERATION)
