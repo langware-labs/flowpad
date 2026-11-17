@@ -1,7 +1,7 @@
 /**
  * The message classifier's page: the one automation that gives each arriving message its tag.
  *
- *   IF a message arrives → THEN classify it under [inbox]
+ *   IF a message arrives → THEN classify it under [stream_inbox]
  *
  * It is Flowpad's own rule, so there is nothing to build here: a switch (classify arrivals or not) and
  * the way to the tag tree, which is where what it does is decided. No delete, no JSON, no try list.

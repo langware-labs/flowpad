@@ -104,7 +104,7 @@ export function useAutomationWords(): AutomationWords {
       if (w.kind === 'schedule' && w.schedule) return schedule(w.schedule);
       if (w.kind === 'event' && w.event) {
         if (isMessagePattern(w.event.pattern)) {
-          // A tag rule names its tags by their last part ("inbox.support.billing" reads "billing").
+          // A tag rule names its tags by their last part ("stream_inbox.support.billing" reads "billing").
           const tags = (w.event.message_tags ?? []).map((tag) => tag.split('.').at(-1)).join(` ${t`or`} `);
           return tags ? t`When a message is tagged ${tags}` : t`When a message arrives`;
         }

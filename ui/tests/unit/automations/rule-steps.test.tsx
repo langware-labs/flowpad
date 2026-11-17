@@ -68,8 +68,8 @@ describe('the words', () => {
   const words = () => renderHook(() => useAutomationWords()).result.current;
 
   it('a tag rule names its tags; without tags it is a message arriving', () => {
-    expect(words().when(event(['inbox.billing']))).toBe('When a message is tagged billing');
-    expect(words().when(event(['inbox.billing', 'bug']))).toBe('When a message is tagged billing or bug');
+    expect(words().when(event(['stream_inbox.billing']))).toBe('When a message is tagged billing');
+    expect(words().when(event(['stream_inbox.billing', 'bug']))).toBe('When a message is tagged billing or bug');
     expect(words().when(event())).toBe('When a message arrives');
   });
 
