@@ -92,9 +92,13 @@ test('2 the hub UI opens the agent in its editor, read from git', async ({ page 
 
   await page.goto(`${HUB_FE}/dock/hub/assets/editor/agent/typeid/agent-${agentId}`);
   await expect(page, 'the hub UI, not its login page').not.toHaveURL(/login\.html/);
-  await expect(page.getByTestId('agent-definition-fields')).toBeVisible();
+  // The definition is read from git: no load error, and its prompt is on the Instructions tab (the editor's
+  // fields moved into Summary/Instructions/Settings tabs; `agent-definition-fields` now holds only that error).
+  await expect(page.getByTestId('agent-tab-instructions')).toBeVisible();
+  await expect(page.getByTestId('agent-definition-error')).toHaveCount(0);
   await expect(page.getByTestId('asset-git-connection-required')).toHaveCount(0);
   await expect(page.getByTestId('entity-resolution-missing-asset')).toHaveCount(0);
+  await page.getByTestId('agent-tab-instructions').click();
   await expect(page.getByText(prompt, { exact: false }).first()).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('hub-agent-editor.png'), fullPage: true });
 });

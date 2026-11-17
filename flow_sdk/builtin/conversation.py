@@ -470,6 +470,11 @@ class Conversation(ProjectedFields, Entity):
         out.sort(key=_event_key)
         return out
 
+    @classmethod
+    def recency(cls, messages: list) -> Optional[datetime]:
+        """The newest ``event_time`` among ``messages`` — the conversation's ``updated_date`` — or None."""
+        return max(filter(None, (cls._as_datetime(m.event_time) for m in messages)), default=None)
+
     @staticmethod
     def count_listed_files(messages: list) -> int:
         """How many files these messages list (``Attachment.is_listed_file``) — ``attachment_count``."""

@@ -117,7 +117,7 @@ describe('agent visibility panel Share button grants a hub role', () => {
     // The panel gates Share on this exact read.
     await pollUntil(
       async () => (await jsonApi(alice.apiUrl, `/graph/agent/${agentId}/version`))?.data?.published === true,
-      adjusted(10_000),
+      10_000,
       'local agent reads as published',
     );
   });
@@ -162,7 +162,7 @@ describe('agent visibility panel Share button grants a hub role', () => {
     const seen = await pollUntil(async () => {
       const read = await bobHubRead();
       return read.status === 200 ? read : null;
-    }, adjusted(15_000), 'bob can read the agent on the hub');
+    }, 15_000, 'bob can read the agent on the hub');
     expect(seen.roles).toContain('reader');
   });
 });

@@ -44,6 +44,7 @@ import { ExternalLink, Maximize2, Plus, X, type LucideIcon } from 'lucide-react'
 import { StickyNoteShape } from '@src/components/notes/StickyNoteShape';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
+import { toplog } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 
 /**
@@ -216,6 +217,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
   const { dir } = useLocaleInfo();
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // When each chip first mounted — the click trace reports how long it had been on screen.
+  const chipMountedAt = useRef<Record<string, number>>({});
   const highlights = useTabHighlights();
   // Close-in-place: a mouse close holds every tab's width until the pointer leaves.
   const stripRef = useRef<HTMLDivElement>(null);
@@ -543,6 +546,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <div
         ref={(node) => {
           tabRefs.current[key] = node;
+          if (node) chipMountedAt.current[key] ??= performance.now();
+          else delete chipMountedAt.current[key];
         }}
         // A colored chip carries a border in its note's fold shade; the selected one is 3px all round.
         style={tint ? { ...sizing, ...notePaperStyle(tint), borderColor: tint.fold, ...(isActive && { borderWidth: 3 }) } : sizing}
@@ -572,9 +577,17 @@ export const TabStrip: React.FC<TabStripProps> = ({
                   'cursor-pointer border-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground'
         } ${dragKey === key ? 'opacity-60' : ''}`}
         onPointerDown={(e) => startDrag(e, key, isDisabled)}
-        onClick={() => {
+        onClick={(e) => {
           if (isDisabled) return;
           if (justDraggedRef.current) return; // a drag just ended — don't navigate
+          if (toplog.isOn(['tab_switch', 'flow_show'])) {
+            const r = e.currentTarget.getBoundingClientRect();
+            const age = Math.round(performance.now() - (chipMountedAt.current[key] ?? performance.now()));
+            toplog.log(
+              ['tab_switch', 'flow_show'],
+              `chip click key=${key} trusted=${e.isTrusted} detail=${e.detail} at=${Math.round(e.clientX)},${Math.round(e.clientY)} chip=${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)} on_screen_ms=${age}`,
+            );
+          }
           onSelect(key);
         }}
         data-testid={item.testId}

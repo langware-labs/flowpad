@@ -77,12 +77,14 @@ def prep_mock_project_docs(root: Path) -> None:
     """Lay down the test vault on disk:
 
         root/
-            Parent/
+            docs/
+              Parent/
                 parent.md   # title=Parent, body links to [[Child]]
                 child.md    # title=Child
     """
-    parent_dir = root / "Parent"
-    parent_dir.mkdir()
+    # Markdown is only indexed inside a docs/ (or doc/) folder.
+    parent_dir = root / "docs" / "Parent"
+    parent_dir.mkdir(parents=True)
     (parent_dir / "parent.md").write_text(
         "---\ntitle: Parent\n---\n\n# Parent\n\nLinks to [[Child]].\n",
         encoding="utf-8",

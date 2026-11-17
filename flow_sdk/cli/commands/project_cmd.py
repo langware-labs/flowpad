@@ -3,6 +3,7 @@
     flow project setup              — walk through every connection and credential it needs
     flow project setup --dry-run    — only list them, and which already hold
     flow project setup --no-ai      — never hand a value to AI Assist
+    flow project register <dir>     — make <dir> a project
 
 ``setup`` collects what the project needs (``builtin/project_setup``), compiles it into a wizard
 held in memory, and runs it HERE with the stock runner: each question is asked on this terminal
@@ -321,6 +322,18 @@ def setup_project(
     code = asyncio.run(_run(project, dry_run=dry_run, ai=not no_ai, as_json=as_json, deployment_id=deployment or ""))
     if code:
         raise typer.Exit(code)
+
+
+@project_app.command("register")
+def register_project(
+    folder: Annotated[str, typer.Argument(help="The project's folder.")],
+) -> None:
+    """Register FOLDER as a Flowpad project, named after it, and print its id; a folder that already is one
+    answers that project. Goes through the CLI's gated transport, so it works on a gated instance."""
+    from flow_sdk.cli.commands._common import caller_abs_path, discover_port, ok, project_for_path  # noqa: PLC0415
+
+    path = caller_abs_path(folder)
+    ok({"project_id": project_for_path(discover_port(), path, create=True), "path": path})
 
 
 @project_app.command("load")

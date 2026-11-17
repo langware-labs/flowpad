@@ -63,6 +63,7 @@ export async function pollUntil<T>(
   timeoutMs: number,
   label: string,
 ): Promise<T> {
+  // ADJUSTABLE_TIMEOUT is added here: callers pass the committed budget, never adjusted(...).
   const deadline = Date.now() + adjusted(timeoutMs);
   while (Date.now() < deadline) {
     const v = await fn();

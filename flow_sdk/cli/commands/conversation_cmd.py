@@ -7,7 +7,7 @@ hits — no business logic lives here (mirrors ``flow record``). Commands:
     flow conversation summary <id>               — one line per message
     flow conversation show <id> [--last N] [--thread T] — full messages, oldest-first
     flow conversation message <msg-id>           — one message in full
-    flow conversation send <id> <message>        — add a text message
+    flow conversation send <id> <message>        — add a message (--file / --prompt / --form)
     flow conversation live-session <id>          — start (or show) the live session on the other's machine
     flow conversation new <who> <message>        — start one with an email / contact (`flow contacts find`)
     flow conversation attach <id> <target> <msg> — add a message + attachment
@@ -86,18 +86,38 @@ def _post_json(
     *,
     timeout: int = 30,
     not_found_hint: Optional[str] = None,
+    files: Optional[list] = None,
 ) -> dict:
-    """POST JSON to a graph endpoint and return its ``data`` envelope.
+    """POST JSON to a graph endpoint and return its ``data`` envelope. With ``files`` the
+    same payload goes multipart instead, a list or dict field (a form attachment) as its JSON text.
 
     Transport / parse / non-SUCCESS responses route through ``_fail`` (which
     exits). A 404 maps to ``EXIT_NOT_FOUND`` with ``not_found_hint`` when given.
     """
+    if files:
+        data = {k: json.dumps(v) if isinstance(v, (list, dict)) else str(v) for k, v in (payload or {}).items()}
+        request = {"data": data, "files": files, "timeout": max(timeout, 60)}
+    else:
+        request = {"json": payload or {}, "timeout": timeout}
     try:
-        resp = _local_post(url, json=payload or {}, timeout=timeout)
+        resp = _local_post(url, **request)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         raise  # unreachable
     return _envelope(resp, not_found_hint=not_found_hint)
+
+
+def _read_files(paths: list[str]) -> list[tuple[str, tuple[str, bytes]]]:
+    """``paths`` as multipart ``files`` parts; a missing or unreadable file stops before anything is sent."""
+    parts = []
+    for raw in paths:
+        path = os.path.expanduser(raw)
+        try:
+            with open(path, "rb") as fh:
+                parts.append(("files", (os.path.basename(path), fh.read())))
+        except OSError as e:
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Cannot read file {raw}: {e.strerror or e}")
+    return parts
 
 
 def _envelope(resp: "requests.Response", *, not_found_hint: Optional[str] = None) -> dict:
@@ -431,7 +451,10 @@ def _form_attachment(arg: str) -> dict:
 
 @conversation_app.command(
     "send",
-    help="Add a text message to a conversation.",
+    help=(
+        "Add a message to a conversation: text, and optionally files (--file, repeatable), "
+        "a runnable prompt (--prompt), or a form (--form)."
+    ),
 )
 def send_message(
     conversation_id: Annotated[str, typer.Argument(help=_CONV_ID_HELP)],
@@ -461,6 +484,10 @@ def send_message(
         ),
     ] = None,
     form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
+    file: Annotated[
+        Optional[list[str]],
+        typer.Option("--file", help="A file to attach and upload; repeat for several (e.g. a git bundle, a report)."),
+    ] = None,
     on_reply: Annotated[Optional[str], typer.Option("--on-reply", help=_ON_REPLY_HELP)] = None,
     wait: Annotated[Optional[str], typer.Option("--wait", help="How long to wait for the reply: 30m, 2h, 3d (default 3d).")] = None,
 ) -> None:
@@ -485,6 +512,7 @@ def send_message(
         _add_message_url(port, cid),
         body,
         not_found_hint=f"Conversation not found: {cid}",
+        files=_read_files(file or []),
     )
     _emit_send_result(cid, data)
 
@@ -733,34 +761,12 @@ def attach_message(
         return
 
     # File path — validate on disk, then multipart-upload under the "files" field.
-    path = os.path.expanduser(tgt)
-    if not os.path.isfile(path):
-        _fail(
-            EXIT_INVALID_ARG,
-            "INVALID_ARG",
-            f"Not a TypeId and not an existing file: {tgt}",
-        )
-    filename = os.path.basename(path)
-    try:
-        with open(path, "rb") as fh:
-            content = fh.read()
-    except OSError as e:
-        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Cannot read file {tgt}: {e}")
-        return
+    if not os.path.isfile(os.path.expanduser(tgt)):
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Not a TypeId and not an existing file: {tgt}")
     form_fields = {"text": message, **_origin_session()}
     if session:
         form_fields["remote_worker_session_id"] = session.strip()
-    try:
-        resp = _local_post(
-            url,
-            data=form_fields,
-            files={"files": (filename, content)},
-            timeout=60,
-        )
-    except requests.exceptions.RequestException as e:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
-        return
-    data = _envelope(resp, not_found_hint=f"Conversation not found: {cid}")
+    data = _post_json(url, form_fields, files=_read_files([tgt]), not_found_hint=f"Conversation not found: {cid}")
     _emit_send_result(cid, data)
 
 

@@ -1,17 +1,16 @@
 # GitHub PRs (`github_pr`)
 
-Each open pull request assigned to you (or waiting on your review) is a **conversation**; what
-happens on it is the **messages**:
+Each open pull request you opened, that waits on your review or that mentions you is a
+**conversation**; its chat is the **messages**, each linking back to GitHub:
 
 | On GitHub | The message | Key |
 | --- | --- | --- |
 | an issue comment | its body | `comment-<id>` |
 | a review comment (on a line) | its body, `in_reply_to` its thread's parent | `review-comment-<id>` |
 | a submitted review | its body, or `dana approved` / `requested changes` | `review-<id>` |
-| an assignment | `dana assigned you` | `event-<id>` |
-| a pushed commit | `serans1 pushed 1 commit: <subject>` | `commit-<sha>` |
-| a force-push, merge, close, reopen | `dana force-pushed`, `merged`, `closed`, `reopened` | `event-<id>` |
-| the head commit's checks, once all finished | `CI passed · 3 checks` / `CI failed · 1 of 3 checks` | `check-<head sha>` |
+| a merge, close, reopen (ends / reopens the conversation) | `merged by dana`, `closed`, `reopened` | `event-<id>` |
+
+Pushes, CI results and assignments are not messages.
 
 The conversation's address is `<owner>/<repo>#<n>` and its subject is the PR title. Replying
 to a review comment answers in its thread; replying to anything else, or sending, posts an
@@ -34,7 +33,7 @@ expired" when there is no token or GitHub refuses it.
 
 Polling. A pass searches `is:pr is:open assignee:@me` (or `review-requested:@me`, plus a
 `repo:` per configured repository) sorted by `updated`, 30 PRs a search page, and reads each
-PR's comments, review comments, reviews, timeline and check runs (one page of 100 each). The
+PR's comments, review comments, reviews and timeline (one page of 100 each). The
 resume cursor is the newest `updated` seen; the next pass narrows to `updated:>=<mark>`, so a
 PR is re-read whenever anything on it changes and its messages keep their keys.
 

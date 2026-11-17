@@ -50,7 +50,7 @@
  */
 
 import { afterAll, afterEach, beforeEach } from 'vitest';
-import { disposeAllOwnedSdkRealms } from './_sdk_realm';
+import { disposeAllOwnedSdkRealms, settleOwnedSdkRealms } from './_sdk_realm';
 
 /**
  * Marker prefix for entities created by tests. The leak sweep keys off this, so
@@ -392,7 +392,9 @@ export function installCleanup(opts: { sweepTypes?: string[] } = {}): void {
       await assertNoLeaks();
     } finally {
       // Dispose only realms created through the test realm lifecycle owner,
-      // after their final entity cleanup requests have completed.
+      // after their final entity cleanup requests and their in-flight
+      // fire-and-forget scan refreshes have completed.
+      await settleOwnedSdkRealms();
       disposeAllOwnedSdkRealms();
     }
   });

@@ -463,10 +463,13 @@ def issue_of(payload: dict) -> "dict | None":
 
 def derive_issue_reply(fm: "FlowMessage", payload: dict) -> None:
     """Carry a Monitoring message's ``metadata.issue`` (hub-written) onto ``issue_reply``. Idempotent; absent
-    leaves it as is, so a refresh without metadata keeps the last status the hub sent."""
+    leaves it as is, so a refresh without metadata keeps the last status the hub sent. The "Resolved: …"
+    follow-up arrives READ: the issue's card already shows it, and the conversation does not draw it."""
     issue = issue_of(payload)
     if issue is not None:
         fm.issue_reply = issue
+        if issue.get("follow_up"):
+            fm.is_read = True
 
 
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
