@@ -100,12 +100,14 @@ def test_mounted_dirs_trusted_before_launch(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "instance_temp_dir", lambda *parts: tmp_path.joinpath("temp", *parts))
     monkeypatch.setattr(config, "flowpad_assistant_project_root", lambda: assistant)
     home.mkdir()
+    # A trusted folder above a dependency does not cover it: Claude still asks for a git repository inside it.
+    (home / ".claude.json").write_text(json.dumps({"projects": {str(tmp_path.resolve()): {"hasTrustDialogAccepted": True}}}))
     sessions = data / "records" / "agentic_process"
     project = data / "workspace" / "my-project"  # the person's own project, inside the instance folder
     mounted = [assistant, sessions / "p1" / "execution" / "assets", dep, other, project]
     trust.trust_mounted_dirs([str(p) for p in mounted], [str(dep)])
     trusted = {Path(k) for k in json.loads((home / ".claude.json").read_text())["projects"]}
-    assert trusted == {p.resolve() for p in (sessions, assistant, dep)}  # product folders + the dependency only
+    assert trusted == {p.resolve() for p in (tmp_path, sessions, assistant, dep)}  # product folders + the dependency
     assert screen.trust_prompt_folder(ADD_DIR) == "/x/assets"
 
 
