@@ -4084,12 +4084,8 @@ class AgenticProcess(Entity):
 
         def _unfinished_turn() -> RuntimeError:
             # The worker's own error line (a refusal, a 429) is the reason every caller needs.
-            said = self._worker_status_detail(_WS.ERROR)
-            return RuntimeError(
-                getattr(self, "start_failure", None)
-                or (said.text if said else "")
-                or "the worker exited without finishing its turn"
-            )
+            said = getattr(self, "start_failure", None) or self._worker_status_detail(_WS.ERROR)
+            return RuntimeError(getattr(said, "text", said) or "the worker exited without finishing its turn")
 
         transcript_path: Path | None = None
         while transcript_path is None:
