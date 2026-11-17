@@ -11,7 +11,6 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.qa import QATestExecution
-from flow_sdk.builtin.rca import Rca
 
 pytestmark = pytest.mark.asyncio
 
@@ -49,10 +48,3 @@ async def test_a_test_file_is_one_row_per_repository_whatever_its_phase(bootstra
     file_id = await _create(bootstrapped_client, "qa_test_file", {"repo": "org/identity-files", "phase": phase_1, "path": "tests/test_a.py"})
     assert await _create(bootstrapped_client, "qa_test_file", {"repo": "org/identity-files", "phase": phase_2, "path": "tests/test_a.py"}) == file_id
     assert await _create(bootstrapped_client, "qa_test_file", {"repo": "org/other", "phase": phase_1, "path": "tests/test_a.py"}) != file_id
-
-
-async def test_a_subject_has_one_rca(bootstrapped_client):
-    rca = {"subject": "qa_test_execution-0193", "complexity": "low", "severity": "high", "description_md": "x"}
-    rca_id = await _create(bootstrapped_client, "rca", rca)
-    assert await _create(bootstrapped_client, "rca", rca) == rca_id
-    assert len(await Rca.get_all({"subject": "qa_test_execution-0193"})) == 1

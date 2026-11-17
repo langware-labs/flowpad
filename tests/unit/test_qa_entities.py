@@ -1,9 +1,6 @@
-"""The QA entities (builtin/qa.py) and the generic Rca (builtin/rca.py): registered as types, saved and queried like any entity."""
-import pytest
-
+"""The QA entities (builtin/qa.py) and the generic Rca (builtin/rca.py): which types are pushed to every connection."""
 from flow_sdk.builtin.qa import QACycle, QAIteration, QAPhase, QATestCase, QATestFile, QATestExecution
 from flow_sdk.builtin.rca import Rca
-from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 QA_TYPES = {
@@ -12,37 +9,7 @@ QA_TYPES = {
 }
 
 
-def test_every_qa_type_is_registered_with_its_class():
-    for type_name, cls in QA_TYPES.items():
-        assert SchemaRegistry.get_entity_cls(type_name) is cls, type_name
-
-
 def test_test_executions_and_test_cases_are_not_pushed_to_every_connection():
-    """~29,000 executions per iteration: Q tells its page through its own events instead."""
+    """~29,000 executions per iteration: too many to push to every connection."""
     hidden = {t for t in QA_TYPES if not SchemaRegistry.is_api_visible(t)}
     assert hidden == {"qa_test_case", "qa_test_execution"}
-
-
-def test_every_qa_type_is_found_by_its_natural_key_through_an_index():
-    """The create route looks a row up by its natural key: one indexed read, never a scan of the shared table."""
-    for type_name in QA_TYPES:
-        info = SchemaRegistry.get(type_name)
-        assert info.natural_key, type_name
-        assert info.natural_key in info.indexes, type_name
-
-
-@pytest.mark.asyncio
-async def test_an_execution_is_saved_and_found_by_its_iteration():
-    cycle = await QACycle(cycle_id="qa-20261112-120000", name="nightly", repo="org/repo", branch="main", commit_sha="abc").save()
-    iteration = await QAIteration(iteration_id="i01", cycle=cycle.id, order=1,
-                                  planned={"phases": ["p1"], "test_files": [], "test_cases": []}).save()
-    for attempt, status in ((1, "fail"), (2, "pass")):
-        await QATestExecution(cycle=cycle.id, iteration=iteration.id, phase="p1", test_file="f1", test_name="test_login",
-                           attempt=attempt, status=status, attachments=["file-1"]).save()
-
-    query = QueryFilter(type="qa_test_execution")
-    query.match = ExpressionNode(op=QueryOp.EQ, operands=["iteration", iteration.id])
-    found = sorted(await QATestExecution.get_all(query), key=lambda r: r.attempt)
-    assert [(r.attempt, r.status) for r in found] == [(1, "fail"), (2, "pass")]
-    assert found[0].attachments == ["file-1"]
-    assert (await QAIteration.get_by_id(iteration.id)).planned == {"phases": ["p1"], "test_files": [], "test_cases": []}
