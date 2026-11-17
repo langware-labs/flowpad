@@ -133,10 +133,16 @@ files as ghost nodes. It is served through the generic entity-subgraph route
 ## Incoming message classification and automations
 
 Messages use the same `Entity.tags` field and Tag definitions as every other
-entity. Classification considers the user's nondeprecated ontology. The optional
-Flowpad message vocabulary is enabled separately; it does not replace user tags
-or introduce a `labels` field. Tag definitions carry an optional `color` and an
-`stream_inbox` management marker; that marker does not restrict classifier eligibility.
+entity. Classification puts a message under ONE tag of a tree: the setting `root`
+(default `inbox`) names the tree, and every nondeprecated Tag within it is an option
+whose `description` is what it means — the instructions a person edits. The generic
+classifier is `flow_sdk/tags/classify.py`: `classify(value, root)` asks the Decision API
+one choice question and answers a `TagClassification` (`tags.classification`) holding
+the full dot name; it never writes. The inbox calls it with a `MessageContextSpec`
+(`stream_inbox.message.context`, the message for now). The optional Flowpad message
+vocabulary is enabled separately; it does not replace user tags or introduce a
+`labels` field. Tag definitions carry an optional `color` and a `stream_inbox`
+management marker; that marker does not restrict classifier eligibility.
 
 Only new incoming messages enter classification. Historical imports and reads do
 not backfill work, and outgoing/own-automation messages are excluded. A failed
@@ -162,8 +168,9 @@ the resulting state to live clients. The stream inbox remains a single-line row;
 tag details and queue history are opened on demand.
 
 Read or update instance settings through
-`GET|POST /api/v1/graph/flow_message/classification-settings` using `enabled` and
-`include_flow_tags`. Replace a message's tags atomically through
+`GET|POST /api/v1/graph/flow_message/classification-settings` using `enabled`,
+`include_flow_tags` and `root`. Ask where a message would land, without changing it,
+through `POST /api/v1/graph/flow_message/<id>/classify` (the tag editor's Try panel). Replace a message's tags atomically through
 `POST /api/v1/graph/flow_message/<id>/set-tags` with `{"tags": [...]}`.
 
 Stream Inbox tag management uses the existing successor/alias convention when renaming:

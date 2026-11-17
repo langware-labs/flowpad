@@ -249,6 +249,17 @@ export interface MessageProcessing {
 export interface MessageClassificationSettings {
   enabled: boolean;
   include_flow_tags: boolean;
+  /** The tag tree messages are classified into. */
+  root: string;
+}
+
+/** Where a message lands (dry run): one full dot tag, or why there is none. */
+export interface MessageClassification {
+  exit_code: number;
+  detail: string;
+  value?: { tag: string; confidence: number } | null;
+  /** The decision API's closed reason when it could not be asked (`no_endpoint`, …). */
+  unavailable?: string | null;
 }
 
 export interface IFlowMessage extends IEntity {
@@ -479,6 +490,13 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     const action = new ActionInfo('classification-settings', FlowMessage.type, null, patch ? 'POST' : 'GET');
     if (patch) action.bodyParameters = patch;
     return (await dataManager.callAction<unknown, MessageClassificationSettings>(action))!;
+  }
+
+  /** Classify this message under the configured root. A dry run: nothing on the message changes. */
+  async classify(): Promise<MessageClassification> {
+    const action = new ActionInfo('classify', FlowMessage.type, this.id ?? null, 'POST');
+    action.bodyParameters = {};
+    return (await dataManager.callAction<unknown, MessageClassification>(action))!;
   }
 
   async setTags(tags: string[]): Promise<void> {

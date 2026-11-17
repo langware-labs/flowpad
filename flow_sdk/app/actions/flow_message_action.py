@@ -5060,13 +5060,22 @@ async def message_classification_settings() -> ApiResponse:
     current = settings()
     if info.request.method.upper() == "POST":
         body = await info.get_post_data()
-        if not isinstance(body, dict) or set(body) - {"enabled", "include_flow_tags"}:
-            return ApiFailResponse(message="Expected enabled and/or include_flow_tags settings", status_code=400)
+        if not isinstance(body, dict) or set(body) - {"enabled", "include_flow_tags", "root"}:
+            return ApiFailResponse(message="Expected enabled, include_flow_tags and/or root settings", status_code=400)
         try:
             current = save_settings({**current.model_dump(mode="json"), **body})
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
     return ApiSuccessResponse(data=current.model_dump(mode="json"))
+
+
+@action.post(action_name="classify", types=["flow_message"])
+async def message_classify(self: FlowMessage) -> ApiResponse:
+    """Dry run: where this message lands in the classification tree. Writes nothing."""
+    from flow_sdk.stream_inbox.message_tags import classify, ontology
+
+    answer = await classify(self, await ontology())
+    return ApiSuccessResponse(data=answer.model_dump(mode="json"))
 
 
 @action.post(action_name="set-tags", types=["flow_message"])

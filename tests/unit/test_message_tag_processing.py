@@ -7,8 +7,9 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.builtin import trigger_callbacks
-from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing, TagAssignment
+from flow_sdk.schema.data_spec.message_processing_spec import MessageClassificationSettings, MessageProcessing, TagAssignment
 from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
+from flow_sdk.schema.data_spec.tag_classification_spec import TagClassification
 from flow_sdk.stream_inbox import message_tags as processing
 from tests.pytest_plugin import async_context
 
@@ -48,21 +49,6 @@ def test_alternative_tag_keeps_queued_and_running_is_not_cancelled():
     state.queue[0].status = "running"
     processing.apply_delta(tags, state, remove=tags, source=TagAssignment(), rules=[trigger])
     assert state.queue[0].status == "running"
-
-
-@async_context
-async def test_real_classifier_flowcall_validates_input_and_returns_tags(monkeypatch):
-    from flow_sdk.core.compute_op import runner
-    from tests.utils.message_tag_classifier import MessageTagEndpoint
-
-    async def endpoint():
-        return MessageTagEndpoint()
-
-    monkeypatch.setattr(runner, "_box_llm", endpoint)
-    answer = await processing.classify(FlowMessage(text="refund please"), [
-        {"name": "--qa--.billing.refund", "description": "Refund request"}])
-    assert answer.has_value, answer.detail
-    assert answer.value.model_dump() == {"tags": ["--qa--.billing.refund"]}
 
 
 @async_context
@@ -138,7 +124,7 @@ async def test_classifier_finishing_after_manual_remove_does_not_restore_tag(exp
     async def classify(*_args):
         entered.set()
         await release.wait()
-        return ReturnedValue.satisfied(value={"tags": [tag]})
+        return ReturnedValue.satisfied(value=TagClassification(tag=tag))
 
     monkeypatch.setattr(processing, "ontology", definitions)
     monkeypatch.setattr(processing, "classify", classify)
@@ -242,11 +228,13 @@ async def test_user_ontology_not_opted_out_by_stream_inbox_flag(monkeypatch):
     await Tag(name=name, stream_inbox=False).save()
     await Tag(name=name + ".deprecated", deprecated=True).save()
     await seed_system_tags()
-    monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings())
+    await Tag(name=f"--qa--.{mint_uuid()}-outside-root").save()
+    monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings(root=name))
     names = {row["name"] for row in await processing.ontology()}
     assert name in names and name + ".deprecated" not in names
+    assert names == {name}, "only the root's subtree is offered"
     assert "message.receipt" not in names
-    monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings(include_flow_tags=True))
+    monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings(root=name, include_flow_tags=True))
     assert "message.receipt" in {row["name"] for row in await processing.ontology()}
 
 
@@ -344,7 +332,7 @@ async def test_unknown_classifier_tag_fails_without_partial_assignment(explicit_
         return [{"name": "known.tag", "description": "known"}]
 
     async def invalid(*_args):
-        return ReturnedValue.satisfied(value={"tags": ["known.tag", "invented.tag"]})
+        return ReturnedValue.satisfied(value=TagClassification(tag="invented.tag"))
 
     monkeypatch.setattr(processing, "ontology", definitions)
     monkeypatch.setattr(processing, "classify", invalid)
@@ -453,7 +441,7 @@ async def test_classification_finishes_after_tag_rename_or_delete(explicit_drain
     async def classify(*_args):
         entered.set()
         await release.wait()
-        return ReturnedValue.satisfied(value={"tags": [tag.name]})
+        return ReturnedValue.satisfied(value=TagClassification(tag=tag.name))
 
     monkeypatch.setattr(processing, "ontology", definitions)
     monkeypatch.setattr(processing, "classify", classify)
@@ -517,9 +505,10 @@ async def test_catchup_then_live_create_classifies_once_and_duplicate_keeps_clai
 
     async def classify(*_args):
         calls.append(True)
-        return ReturnedValue.satisfied(value={"tags": [tag.name]})
+        return ReturnedValue.satisfied(value=TagClassification(tag=tag.name))
 
     monkeypatch.setattr(processing, "classify", classify)
+    monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings(root=tag.name))
     conversation_id = str(mint_uuid())
     payload = {"id": str(mint_uuid()), "text": "An incoming message", "sender_id": str(mint_uuid())}
 

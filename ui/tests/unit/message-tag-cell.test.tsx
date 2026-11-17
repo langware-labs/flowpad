@@ -1,0 +1,61 @@
+/**
+ * A Stream Inbox row's tag cell: no tags → the crossed tag alone, one → its chip, more → the first + count;
+ * every form opens the same quick menu through the URL (`message_tags=<id>:picker`).
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+
+const { openDock, dock } = vi.hoisted(() => {
+  const dock = { options: {} as Record<string, string>, withOption: vi.fn((key: string, value: string) => ({ key, value })) };
+  return { openDock: vi.fn(), dock };
+});
+vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openDock }, currentDock: dock }) }));
+vi.mock('@src/hooks/entity-hooks', () => ({
+  useEntitiesQuery: () => ({ data: [{ name: 'inbox.support.billing', color: '#8b5cf6' }] }),
+}));
+vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: undefined }) }));
+
+import { MessageTags, treeRows } from '@src/components/tags/MessageTags';
+import type { FlowMessage } from '@sdk';
+
+const cell = (tags: string[]) => {
+  render(<MessageTags message={{ id: 'm1', tags } as unknown as FlowMessage} compact />);
+  return screen.getByTestId('message-tags-menu');
+};
+
+describe('MessageTags compact cell', () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('shows the crossed tag alone when there are no tags', () => {
+    const button = cell([]);
+    expect(button.textContent).toBe('');
+    expect(button.getAttribute('aria-label')).toBe('No tags — add one');
+  });
+
+  it('shows one tag by its last segment, in its colour', () => {
+    const button = cell(['inbox.support.billing']);
+    expect(button.textContent).toBe('billing');
+    expect(button.getAttribute('style')).toContain('#8b5cf6');
+  });
+
+  it('shows the first tag and a count, and opens the quick menu through the URL', () => {
+    const button = cell(['inbox.support.billing', 'inbox.urgent', 'inbox.customer.vip']);
+    expect(button.textContent).toBe('billing+2');
+    fireEvent.click(button);
+    expect(dock.withOption).toHaveBeenCalledWith('message_tags', 'm1:picker');
+    expect(openDock).toHaveBeenCalled();
+  });
+});
+
+describe('treeRows', () => {
+  it('walks the root subtree depth-first, intermediates included', () => {
+    expect(treeRows(['inbox.support.billing', 'inbox.sales', 'other.x'], 'inbox')).toEqual([
+      { name: 'inbox.sales', depth: 0 },
+      { name: 'inbox.support', depth: 0 },
+      { name: 'inbox.support.billing', depth: 1 },
+    ]);
+  });
+});

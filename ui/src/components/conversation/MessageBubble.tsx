@@ -402,6 +402,8 @@ export function MessageBubble({
 
   const handleBubbleClick = (e: MouseEvent<HTMLDivElement>) => {
     if (!onSelect) return;
+    // A click inside a portaled menu still bubbles here through React; only the bubble's own DOM selects.
+    if (!e.currentTarget.contains(e.target as Node)) return;
     // Ignore clicks that originated on interactive children (buttons, links,
     // inputs) so name-edit / attachment actions / attachment downloads keep
     // their native behaviour without double-firing selection.
