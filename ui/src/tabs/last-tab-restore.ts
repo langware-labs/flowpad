@@ -1,10 +1,11 @@
 import { Layout } from '@sdk';
 import { redirect } from 'react-router';
 
-import type { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 /**
- * Restore the last view on launch, the way an IDE reopens where you left off.
+ * Restore the last view on launch, the way an IDE reopens where you left off — and with no last
+ * place (a first launch, or the user left from Home), open the Inbox: it is the first and default screen.
  *
  * The app launches at a BARE `/` — Electron loads the backend root, a browser
  * opens the address — while every in-app navigation to Home states its mode
@@ -87,13 +88,13 @@ export function endLaunch(): void {
 }
 
 /**
- * On a launch, the last place, or null to stay on Home. It takes the bare launch
- * URL's place (I7), so that URL is not left behind as a Back step.
+ * On a launch, the last place, else the Inbox; null (stay on Home) for any other home load. It takes
+ * the bare launch URL's place (I7), so that URL is not left behind as a Back step.
  */
 export function lastPlaceRestoreRedirect(request: Request): Promise<Response | null> {
   if (!launchPending || new URL(request.url).pathname !== '/') return Promise.resolve(null);
-  const url = storage((s) => s.getItem(STORAGE_KEY));
-  return Promise.resolve(url ? redirect(url) : null);
+  const url = storage((s) => s.getItem(STORAGE_KEY)) ?? DockPointer.forStreamInbox().toUrl('/');
+  return Promise.resolve(redirect(url));
 }
 
 export function resetLastPlaceRestoreForTests(documentUrl: string, navigationType: string | null = 'navigate'): void {
