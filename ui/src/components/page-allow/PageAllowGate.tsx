@@ -18,23 +18,41 @@ type Access = { status: 'checking' } | { status: 'ok'; context: PageContext } | 
  * carries one it minted (`probed`). A server that asks for none lets everything run; a key the server
  * does not know — expired, or from another computer — asks again like no key at all.
  */
-function usePageAccess(dockKey: string | undefined, reaskToken: number, installed: boolean): Access {
-  const [access, setAccess] = useState<Access>({ status: 'checking' });
+/** Keys the server already vouched for: a warm return to their page renders at once and asks the backend nothing. */
+const vouched = new Map<string, Access>();
+
+function usePageAccess(
+  dockKey: string | undefined,
+  reaskToken: number,
+  installed: boolean,
+  enabled: boolean,
+): Access {
+  const [access, setAccess] = useState<Access>(() => (dockKey && vouched.get(dockKey)) || { status: 'checking' });
   useEffect(() => {
+    // No dock: the gate runs its page as is, so there is nothing to ask the server.
+    if (!enabled) return;
+    const known = dockKey ? vouched.get(dockKey) : undefined;
+    if (known) {
+      setAccess(known);
+      return;
+    }
     let live = true;
     setAccess({ status: 'checking' });
     void probePageKey(dockKey)
       .then(({ enforced, probed }) => {
         if (!live) return;
-        if (probed) setAccess({ status: 'ok', context: probed.context ?? {} });
-        else setAccess(enforced ? { status: 'ask' } : { status: 'ok', context: {} });
+        if (probed) {
+          const ok: Access = { status: 'ok', context: probed.context ?? {} };
+          if (dockKey) vouched.set(dockKey, ok);
+          setAccess(ok);
+        } else setAccess(enforced ? { status: 'ask' } : { status: 'ok', context: {} });
       })
       // A server that cannot be asked fails closed for a file, and open for an installed app (which then says why itself).
       .catch(() => live && setAccess(installed ? { status: 'ok', context: {} } : { status: 'ask' }));
     return () => {
       live = false;
     };
-  }, [dockKey, reaskToken, installed]);
+  }, [dockKey, reaskToken, installed, enabled]);
   return access;
 }
 
@@ -67,7 +85,7 @@ export function PageAllowGate({
   const [reask, setReask] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
-  const access = usePageAccess(dockKey, reask, installed);
+  const access = usePageAccess(dockKey, reask, installed, !!currentDock);
 
   const allow = useCallback(
     async (always: boolean) => {
