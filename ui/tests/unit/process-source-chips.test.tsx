@@ -19,12 +19,11 @@ const msg = (n: number) => new TypeId('flow_message', `2222222${n}-2222-4222-822
 
 const trig = (n: number) => new TypeId('trigger', `4444444${n}-4444-4444-8444-444444444444`);
 
-function proc(context: TypeId[], privateContext: TypeId[] = []): AgenticProcess {
+function proc(context: TypeId[]): AgenticProcess {
   vi.spyOn(dataManager, 'subscribe').mockReturnValue(() => {});
   return {
     typeId: new TypeId('agentic_process', '33333333-3333-4333-8333-333333333333'),
     sharedContextEntities: context,
-    privateContextEntities: privateContext,
   } as unknown as AgenticProcess;
 }
 
@@ -54,10 +53,10 @@ describe('ProcessSourceChips', () => {
   });
 
   it('shows the callbacks a session set: one as its chip, several as one counted chip', () => {
-    render(<ProcessSourceChips process={proc([], [trig(1)])} />);
+    render(<ProcessSourceChips process={proc([trig(1)])} />);
     expect(screen.getByTestId(`chip-${String(trig(1))}`)).toBeTruthy();
     cleanup();
-    render(<ProcessSourceChips process={proc([], [trig(1), trig(2)])} />);
+    render(<ProcessSourceChips process={proc([trig(1), trig(2)])} />);
     expect(screen.getByTestId('process-source-triggers-count').textContent).toBe('2');
   });
 });
