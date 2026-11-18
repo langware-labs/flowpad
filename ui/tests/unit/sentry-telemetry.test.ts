@@ -71,6 +71,7 @@ afterEach(async () => {
   setBootstrap(null);
   await settle();
   (privacyManager as any)._apply('connected');
+  (privacyManager as any)._initialized = false; // seeding is once per page load; a test must not leak it
 });
 
 describe('which pages report', () => {
@@ -136,6 +137,20 @@ describe('runtime configuration changes, without a reload', () => {
     await settle();
     expect(__testing.activeConfig()).toBeNull();
     (privacyManager as any)._apply('connected');
+    await settle();
+    expect(__testing.activeConfig()?.dsn).toBe(DSN_A);
+  });
+
+  it('a fresh bootstrap (a sign-in refresh) re-seeds the privacy manager, so a missed live message cannot keep reporting on', async () => {
+    privacyManager.seedBootstrap('connected');
+    startSentryReaction();
+    setBootstrap(sandbox({ dsn: DSN_A, environment: 'staging' }));
+    await settle();
+    expect(__testing.activeConfig()?.dsn).toBe(DSN_A);
+    privacyManager.adoptBootstrap('local'); // the backend says Local now; the live message never arrived
+    await settle();
+    expect(__testing.activeConfig()).toBeNull();
+    privacyManager.adoptBootstrap('connected');
     await settle();
     expect(__testing.activeConfig()?.dsn).toBe(DSN_A);
   });
