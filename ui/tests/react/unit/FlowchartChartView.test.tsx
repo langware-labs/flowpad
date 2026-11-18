@@ -5,7 +5,7 @@
  *   2. State and Notes sit beside the canvas, never in it, numbered like their question.
  *   3. Hovering a State row lights its node, and a node lights its row.
  *   4. The Table view lists every node with its state and where it leads.
- *   5. Clicking a node opens "Change this", which hands the request to `changes.request`.
+ *   5. Clicking a node opens "Change this", which hands the request to `changes.request`; a press outside closes it.
  *   6. parseFlowchart drops malformed nodes and dangling edges; flowchartToMermaid keeps state and notes.
  */
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -128,6 +128,16 @@ describe('FlowchartChartView', () => {
     fireEvent.change(screen.getByTestId('chart-change-text'), { target: { value: 'Say Send it' } });
     fireEvent.click(screen.getByTestId('chart-change-add'));
     expect(request).toHaveBeenCalledWith({ quote: 'ship · Ship it', instruction: 'Say Send it', runNow: false });
+  });
+
+  it('a press outside the change box closes it; a press inside keeps it', async () => {
+    renderView({ request: vi.fn(), marks: new Map() });
+    await screen.findByTestId('chart-flowchart-svg');
+    fireEvent.click(nodeOf('ship'));
+    fireEvent.pointerDown(screen.getByTestId('chart-change-text'));
+    expect(screen.getByTestId('chart-change-box')).toBeTruthy();
+    fireEvent.pointerDown(screen.getByTestId('chart-title'));
+    expect(screen.queryByTestId('chart-change-box')).toBeNull();
   });
 });
 

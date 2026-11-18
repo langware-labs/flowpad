@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Database, RefreshCw, StickyNote, type LucideIcon } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Trans } from '@lingui/react/macro';
 import type { Chart, FSRef } from '@sdk';
@@ -373,13 +373,88 @@ export interface ChartSideRow {
   text: string;
 }
 
-/** The panel beside the canvas: titled sections of numbered rows, linked to the canvas by hover. */
+/** `fact`: a stored value per numbered element. `note`: prose a reader needs beside the chart. */
+export type ChartSideVariant = 'fact' | 'note';
+
+export interface ChartSideSection {
+  id: string;
+  title: string;
+  variant: ChartSideVariant;
+  rows: ChartSideRow[];
+}
+
+/**
+ * How each kind of side section looks — its icon, its colour and how strongly that colour tints the
+ * card (`bg`, `border`), a lit row (`lit`) and the card's leading edge (`edge`, px). Owned here, so a
+ * chart type only says which kind a section is and two kinds never read as one list.
+ */
+const SIDE_VARIANTS: Record<
+  ChartSideVariant,
+  { icon: LucideIcon; accent: string; bg: number; border: number; lit: number; edge: number }
+> = {
+  fact: { icon: Database, accent: 'var(--side-fact)', bg: 0, border: 0, lit: 10, edge: 1 },
+  note: { icon: StickyNote, accent: 'var(--side-note)', bg: 7, border: 35, lit: 16, edge: 3 },
+};
+
+/** `pct`% of `accent` over the card surface; 0 is the plain surface. */
+const tint = (accent: string, pct: number) => `color-mix(in srgb, ${accent} ${pct}%, var(--surface-1))`;
+
+/** An element's number: filled in the section's colour, or a quiet outline. */
+function NumBadge({ n, accent }: { n: string; accent?: string }) {
+  return (
+    <span
+      className={
+        accent
+          ? 'mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white'
+          : 'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold'
+      }
+      style={accent ? { background: accent } : { borderColor: 'var(--hairline-strong)', color: 'var(--text-secondary)' }}
+    >
+      {n}
+    </span>
+  );
+}
+
+/** A stored value: the element's number and name, then the value as a chip. */
+function FactRow({ row, accent }: { row: ChartSideRow; accent: string }) {
+  return (
+    <span className="flex gap-2">
+      {row.n && <NumBadge n={row.n} accent={accent} />}
+      <span className="min-w-0">
+        {row.title && <span className="block font-semibold">{row.title}</span>}
+        <span
+          className="mt-1 block rounded px-1.5 py-1 font-mono text-[12px] leading-snug"
+          style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+        >
+          {row.text}
+        </span>
+      </span>
+    </span>
+  );
+}
+
+/** Prose first; the element it is about is a quiet caption under it. */
+function NoteRow({ row }: { row: ChartSideRow }) {
+  return (
+    <>
+      <span className="block">{row.text}</span>
+      {row.title && (
+        <span className="mt-1 flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          {row.n && <NumBadge n={row.n} />}
+          {row.title}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** The panel beside the canvas: sections of rows, linked to the canvas by hover. */
 export function ChartSidePanel({
   sections,
   hot,
   onHot,
 }: {
-  sections: { id: string; title: string; rows: ChartSideRow[] }[];
+  sections: ChartSideSection[];
   hot: string | null;
   onHot: (target: string | null) => void;
 }) {
@@ -387,56 +462,54 @@ export function ChartSidePanel({
   if (!shown.length) return null;
   return (
     <aside className="flex w-[320px] shrink-0 flex-col gap-4" data-testid="chart-side">
-      {shown.map((section) => (
-        <section
-          key={section.id}
-          className="rounded-xl border p-3"
-          style={{ background: 'var(--surface-1)', borderColor: 'var(--hairline)' }}
-          data-testid={`chart-side-${section.id}`}
-        >
-          <h2
-            className="m-0 mb-2 text-[11px] font-bold uppercase tracking-[.08em]"
-            style={{ color: 'var(--text-muted)' }}
+      {shown.map((section) => {
+        const look = SIDE_VARIANTS[section.variant];
+        const Icon = look.icon;
+        return (
+          <section
+            key={section.id}
+            className="rounded-xl border p-3"
+            style={{
+              background: tint(look.accent, look.bg),
+              borderColor: look.border ? tint(look.accent, look.border) : 'var(--hairline)',
+              borderInlineStartWidth: look.edge,
+              borderInlineStartColor: look.edge > 1 ? look.accent : undefined,
+            }}
+            data-testid={`chart-side-${section.id}`}
+            data-variant={section.variant}
           >
-            {section.title}
-          </h2>
-          <ul className="m-0 flex list-none flex-col gap-1 p-0">
-            {section.rows.map((row, i) => {
-              const lit = !!row.target && row.target === hot;
-              return (
-                <li
-                  key={`${row.target ?? ''}:${i}`}
-                  className="flex gap-2 rounded-md border px-2 py-1.5 text-[13px]"
-                  style={{
-                    borderColor: lit ? 'var(--focus)' : 'transparent',
-                    background: lit ? 'var(--surface-2)' : undefined,
-                  }}
-                  data-testid="chart-side-row"
-                  data-for={row.target}
-                  data-lit={lit ? 'true' : 'false'}
-                  onPointerEnter={() => row.target && onHot(row.target)}
-                  onPointerLeave={() => row.target && onHot(null)}
-                >
-                  {row.n && (
-                    <span
-                      className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                      style={{ background: 'var(--s1)' }}
-                    >
-                      {row.n}
-                    </span>
-                  )}
-                  <span className="min-w-0">
-                    {row.title && <span className="block font-semibold">{row.title}</span>}
-                    <span className="block" style={{ color: row.title ? 'var(--text-secondary)' : undefined }}>
-                      {row.text}
-                    </span>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
+            <h2
+              className="m-0 mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[.08em]"
+              style={{ color: look.accent }}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {section.title}
+            </h2>
+            <ul className="m-0 flex list-none flex-col gap-1 p-0">
+              {section.rows.map((row, i) => {
+                const lit = !!row.target && row.target === hot;
+                return (
+                  <li
+                    key={`${row.target ?? ''}:${i}`}
+                    className="rounded-md border px-2 py-1.5 text-[13px]"
+                    style={{
+                      borderColor: lit ? look.accent : 'transparent',
+                      background: lit ? tint(look.accent, look.lit) : undefined,
+                    }}
+                    data-testid="chart-side-row"
+                    data-for={row.target}
+                    data-lit={lit ? 'true' : 'false'}
+                    onPointerEnter={() => row.target && onHot(row.target)}
+                    onPointerLeave={() => row.target && onHot(null)}
+                  >
+                    {section.variant === 'note' ? <NoteRow row={row} /> : <FactRow row={row} accent={look.accent} />}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
     </aside>
   );
 }

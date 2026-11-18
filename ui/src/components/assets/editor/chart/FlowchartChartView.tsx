@@ -2,7 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import type { Chart, FSRef } from '@sdk';
 import { autoNote } from './chartDoc';
-import { ChartCanvas, ChartFrame, ChartLoading, ChartSidePanel, ChartTable, useChartView } from './chartBase';
+import {
+  ChartCanvas,
+  ChartFrame,
+  ChartLoading,
+  ChartSidePanel,
+  ChartTable,
+  useChartView,
+  type ChartSideSection,
+} from './chartBase';
 import { Marks, chartAct, type ChartChanges } from './chartControls';
 import {
   FLOW_NODE,
@@ -98,12 +106,13 @@ export function FlowchartChartView({ fsRef, chart, projectId, changes }: Flowcha
     () => ({ start: t`Start`, question: t`Question`, outcome: t`Outcome`, step: t`Step` }),
     [t],
   );
-  const sections = useMemo(() => {
+  const sections = useMemo<ChartSideSection[]>(() => {
     const boxes = layout?.boxes ?? [];
     return [
       {
         id: 'state',
         title: t`State`,
+        variant: 'fact',
         rows: boxes
           .filter((b) => b.node.state)
           .map((b) => ({ target: b.node.id, n: b.n, title: b.node.label, text: b.node.state! })),
@@ -111,6 +120,7 @@ export function FlowchartChartView({ fsRef, chart, projectId, changes }: Flowcha
       {
         id: 'notes',
         title: t`Notes`,
+        variant: 'note',
         rows: [
           ...boxes
             .filter((b) => b.node.note)
