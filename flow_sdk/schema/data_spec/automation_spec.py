@@ -266,6 +266,15 @@ class AutomationSummary(DataSpec):
     #: That parent's name — the header the list groups its rules under.
     parent_name: Optional[str] = None
     source: AutomationSource = "local"
+    #: Where it stands in its own life (automations/lifecycle.py): active · off · done · expired · cancelled.
+    status: str = "active"
+    #: Its run limit and what is left of it; None = no limit.
+    max_runs: Optional[int] = None
+    runs_left: Optional[int] = None
+    #: When it ends by itself, and when / why it ended.
+    until: Optional[str] = None
+    ended_at: Optional[str] = None
+    ended_reason: Optional[str] = None
 
 
 # ── Check (a dry run) ─────────────────────────────────────────────────────────

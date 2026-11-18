@@ -103,7 +103,7 @@ async def test_a_refused_catch_up_is_not_asked_again_by_the_same_principal(monke
     monkeypatch.setattr(HubProxy, "call", staticmethod(hub_call))
     monkeypatch.setattr(webhook_relay, "_refused_for", None)
     user = {"id": "agent-1"}
-    monkeypatch.setattr(app_config, "get_user", lambda: user)
+    monkeypatch.setattr(app_config, "get_principal", lambda: app_config.as_principal(user))
 
     for _ in range(3):
         await webhook_relay.catch_up()

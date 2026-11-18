@@ -269,6 +269,16 @@ def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Pr
     )
 
 
+def _refused(req: SetupRequirementSpec, roots: list[RootRef], refused: dict[str, str]) -> SetupRequirementSpec:
+    """A value credential a root source's login was refused with: every value asked again, the presence check off
+    (``rejected``) — else "Set up again" finds them present, asks nothing and retries the same refused values."""
+    why = next((refused[r.typeid] for r in roots if r.typeid in refused), "")
+    if not why or req.is_oauth:
+        return req
+    vars = [v.model_copy(update={"present": False}) for v in req.vars]
+    return req.model_copy(update={"vars": vars, "satisfied": False, "rejected": why})
+
+
 def _project_skip_key(req: SetupRequirementSpec) -> str:
     """Where a local skip lives when it is kept in the PROJECT's own map: a dependency's under its name, a shipped
     template's under ``credential:<name>`` — the template's record is every project's, so a mark there would skip
@@ -388,11 +398,14 @@ async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[Se
             narrow[held.name] = wider
 
     out = await _undeclared_connections(project, undeclared, templates, skips)
+    # A source whose provider refused its login: the values it read with are wrong, not merely present.
+    refused = {str(s.typeid): str(s.error_detail or "the login was refused")
+               for s in needs.sources if getattr(s, "error_code", None) == "access_denied"}
     for name, roots in packs.items():
         if gap := _undeclared_for_agents(name, roots, rows):
             out.append(gap)
         if name in rows:
-            req = _from_row(rows[name], roots, project)
+            req = _refused(_from_row(rows[name], roots, project), roots, refused)
             if wider := narrow.get(name):  # the setup step widens the row (``requirement_step``) before connecting
                 req = req.model_copy(update={"scopes": [*req.scopes, *wider], "satisfied": False,
                                              "note": f"needs {', '.join(wider)} too: connect again to grant them"})
@@ -526,6 +539,8 @@ def compile_setup(
             # answers the question — the person's other way to give the value, not a step of its own.
             assist = AI_AGENT if ai and req.setup.strip() else ""
             check = _cli("credentials", "check", req.name, "--project", project_id, *target)
+            # Refused values are present: their presence check would skip every question below.
+            asked = None if req.rejected else check
             # The ONE_OF ways, asked FIRST as one choice; a way of several values is one choice with a field each.
             if vaults and not deployment_id and any(v.kind is not CredentialVarKind.CLI for v in req.missing):
                 # The team's copy first: a full fetch satisfies the check, so every question below skips.
@@ -555,7 +570,7 @@ def compile_setup(
                         "choices": [_way_choice(way, members, req.ways.get(way)) for way, members in offered.items()],
                     },
                     "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
-                    "completion_check": check,
+                    "completion_check": asked,
                 }, bind=input_name(req.name, ONE_OF_INPUT))
             for var in req.missing:
                 if var.is_one_of:
@@ -569,13 +584,13 @@ def compile_setup(
                     # value where they are asked for it.
                     "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
                     # The goal's own check: a re-run (resume) asks nobody once the values are stored.
-                    "completion_check": check,
+                    "completion_check": asked,
                 }, bind=input_name(req.name, var.env_var))
             add({
                 "name": f"store-{req.name}", "label": f"Store {req.title or req.name}",
                 "description": f"{req.name} has every value it needs in {where}.",
                 "subkind": "cli", "exe_data": _cli("credentials", "set", req.name, "--project", project_id, *target, "--from-inputs"),
-                "completion_check": check,
+                "completion_check": asked,
             })
     wizard = WizardSpec.model_validate({
         "name": "project-setup", "description": "Set up this project's connections and credentials.",
@@ -768,7 +783,7 @@ def setup_run_address(project_id: str, root: str = "") -> str:
 
 async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tree: Any = None,
                       load_after: bool = True, providers: Any = None, dependency_approval: bool = True,
-                      ancestors: tuple[str, ...] = (), connect_here: bool = True) -> str:
+                      ancestors: tuple[str, ...] = (), connect_here: bool = True, load_only: bool = False) -> str:
     """Start the project's setup in the background and return its address at once.
 
     The setup is the project's TREE (``core/setup/derive.ProjectTree``): every dependency, connection,
@@ -778,6 +793,9 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
     (``ask_person`` → the open tab), not a terminal. A run already going for the same root is joined,
     never doubled. ``tree``: a resolver pair (``resolve_node`` / ``resolve_op``) built already — a load
     (``core/setup/load``) hands in the one-node tree it checked, so the project is not derived twice.
+
+    Raises ``FirstRunPending`` until first-run setup has ended all green (``core/wizard/first_run``) —
+    unless ``load_only``: a load starting what is already set up, which is not setup.
     """
     from flow_sdk.core.setup import execute_setup  # noqa: PLC0415
     from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
@@ -787,6 +805,10 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
     key = (pid, root)
     running = _RUNS.get(key)
     if running is None or running.done():
+        if not load_only:
+            from flow_sdk.core.wizard.first_run import require_first_run  # noqa: PLC0415
+
+            await require_first_run()
         tree = tree or await ProjectTree(project, ai=ai, connect_here=connect_here).load()
         control = _CONTROLS[key] = SetupControl()
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")

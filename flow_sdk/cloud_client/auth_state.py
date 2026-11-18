@@ -56,16 +56,17 @@ def login_block() -> dict:
     DISK WINS. Leaving that behind in the route would have meant two callers
     disagreeing about the same fact, which is the bug this function exists to end.
     """
-    from flow_sdk.cli.app_config import get_user
+    from flow_sdk.cli.app_config import get_principal
     from flow_sdk.cli.auth.hub_login import is_logged_in
 
-    # `is_logged_in()` is `bool(get_user())`, so this reads the config file twice
+    # `is_logged_in()` is `bool(get_principal())`, so this reads the config file twice
     # and could be one call. It is deliberately left as two: the named predicate is
     # what states the intent, and it is the seam callers and tests patch to mean
     # "this instance is signed out". Both reads are of a small already-warm file on
     # a path that also makes a network probe (`is_cloud_login_available`), so the
     # saving would be noise and the coupling would be real.
     logged_in = is_logged_in()
+    principal = get_principal() if logged_in else None
     status = current_login_status()
     if logged_in and status != HubLoginStatus.LOGGED_IN:
         status = HubLoginStatus.LOGGED_IN
@@ -74,7 +75,9 @@ def login_block() -> dict:
 
     return {
         "status": status.value,
-        "user": get_user() if logged_in else None,
+        # Who is signed in (a person or an Identity); ``user`` is that person only, None for an agent.
+        "principal": principal,
+        "user": principal if principal and principal["type"] == "user" else None,
         "reason": None,
     }
 

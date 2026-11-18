@@ -10,6 +10,7 @@ import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { errorDetail, errorMessage, errorStatus } from '@src/lib/error-message';
 
+import { clientFacts } from './client-facts';
 import { useAnonymousAgent } from './launch-target';
 
 interface Opened {
@@ -26,9 +27,11 @@ interface Opened {
  */
 export function openVisitorSandbox(agentId: string, code?: string, anonymous = Boolean(code)): Promise<Opened> {
   const path = `/api/v1/graph/${Agent.type}/${encodeURIComponent(agentId)}/visitor-sandbox`;
+  // `client`: what this phone says about itself, for the hub's log only (`client-facts.ts`).
+  const body = { ...(code ? { code } : {}), client: clientFacts() };
   return anonymous
-    ? apiClient.post<Opened>(path, code ? { code } : {}, { adapter: 'fetch', withCredentials: false })
-    : apiClient.post<Opened>(path, {});
+    ? apiClient.post<Opened>(path, body, { adapter: 'fetch', withCredentials: false })
+    : apiClient.post<Opened>(path, body);
 }
 
 /** The hub asks for a code: the agent is in invite-code mode. */
@@ -52,10 +55,11 @@ export default function OpenPcLanding() {
   const agentId = (useParams().agentId ?? '').trim();
   const agent = useAnonymousAgent(agentId || null);
   const name = agent ? agent.getDisplayName() || agent.name : '';
-  const [phase, setPhase] = useState<'probing' | 'code' | 'opening' | 'failed'>('probing');
-  const [askCode, setAskCode] = useState(false);
-  // A code handed over in the link's fragment (`#code=…`, from the owner's Open machine) is already in the box.
-  const [code, setCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('code') ?? '');
+  // An invite link (`#code=…`) just shows the code box with the code filled in; nothing is sent until Open.
+  const [linkCode] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('code') ?? '');
+  const [phase, setPhase] = useState<'probing' | 'code' | 'opening' | 'failed'>(linkCode ? 'code' : 'probing');
+  const [askCode, setAskCode] = useState(Boolean(linkCode));
+  const [code, setCode] = useState(linkCode);
   const [problem, setProblem] = useState<string | null>(null);
 
   const problemOf = (e: unknown, sentCode: boolean): string => {
@@ -71,7 +75,6 @@ export default function OpenPcLanding() {
         : t`This agent isn't ready to open yet. Tell whoever gave you the code.`;
     }
     if (status === 429) return t`Too many tries. Try again later.`;
-    if (status === 403) return t`This link is for visitors. Open it in a private window.`;
     return errorMessage(e, t`Couldn't open a sandbox.`);
   };
 
@@ -83,7 +86,7 @@ export default function OpenPcLanding() {
   // Once per page: a second probe would only wake the same box.
   const probed = useRef(false);
   useEffect(() => {
-    if (!agentId || probed.current) return;
+    if (!agentId || linkCode || probed.current) return;
     probed.current = true;
     void (async () => {
       try {

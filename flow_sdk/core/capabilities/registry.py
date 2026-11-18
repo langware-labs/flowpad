@@ -953,6 +953,7 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
         CapabilitySpec(
             name="Claude CLI",
             kind=CapabilityKind.CLAUDE_CLI.value,
+            latest_version_npm="@anthropic-ai/claude-code",
             description="Claude Code command-line harness.",
             icon="Bot",
             value_spec=_FOLDER,
@@ -982,6 +983,7 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
         CapabilitySpec(
             name="Codex CLI",
             kind=CapabilityKind.CODEX_CLI.value,
+            latest_version_npm="@openai/codex",
             description="Codex command-line harness.",
             icon="Terminal",
             value_spec=_FOLDER,
@@ -1009,6 +1011,7 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
         CapabilitySpec(
             name="Copilot CLI",
             kind=CapabilityKind.COPILOT_CLI.value,
+            latest_version_npm="@github/copilot",
             description="GitHub Copilot command-line harness.",
             icon="Terminal",
             value_spec=_FOLDER,
@@ -1037,6 +1040,7 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
         CapabilitySpec(
             name="OpenCode CLI",
             kind=CapabilityKind.OPENCODE_CLI.value,
+            latest_version_npm="opencode-ai",
             description="OpenCode open-source command-line harness.",
             icon="Terminal",
             value_spec=_FOLDER,

@@ -76,6 +76,10 @@ class DeployRequest(DataSpec):
     agent_mode: Optional[Literal["shared", "private"]] = None
     channels: Optional[list[Literal["email", "slack", "chat_api"]]] = None
     idle_pause_seconds: Optional[int] = Field(default=None, ge=60)
+    #: Who the machine signs in as: ``agent`` (the main agent's Identity, shared by its machines),
+    #: ``deployment`` (an Identity of this placement alone), ``user`` (the owner) or ``none``. Absent: the hub's
+    #: default (``agent`` with a main agent, else ``none``).
+    identity: Optional[Literal["none", "agent", "deployment", "user"]] = None
 
     @field_validator("provider", mode="before")
     @classmethod
@@ -104,7 +108,7 @@ class DeployRequest(DataSpec):
     @property
     def mode_fields(self) -> dict[str, Any]:
         """The agent-mode fields as given, for the hub's ``deploy`` (which owns their meaning)."""
-        return self.model_dump(include={"agent_mode", "channels", "idle_pause_seconds"}, exclude_none=True)
+        return self.model_dump(include={"agent_mode", "channels", "idle_pause_seconds", "identity"}, exclude_none=True)
 
 
 class DeployRunning(RuntimeError):

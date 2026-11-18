@@ -21,6 +21,11 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
+from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
+from tests.long_tests._model_tier import model_for
+from tests.long_tests._transcript_helpers import assert_prompt_ok
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -29,12 +34,6 @@ pytestmark = [
         reason="Skipping long tests when DEEP_TESTING is disabled",
     )
 ]
-
-from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
-from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
-from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
-from tests.long_tests._model_tier import model_for
-from tests.long_tests._transcript_helpers import assert_prompt_ok
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 

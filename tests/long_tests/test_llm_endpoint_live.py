@@ -23,6 +23,7 @@ model-catalog tests stay per-provider: their subject is a provider's own key and
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -135,3 +136,34 @@ async def test_the_default_embedding_model_still_exists(provider):
     if not slugs:
         pytest.skip(f"{provider} did not answer a model catalog")
     assert endpoint.tiers["embedding"] in slugs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("family", ["gemini", "claude"])
+@pytest.mark.parametrize("output", ["text", "json", "stream"])
+async def test_local_vertex_completion(family, output):
+    """Direct service-account proof: no hub, fallback provider, or ambient ADC."""
+    credential_file = os.environ.get("VERTEX_SERVICE_ACCOUNT_FILE")
+    if not credential_file:
+        pytest.skip("VERTEX_SERVICE_ACCOUNT_FILE is not set")
+    from flow_sdk.external_apis.llm.vertex import canonical_config
+    from flow_sdk.schema.data_spec.llm_model_spec import VertexConfig
+
+    credential = Path(credential_file).read_text()
+    base_url, _ = canonical_config("", VertexConfig(
+        project_id=os.environ.get("VERTEX_PROJECT", ""), location=os.environ.get("VERTEX_LOCATION", "global"),
+    ), credential)
+    model = os.environ.get(f"VERTEX_{family.upper()}_MODEL") or {
+        "gemini": "google/gemini-2.5-flash", "claude": "claude-haiku-4-5@20251001",
+    }[family]
+    endpoint = LLMEndpoint(provider="vertex", api_key=credential, base_url=base_url)
+    system = 'Return only JSON with one key "answer" whose value is a number.' if output == "json" else "Reply with only one digit."
+    reply = await endpoint.create_completion(system, "What is seven minus four?", model=model,
+                                             json_reply=output == "json", stream=output == "stream")
+    if output == "stream":
+        reply = "".join([chunk async for chunk in reply])
+    if output == "json":
+        assert reply == {"answer": 3}
+    else:
+        assert reply.strip() in {"3", "3."}
+    print(f"PASS direct vertex source=service_account model={model} output={output}")

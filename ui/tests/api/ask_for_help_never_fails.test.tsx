@@ -28,6 +28,7 @@ import { HelpdeskLoadDialog } from '@src/components/helpdesk/HelpdeskLoadDialog'
 import { notify } from '@src/notifications';
 import { registerNavigate } from '@src/notifications/commands';
 import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { apiTestSetup, getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
 
 // The portal's chat surface is not under test — only whether a person is reachable beside it.
@@ -223,9 +224,12 @@ describe.skipIf(!HELPER_EMAIL)('Ask for help never fails', () => {
     const real = dataManager.callAction.bind(dataManager);
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
+    let asked: { conversation_id: string } | undefined;
     vi.spyOn(dataManager, 'callAction').mockImplementation(async (info) => {
-      if (info.name === 'ask-for-help') await held;
-      return real(info);
+      if (info.name !== 'ask-for-help') return real(info);
+      await held;
+      asked = await real(info);
+      return asked;
     });
 
     render(<AskHost onAssigned={() => {}} />);
@@ -246,7 +250,10 @@ describe.skipIf(!HELPER_EMAIL)('Ask for help never fails', () => {
     await waitFor(() => expect(document.querySelector('[data-testid="dialog-closed"]')).not.toBeNull(), {
       timeout: adjusted(15000),
     });
-    expect(told, 'the person must be told the ask went').toHaveBeenCalled();
+    expect(asked?.conversation_id, 'the request was saved').toBeTruthy();
+    expect(told, "the person must be taken to the request's own conversation").toHaveBeenCalledWith(
+      DockPointer.forConversation(asked!.conversation_id).toUrl(),
+    );
   });
 
   it('a helper who was offline when asked finds the task on their board when they come back', async () => {

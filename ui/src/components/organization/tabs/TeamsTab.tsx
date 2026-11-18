@@ -37,6 +37,9 @@ export function TeamsTab({
   const shown = teams.filter(
     (team) => (!mineOnly || !!team.my_roles?.length) && team.name.toLowerCase().includes(query.trim().toLowerCase()),
   );
+  // The org's spend counts everything drawn on its budget; what no team row accounts for
+  // (an agent's visitors, a budget handed out straight from the org) gets its own row.
+  const outsideTeams = org.spent_usd - teams.reduce((sum, team) => sum + team.spent_usd, 0);
 
   return (
     <div data-testid="org-teams-tab">
@@ -106,6 +109,15 @@ export function TeamsTab({
               {shown.length === 0 && (
                 <li className="px-4 py-3 text-sm text-muted-foreground">
                   <Trans>No team matches.</Trans>
+                </li>
+              )}
+              {shown.length === teams.length && outsideTeams >= 0.01 && (
+                <li className={`${TEAM_GRID} py-3`} data-testid="org-outside-teams">
+                  <span className="col-span-3 text-sm text-muted-foreground">
+                    <Trans>Agent visitors / outside teams</Trans>
+                  </span>
+                  <span className="text-end text-sm font-medium tabular-nums">{formatUsd(outsideTeams)}</span>
+                  <span />
                 </li>
               )}
             </ul>

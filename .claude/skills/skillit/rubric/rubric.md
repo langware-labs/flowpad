@@ -16,5 +16,5 @@ reviewing a whole skill, walk the rows top to bottom, loading one at a time.
 
 Findings cite the criterion file and rule number (e.g. `structure.md #2`) — or,
 when judging against a context document, a context location (`context: "<short
-verbatim quote>"`) — so a later correct pass can re-load exactly the rule a fix
+verbatim quote>"`) — so a later improve pass can re-load exactly the rule a fix
 must satisfy.

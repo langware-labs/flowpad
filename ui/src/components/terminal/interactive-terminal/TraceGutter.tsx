@@ -365,7 +365,7 @@ function ExpandedEventLine({ entry }: { entry: TraceGutterEntry }) {
             <TooltipTrigger asChild>
               <button
                 className={cn(
-                  'mt-0.5 shrink-0 rounded p-0.5 opacity-0 transition-colors group-hover:opacity-100',
+                  'mt-0.5 shrink-0 rounded p-0.5 opacity-0 transition-colors group-hover:opacity-100 pointer-coarse:opacity-100',
                   lensPointer
                     ? 'text-muted-foreground hover:bg-muted hover:text-foreground'
                     : 'cursor-default text-muted-foreground/30',

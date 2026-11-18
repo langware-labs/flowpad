@@ -20,6 +20,7 @@ from typing import Any
 
 
 USER_KEY = "user"
+PRINCIPAL_KEY = "principal"
 
 
 def _config_file_path() -> Path:
@@ -83,19 +84,62 @@ def get_config(key: str, default: Any = None) -> Any:
     return _load_config().get(key, default)
 
 
+def as_principal(record: Any) -> dict | None:
+    """A stored login record as a principal: ``type`` is ``user`` or ``identity``. A record written before the
+    principal existed was the hub's user-shaped projection, which marked an agent with ``is_identity``."""
+    if not isinstance(record, dict) or not record.get("id"):
+        return None
+    if record.get("is_identity"):
+        keep = ("id", "name", "title", "picture", "subject_typeid", "status")
+        record = {**{k: record[k] for k in keep if k in record}, "type": "identity"}
+    elif record.get("type") != "identity":
+        record = {**record, "type": "user"}
+    from flow_sdk.fs_store.type_id import type_id_str
+
+    return {**record, "typeid": type_id_str(record["type"], str(record["id"]))}
+
+
+def get_principal() -> dict | None:
+    """Who this instance is signed in to the hub as: the ``/current-principal`` record, or None.
+    ``type`` is ``user`` (a person) or ``identity`` (an agent or a deployment), ``typeid`` always set.
+
+    The rule for callers: "is this me" (my message, my row, my credentials) asks the PRINCIPAL;
+    what needs a person (an email, an invitation, a person's hub routes) asks :func:`get_user`."""
+    config = _load_config()
+    return as_principal(config.get(PRINCIPAL_KEY) or config.get(USER_KEY))
+
+
 def get_user() -> dict | None:
-    """Return the stored user record for the current instance, or None."""
-    return get_config(USER_KEY)
+    """The signed-in PERSON's record, or None -- also when the principal is an Identity, which is no person."""
+    principal = get_principal()
+    return principal if principal and principal.get("type") == "user" else None
+
+
+def set_principal(principal: dict) -> None:
+    """Persist who this instance is signed in as, normalized (``{}`` signs it out)."""
+    normalized = as_principal(principal) if principal else None
+    if principal and normalized is None:
+        raise ValueError("a signed-in principal needs an id")
+    config = _load_config()
+    config.pop(USER_KEY, None)
+    if normalized:
+        config[PRINCIPAL_KEY] = normalized
+    else:
+        config.pop(PRINCIPAL_KEY, None)
+    _save_config(config)
+
+
+def is_switching_principal(incoming: Any) -> bool:
+    """Whether signing in as ``incoming`` (a hub record) replaces a DIFFERENT principal signed in here."""
+    current, new = get_principal(), as_principal(incoming)
+    return bool(current and new and current["typeid"] != new["typeid"])
 
 
 def set_user(user_info: dict) -> None:
-    """Persist the user record for the current instance."""
-    set_config(USER_KEY, user_info)
+    """Persist the signed-in record. Kept for callers that predate the principal: it IS the principal."""
+    set_principal(user_info)
 
 
 def clear_user() -> None:
-    """Drop the user record for the current instance. Idempotent."""
-    config = _load_config()
-    if USER_KEY in config:
-        del config[USER_KEY]
-        _save_config(config)
+    """Sign this instance out of the hub: drop the principal record. Idempotent."""
+    set_principal({})

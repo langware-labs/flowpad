@@ -37,6 +37,7 @@ module.exports.__t = {
   setMainWindow: (w) => { mainWindow = w; },
   setPackageUpdateInFlight: (v) => { packageUpdateInFlight = v; }, // "a package check runs": the blocker the offer waits behind
   setBackendReady: (v) => { backendReady = v; },
+  setEngineOfferDeferredToBoot: (v) => { engineOfferDeferredToBoot = v; },
   setQuitting: (v) => { isQuitting = v; },
   setUvManager: (u) => { uvManager = u; },
   getUvManager: () => uvManager,
@@ -573,6 +574,52 @@ const HOUR = 60 * 60 * 1000;
     writeAccountEmail('dev@langware.ai');
     await regular.t.runScheduledUpdateCheck(); await tick();
     eq([regular.autoUpdater.checks, regular.uv.checks], [2, 1], 'switching to an internal account makes the stale (two-channel) check due');
+  }
+  {
+    // An engine update waits (the user said Later): the 20-minute pass looks for a newer one and quietly swaps it in.
+    const recent = { lastSuccessAt: agoIso(25 * 60 * 1000), lastAttemptAt: agoIso(25 * 60 * 1000), lastResult: { state: 'current', version: null }, failureCount: 0 };
+    const idle = load({ accountEmail: 'user@example.com', engineReady: '0.2.181' });
+    idle.writeSchedule(recent);
+    idle.t.setupElectronAutoUpdater();
+    await schedulerTick(idle).fn(); await tick();
+    eq(idle.uv.checks, 0, 'nothing waiting: the 20-minute pass leaves the engine to its daily cadence');
+    const env = load({ accountEmail: 'user@example.com', engineReady: '0.2.181' });
+    env.writeSchedule(recent);
+    env.uv.prepared = { version: '0.2.180' };
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq(env.uv.checks, 1, '0.2.180 waits: the 20-minute pass looks for a newer engine');
+    eq([toasts(env).length, readyStates(env).at(-1).engine.to], [0, '0.2.181'], '0.2.181 replaces it quietly: no toast, the indicator and popover name the new one');
+    eq(env.readSchedule().engineLastAttemptAt, undefined, 'and the engine cadence is not touched');
+  }
+  {
+    // The popover saw PyPI ahead of the engine update waiting: it asks now — the same quiet check.
+    const env = load({ engineReady: '0.2.181' });
+    eq(await env.ipc['update-refresh-waiting-engine'](), { started: false }, 'nothing waits: nothing to refresh');
+    env.uv.prepared = { version: '0.2.180' };
+    eq(await env.ipc['update-refresh-waiting-engine'](), { started: true }, '0.2.180 waits: the desktop looks now');
+    for (let i = 0; i < 4; i++) await tick();
+    eq([env.uv.checks, toasts(env).length, readyStates(env).at(-1).engine.to], [1, 0, '0.2.181'], 'and swaps 0.2.181 in quietly');
+  }
+  {
+    // A launch whose engine check compared with PyPI starts the engine's own clock: the first tick does not repeat it.
+    const env = load();
+    env.t.setEngineOfferDeferredToBoot(true);
+    await env.t.postBootUpdates(); await tick();
+    ok((env.readSchedule() || {}).engineLastCheckAt, 'the post-boot engine check is recorded');
+  }
+  {
+    // The desktop feed fails for hours (ERR_NETWORK_CHANGED): its backoff retries the feed, and the engine keeps its
+    // own interval anyway — before, it was never checked while the feed failed.
+    const failing = { lastSuccessAt: agoIso(25 * HOUR), lastAttemptAt: agoIso(5 * 60 * 1000), lastResult: { state: 'current', version: null }, failureCount: 13 };
+    const env = load({ accountEmail: 'user@example.com' });
+    env.writeSchedule(failing);
+    env.t.setupElectronAutoUpdater();
+    await schedulerTick(env).fn(); await tick();
+    eq(env.uv.checks, 1, 'feed in backoff, a day since the last answer: the engine is checked on its own clock');
+    ok(env.readSchedule().engineLastCheckAt, 'and stamped');
+    await schedulerTick(env).fn(); await tick();
+    eq(env.uv.checks, 1, 'the next tick does not check it again: its interval starts over');
   }
   {
     // RESTART: the persisted answer is reused — no check, and the engine is NOT held by it.

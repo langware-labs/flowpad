@@ -60,6 +60,8 @@ vi.mock('@src/components/entity-actions/EntityActionsToolbar', () => ({
 vi.mock('@src/components/top-nav-bar/PageShareButton', () => ({
   PageShareButton: () => <button data-testid="entity-actions-share">share</button>,
 }));
+// The Context button pulls in navigation (and the whole SDK); this suite is about the record button.
+vi.mock('@src/components/entity-actions/ContextMenuButton', () => ({ ContextMenuButton: () => null }));
 vi.mock('@src/components/top-nav-bar/BookmarksStarButton', () => ({ BookmarksStarButton: () => <button>star</button> }));
 vi.mock('@src/components/favorites/favorite-target', () => ({ favoriteTargetForDock: () => null }));
 

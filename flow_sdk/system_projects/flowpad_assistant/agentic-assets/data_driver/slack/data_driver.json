@@ -48,7 +48,7 @@
       "choices": true,
       "label": "Channel",
       "placeholder": "C0123456789",
-      "hint": "Leave empty for everything you are in (your own app, set up by Connect). To read ONE channel as a bot, pick it here or type its ID — the ID is what is stored; a renamed channel keeps it. Several channels? One source per channel."
+      "hint": "Leave empty for everything you are in (Sign in with Slack, or your own app). To read ONE channel as a bot, pick it here or type its ID — the ID is what is stored; a renamed channel keeps it. Several channels? One source per channel."
     },
     "allowed_senders": {
       "type": "lines",
@@ -80,15 +80,5 @@
       "POST"
     ],
     "required_headers": []
-  },
-  "setup_wizards": [
-    {
-      "stage": "connect",
-      "label": "Connect",
-      "wizard": "slack-connect",
-      "provides": [
-        "credential"
-      ]
-    }
-  ]
+  }
 }

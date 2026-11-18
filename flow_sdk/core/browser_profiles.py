@@ -328,6 +328,45 @@ def list_browser_profiles() -> BrowserProfiles:
     return BrowserProfiles(browsers=browsers)
 
 
+class ExtensionProfile(DataSpec):
+    """One browser profile and whether a given extension is installed in it."""
+
+    browser: str
+    profile: BrowserProfile
+    installed: bool
+
+
+class ExtensionScan(DataSpec):
+    """``denied``: a browser's profile list exists but this process may not read it
+    (macOS privacy), so its profiles are unknown — not absent."""
+
+    profiles: list[ExtensionProfile]
+    denied: bool = False
+
+
+def scan_extension(extension_id: str) -> ExtensionScan:
+    """Every Chromium profile on this machine, and whether ``extension_id`` is installed in
+    it (``<profile>/Extensions/<id>`` exists)."""
+    os_name = current_os()
+    found: list[ExtensionProfile] = []
+    denied = False
+    for browser in CATALOG:
+        if browser.kind == "firefox":
+            continue
+        for root in _profile_roots(browser, os_name):
+            if not (root / "Local State").exists():
+                continue
+            profiles = read_chromium_profiles(root) if os.access(root / "Local State", os.R_OK) else []
+            if not profiles:
+                denied = True
+                continue
+            for profile in profiles:
+                installed = (root / profile.id / "Extensions" / extension_id).is_dir()
+                found.append(ExtensionProfile(browser=browser.name, profile=profile, installed=installed))
+            break
+    return ExtensionScan(profiles=found, denied=denied)
+
+
 def launch_argv(kind: BrowserKind, target: str, profile_id: str, url: str, os_name: OsName) -> list[str]:
     """The command line, as a list — never a shell string, so a URL is one argument whatever it contains."""
     if kind == "firefox":

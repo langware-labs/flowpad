@@ -7,6 +7,7 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from starlette.requests import Request
 
 from flow_sdk.server import grants
 from flow_sdk.server.service_proxy import GRANT_MAX_AGE, TICKET_MAX_AGE, Grant, sign_grant
@@ -80,11 +81,13 @@ def test_the_exchange_is_one_trade_for_every_door():
     # ``exchange`` reads the real clock, so the ticket is signed now: ``NOW`` is when this file was
     # imported, and a one-minute ticket from then has expired by the time a full run gets here.
     now = int(time.time())
-    traded = grants.exchange(sign_grant(_grant(), SECRET, now=now), audience="app", landing="/x")
+    # A real request's connection, as each door hands it over: the trade is logged from it.
+    conn = Request({"type": "http", "method": "GET", "path": "/auth/gate", "headers": [], "query_string": b""})
+    traded = grants.exchange(sign_grant(_grant(), SECRET, now=now), audience="app", landing="/x", conn=conn)
     assert traded is not None and traded.status_code == 302 and traded.headers["location"] == "/x"
     assert traded.headers["set-cookie"].startswith(grants.COOKIE_NAME)
-    assert grants.exchange(sign_grant(_grant(), SECRET, now=now), audience="admin", landing="/") is None
-    assert grants.exchange("junk", audience="app", landing="/") is None
+    assert grants.exchange(sign_grant(_grant(), SECRET, now=now), audience="admin", landing="/", conn=conn) is None
+    assert grants.exchange("junk", audience="app", landing="/", conn=conn) is None
 
 
 @pytest.mark.parametrize("hostile", ["//evil.com", "https://x", "evil.com/x", "", None, "/__flowpad/session"])
@@ -99,3 +102,38 @@ def test_the_cookie_line_is_host_only_partitioned_and_a_session_cookie():
     for attribute in ("Path=/", "Secure", "HttpOnly", "SameSite=None", "Partitioned"):
         assert attribute in line
     assert "Domain=" not in line and "Max-Age=" not in line and "Expires=" not in line
+
+
+# ── why a credential was refused: words for the Forbidden page, never the value ─────────────
+
+
+def test_check_ticket_names_each_reason():
+    system = "system"
+    fresh = sign_grant(_grant(audience=system), SECRET, now=NOW)
+    assert grants.check_ticket(fresh, audience=system, now=NOW)[0] == "ok"
+    assert grants.check_ticket(None, audience=system, now=NOW)[0] == "none"
+    assert grants.check_ticket("junk", audience=system, now=NOW)[0] == "malformed"
+    assert grants.check_ticket(sign_grant(_grant(audience=system), "other", now=NOW), audience=system)[0] == (
+        "bad-signature"
+    )
+    assert grants.check_ticket(fresh, audience=system, now=NOW + TICKET_MAX_AGE + 5)[0] == "expired 5s ago"
+    assert grants.check_ticket(fresh, audience="app", now=NOW)[0] == "wrong-door"
+
+
+def test_check_cookie_names_each_reason():
+    value = grants.mint_grant(_grant(), now=NOW)
+    assert grants.check_cookie(value, audience="app", now=NOW)[0] == "ok"
+    assert grants.check_cookie(None, audience="app", now=NOW)[0] == "none"
+    assert grants.check_cookie(value, audience="app", now=NOW + GRANT_MAX_AGE + 1)[0] == "expired 1s ago"
+    assert grants.check_cookie(value, audience="system", now=NOW)[0] == "wrong-door"
+    grants.revoke(None, [ENDPOINT], now=NOW)
+    assert grants.check_cookie(value, audience="app", now=NOW)[0] == "revoked"
+
+
+def test_a_grant_from_before_a_restart_says_so():
+    """A restart changes the boot nonce, so the grant's signature no longer matches."""
+    before = grants.mint_grant(_grant(), now=NOW)
+    with patch.object(grants, "_BOOT_NONCE", uuid.uuid4().hex):
+        assert grants.check_cookie(before, audience="app", now=NOW)[0] == (
+            "bad-signature (from before a restart, or another box)"
+        )

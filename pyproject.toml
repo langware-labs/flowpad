@@ -65,6 +65,7 @@ dependencies = [
     "groq",
     "openai",
     "anthropic",
+    "google-auth[requests]>=2,<3",
     "pydantic-ai-slim[mcp]>=1.62,<2",
     "distro",
     "appdirs",

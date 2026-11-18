@@ -45,7 +45,9 @@ if [[ "${MATRIX:-}" == "1" ]]; then
   echo "public endpoint: $ENDPOINT_ID" >&2
   exec docker run --rm --add-host=host.docker.internal:host-gateway \
     -v "$PWD/tests/loginless_e2e/family_matrix.sh:/home/flow/family_matrix.sh:ro" \
-    -e WORKERS -e FAMILIES -e SIZES -e WIZARDS -e PROMPT="${CELL_PROMPT:-hi}" \
+    -v "$PWD/tests/loginless_e2e/make_matrix_endpoint.py:/home/flow/make_matrix_endpoint.py:ro" \
+    -v "$PWD/tests/loginless_e2e/worker_matrix.py:/home/flow/worker_matrix.py:ro" \
+    -e WORKERS -e FAMILIES -e SIZES -e WIZARDS -e MATRIX_MODELS -e PROMPT="${CELL_PROMPT:-hi}" \
     "$IMAGE" bash /home/flow/family_matrix.sh "$ENDPOINT_ID" "$HUB_IN_CONTAINER"
 fi
 ENDPOINT_ID="${ENDPOINT_ID:-$(HUB="$HUB" uv run python tests/loginless_e2e/make_public_endpoint.py)}"

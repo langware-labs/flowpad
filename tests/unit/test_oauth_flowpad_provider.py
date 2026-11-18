@@ -125,7 +125,7 @@ def test_endpoints_and_probe_follow_the_configured_hub(hub_url):
     p = get_local_provider(FLOWPAD)
     assert p.endpoints.authorize_url == f"{hub_url}/oauth/authorize"
     assert p.endpoints.token_url == f"{hub_url}/oauth/token"
-    assert p.probe.url == f"{hub_url}/current-user"
+    assert p.probe.url == f"{hub_url}/current-principal"
 
 
 def test_repointing_the_hub_repoints_the_grant(monkeypatch):

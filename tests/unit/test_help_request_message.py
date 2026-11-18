@@ -389,3 +389,19 @@ def test_the_warning_learns_the_help_desk_replied_only_from_someone_elses_last_w
     assert not afh._desk_replied(conv(*asked)), "reported, nobody answered yet"
     assert afh._desk_replied(conv(*asked, fm("user", "dana"))), "the desk answered"
     assert not afh._desk_replied(conv(*asked, fm("user", "dana"), fm("user", "me"))), "the asker spoke last"
+
+
+async def test_diagnosis_message_names_the_worker_that_ran_it(monkeypatch):
+    """The diagnosis message opens its worker: the record's private link to the process, nothing new stored."""
+    from flow_sdk.app.actions import diagnose_action
+
+    record = SimpleNamespace(private_context_entities=[TypeId(type="agentic_process", id="proc-1")])
+    monkeypatch.setattr(diagnose_action, "recorded_diagnosis", AsyncMock(return_value=record))
+    fm = SimpleNamespace(
+        kind=FlowMessageKind.DIAGNOSIS.value,
+        attachment=[SimpleNamespace(data="flowpad_diagnosis-d1")],
+    )
+    monkeypatch.setattr(afh, "_kind", lambda m: m.kind)
+
+    assert await afh._diagnosis_worker([fm]) == "proc-1"
+    assert await afh._diagnosis_worker([]) == ""

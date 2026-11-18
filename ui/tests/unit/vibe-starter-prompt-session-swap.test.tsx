@@ -117,6 +117,7 @@ vi.mock('@src/components/persistent-iframe', () => ({ default: () => null }));
 vi.mock('@src/components/display-toolbar', () => ({
   DisplayToolbar: ({ children }: React.PropsWithChildren) => <>{children}</>,
   WebappDisplayToolbar: () => null,
+  useDisplayChromeSlot: () => null,
 }));
 vi.mock('@src/components/ui/resizable', () => ({
   ResizablePanelGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,

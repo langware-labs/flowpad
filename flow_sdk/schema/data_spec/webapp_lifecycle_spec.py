@@ -84,6 +84,8 @@ class FailureCode(StrEnum):
     SETUP_OWED = "setup_owed"
     #: A credential or a sign-in only the person can give (its question unanswered, its check failing).
     CREDENTIAL_MISSING = "credential_missing"
+    #: Its setup waits for first-run setup (``core/wizard/first_run``): the person finishes that wizard first.
+    FIRST_RUN_SETUP = "first_run_setup"
     UNKNOWN = "unknown"
 
 

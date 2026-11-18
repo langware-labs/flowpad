@@ -63,6 +63,13 @@ const InvitePage: React.FC = () => {
         // The server chose this and re-validated it against the open-redirect
         // check — don't compute a landing here. It's an absolute app URL, so
         // assign it rather than routing to it.
+        //
+        // A full load makes this page's URL, token included, the next page's
+        // `document.referrer`, and GTM reads that there.
+        const noReferrer = document.createElement('meta');
+        noReferrer.name = 'referrer';
+        noReferrer.content = 'no-referrer';
+        document.head.append(noReferrer);
         window.location.href = redirect_url;
       })
       .catch((err: unknown) => {

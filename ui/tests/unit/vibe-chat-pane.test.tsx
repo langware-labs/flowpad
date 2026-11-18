@@ -112,6 +112,7 @@ describe('VibeChatPane', () => {
 
     expect(mocks.panelProps?.target).toBe('project-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
     expect(mocks.panelProps?.initialProcessId).toBe(process.id);
+    expect(mocks.panelProps).not.toHaveProperty('defaultModel');
     fireEvent.click(screen.getByTestId('pick-history'));
     // Recent opens the picked session as a Vibe tab BESIDE this one.
     expect(mocks.openVibeTabBeside).toHaveBeenCalledWith('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
@@ -159,6 +160,7 @@ describe('VibeChatPane', () => {
 
     expect(screen.queryByTestId('vibe-worker-switch-dialog')).toBeNull();
     await waitFor(() => expect(mocks.createProcess).toHaveBeenCalledWith(expect.objectContaining({ workerType: 'copilot' })));
+    expect(mocks.createProcess.mock.calls[0][0]).not.toHaveProperty('model');
     expect(mocks.continueProcess).not.toHaveBeenCalled();
   });
 

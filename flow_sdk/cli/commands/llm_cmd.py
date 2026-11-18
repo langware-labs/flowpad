@@ -203,6 +203,7 @@ class Row(NamedTuple):
     # Set only on the row `user use <endpoint-id>` makes for a PUBLIC endpoint this box was never
     # offered: the hub it lives on. Non-empty is what tells `select` to bind it without a login.
     public_hub: str = ""
+    model_config: dict | None = None
 
 
 def _worker_of(capability_kind: str) -> str:
@@ -491,8 +492,8 @@ def _use_shell(
 
 @llm_app.command(
     "size",
-    help="Show or set the model size (sm/md/lg) workers run when none is named. "
-    "Each endpoint says which model that size is.",
+    help="Show or set the device-login model size preference (sm/md/lg). "
+    "API-key and hub sources use their endpoint default (or sm when unset) when no model is named.",
 )
 def size_cmd(
     size: Annotated[Optional[str], typer.Argument(help="sm, md or lg. Omit to show the current one.")] = None,
@@ -558,10 +559,10 @@ def _public_endpoint_typeid(ref: str) -> str:
     return f"{prefix}-{bare}" if is_valid_uuid(bare) else ""
 
 
-def _probe_public_endpoint(typeid: str, hub: str) -> str:
-    """Ask the hub, with NO credential, whether *typeid* is a public endpoint. Returns its origin.
+def _probe_public_endpoint(typeid: str, hub: str) -> tuple[str, dict]:
+    """Read a public endpoint's model configuration without an account credential.
 
-    ``models`` is one of the two things an anonymous caller holds on a public endpoint, and it
+    ``model-config`` is part of the anonymous runner's endpoint access, and it
     spends nothing. Asking now is what makes a wrong id fail HERE, with a sentence, instead of
     at the first worker spawn with a harness's retry loop.
     """
@@ -572,7 +573,7 @@ def _probe_public_endpoint(typeid: str, hub: str) -> str:
     origin = (hub or hub_origin()).strip().rstrip("/")
     if not origin.startswith(("http://", "https://")):
         _fail(EXIT_INVALID_ARG, "BAD_HUB", f"{origin!r} is not a hub URL. Pass --hub https://<your hub>.")
-    url = f"{origin}{hub_invoke_path(TypeId(typeid)).removesuffix('/invoke')}/models"
+    url = f"{origin}{hub_invoke_path(TypeId(typeid)).removesuffix('/invoke')}/model-config"
     try:
         response = requests.get(url, headers={"Authorization": f"Bearer {PUBLIC_ENDPOINT_TOKEN}"})
     except requests.RequestException as exc:
@@ -585,7 +586,18 @@ def _probe_public_endpoint(typeid: str, hub: str) -> str:
             f"It is not a public endpoint, or the id is wrong.",
             {"remediation": ["Ask its owner to make it public", "or sign in: flow auth login"]},
         )
-    return origin
+    from flow_sdk.external_apis.llm.model_selection import EndpointModelConfig
+
+    try:
+        body = response.json()
+        if not isinstance(body, dict):
+            raise ValueError("invalid endpoint model configuration")
+        config = EndpointModelConfig.model_validate(body.get("data"))
+        if body.get("status") == "FAIL" or str(TypeId(config.endpoint_typeid)) != str(TypeId(typeid)):
+            raise ValueError("invalid endpoint model configuration")
+    except (ValueError, TypeError):
+        _fail(EXIT_REFUSED, "MODEL_CONFIG_UNAVAILABLE", "The hub did not return this endpoint's model configuration.")
+    return origin, config.model_dump()
 
 
 @user_app.command("use", help="Make a source this instance's default. A PUBLIC hub endpoint's id works with no login.")
@@ -615,6 +627,7 @@ def _use_box(
         # refusal: a box with no hub login is offered nothing, and a PUBLIC endpoint is exactly
         # the budget meant for it. It becomes a row like any other, offered to every harness,
         # and goes through the same select below.
+        public_origin, model_config = _probe_public_endpoint(public_typeid, hub)
         row = Row(
             n=0,
             typeid=public_typeid,
@@ -624,7 +637,8 @@ def _use_box(
             harnesses=sorted({_worker_of(kind) for kind in status.get("sources") or {}}),
             scope="",
             active_for=[],
-            public_hub=_probe_public_endpoint(public_typeid, hub),
+            public_hub=public_origin,
+            model_config=model_config,
         )
     elif hub:
         _fail(EXIT_INVALID_ARG, "HUB_NEEDS_ENDPOINT_ID", "--hub goes with a public endpoint id, not a listed source.")
@@ -637,6 +651,7 @@ def _use_box(
             payload["provider"] = row.provider
         if row.public_hub:
             payload.update(name=row.name, public=True, hub_origin=row.public_hub)
+            payload.update(row.model_config or {})
         _op("select", payload)
         typer.echo(f"  {worker} -> {row.name}")
     # The selection is the whole effect. The harnesses' own config files belong to the machine --

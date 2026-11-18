@@ -187,7 +187,7 @@ def place_of(view: ViewType) -> dict[str, Any]:
     """One ``VIEW_META`` row as a ``navigation.place`` value."""
     meta = VIEW_META[view]
     subplaces = [*meta.subplaces, *(_GENERATED_SUBPLACES[view]() if view in _GENERATED_SUBPLACES else ())]
-    aka = dict(meta.subplace_aliases)
+    aka = dict(meta.subplace_names)
     return {
         "view": view.value,
         "label": meta.label,

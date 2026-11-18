@@ -75,6 +75,11 @@ def desk_conversation_id(conversation_id: str) -> str:
 #: Diagnoses running for a request: held here so a finished request is never garbage-collected mid-run.
 _DIAGNOSING: set[asyncio.Task] = set()
 
+
+def _diagnosis_running(conv_id: str) -> bool:
+    """Whether a request's background diagnosis is still running here (its task is named for the conversation)."""
+    return any(t.get_name() == conv_id for t in _DIAGNOSING)
+
 #: The hub capability that lets a ticket be opened under the id this machine minted (hub f9ff57ace).
 IDEMPOTENT_TICKETS = "idempotent_guest_conversation"
 
@@ -131,10 +136,12 @@ async def ask_for_help() -> ApiResponse:
     capture = ask.model_copy(update={"diagnose": False}) if background else ask
     context: Optional[dict[str, bytes]] = None
     answers = []
+    wrote = False
     for one in asks:
         conv, task, created = await _capture_conversation(one, someone)
         opening = await _opening_message(conv)
         if opening is None:
+            wrote = True
             if context is None:
                 context = await capture_context(capture, recorded)
             sent = await _write_request(conv, task, one, body.get("files"), context, someone, diagnosing=background)
@@ -145,11 +152,14 @@ async def ask_for_help() -> ApiResponse:
             opening = await FlowMessage.get_one({"id": sent.data["id"]})
         answers.append((conv, task, opening))
 
-    # The request goes out at once; a diagnosis follows when it is ready (``_diagnose_then_deliver``).
-    for conv, _task, _opening in answers:
-        if conv.hub_bound:
-            await _first_delivery(conv, "ask-for-help")
-    if background:
+    # A repeat Send (its first answer was lost) finds the request written and its diagnosis running or done --
+    # never a second one. Running: that run delivers when it is done. Done: deliver as without a diagnosis.
+    running = background and not wrote and _diagnosis_running(answers[0][0].id)
+    if background and not wrote and not running:
+        background = not (await _posted_diagnosis(answers[0][0]))[1]
+    if running:
+        pass
+    elif background:
         run = asyncio.create_task(
             _diagnose_then_deliver([c.id for c, _t, _o in answers], ask, someone), name=answers[0][0].id
         )
@@ -624,6 +634,27 @@ async def _posted_diagnosis(conv, messages=None):
     return None, posted
 
 
+async def _diagnosis_worker(messages) -> str:
+    """The context worker that ran the request's diagnosis here: the record's own private link to its
+    process (``cross_link_entities`` in ``flow diagnose``'s runner). Private, so it never travels."""
+    from flow_sdk.app.actions.diagnose_action import recorded_diagnosis  # noqa: PLC0415
+
+    prefix = "flowpad_diagnosis-"
+    for fm in reversed(messages):
+        if _kind(fm) != FlowMessageKind.DIAGNOSIS.value:
+            continue
+        for a in fm.attachment or []:
+            ref = str(a.data)
+            if not ref.startswith(prefix):
+                continue
+            record = await recorded_diagnosis(ref[len(prefix):])
+            for tid in (record.private_context_entities if record is not None else None) or []:
+                if tid.type == "agentic_process":
+                    return tid.id
+        return ""
+    return ""
+
+
 @action.post(action_name="help-request-diagnosis", types=["conversation"])
 async def help_request_diagnosis() -> ApiResponse:
     """``POST /graph/conversation/<id>/help-request-diagnosis`` — what the diagnosis message offers: its
@@ -642,13 +673,14 @@ async def help_request_diagnosis() -> ApiResponse:
         _id, desk, pass_on = await _report_target(conv, diagnosis)
     return ApiSuccessResponse(
         data={
-            "diagnosing": not posted and any(t for t in _DIAGNOSING if t.get_name() == conv.id),
+            "diagnosing": not posted and _diagnosis_running(conv.id),
             "diagnosis": diagnosis.model_dump(mode="json") if diagnosis is not None else None,
             "reportable": bool(diagnosis is not None and diagnosis.reportable and not reported),
             "reported": reported,
             "replied": reported and _desk_replied(messages),
             "desk": desk,
             "pass_on": pass_on,
+            "worker_process_id": await _diagnosis_worker(messages),
         }
     )
 
@@ -979,16 +1011,39 @@ async def help_recipients() -> ApiResponse:
                 kind=HelpRecipientKind.DESK, desk_project_id=adopted.queue_project_id, name="This project's help desk"
             ).model_dump(mode="json")
         )
-    default = await _hub_default_helpdesk()
-    reached = await get_info() is not None
+    # Three independent hub reads: asked together, the dialog waits for the slowest, not the sum.
+    default, info, my_desks = await asyncio.gather(_hub_default_helpdesk(), get_info(), _my_helpdesks())
+    reached = info is not None
     if default is not None and default.project_id not in {d["desk_project_id"] for d in desks}:
         desks.append(
             HelpRecipient(
                 kind=HelpRecipientKind.DESK, desk_project_id=default.project_id, name="Flowpad support"
             ).model_dump(mode="json")
         )
+    # The desks this person added themselves, like contacts: theirs in every project.
+    listed = {d["desk_project_id"] for d in desks}
+    for mine in my_desks:
+        if mine["id"] not in listed:
+            desks.insert(
+                len(desks) - (1 if default is not None else 0),
+                HelpRecipient(
+                    kind=HelpRecipientKind.DESK, desk_project_id=mine["id"], name=mine.get("display_name") or "Help desk"
+                ).model_dump(mode="json"),
+            )
     state = "known" if default is not None else ("not_configured" if reached else "unknown")
     return ApiSuccessResponse(data={"desks": desks, "default_state": state})
+
+
+async def _my_helpdesks() -> list[dict]:
+    """The help desks this login added on the hub (``my-helpdesks``); none when the hub cannot say."""
+    from flow_sdk.cli.app_config import get_principal  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+
+    me = str((get_principal() or {}).get("id") or "")
+    if not me:
+        return []
+    rows = await HubProxy.try_call("GET", BuiltinEntityType.USER, me, "helpdesks")
+    return [r for r in rows or [] if isinstance(r, dict) and r.get("id") and r.get("enabled")]
 
 
 async def _portal_queue_id(project_id: Optional[str]) -> Optional[str]:

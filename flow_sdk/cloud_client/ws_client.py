@@ -346,19 +346,6 @@ def _is_reply(raw_message: str | bytes) -> bool:
     return kind is None or kind == WSMessageType.RESPONSE_MSG.value
 
 
-def _empty_success(raw_message: str | bytes) -> bool:
-    """A reply that succeeded with no data: ``current-user`` answering for a principal that is not a person."""
-    from flow_sdk.api.messages import WSMessageType  # noqa: PLC0415 — same lazy import as its caller
-
-    try:
-        frame = json.loads(raw_message)
-    except (TypeError, ValueError):
-        return False
-    if isinstance(frame, dict) and frame.get("message_type") == WSMessageType.RESPONSE_MSG.value:
-        frame = frame.get("content") or {}
-    return isinstance(frame, dict) and str(frame.get("status") or "").lower() == "success" and not frame.get("data")
-
-
 class HubWebSocketManager:
     """Small background manager for the desktop-to-hub WebSocket session."""
 
@@ -786,11 +773,11 @@ class HubWebSocketManager:
         return False
 
     async def verify_current_user(self, config: ApiConfig | None = None) -> dict[str, Any]:
-        """Verify hub WS auth by comparing hub current-user data to local cloud profile."""
+        """Verify hub WS auth by comparing the hub's principal for this socket to the local signed-in one."""
         from flow_sdk.api.messages import APIMessage, WSMessageType
-        from flow_sdk.cli.app_config import get_user
+        from flow_sdk.cli.app_config import get_principal
 
-        local_user = get_user() or {}
+        local_user = get_principal() or {}
         local_user_id = local_user.get("id")
         if not local_user_id:
             await self._set_state(
@@ -803,24 +790,15 @@ class HubWebSocketManager:
 
         try:
             async with connect_hub_websocket(config or self.config, connection_id=str(uuid.uuid4())) as websocket:
-
-                async def ask(action: str) -> str | bytes:
-                    await websocket.send(APIMessage(action=action).model_dump_json())
-                    # The hub's opening ``ws_ready_msg`` greeting is consumed by
-                    # ``connect_hub_websocket``. The reply is the first frame that IS
-                    # one: the hub may fan out pushes (a ``data_op_msg`` for a
-                    # conversation just shared, …) to this socket first, and reading
-                    # one of those as the reply failed verification.
-                    async with asyncio.timeout(HUB_WS_VERIFY_TIMEOUT_SECONDS):
-                        while not _is_reply(raw := await websocket.recv()):
-                            pass
-                    return raw
-
-                raw_message = await ask("current-user")
-                # A hub that splits person from principal (FLOWPAD-2353) answers an Identity --
-                # a deployed agent's box -- with empty data here and names it at current-principal.
-                if _empty_success(raw_message):
-                    raw_message = await ask("current-principal")
+                await websocket.send(APIMessage(action="current-principal").model_dump_json())
+                # The hub's opening ``ws_ready_msg`` greeting is consumed by
+                # ``connect_hub_websocket``. The reply is the first frame that IS
+                # one: the hub may fan out pushes (a ``data_op_msg`` for a
+                # conversation just shared, …) to this socket first, and reading
+                # one of those as the reply failed verification.
+                async with asyncio.timeout(HUB_WS_VERIFY_TIMEOUT_SECONDS):
+                    while not _is_reply(raw_message := await websocket.recv()):
+                        pass
         except HubWebSocketAuthError:
             await self._set_state(
                 HubConnectionStatus.AUTH_REJECTED,

@@ -50,6 +50,8 @@ The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `htt
 
 > **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is a separate service — run it from your hub checkout (it serves** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
 
+> **Smart navigation on a local hub needs `JEV_API_KEY` in the hub's env.** A local hub keys its built-in decision endpoint from it at startup; without it the hub logs a warning and every request goes to the assistant, even "open preferences".
+
 ### Validating the HUB UI (non-negotiable)
 
 **"Open the hub UI" means a frontend configured against the HUB server — never the local backend.** The hub page rendered against `localhost:$LOCAL_SERVER_PORT` is a *different runtime*: the local server declares `supported_pages: ["desk","hub"]`, so `isHubOnly()` is false, the full desktop API is present, and the type registry is populated. Every hub-only behavior — the API subset, `isHubOnly()` gates, missing `types` — is invisible there. Validating a hub change against the local backend proves nothing about the hub.
@@ -233,6 +235,15 @@ Why the exception and nothing else: a read-only asset has no row of its own to l
 2. **`apiClient`** (`import apiClient from '@sdk/client'`) — the worst-case escape hatch for non-entity REST routes; it carries the base URL, auth, and the `{status,data}` envelope unwrapping. Pass it a **path** (`/api/v1/...`), never a full URL.
 
 If a backend route can't be called through `apiClient` because it doesn't return the standard `ApiResponse` envelope, fix the route to return the envelope — don't fall back to `fetch`. Workers/skills resolve their own backend via the pinned `FLOW_INSTANCE` (`~/.flow/instances/<name>/server.json`), never via a URL baked into a prompt or file.
+
+## One view on the hub and the desktop (non-negotiable)
+
+**Every view is shared between the hub and the desktop unless the user approved otherwise for that view.**
+A view (a help desk, an agent, a project page) is one component that both runtimes render; a feature that
+needs a page gets it once, not a hub page and a desktop page. What differs between the two is gated inside
+the shared view (`isHubOnly()`, the API subset), never forked into a second view. A view that exists on one
+side only is a gap to fill, not a design. An approved exception is noted in the view's own source with its
+date and reason.
 
 ## Type icons (non-negotiable)
 

@@ -69,6 +69,8 @@ _DETERMINISTIC: dict[FailureCode, HandlingAction] = {
     FailureCode.PORT_HELD: HandlingAction.NEEDS_PERSON,
     # A credential, a sign-in: only the person has it — never an agent's to invent or work around.
     FailureCode.CREDENTIAL_MISSING: HandlingAction.NEEDS_PERSON,
+    # First-run setup comes first: the person finishes that wizard, then the app's setup goes on.
+    FailureCode.FIRST_RUN_SETUP: HandlingAction.NEEDS_PERSON,
 }
 
 
@@ -218,6 +220,7 @@ async def _setup_owed(app, *, display: str) -> Optional[WebappFailureSpec]:
     """Run what the app stands on when its check finds it owed. None when nothing is (or the run made it so)."""
     from flow_sdk.builtin.project_setup import _RUNS, start_setup  # noqa: PLC0415
     from flow_sdk.core.setup.load import _unmet  # noqa: PLC0415
+    from flow_sdk.core.wizard.first_run import FirstRunPending  # noqa: PLC0415
 
     found = await _owed_now(app, display=display)
     if found is None:
@@ -227,7 +230,10 @@ async def _setup_owed(app, *, display: str) -> Optional[WebappFailureSpec]:
     if not owed:
         await _note_owed(str(app.id), "")
         return None
-    run = await start_setup(project, root=target, tree=tree, load_after=False, connect_here=False)
+    try:
+        run = await start_setup(project, root=target, tree=tree, load_after=False, connect_here=False)
+    except FirstRunPending as exc:
+        return make(FailurePhase.DEPENDENCY, FailureCode.FIRST_RUN_SETUP, str(exc), folder=app.asset_ref)
     await record.set_state(str(app.id), LifecycleState.STARTING, f"setting up what it needs: {owed}", setup_owed=owed)
     task = _RUNS.get((str(project.id), target))
     result = await asyncio.shield(task) if task is not None else None
@@ -388,12 +394,16 @@ async def _setup_node(app, node_id: str) -> Optional[WebappFailureSpec]:
     """Run one node of the project's setup tree (a dependency), and wait for it."""
     from flow_sdk.builtin.project_setup import _RUNS, start_setup  # noqa: PLC0415
     from flow_sdk.core.setup.load import _leaf_failure  # noqa: PLC0415
+    from flow_sdk.core.wizard.first_run import FirstRunPending  # noqa: PLC0415
 
     project = await _project(app)
     if project is None or not node_id:
         return make(FailurePhase.DEPENDENCY, FailureCode.SETUP_OWED, f"no setup node {node_id!r} to run",
                     folder=app.asset_ref)
-    await start_setup(project, root=node_id, load_after=True, connect_here=False)
+    try:
+        await start_setup(project, root=node_id, load_after=True, connect_here=False)
+    except FirstRunPending as exc:
+        return make(FailurePhase.DEPENDENCY, FailureCode.FIRST_RUN_SETUP, str(exc), folder=app.asset_ref)
     task = _RUNS.get((str(project.id), node_id))
     result = await asyncio.shield(task) if task is not None else None
     if result is not None and result.ok:

@@ -41,6 +41,14 @@ def turn_env(monkeypatch, tmp_path):
     monkeypatch.setattr(AgenticProcess, "save", no_op)
     monkeypatch.setattr(AgenticProcess, "prepare_process_assets", prepare)
     monkeypatch.setattr(claude_driver, "apply_worker_secret_env", secret_env)
+
+    # A device login: the launch resolves no API binding, and this suite is about the turn's env.
+    async def no_api_auth(_process, **_kwargs):
+        return None
+
+    from flow_sdk.builtin.agentic_process.cli_drivers import api_auth
+
+    monkeypatch.setattr(api_auth, "resolve_worker_api_auth", no_api_auth)
     monkeypatch.setattr(claude_driver, "run_headless_turn", fake_turn)
 
     async def run(**fields) -> dict:

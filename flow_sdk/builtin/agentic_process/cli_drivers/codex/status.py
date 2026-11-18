@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.transcript_tail_status import tail_status
+from flow_sdk.core.capabilities.models import CapabilityKind
 from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,7 @@ def codex_tail_status(path: str | Path) -> WorkerStatus:
     reported only while the file is fresh; once the writer is stale, the worker
     is considered inactive rather than idle.
     """
-    return tail_status(path, _classify_codex_entry)
+    return tail_status(path, _classify_codex_entry, capability_kind=CapabilityKind.CODEX_CLI.value)
 
 
 def _classify_codex_entry(raw: dict[str, Any]) -> tuple[WorkerStatus | None, bool]:

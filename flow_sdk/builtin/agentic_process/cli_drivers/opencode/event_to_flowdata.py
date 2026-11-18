@@ -59,6 +59,11 @@ class OpenCodeEventConverter:
             self._line_index += 1
 
         out = [_wrap_live(entry) for entry in entries]
+        part = event.get("part")
+        if event_type == "step_finish" and isinstance(part, dict) and part.get("reason") == "stop":
+            # The worker recognizes this as terminal, so it will not synthesize
+            # flowpad.result. Deliver the matching stream completion here.
+            out.append(final_end_frame())
         if not out:
             return [status_frame(str(event_type) or "unknown", safe_dump(event))]
         return out
@@ -128,5 +133,4 @@ def _result(event: dict[str, Any]) -> list[FlowData]:
         ),
         final_end_frame(),
     ]
-
 

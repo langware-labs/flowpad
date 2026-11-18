@@ -22,6 +22,8 @@ import { EntityCrumbHoverCard } from './EntityCrumbHoverCard';
 import { selectVisibleCrumbs } from './crumb-overflow';
 import type { Crumb } from './use-entity-breadcrumbs';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
+import { ProjectLocationButton } from '@src/components/terminal/project-list-menu';
+import { useProjectLocation } from '@src/hooks/use-project-location';
 
 /**
  * Crumb widths as laid out, by what decides them: the trail's text and kind (a
@@ -68,6 +70,7 @@ export function AddressField({
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const { project, projectPath } = useProjectLocation();
   // "switch project" (smart navigation): the same picker the project crumb opens.
   useUiActionRequest(['project-list'], () => setProjectModalOpen(true));
 
@@ -156,14 +159,25 @@ export function AddressField({
     return (
       <BreadcrumbItem key={crumb.key} data-crumb className={isLast ? 'min-w-0 shrink' : 'shrink-0'}>
         {crumb.kind === 'project' ? (
-          <ProjectCrumbHoverCard>
-            <BreadcrumbLink
-              className="flex cursor-pointer items-center gap-1 hover:text-foreground"
-              onClick={() => go(crumb)}
-            >
-              {body}
-            </BreadcrumbLink>
-          </ProjectCrumbHoverCard>
+          <span className="flex items-center gap-0.5">
+            {/* Cloud project → open it in the hub; local one → reveal its folder. */}
+            {project && (
+              <ProjectLocationButton
+                projectId={project.id}
+                projectPath={projectPath}
+                cloudLinked={project.remote === true}
+                fallback={null}
+              />
+            )}
+            <ProjectCrumbHoverCard>
+              <BreadcrumbLink
+                className="flex cursor-pointer items-center gap-1 hover:text-foreground"
+                onClick={() => go(crumb)}
+              >
+                {body}
+              </BreadcrumbLink>
+            </ProjectCrumbHoverCard>
+          </span>
         ) : isLast && crumb.path ? (
           <CrumbDetailsPopover
             label={crumb.label}

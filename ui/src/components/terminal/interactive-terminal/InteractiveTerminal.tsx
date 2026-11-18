@@ -82,6 +82,7 @@ import { ShellTerminal } from './ShellTerminal';
 import { TerminalBottomRibbon } from './TerminalBottomRibbon';
 import { TerminalSearchBar } from './TerminalSearchBar';
 import { calcTimeGutterWidth, TimeGutter } from './TimeGutter';
+import { useIsMobile } from '@src/hooks/use-mobile';
 import { TraceGutter } from './TraceGutter';
 import { getAnchors, useAnnotationGutter } from './use-annotation-gutter';
 import { useTimeGutter } from './use-time-gutter';
@@ -360,6 +361,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [traceFilters, setTraceFilters] = usePreference<TraceFilters>(PrefKey.TRACE_FILTERS);
   const [gutterExpanded, setGutterExpanded] = useState(false);
   const [colVis, setColVis] = usePreference<ColVisibility>(PrefKey.COLUMN_VISIBILITY);
+  const isMobile = useIsMobile();
   // Open side windows + active are dock state (URL: ?sideWindows&activeSideWindow),
   // read/written through the shared useSideWindows() hook. We narrow the generic
   // string ids back to this surface's SideTabId registry (dropping any stale or
@@ -522,10 +524,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       .reduce<string | null>((max, e) => (max === null || e.timestamp > max ? e.timestamp : max), null);
     return last;
   }, [allTraceEvents]);
-  const showGutter = !!process && traceFilters.events && colVis.trace;
+  // A phone has no width to spare for the trace column.
+  const traceColumn = colVis.trace && !isMobile;
+  const showGutter = !!process && traceFilters.events && traceColumn;
   // Reserve gutter space based on user settings even before process resolves,
   // so xterm fits at the correct width from the start (avoids layout shift).
-  const reserveGutterSpace = traceFilters.events && colVis.trace;
+  const reserveGutterSpace = traceFilters.events && traceColumn;
   const showTimeGutter =
     !!process &&
     colVis.time &&

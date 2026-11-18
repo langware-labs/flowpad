@@ -1,3 +1,4 @@
+import { submitOnEnter } from '@src/hooks/use-mobile';
 import { t } from '@lingui/core/macro';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
@@ -77,7 +78,7 @@ export function SessionInput({
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (submitOnEnter(e)) {
       e.preventDefault();
       handleSubmit();
     }

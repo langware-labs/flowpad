@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -193,6 +194,61 @@ def _int_field(row: dict[str, Any], key: str) -> int:
         return 0
 
 
+#: Folders whose children are drives that appear only while connected: a missing
+#: path whose nearest existing ancestor is one of these is unplugged, not deleted.
+MOUNT_CONTAINERS = {"/Volumes", "/media", "/mnt"}
+#: The same, one level down: udisks mounts at ``/run/media/<user>/<drive>``.
+PER_USER_MOUNT_CONTAINERS = {"/run/media"}
+FSTAB = Path("/etc/fstab")
+
+
+_fstab_cache: tuple[tuple[str, int], set[str]] | None = None
+
+
+def _fstab_mount_points() -> set[str]:
+    # A scan asks once per missing folder; re-read only when fstab changes.
+    global _fstab_cache
+    try:
+        key = (str(FSTAB), FSTAB.stat().st_mtime_ns)
+        if _fstab_cache is not None and _fstab_cache[0] == key:
+            return _fstab_cache[1]
+        lines = FSTAB.read_text().splitlines()
+    except OSError:
+        return set()
+    points = set()
+    for line in lines:
+        fields = line.split()
+        if len(fields) >= 2 and not fields[0].startswith("#") and fields[1].startswith("/") and fields[1] != "/":
+            # fstab octal-escapes whitespace in a path: "/mnt/My\\040Drive".
+            points.add(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), fields[1]))
+    _fstab_cache = (key, points)
+    return points
+
+
+def on_unavailable_volume(path: str) -> bool:
+    """Whether a missing ``path`` is on a drive or share that is not connected,
+    rather than deleted. Decided by its nearest existing ancestor:
+
+    * nothing exists, not even the root: the drive or UNC share is absent (Windows);
+    * a mount container (``/Volumes/<drive>`` gone, ``/run/media/<user>/<drive>`` gone);
+    * an ``/etc/fstab`` mount point that is not mounted (Linux keeps it as a folder).
+
+    An existing root is NOT a disconnected drive: ``/scratch/proj`` with ``/scratch``
+    deleted is an ordinary orphan. Other mounts (autofs, a mount point outside
+    fstab) are not detected and read as orphans.
+    """
+    probe = Path(path)
+    while not os.path.lexists(probe):
+        if probe.parent == probe:
+            return True
+        probe = probe.parent
+    if probe.parent == probe:
+        return False
+    if probe.as_posix() in MOUNT_CONTAINERS or probe.parent.as_posix() in PER_USER_MOUNT_CONTAINERS:
+        return True
+    return probe.as_posix() in _fstab_mount_points() and not os.path.ismount(probe)
+
+
 def classify(
     row: dict[str, Any],
     *,
@@ -213,6 +269,10 @@ def classify(
     path = Path(cwd)
     info = stat if stat is not None else _stat_or_none(path)
     if info is None:
+        # A folder on an unplugged drive will come back with it: not a cleanup
+        # candidate, so not counted as orphaned (and never offered for removal).
+        if on_unavailable_volume(cwd):
+            return CleanupVerdict.ACTIVE
         # The folder is gone; only the row survives.
         return CleanupVerdict.ORPHANED
 
@@ -583,6 +643,28 @@ def remove_from_harness(row: dict[str, Any], index: HarnessIndex) -> dict[str, A
     return clear_harness_state(row, index)
 
 
+def trash_folder(cwd: str) -> Optional[str]:
+    """Move a project folder to the Trash; the mechanism used, or None when it is already gone."""
+    from flow_sdk.fs_store.path_utils import trash_path  # noqa: PLC0415
+
+    try:
+        return trash_path(cwd)
+    except FileNotFoundError:
+        return None
+
+
+def trash_unrecorded_project(row: dict[str, Any], index: HarnessIndex) -> dict[str, Any]:
+    """Remove a listed folder that has no Project row: guard it, clear its harness state, trash it.
+
+    The row-backed delete is ``Project._delete_with_children``; this is all that is left
+    of it when there is no record — no children, no row to delete.
+    """
+    guard_deletable(row["cwd"])
+    outcome = clear_harness_state(row, index)
+    mechanism = trash_folder(row["cwd"])
+    return {**outcome, "trashed": mechanism is not None, "mechanism": mechanism, "deleted_children": 0}
+
+
 __all__ = [
     "CleanupRefused",
     "HarnessIndex",
@@ -599,5 +681,7 @@ __all__ = [
     "has_harness_state",
     "has_visible_entry",
     "remove_from_harness",
+    "trash_folder",
+    "trash_unrecorded_project",
     "summarize",
 ]

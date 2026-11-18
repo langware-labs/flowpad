@@ -1,6 +1,7 @@
-import { memo, useCallback, useRef, useState } from 'react';
+import { Fragment, memo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw, type LucideIcon } from 'lucide-react';
+import type { RailEntry } from '@src/components/collapsed-sidebar/collapsed-sidebar';
 import { useContext } from '@src/hooks/useContext';
 import { smartAskOrOpen } from '@src/navigation/smart-ask';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -32,16 +33,13 @@ import type { Project, RuntimeKind } from '@sdk';
 const TopNavControls = memo(function TopNavControls({
   project,
   runtimeKind,
-  onHome,
-  onFiles,
 }: {
   project: Project | null;
   runtimeKind: RuntimeKind;
-  onHome: () => void;
-  onFiles: () => void;
 }) {
   const { t } = useLingui();
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
+  const places = useNavBarPlaces();
   return (
     <>
       {/* Back/forward are the only glyphs in this cluster that encode a
@@ -65,13 +63,13 @@ const TopNavControls = memo(function TopNavControls({
       {/* A full window reload, the same as the browser's own — no modifier
           gesture and no soft variant. Anything less does not reload. */}
       <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
-      {/* Home is Flowpad's own home page, never a project's home page. */}
-      <NavIconButton icon={Home} label={t`Home`} onClick={onHome} testId="top-nav-home" />
-      {/* Right after Home, where it is found, rather than at the far edge of the bar. */}
-      <TopBarAskForHelp projectId={project?.id ?? null} />
-      {/* Files sat on the rail; same destination, same one-liner, just beside
-          the other place-buttons instead of below them. */}
-      <NavIconButton icon={FolderOpen} label={t`Files`} onClick={onFiles} testId="top-nav-files" />
+      {places.map((place, index) => (
+        <Fragment key={place.key}>
+          <NavIconButton icon={place.icon} label={place.title} onClick={place.open} testId={`top-nav-${place.id}`} />
+          {/* Right after Home, where it is found, rather than at the far edge of the bar. */}
+          {index === 0 && <TopBarAskForHelp projectId={project?.id ?? null} />}
+        </Fragment>
+      ))}
       <AppButton project={project} />
       <RuntimeChip kind={runtimeKind} project={project} />
       <ProjectSetupButton project={project} />
@@ -79,6 +77,27 @@ const TopNavControls = memo(function TopNavControls({
     </>
   );
 });
+
+/**
+ * The bar's place-buttons as data — the same shape as a rail entry, so the phone menu lists them with
+ * the rail's. Home is Flowpad's own home page, never a project's; Files sat on the rail once.
+ */
+export function useNavBarPlaces(): (RailEntry & { icon: LucideIcon })[] {
+  const { t } = useLingui();
+  const { currentDock, navigation } = useDockNavigation();
+  const at = (viewType: ViewType) => currentDock?.viewType === viewType;
+  return [
+    { key: 'home', id: 'home', title: t`Home`, icon: Home, active: at(ViewType.HOME), open: () => navigation.goHome({ homePage: true }) },
+    {
+      key: 'files',
+      id: 'files',
+      title: t`Files`,
+      icon: FolderOpen,
+      active: at(ViewType.EXPLORER),
+      open: () => navigation.openTab(ViewType.EXPLORER),
+    },
+  ];
+}
 
 /**
  * The app's navigation bar — full window width, above the rail and the content
@@ -110,11 +129,6 @@ export function TopNavBar() {
   const { crumbs, targetTypeId, targetTitle } = useEntityBreadcrumbs(currentDock);
   // The OS window title mirrors the address — same crumbs, no second resolve.
   useDocumentTitle(windowTitleFor(crumbs));
-  // Stable handlers for the memoized controls: the actions object is rebuilt on every navigation.
-  const navigationRef = useRef(navigation);
-  navigationRef.current = navigation;
-  const onHome = useCallback(() => navigationRef.current.goHome(), []);
-  const onFiles = useCallback(() => navigationRef.current.openTab(ViewType.EXPLORER), []);
 
   return (
     <div
@@ -122,7 +136,7 @@ export function TopNavBar() {
       data-runtime={runtimeKind}
       className="flex w-full shrink-0 items-center gap-2 border-b bg-muted/40 px-2.5 py-2"
     >
-      <TopNavControls project={project} runtimeKind={runtimeKind} onHome={onHome} onFiles={onFiles} />
+      <TopNavControls project={project} runtimeKind={runtimeKind} />
       {/* One slot, three modes — the address is where you are, search is
           where you'd rather be, and ask (a click on the pill's dead space) is
           what you want done, handed to the Flowpad Assistant. Same pill, same

@@ -145,6 +145,11 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
     Funding facts only: whether FlowPad is signed in, which keys are stored, and who the hub
     user is are STATUS facts (``core.status``) and are read there, not repeated here.
     """
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+    from flow_sdk.core.status.build import stored_keys  # noqa: PLC0415
+
+    keys = stored_keys()  # only providers with a key stored here: the views also offer keyless placeholders
+
     bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
     # Listings report readable budgets. A hub-pushed Runner binding remains usable even
     # when absent from those lists; the hub authorizes each invocation independently.
@@ -159,7 +164,11 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
         decision=await _decision_api(refresh=refresh),
         notes=notes,
         endpoints=endpoints,
-        available=[endpoint.to_wire() for endpoint in available],
+        # One list for the endpoint tables: the hub's budgets AND this machine's key roots -- every
+        # stored key, not only those a harness offers (a key no harness speaks to is still a root,
+        # and the API keys tab counts it). Readers that want one side filter by ``kind``.
+        available=[endpoint.to_wire() for endpoint in available]
+        + [row.to_wire() for row in await LLMEndpoint.stored_key_roots(keys)],
         # Harnesses whose resolved source IS the bound endpoint -- the resolver's own reading.
         active_for=[
             kind for kind, pick in resolved.items() if pick and bound_typeid and pick.endpoint_typeid == bound_typeid
@@ -223,6 +232,8 @@ async def bind_hub_llm_endpoint(payload: dict) -> dict:
             name=payload.get("name"),
             models_allow=payload.get("models_allow"),
             tiers=payload.get("tiers"),
+            default_model=payload.get("default_model"),
+            effective_default_model=payload.get("effective_default_model"),
         )
     except ValueError as exc:
         raise HubEndpointBindError(str(exc), 400) from exc
@@ -402,6 +413,8 @@ async def select_llm_source(payload: dict) -> dict:
                 # A public budget is unlisted to a signed-out box: the sizes the hub sends with it are
                 # the only ones a spawn will ever see.
                 tiers=payload.get("tiers") if isinstance(payload.get("tiers"), dict) else None,
+                default_model=payload.get("default_model"),
+                effective_default_model=payload.get("effective_default_model"),
             )
         cap.auth_mode, cap.api_provider = "api", LMApiProvider.FLOWPAD.value
 
@@ -713,21 +726,22 @@ async def _test_api_key(provider: str) -> dict:
     key = get_lm_api(provider)
     if not key:
         return _verdict(False, status=401, message=f"no {provider} key is stored on this machine")
-    model = _TEST_MODELS.get(provider, "")
-    if not model:
-        return _verdict(False, message=f"{provider} has no test model configured")
+    import time
 
-    if provider == "anthropic":
-        url = "https://api.anthropic.com/v1/messages"
-        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
-        body = {"model": model, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
-    else:
-        base = "https://openrouter.ai/api/v1" if provider == "openrouter" else "https://api.openai.com/v1"
-        url = f"{base}/chat/completions"
-        headers = {"Authorization": f"Bearer {key}"}
-        body = {"model": model, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+    from flow_sdk.builtin.llm_endpoint import LM_SECRET_PREFIX, LLMEndpoint
+    from flow_sdk.external_apis.llm.errors import LLMError
 
-    return await _spend_one(url, headers, body, model)
+    endpoint = await LLMEndpoint.find_by_secret(f"{LM_SECRET_PREFIX}{provider}") or LLMEndpoint(provider=provider)
+    endpoint._explicit_api_key = key
+    model = endpoint.tiers.get("sm", "")
+    started = time.monotonic()
+    try:
+        # Preserve the old _spend_one HTTP client's default five-second ceiling.
+        await endpoint.client().test_completion(timeout=5.0)
+        return _verdict(True, status=200, model=model, latency_ms=int((time.monotonic() - started) * 1000))
+    except LLMError as exc:
+        return _verdict(False, status=exc.status, model=model, message=exc.message,
+                        latency_ms=int((time.monotonic() - started) * 1000))
 
 
 async def _spend_one(url: str, headers: dict, body: dict, model: str) -> dict:
@@ -779,7 +793,6 @@ async def check_llm_source(payload: dict) -> dict:
     is per-harness and has no other identity.
     """
     from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
-
     kind = str(payload.get("kind") or "").strip()
     if kind == LLMEndpointKind.DEVICE:
         worker = str(payload.get("harness") or "").strip()

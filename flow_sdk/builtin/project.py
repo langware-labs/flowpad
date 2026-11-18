@@ -772,6 +772,83 @@ class Project(SetupSkippable, Entity):
         await self._reindex_manifest()
         return ApiSuccessResponse(data={"env_files": spec.env_files})
 
+    @action.post(action_name="set-browser")
+    async def set_browser_action(self, browser: str = "agent") -> "ApiResponse":
+        """`POST /project/<id>/set-browser {browser}` — the browser this project's sessions use
+        (``agent`` | ``extension``). Written into ``project_manifest.json``; a session reads it
+        at its next launch."""
+        from flow_sdk.assets.project_manifest import ManifestError, set_browser  # noqa: PLC0415
+
+        if not self.fs_storage_mount_path:
+            return ApiFailResponse(message="Project has no local working directory")
+        try:
+            spec = set_browser(Path(self.fs_storage_mount_path), browser)
+        except ManifestError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        await self._reindex_manifest()
+        return ApiSuccessResponse(data={"browser": spec.browser})
+
+    @action.get(action_name="browser-status")
+    async def browser_status_action(self, process_id: str = "") -> "ApiResponse":
+        """`GET /project/<id>/browser-status?process_id=` — the project's browser, what is
+        available (agent window up, extension hint), and — for a session — what it resolves to
+        and its last browser call. Polled by the footer chip, so the file and CDP reads run
+        off the event loop."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.assets.project_manifest import read_browser  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process import browser_choice  # noqa: PLC0415
+        from flow_sdk.core.agent_browser import status as agent_status  # noqa: PLC0415
+
+        setting = read_browser(Path(self.fs_storage_mount_path)) if self.fs_storage_mount_path else "agent"
+        process = None
+        if process_id:
+            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+            process = await AgenticProcess.get_by_id(process_id)
+
+        if process is not None:
+            options = browser_choice.worker_options(process.worker_type)
+        else:
+            from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
+
+            options = browser_choice.worker_options(await resolve_default_worker_type())
+
+        def _probe() -> tuple[dict, dict, dict | None]:
+            last_use = None
+            if process is not None:
+                from flow_sdk.builtin.agentic_process.transcript_cache import transcript_path  # noqa: PLC0415
+
+                # The harness transcript, then any the process tees into its own record folder
+                # (the headless stream) — the newest call wins.
+                paths = [transcript_path(process), *process._record_dir().glob("*transcript*.jsonl")]
+                uses = [u for u in map(browser_choice.last_browser_use, paths) if u]
+                last_use = max(uses, key=lambda u: u["at"] or "") if uses else None
+            # Extension facts only for a worker that has one.
+            extension: dict = {"installed": False, "device": ""}
+            if options.EXTENSION_ID:
+                from flow_sdk.core.browser_profiles import scan_extension  # noqa: PLC0415
+
+                scan = scan_extension(options.EXTENSION_ID)
+                extension = {
+                    **browser_choice.extension_hint(),
+                    "profiles": [{**p.profile.model_dump(), "browser": p.browser, "installed": p.installed} for p in scan.profiles],
+                    "profiles_denied": scan.denied,
+                }
+            return agent_status().model_dump(), extension, last_use
+
+        agent, extension, last_use = await asyncio.to_thread(_probe)
+        return ApiSuccessResponse(
+            data={
+                "setting": setting,
+                "effective": (await browser_choice.resolve_for(process, setting)).kind if process else setting,
+                "supports_extension": options.EXTENSION_FLAG is not None,
+                "agent": agent,
+                "extension": extension,
+                "last_use": last_use,
+            }
+        )
+
     async def _reindex_manifest(self) -> None:
         """Re-index ``project_manifest.json`` after a field write. The row is the
         projection every reader queries (the home-page picker, Credentials), and
@@ -1092,8 +1169,12 @@ class Project(SetupSkippable, Entity):
         questions come to the app. ``root`` sets up one node of the tree and what it needs (a source, a web
         app). Answers at once with the run's address, which a screen claims to draw them in place."""
         from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+        from flow_sdk.core.wizard.first_run import FirstRunPending  # noqa: PLC0415
 
-        return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
+        try:
+            return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
+        except FirstRunPending as exc:
+            return ApiFailResponse(message=str(exc), status_code=412, data={"error_code": exc.code})
 
     @action.post(action_name="setup-stop")
     async def setup_stop_action(self, root: str = "") -> "ApiResponse":
@@ -1732,7 +1813,7 @@ class Project(SetupSkippable, Entity):
 
         parent_tid = parent_share_typeid(self)
         if parent_tid is not None:
-            self.add_shared_context_entities(parent_tid)
+            self.add_shared_context_entities(parent_tid, via="static")
         if self.fs_storage_mount_path:
             origin = await asyncio.to_thread(GitOrigin.for_asset_path, self.fs_storage_mount_path)
             if origin is not None:
@@ -4160,8 +4241,9 @@ class Project(SetupSkippable, Entity):
         """Permanently delete this project and everything that belongs to it.
 
         ``folder`` says what happens to the user's own files at
-        ``fs_storage_mount_path``: ``rmtree`` destroys them (the default, what
-        the assets-page delete has always done), ``trash`` moves them to the
+        ``fs_storage_mount_path``: ``rmtree`` destroys them (the default here, for
+        internal callers that own the folder; the HTTP route and the assets-page
+        dialog pass ``keep`` unless the user asks), ``trash`` moves them to the
         desktop Trash so the deletion is recoverable, and ``keep`` leaves them
         alone. Everything else — the child records, their bundles, the ``@local``
         detach and the project's own record — is identical in all three, which
@@ -4337,12 +4419,61 @@ class Project(SetupSkippable, Entity):
             "folder_mechanism": folder_mechanism,
         }
 
+    async def _folder_delete_refusal(self) -> str | None:
+        """Why this project's folder must not be removed from disk, or None.
+
+        A folder delete may only ever reach this project's own files: never a
+        protected path (root, home, a workspace root), and never a folder another
+        project lives in, sits inside, or shares. The mount is stored canonical
+        (links resolved), so it is the very path the dialog showed, and ``rmtree``
+        does not follow links below it."""
+        mount = self.fs_storage_mount_path
+        if not mount:
+            return "this project has no folder on disk"
+        if self.protected_path:
+            return f"{mount} is a protected folder and is never deleted"
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # Any row on or below the folder blocks it, hidden or not: its files would go
+        # too. An enclosing row blocks only when visible, the rule nesting uses:
+        # hidden rows (the workspace root, shipped assets) enclose every project.
+        others = [p for p in await self._mount_owners(mount) if str(p.id) != str(self.id)]
+        others += [p for p in await self._enclosing_owners(mount) if p._visible()]
+        others += [
+            p
+            for p in await type(self).get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["fs_storage_mount_path", f"{mount}/%"]))
+            )
+            # LIKE over-fetches (`_`/`%` in a path are wildcards, and it ignores case):
+            # this prefix check is what makes the match exact. Do not drop it.
+            if (p.fs_storage_mount_path or "").startswith(f"{mount}/")
+        ]
+        if others:
+            names = ", ".join(sorted({f"{p.name!r} ({p.fs_storage_mount_path})" for p in others}))
+            return f"{mount} is shared with other projects: {names}"
+        return None
+
     @action.post(action_name="delete-with-children")
     async def _http_delete_with_children(self) -> ApiResponse:
-        """Permanently delete this project and all of its children. Irreversible."""
+        """Permanently delete this project and all of its children. Irreversible.
+
+        The project folder on disk is the user's own work: it is removed only when
+        the body says ``delete_folder: true``, and kept otherwise."""
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
-        if not isinstance(body, dict) or not isinstance(body.get("delete_chats", True), bool):
-            return ApiFailResponse(message="delete_chats must be a boolean", status_code=400)
-        result = await self._delete_with_children(delete_chats=body.get("delete_chats", True))
+        if not isinstance(body, dict):
+            return ApiFailResponse(message="body must be an object", status_code=400)
+        for key, default in (("delete_chats", True), ("delete_folder", False)):
+            if not isinstance(body.get(key, default), bool):
+                return ApiFailResponse(message=f"{key} must be a boolean", status_code=400)
+        if body.get("delete_folder", False):
+            refusal = await self._folder_delete_refusal()
+            if refusal:
+                # Refuse the whole request: removing the row and silently keeping the
+                # folder would answer a different question than the user asked.
+                return ApiFailResponse(message=refusal, status_code=409)
+        result = await self._delete_with_children(
+            folder="rmtree" if body.get("delete_folder", False) else "keep",
+            delete_chats=body.get("delete_chats", True),
+        )
         return ApiSuccessResponse(data=result)

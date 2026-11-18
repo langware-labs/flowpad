@@ -39,6 +39,7 @@ class World:
     b: Project  # a second project (caller / consumer)
     inner: Project  # nested mount tmp/a/inner
     doc_a: Docs
+    folder_doc: Docs  # stamped with a project id that names no project (a non-project folder's)
     a_dir: Path
     inner_dir: Path
 
@@ -59,7 +60,9 @@ async def world(tmp_path: Path) -> World:
         await p.save()
     doc_a = Docs(title=f"doc a {tag}", project_id=a.id)
     await doc_a.save()
-    return World(a=a, b=b, inner=inner, doc_a=doc_a, a_dir=a_dir, inner_dir=inner_dir)
+    folder_doc = Docs(title=f"folder doc {tag}", project_id=str(uuid.uuid4()))
+    await folder_doc.save()
+    return World(a=a, b=b, inner=inner, doc_a=doc_a, folder_doc=folder_doc, a_dir=a_dir, inner_dir=inner_dir)
 
 
 # (name, build(world) -> (pointer, target_type, target_id, opened_in), expected, expected_owner)
@@ -74,6 +77,16 @@ SCENARIOS = [
         "vfs asset open → asset's project",
         lambda w: (_ptr("assets", f"editor/markdown/{_vfs(w.a_dir / 'x.md')}"), "markdown", w.doc_a.id, w.b.id),
         "a", "a",
+    ),
+    (
+        "a stamp naming no project (a non-project folder) → its path decides",
+        lambda w: (_ptr("assets", f"editor/markdown/{_vfs(w.inner_dir / 'x.md')}"), "markdown", w.folder_doc.id, None),
+        "inner", "inner",
+    ),
+    (
+        "a typeid asset stamped with a non-project folder id → Global",
+        lambda w: (_ptr("assets", f"editor/markdown/typeid/markdown-{w.folder_doc.id}"), "markdown", w.folder_doc.id, w.b.id),
+        None, None,
     ),
     (
         "unminted file in nested mount → deepest project",

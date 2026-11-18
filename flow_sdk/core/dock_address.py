@@ -161,6 +161,7 @@ class ViewType(StrEnum):
     DESKTOP = "desktop"  # Full-page favorites desktop (BrowseableGrid)
     LIVE_SESSION = "live_session"  # Live remote-worker session
     HELPDESK = "helpdesk"  # Helpdesk portal - /dock/helpdesk/<projectId>[/article/<path>]
+    SUPPORT_DESK = "support_desk"  # A help desk itself (its team's view; the link a person asking opens) - /dock/support_desk/<hub project id>
     ATLAS = "atlas"  # Retired: redirects to /dock/hub/worldview/…
     HUB_RECORDS = "records"  # Hub entity list by type (page=hub)
     HUB_ENTITY = "entity"  # Hub single-entity viewer (page=hub)
@@ -178,7 +179,7 @@ class ViewType(StrEnum):
     TOKEN_PLAN = "token-plan"  # Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/<scope>]
     # DESK page: what funds this machine's harnesses. Every fact it renders is a box fact
     # (a device token, a stored key, the endpoint BINDING), so it has no hub half.
-    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/<worker>|keys|endpoints] -- the harness or section in focus
+    LLM_SOURCES = "llm-sources"  # /dock/llm-sources[/logins[/<worker>]|keys[/<id>]|endpoints[/<id>]] -- tab, then what is in focus (a bare <worker> = logins/<worker>)
     # DESK page: the first-run chooser -- "what should issue your LLM calls". Its own address
     # rather than a state on LLM_SOURCES because ``flow llm set auto`` opens it in a BROWSER,
     # and a CLI can hand a user nothing but a URL. LLM_SOURCES answers "what funds each harness
@@ -390,9 +391,9 @@ class ViewMeta:
     #: pointer starting ``?`` is the screen's options (``?creating=schedule``); one starting ``/``
     #: is a whole address of its own (``/hub/worldview/world``, a projection the hub renders).
     subplaces: tuple[tuple[str, str], ...] = ()
-    #: ``(pointer, aliases)``: what a person calls a subplace beside its whole name, as a screen's
-    #: ``aliases`` -- offered with it and a rule ("failed runs" is Automations > Runs that failed).
-    subplace_aliases: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    #: ``(pointer, names)``: what a person calls a subplace, for the navigator's rules -- a name
+    #: here opens that subplace with no model call ("toplog settings").
+    subplace_names: tuple[tuple[str, tuple[str, ...]], ...] = ()
     #: ``(entity type, pointer form, name)``: how this screen opens ON an entity in context when
     #: that is more than its bare id -- ``("agentic_process", "<harness>/transcript/<session>",
     #: "transcript")``. The form's placeholders are ``<id>``, ``<type>``, ``<path>`` and any field
@@ -404,6 +405,31 @@ class ViewMeta:
     #: are one place, so ``canonical_address`` folds the tab away.
     default_tab: str = ""
 
+
+#: ``(pointer, name, names)`` for every Preferences tab -- the tabs of ``PREF_GROUPS``
+#: (``ts_sdk/src/preferences/prefLayout.ts``; ``test_navigation_map`` checks they agree), named by
+#: what is in them, plus what a person calls the tab when that is not its name.
+PREFERENCE_TABS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("general/appearance", "General > Appearance: view mode (vibe, standard, advanced), language, system projects and skills", ()),
+    ("general/notifications", "General > Notifications: turn the sound on or off when an agent waits, which sound", ()),
+    ("terminal/behavior", "Terminal > Behavior: external OS terminal, ask before running a command link", ()),
+    ("terminal/display", "Terminal > Display: buffer sync updates, scrollback lines", ()),
+    ("ai/models", "AI & chat > Models: default model size, token source order", ()),
+    ("ai/chat", "AI & chat > Chat: show tool calls", ()),
+    ("indexing/auto-index", "Indexing > Auto index: index a project on selection, depth, when, where the walk runs", ()),
+    ("indexing/engine", "Indexing > Engine: disk I/O backend (Python or Rust)", ()),
+    ("sharing/sharing", "Sharing & privacy > Sharing: message status, cloud link prompt, sign-in prompt", ()),
+    ("sharing/this-machine", "Sharing & privacy > This machine: IT messages", ()),
+    (
+        "developer/trace-logging",
+        "Developer > Trace logging: toplog tags, debug log on or off, keep after restart",
+        ("toplog", "toplog settings", "toplog preferences", "trace logging", "tracing", "tracing settings", "debug logging"),
+    ),
+    ("developer/hook-sniffer", "Developer > Hook sniffer: max sniffer events", ()),
+    ("developer/errors", "Developer > Errors: de-duplicate errors", ()),
+    ("developer/smart-navigation", "Developer > Smart navigation: turn the smart navigation log on or off", ()),
+    ("developer/experimental", "Developer > Experimental: experimental flags, regenerate onboarding", ()),
+)
 
 #: The table below builds rows directly. ``pointer`` leads and ``addressable``
 #: defaults to True, so a row is `_m(_OPT, label="…")` — a pass-through wrapper
@@ -556,25 +582,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         folds_pointer=True,
         label="Preferences",
         aliases=("my preferences", "appearance"),
-        # The bare address shows the first category (PreferencesView: ``categories[0]``).
-        default_tab="general",
-        # The tabs of ``PREF_CATEGORIES`` (ts_sdk/src/preferences/prefRegistry.ts), named by what is in them.
-        subplaces=tuple(
-            (tab, f"Preferences > {name}")
-            for tab, name in (
-                ("general", "General: show system skills"),
-                ("terminal", "Terminal: scrollback sync, history, terminal openers"),
-                ("notifications", "Notifications: turn the sound on or off when an agent waits, message status, sign-in ask"),
-                ("advanced", "Advanced: turn the smart navigation log on or off, terminal scrollback lines"),
-                ("auto_index", "Auto index: which folders are indexed automatically"),
-                ("i18n", "Language"),
-                ("ui", "Interface: choose the view mode (vibe or terminal), the vibe model, system projects"),
-                ("chat", "Chat: show tool calls"),
-                ("errors", "Errors: time span, status filter, de-duplication"),
-                ("debug", "Debug: event sniffer"),
-                ("onboarding", "Onboarding"),
-            )
-        ),
+        subplaces=tuple((pointer, f"Preferences > {name}") for pointer, name, _ in PREFERENCE_TABS),
+        subplace_names=tuple((pointer, names) for pointer, _, names in PREFERENCE_TABS if names),
     ),
     ViewType.AGENTIC_PROCESS: _m(_REQ, label="Process", provides=("entity", "process"), opens=("agentic_process",)),
     ViewType.SEARCH: _m(_NONE, label="Search", aliases=("find",)),
@@ -596,17 +605,12 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
             ("?creating=file", "New file-watcher automation: runs when a file changes (an empty form)"),
             ("?creating=agent_hook", "New agent-hook automation (an empty form)"),
         ),
-        # The Runs screen's own "failed" badge is not in its address: this is the place that opens on
-        # only the failed ones.
-        subplace_aliases=(("runs?status=failed", ("failed runs",)),),
         open_forms=(("trigger", "?trigger=<id>", "page"), ("event", "?trigger=<id>", "page")),
     ),
     ViewType.EVENTS: _m(_NONE, addressable=False),
     ViewType.TRIGGERS: _m(_NONE, addressable=False),
     ViewType.CAPABILITIES: _m(_NONE, label="Capabilities", aliases=("checks", "system checks")),
-    # "workflows" alone are the dynamic workflows a person writes and runs (the Assets list,
-    # ``navigation.LIST_WORDS``); this dev-mode editor is called by its whole name.
-    ViewType.GRAPH_WORKFLOWS: _m(_OPT, label="Graph Workflows"),
+    ViewType.GRAPH_WORKFLOWS: _m(_OPT, label="Graph Workflows", aliases=("workflows",)),
     ViewType.SIGNALS: _m(_NONE, addressable=False),
     # Pointer `[drivers[/<driverName>]]`: the drivers live UNDER the sources, and all
     # three levels fold into one tab chip (ui/src/components/data-sources/data-sources-pointer.ts).
@@ -660,11 +664,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         pages=("desk", "hub"),
         provides=("entity",),
         # The per-type lists (``list/<type>``) come from the type registry: ``navigation.place_of``.
-        subplaces=(
-            ("project-home", "Project home: the current project's overview page"),
-            # The list the screen opens on (``DockPointer.forAssetList('all')``).
-            ("list/all", "Assets > all my assets: the list of every asset, of every type"),
-        ),
+        subplaces=(("project-home", "Project home: the current project's overview page"),),
     ),
     # Same: a bare project dock is the assets workspace (see the PROJECT arm in
     # `content-panel.tsx`, which documents exactly that and was unaddressable).
@@ -695,6 +695,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _REQ, label="Live Session", open_forms=(("agentic_process", "<live_session>", "live session"),)
     ),
     ViewType.HELPDESK: _m(_REQ, folds_pointer=True, label="Help desk", aliases=("support",), opens=("project",)),
+    ViewType.SUPPORT_DESK: _m(_REQ, label="Support desk"),
     ViewType.ATLAS: _m(_OPT, addressable=False),
     ViewType.HUB_RECORDS: _m(_REQ, label="Records", aliases=("hub records",), pages=("hub",)),
     ViewType.HUB_ENTITY: _m(_REQ, label="Entity", aliases=("hub entity",), pages=("hub",)),
@@ -721,8 +722,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         _OPT,
         folds_pointer=True,
         label="LLM Endpoints",
-        # The list shows each endpoint's usage today: with no endpoint named, it answers "endpoint usage".
-        aliases=("endpoints", "endpoint usage", "endpoints usage"),
+        aliases=("endpoints",),
         pages=("hub",),
         provides=("entity",),
         open_forms=(
@@ -743,15 +743,16 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.LLM_SOURCES: _m(
         _OPT,
         folds_pointer=True,
-        label="LLM sources",
-        aliases=("harness funding",),
+        label="Token sources",
+        aliases=("llm sources", "harness funding"),
         subplaces=tuple(
-            (h, f"LLM sources > how {name} is funded (its key, plan or allowance)")
+            (h, f"Token sources > how {name} is funded (its key, plan or allowance)")
             for h, name in (("claude", "Claude Code"), ("codex", "Codex"), ("copilot", "Copilot"), ("opencode", "OpenCode"))
         )
         + (
-            ("keys", "LLM sources > the API keys stored on this machine"),
-            ("endpoints", "LLM sources > the hub endpoints this account can spend"),
+            ("logins", "Token sources > each assistant's device login and what it runs on now"),
+            ("keys", "Token sources > the API keys stored on this machine"),
+            ("endpoints", "Token sources > the hub endpoints this account can spend"),
         ),
     ),
     # Pointer NONE: the screen asks one question and has no selection to address. It is the

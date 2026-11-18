@@ -1,0 +1,1083 @@
+{
+  "version": 1,
+  "mock": "message-tags-20261114",
+  "root": "stream_inbox",
+  "screens": [
+    {
+      "id": "stream_inbox",
+      "title": "Stream Inbox · tags on arriving messages",
+      "scenario": "Single-line 36px stream_inbox rows. Compact tags at right expand on hover to all tag chips and a details icon.",
+      "actions": [
+        {
+          "id": "open",
+          "label": "Charged twice for November",
+          "does": "Charged twice for November",
+          "to": "message",
+          "when": null
+        },
+        {
+          "id": "details",
+          "label": "Tag details",
+          "does": "Tag details",
+          "to": "tag-picker"
+        }
+      ]
+    },
+    {
+      "id": "message",
+      "title": "Message · classified",
+      "scenario": "The original message is unchanged. Its sender line shows three colored tag chips with small remove buttons, a tag overflow icon for the fourth tag, and an automation icon with counter 2.",
+      "actions": [
+        {
+          "id": "tags",
+          "label": "All tags (4)",
+          "does": "All tags (4)",
+          "to": "tag-picker",
+          "when": "More than three tags"
+        },
+        {
+          "id": "view",
+          "label": "refund",
+          "does": "refund",
+          "to": "tag-view",
+          "when": "Inspect a tag"
+        },
+        {
+          "id": "queue",
+          "label": "Automations (2)",
+          "does": "Automations (2)",
+          "to": "queue",
+          "when": null
+        },
+        {
+          "id": "remove-refund",
+          "label": "Remove refund",
+          "does": "Remove refund",
+          "to": "removed-refund",
+          "when": null
+        },
+        {
+          "id": "remove-today",
+          "label": "Remove today",
+          "does": "Remove today",
+          "to": "relabelled",
+          "when": null
+        },
+        {
+          "id": "remove-action-required",
+          "label": "Remove action-required",
+          "does": "Remove action-required",
+          "to": "removed-action-required",
+          "when": null
+        },
+        {
+          "id": "entity-today",
+          "label": "today",
+          "does": "today",
+          "to": "tag-view-today",
+          "when": null
+        },
+        {
+          "id": "entity-action-required",
+          "label": "action-required",
+          "does": "action-required",
+          "to": "tag-view-action-required",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-picker",
+      "title": "Message · tag menu",
+      "scenario": "Click a standard tag chip to open its entity viewer. Automation-added receipt has a source-automation icon link. No separate View button. New tag, editor and removal controls remain.",
+      "actions": [
+        {
+          "id": "remove-today",
+          "label": "Remove today",
+          "does": "Remove today",
+          "to": "relabelled",
+          "when": null
+        },
+        {
+          "id": "new",
+          "label": "New tag",
+          "does": "New tag",
+          "to": "tag-create",
+          "when": null
+        },
+        {
+          "id": "editor",
+          "label": "Open tag editor",
+          "does": "Open tag editor",
+          "to": "tags",
+          "when": null
+        },
+        {
+          "id": "view",
+          "label": "refund",
+          "does": "refund",
+          "to": "tag-view",
+          "when": null
+        },
+        {
+          "id": "close",
+          "label": "Close tags",
+          "does": "Close tags",
+          "to": "message",
+          "when": null
+        },
+        {
+          "id": "remove-refund",
+          "label": "Remove refund",
+          "does": "Remove refund",
+          "to": "removed-refund",
+          "when": "Remove refund from this message"
+        },
+        {
+          "id": "remove-action-required",
+          "label": "Remove action-required",
+          "does": "Remove action-required",
+          "to": "removed-action-required",
+          "when": "Remove action-required from this message"
+        },
+        {
+          "id": "remove-receipt",
+          "label": "Remove receipt",
+          "does": "Remove receipt",
+          "to": "removed-receipt",
+          "when": "Remove receipt from this message"
+        },
+        {
+          "id": "clear",
+          "label": "Remove all tags",
+          "does": "Remove all tags",
+          "to": "unmatched",
+          "when": "Remove every tag from the message"
+        },
+        {
+          "id": "header-queue",
+          "label": "Automations (2)",
+          "does": "Automations (2)",
+          "to": "queue",
+          "when": null
+        },
+        {
+          "id": "view-today",
+          "label": "today",
+          "does": "today",
+          "to": "tag-view-today",
+          "when": "today"
+        },
+        {
+          "id": "view-action-required",
+          "label": "action-required",
+          "does": "action-required",
+          "to": "tag-view-action-required",
+          "when": "action-required"
+        },
+        {
+          "id": "view-receipt",
+          "label": "receipt",
+          "does": "receipt",
+          "to": "tag-view-receipt",
+          "when": "receipt"
+        },
+        {
+          "id": "source",
+          "label": "Source: Refund helper",
+          "does": "Source: Refund helper",
+          "to": "automation",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "relabelled",
+      "title": "Message · tags corrected",
+      "scenario": "The today tag disappears immediately from the sender line. The message body does not change.",
+      "actions": [
+        {
+          "id": "tags",
+          "label": "Tags",
+          "does": "Tags",
+          "to": "tag-picker",
+          "when": null
+        },
+        {
+          "id": "header-queue",
+          "label": "Automations (2)",
+          "does": "Automations (2)",
+          "to": "queue",
+          "when": null
+        },
+        {
+          "id": "header-tag-view",
+          "label": "refund",
+          "does": "refund",
+          "to": "tag-view",
+          "when": null
+        },
+        {
+          "id": "header-removed-refund",
+          "label": "Remove refund",
+          "does": "Remove refund",
+          "to": "removed-refund",
+          "when": null
+        },
+        {
+          "id": "header-removed-action-required",
+          "label": "Remove action-required",
+          "does": "Remove action-required",
+          "to": "removed-action-required",
+          "when": null
+        },
+        {
+          "id": "header-removed-receipt",
+          "label": "Remove receipt",
+          "does": "Remove receipt",
+          "to": "removed-receipt",
+          "when": null
+        },
+        {
+          "id": "entity-action-required",
+          "label": "action-required",
+          "does": "action-required",
+          "to": "tag-view-action-required",
+          "when": null
+        },
+        {
+          "id": "entity-receipt",
+          "label": "receipt",
+          "does": "receipt",
+          "to": "tag-view-receipt",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-view",
+      "title": "Tag viewer · refund",
+      "scenario": "Reuse the Tag Graph / Tree viewer and entity inspector. Show description, ontology source, tagged messages, and related automations.",
+      "actions": [
+        {
+          "id": "manage",
+          "label": "Manage tags",
+          "does": "Manage tags",
+          "to": "tags",
+          "when": "The user manages the ontology"
+        },
+        {
+          "id": "filter",
+          "label": "View tagged messages",
+          "does": "View tagged messages",
+          "to": "tagged-messages",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tagged-messages",
+      "title": "Stream Inbox · filtered by tag",
+      "scenario": "Reuse the existing stream_inbox and TagFilterBar to show messages tagged billing.refund, across channels.",
+      "actions": [
+        {
+          "id": "open",
+          "label": "Charged twice for November",
+          "does": "Charged twice for November",
+          "to": "message",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tags",
+      "title": "Tags · user ontology and Flowpad",
+      "scenario": "The existing Tags page uses Stream Inbox tags as its default heading.",
+      "actions": [
+        {
+          "id": "create",
+          "label": "New tag",
+          "does": "New tag",
+          "to": "tag-create",
+          "when": null
+        },
+        {
+          "id": "edit",
+          "label": "Edit tag",
+          "does": "Edit tag",
+          "to": "tag-edit",
+          "when": "Edit the existing refund tag"
+        },
+        {
+          "id": "delete",
+          "label": "Delete tag",
+          "does": "Delete tag",
+          "to": "tag-delete",
+          "when": "Delete the unused legacy tag"
+        },
+        {
+          "id": "flow",
+          "label": "Flowpad tags",
+          "does": "Flowpad tags",
+          "to": "flow-tags",
+          "when": "Inspect optional Flowpad vocabulary"
+        }
+      ]
+    },
+    {
+      "id": "tag-create",
+      "title": "Tags · create",
+      "scenario": "Reuse the entity form styling for a new tag in the user ontology, with name, title, and description used by classification. Choose a tag color. Choose a tag color. Choose a tag color.",
+      "actions": [
+        {
+          "id": "save",
+          "label": "Create tag",
+          "does": "Create tag",
+          "to": "tag-created",
+          "when": null
+        },
+        {
+          "id": "cancel",
+          "label": "Cancel",
+          "does": "Cancel",
+          "to": "tags",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-created",
+      "title": "Tags · created",
+      "scenario": "The new billing.review tag appears in the existing taxonomy tree and becomes available in the message tag picker.",
+      "actions": [
+        {
+          "id": "back",
+          "label": "Back to tag",
+          "does": "Back to tag",
+          "to": "tag-view",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-edit",
+      "title": "Tags · edit and rename",
+      "scenario": "Edit title and classification description. Rename through the existing successor/alias concept; show the effect on messages and matching automations. Set the tag color; the chip label uses the last dot-separated segment. Set the tag color; the chip label uses the last dot-separated segment. Set the tag color; the chip label uses the last dot-separated segment.",
+      "actions": [
+        {
+          "id": "save",
+          "label": "Save changes",
+          "does": "Save changes",
+          "to": "tag-edited",
+          "when": null
+        },
+        {
+          "id": "cancel",
+          "label": "Cancel",
+          "does": "Cancel",
+          "to": "tags",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-edited",
+      "title": "Tags · changes saved",
+      "scenario": "The new name billing.refund-request is shown; the previous billing.refund name resolves to it. Existing messages and automations remain associated. The chip preview reflects its name and blue color. The chip preview reflects its name and blue color. The chip preview reflects its name and blue color.",
+      "actions": [
+        {
+          "id": "back",
+          "label": "Back to tags",
+          "does": "Back to tags",
+          "to": "tags",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-delete",
+      "title": "Tags · delete confirmation",
+      "scenario": "Reuse the existing delete confirmation. State that deleting this tag removes its attachments, not its messages; show affected automation count.",
+      "actions": [
+        {
+          "id": "delete",
+          "label": "Delete tag",
+          "does": "Delete tag",
+          "to": "tag-deleted",
+          "when": null
+        },
+        {
+          "id": "cancel",
+          "label": "Cancel",
+          "does": "Cancel",
+          "to": "tags",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-deleted",
+      "title": "Tags · deleted",
+      "scenario": "The legacy tag is gone, its messages are retained, and the affected automation is disabled.",
+      "actions": [
+        {
+          "id": "back",
+          "label": "Back to tags",
+          "does": "Back to tags",
+          "to": "tags",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "flow-tags",
+      "title": "Tags · optional Flowpad vocabulary",
+      "scenario": "Flowpad-supplied message tags appear separately from the user ontology. Enable their use in classification without renaming or copying them into the user namespace.",
+      "actions": [
+        {
+          "id": "save",
+          "label": "Save preferences",
+          "does": "Save preferences",
+          "to": "tags",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "queue",
+      "title": "Message · FIFO automation queue",
+      "scenario": "An anchored menu shows each automation as a standard context-entity chip opening that exact automation, with its status. No separate Open button or FIFO caption. The message body is unchanged.",
+      "actions": [
+        {
+          "id": "rule",
+          "label": "Refund helper",
+          "does": "Open Refund helper entity",
+          "to": "automation",
+          "when": "Configure which tag activates an automation"
+        },
+        {
+          "id": "next",
+          "label": "Next",
+          "does": "Next",
+          "to": "chained",
+          "when": null
+        },
+        {
+          "id": "header-tag-picker",
+          "label": "Tags",
+          "does": "Tags",
+          "to": "tag-picker",
+          "when": null
+        },
+        {
+          "id": "header-tag-view",
+          "label": "refund",
+          "does": "refund",
+          "to": "tag-view",
+          "when": null
+        },
+        {
+          "id": "header-removed-refund",
+          "label": "Remove refund",
+          "does": "Remove refund",
+          "to": "removed-refund",
+          "when": null
+        },
+        {
+          "id": "header-relabelled",
+          "label": "Remove today",
+          "does": "Remove today",
+          "to": "relabelled",
+          "when": null
+        },
+        {
+          "id": "header-removed-action-required",
+          "label": "Remove action-required",
+          "does": "Remove action-required",
+          "to": "removed-action-required",
+          "when": null
+        },
+        {
+          "id": "close",
+          "label": "Close automations",
+          "does": "Close automations",
+          "to": "message",
+          "when": null
+        },
+        {
+          "id": "today",
+          "label": "Flag for today",
+          "does": "Flag for today",
+          "to": "automation-today",
+          "when": "Flag for today"
+        },
+        {
+          "id": "entity-today",
+          "label": "today",
+          "does": "today",
+          "to": "tag-view-today",
+          "when": null
+        },
+        {
+          "id": "entity-action-required",
+          "label": "action-required",
+          "does": "action-required",
+          "to": "tag-view-action-required",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "automation",
+      "title": "Automations · when a message gets a tag",
+      "scenario": "Reuse the message rule editor: Any channel, tag match, Then agent and prompt, enabled toggle, Save, and existing test panel. After handling a refund, add billing.review.",
+      "actions": [
+        {
+          "id": "test",
+          "label": "Test on this message",
+          "does": "Test on this message",
+          "to": "automation-test",
+          "when": null
+        },
+        {
+          "id": "save",
+          "label": "Save",
+          "does": "Save",
+          "to": "queue",
+          "when": null
+        },
+        {
+          "id": "tag-refund",
+          "label": "refund",
+          "does": "refund",
+          "to": "tag-view",
+          "when": null
+        },
+        {
+          "id": "tag-review",
+          "label": "review",
+          "does": "review",
+          "to": "tag-view-review",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "automation-test",
+      "title": "Automations · preview only",
+      "scenario": "Preview uses standard Hash tag chips, labeled refund and review, with full paths in tooltips and links to the corresponding tag entity.",
+      "actions": [
+        {
+          "id": "back",
+          "label": "Back to automation",
+          "does": "Back to automation",
+          "to": "automation",
+          "when": null
+        },
+        {
+          "id": "tag-refund",
+          "label": "refund",
+          "does": "refund",
+          "to": "tag-view",
+          "when": null
+        },
+        {
+          "id": "tag-review",
+          "label": "review",
+          "does": "review",
+          "to": "tag-view-review",
+          "when": "Inspect review tag"
+        }
+      ]
+    },
+    {
+      "id": "chained",
+      "title": "Message · automation adds a tag",
+      "scenario": "An anchored menu shows each automation as a standard context-entity chip opening that exact automation, with its status. No separate Open button or FIFO caption. The message body is unchanged.",
+      "actions": [
+        {
+          "id": "next",
+          "label": "Next",
+          "does": "Next",
+          "to": "once",
+          "when": null
+        },
+        {
+          "id": "header-tag-picker",
+          "label": "Tags",
+          "does": "Tags",
+          "to": "tag-picker",
+          "when": null
+        },
+        {
+          "id": "header-tag-view",
+          "label": "refund",
+          "does": "refund",
+          "to": "tag-view",
+          "when": null
+        },
+        {
+          "id": "header-removed-refund",
+          "label": "Remove refund",
+          "does": "Remove refund",
+          "to": "removed-refund",
+          "when": null
+        },
+        {
+          "id": "header-relabelled",
+          "label": "Remove today",
+          "does": "Remove today",
+          "to": "relabelled",
+          "when": null
+        },
+        {
+          "id": "header-removed-action-required",
+          "label": "Remove action-required",
+          "does": "Remove action-required",
+          "to": "removed-action-required",
+          "when": null
+        },
+        {
+          "id": "close",
+          "label": "Close automations",
+          "does": "Close automations",
+          "to": "message",
+          "when": null
+        },
+        {
+          "id": "review",
+          "label": "Review refund",
+          "does": "Review refund",
+          "to": "automation-review",
+          "when": "Review refund"
+        },
+        {
+          "id": "entity-automation",
+          "label": "Refund helper",
+          "does": "Open Refund helper entity",
+          "to": "automation",
+          "when": null
+        },
+        {
+          "id": "entity-automation-today",
+          "label": "Flag for today",
+          "does": "Flag for today",
+          "to": "automation-today",
+          "when": null
+        },
+        {
+          "id": "entity-today",
+          "label": "today",
+          "does": "today",
+          "to": "tag-view-today",
+          "when": null
+        },
+        {
+          "id": "entity-action-required",
+          "label": "action-required",
+          "does": "action-required",
+          "to": "tag-view-action-required",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "once",
+      "title": "Message · duplicate trigger skipped",
+      "scenario": "An anchored menu shows each automation as a standard context-entity chip opening that exact automation, with its status. No separate Open button or FIFO caption. The message body is unchanged. Run history uses the existing context-entity chip presentation.",
+      "actions": [
+        {
+          "id": "history",
+          "label": "Runs",
+          "does": "View run history",
+          "to": "history",
+          "when": null
+        },
+        {
+          "id": "header-tag-picker",
+          "label": "Tags",
+          "does": "Tags",
+          "to": "tag-picker",
+          "when": null
+        },
+        {
+          "id": "header-tag-view",
+          "label": "refund",
+          "does": "refund",
+          "to": "tag-view",
+          "when": null
+        },
+        {
+          "id": "header-removed-refund",
+          "label": "Remove refund",
+          "does": "Remove refund",
+          "to": "removed-refund",
+          "when": null
+        },
+        {
+          "id": "header-relabelled",
+          "label": "Remove today",
+          "does": "Remove today",
+          "to": "relabelled",
+          "when": null
+        },
+        {
+          "id": "header-removed-action-required",
+          "label": "Remove action-required",
+          "does": "Remove action-required",
+          "to": "removed-action-required",
+          "when": null
+        },
+        {
+          "id": "close",
+          "label": "Close automations",
+          "does": "Close automations",
+          "to": "message",
+          "when": null
+        },
+        {
+          "id": "entity-automation",
+          "label": "Refund helper",
+          "does": "Open Refund helper entity",
+          "to": "automation",
+          "when": null
+        },
+        {
+          "id": "entity-automation-today",
+          "label": "Flag for today",
+          "does": "Flag for today",
+          "to": "automation-today",
+          "when": null
+        },
+        {
+          "id": "entity-automation-review",
+          "label": "Review refund",
+          "does": "Review refund",
+          "to": "automation-review",
+          "when": null
+        },
+        {
+          "id": "entity-today",
+          "label": "today",
+          "does": "today",
+          "to": "tag-view-today",
+          "when": null
+        },
+        {
+          "id": "entity-action-required",
+          "label": "action-required",
+          "does": "action-required",
+          "to": "tag-view-action-required",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "history",
+      "title": "Automations · message run history",
+      "scenario": "Reuse Runs list / detail. Show classification, user edits, three ordered executions, tags each added, and the suppressed duplicate. One message is the scope.",
+      "actions": []
+    },
+    {
+      "id": "unmatched",
+      "title": "Message · no matching tags",
+      "scenario": "The unchanged message has no chips and only a compact tag icon to add a tag. No empty-state card, explanation, or queue panel.",
+      "actions": [
+        {
+          "id": "tags",
+          "label": "Tags",
+          "does": "Tags",
+          "to": "tag-picker",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "removed-refund",
+      "title": "Message · refund removed",
+      "scenario": "Only refund is removed; the message body is unchanged.",
+      "actions": [
+        {
+          "id": "tags",
+          "label": "Tags",
+          "does": "Tags",
+          "to": "tag-picker",
+          "when": null
+        },
+        {
+          "id": "header-queue",
+          "label": "Automations (2)",
+          "does": "Automations (2)",
+          "to": "queue",
+          "when": null
+        },
+        {
+          "id": "header-relabelled",
+          "label": "Remove today",
+          "does": "Remove today",
+          "to": "relabelled",
+          "when": null
+        },
+        {
+          "id": "header-removed-action-required",
+          "label": "Remove action-required",
+          "does": "Remove action-required",
+          "to": "removed-action-required",
+          "when": null
+        },
+        {
+          "id": "header-removed-receipt",
+          "label": "Remove receipt",
+          "does": "Remove receipt",
+          "to": "removed-receipt",
+          "when": null
+        },
+        {
+          "id": "entity-today",
+          "label": "today",
+          "does": "today",
+          "to": "tag-view-today",
+          "when": null
+        },
+        {
+          "id": "entity-action-required",
+          "label": "action-required",
+          "does": "action-required",
+          "to": "tag-view-action-required",
+          "when": null
+        },
+        {
+          "id": "entity-receipt",
+          "label": "receipt",
+          "does": "receipt",
+          "to": "tag-view-receipt",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "removed-action-required",
+      "title": "Message · action-required removed",
+      "scenario": "Only action-required is removed; the message body is unchanged.",
+      "actions": [
+        {
+          "id": "tags",
+          "label": "Tags",
+          "does": "Tags",
+          "to": "tag-picker",
+          "when": null
+        },
+        {
+          "id": "header-queue",
+          "label": "Automations (2)",
+          "does": "Automations (2)",
+          "to": "queue",
+          "when": null
+        },
+        {
+          "id": "header-tag-view",
+          "label": "refund",
+          "does": "refund",
+          "to": "tag-view",
+          "when": null
+        },
+        {
+          "id": "header-removed-refund",
+          "label": "Remove refund",
+          "does": "Remove refund",
+          "to": "removed-refund",
+          "when": null
+        },
+        {
+          "id": "header-relabelled",
+          "label": "Remove today",
+          "does": "Remove today",
+          "to": "relabelled",
+          "when": null
+        },
+        {
+          "id": "header-removed-receipt",
+          "label": "Remove receipt",
+          "does": "Remove receipt",
+          "to": "removed-receipt",
+          "when": null
+        },
+        {
+          "id": "entity-today",
+          "label": "today",
+          "does": "today",
+          "to": "tag-view-today",
+          "when": null
+        },
+        {
+          "id": "entity-receipt",
+          "label": "receipt",
+          "does": "receipt",
+          "to": "tag-view-receipt",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "removed-receipt",
+      "title": "Message · receipt removed",
+      "scenario": "Only receipt is removed; the message body is unchanged.",
+      "actions": [
+        {
+          "id": "tags",
+          "label": "Tags",
+          "does": "Tags",
+          "to": "tag-picker",
+          "when": null
+        },
+        {
+          "id": "header-queue",
+          "label": "Automations (2)",
+          "does": "Automations (2)",
+          "to": "queue",
+          "when": null
+        },
+        {
+          "id": "header-tag-view",
+          "label": "refund",
+          "does": "refund",
+          "to": "tag-view",
+          "when": null
+        },
+        {
+          "id": "header-removed-refund",
+          "label": "Remove refund",
+          "does": "Remove refund",
+          "to": "removed-refund",
+          "when": null
+        },
+        {
+          "id": "header-relabelled",
+          "label": "Remove today",
+          "does": "Remove today",
+          "to": "relabelled",
+          "when": null
+        },
+        {
+          "id": "header-removed-action-required",
+          "label": "Remove action-required",
+          "does": "Remove action-required",
+          "to": "removed-action-required",
+          "when": null
+        },
+        {
+          "id": "entity-today",
+          "label": "today",
+          "does": "today",
+          "to": "tag-view-today",
+          "when": null
+        },
+        {
+          "id": "entity-action-required",
+          "label": "action-required",
+          "does": "action-required",
+          "to": "tag-view-action-required",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-view-today",
+      "title": "Tag · today",
+      "scenario": "The existing tag entity viewer shows today with its full ontology name, meaning and related entities.",
+      "actions": [
+        {
+          "id": "back",
+          "label": "Back to tags",
+          "does": "Back to tags",
+          "to": "tag-picker",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-view-action-required",
+      "title": "Tag · action-required",
+      "scenario": "The existing tag entity viewer shows action-required with its full ontology name, meaning and related entities.",
+      "actions": [
+        {
+          "id": "back",
+          "label": "Back to tags",
+          "does": "Back to tags",
+          "to": "tag-picker",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-view-receipt",
+      "title": "Tag · receipt",
+      "scenario": "The existing tag entity viewer shows receipt with its full ontology name, meaning and related entities.",
+      "actions": [
+        {
+          "id": "back",
+          "label": "Back to tags",
+          "does": "Back to tags",
+          "to": "tag-picker",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "tag-view-review",
+      "title": "Tag · review",
+      "scenario": "The existing tag entity viewer shows review with its full ontology name, meaning and related entities.",
+      "actions": [
+        {
+          "id": "back",
+          "label": "Back to tags",
+          "does": "Back to tags",
+          "to": "tag-picker",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "automation-today",
+      "title": "Automation · Flag for today",
+      "scenario": "The existing automation editor opens the Flag for today entity, triggered by today.",
+      "actions": [
+        {
+          "id": "save",
+          "label": "Save",
+          "does": "Save",
+          "to": "queue",
+          "when": null
+        },
+        {
+          "id": "tag-today",
+          "label": "today",
+          "does": "today",
+          "to": "tag-view-today",
+          "when": null
+        }
+      ]
+    },
+    {
+      "id": "automation-review",
+      "title": "Automation · Review refund",
+      "scenario": "The existing automation editor opens Review refund, triggered by review.",
+      "actions": [
+        {
+          "id": "save",
+          "label": "Save",
+          "does": "Save",
+          "to": "chained",
+          "when": null
+        },
+        {
+          "id": "tag-review",
+          "label": "review",
+          "does": "review",
+          "to": "tag-view-review",
+          "when": null
+        }
+      ]
+    }
+  ]
+}

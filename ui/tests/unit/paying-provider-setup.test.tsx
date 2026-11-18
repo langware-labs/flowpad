@@ -117,6 +117,35 @@ describe('PayingProviderSetup — no budget yet', () => {
     expect(rootCallOrder).toBeLessThan(credentialCallOrder);
   });
 
+  it('takes a Vertex API key with a typed project, and says it reaches Gemini only', async () => {
+    h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
+    h.setCredential.mockResolvedValue({
+      ok: true,
+      credential_hint: '****abcd',
+      can_set_credential: true,
+      can_set_up_budget: true,
+    });
+    const user = userEvent.setup();
+    render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-vertex'));
+    const apiKey = `AQ.${'A'.repeat(50)}`;
+    fireEvent.change(screen.getByTestId('credential-input'), { target: { value: apiKey } });
+
+    expect(screen.getByTestId('org-root-vertex-api-key-hint').textContent).toMatch(/Gemini models only/);
+    // No project yet: the URL cannot be built, so Activate waits.
+    expect(screen.getByTestId('org-root-activate')).toHaveProperty('disabled', true);
+    fireEvent.change(screen.getByTestId('org-root-vertex-project'), { target: { value: 'acme-prod' } });
+    fireEvent.click(screen.getByTestId('org-root-activate'));
+
+    await waitFor(() => expect(h.setCredential).toHaveBeenCalledWith(ENDPOINT_BARE, apiKey));
+    expect(h.mutateAsync).toHaveBeenCalledWith({
+      orgId: ORG_ID,
+      provider: 'vertex',
+      baseUrl: 'https://aiplatform.googleapis.com/v1/projects/acme-prod/locations/global',
+    });
+  });
+
   it('trims the key before sending it', async () => {
     h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
     h.setCredential.mockResolvedValue({

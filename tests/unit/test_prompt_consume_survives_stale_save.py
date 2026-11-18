@@ -57,7 +57,7 @@ async def _arrived_prompt() -> tuple[SimpleNamespace, dict]:
     row = _prompt_row(conv_id, session_id)
     fm = FlowMessage.model_validate({**row, "remote": True})
     await fm.save(None, notify=False)
-    session = SimpleNamespace(id=session_id, conversation_id=conv_id)
+    session = SimpleNamespace(id=session_id, conversation_id=conv_id, admits=lambda _sender: True)
     assert [m.id for m in await _queued_turns(session)] == [row["id"]], "precondition: the prompt is queued"
     return session, row
 

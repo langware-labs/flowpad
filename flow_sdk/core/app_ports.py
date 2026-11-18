@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Literal, Optional
 
 from flow_sdk.core.dev_server import LOOPBACKS, dev_command, port_open
+from flow_sdk.core.sockets import is_listener
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +87,7 @@ class PortAnswer:
 
 def _listening(process) -> list[int]:
     """The TCP ports ``process`` (a ``psutil.Process``) listens on. Raises ``psutil.Error`` when it cannot be read."""
-    import psutil  # noqa: PLC0415 -- leaf module
-
-    return sorted({c.laddr.port for c in process.net_connections(kind="tcp") if c.status == psutil.CONN_LISTEN and c.laddr})
+    return sorted({c.laddr.port for c in process.net_connections(kind="tcp") if is_listener(c)})
 
 
 def _tree(pid: int) -> list:
@@ -128,8 +127,13 @@ def _listening_by_pid() -> Optional[dict[int, list[int]]]:
         return None
     found: dict[int, set[int]] = {}
     for connection in connections:
-        if connection.status == psutil.CONN_LISTEN and connection.laddr and connection.pid:
-            found.setdefault(connection.pid, set()).add(connection.laddr.port)
+        if not is_listener(connection):
+            continue
+        if not connection.pid:
+            # Windows 26300 can name no owner for a listener: this table cannot attribute it,
+            # so the caller asks each process instead (which knows its own sockets).
+            return None
+        found.setdefault(connection.pid, set()).add(connection.laddr.port)
     return {pid: sorted(ports) for pid, ports in found.items()}
 
 

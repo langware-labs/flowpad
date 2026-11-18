@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import httpx
 from pydantic import BaseModel, Field
 
-from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError, build_event_hooks, request_path
+from flow_sdk.cloud_client.client_hooks import QUIET_EXTENSION, HubAuthExpiredError, build_event_hooks, request_path
 from flow_sdk.cloud_client.error_reporter import hub_error_reporter
 from flow_sdk.config import API_PREFIX, FLOWPAD_CLOUD_URL, default_service_config
 
@@ -192,6 +192,7 @@ class FlowpadClient:
                 method=method.upper(),
                 path=self._request_path(e.request.url if e.request else path),
                 message=str(e),
+                quiet=bool((extensions or {}).get(QUIET_EXTENSION)),
             )
             raise
 
@@ -239,19 +240,27 @@ class FlowpadClient:
         response = await self.request("GET", path, params=params, timeout=timeout)
         return response.content if raw else self._unwrap(response)
 
-    async def get_user(self) -> Dict[str, Any]:
-        """Get the signed-in principal: the person, or the Identity a deployed agent's box signs in as.
-
-        A hub that splits the two (FLOWPAD-2353) answers ``/current-user`` with empty data for an
-        Identity and names it at ``/current-principal``; an older hub dresses the Identity as a user
-        on ``/current-user`` itself, so that is asked first.
+    async def get_principal(self) -> Dict[str, Any]:
+        """Who this key signs in as: a person (``type`` ``user``) or an Identity (``type`` ``identity``).
 
         Raises:
-            ValueError: If the response is missing the 'id' field.
+            ValueError: If the response names no principal (no ``id`` or ``type``).
+        """
+        principal = await self.get("/current-principal")
+        if not isinstance(principal, dict) or "id" not in principal or "type" not in principal:
+            import json
+
+            raise ValueError(f"Invalid principal: missing 'id' or 'type'. Got:\n{json.dumps(principal, indent=2)}")
+        return principal
+
+    async def get_user(self) -> Dict[str, Any]:
+        """The signed-in PERSON. An Identity is no person: that raises, so callers that accept any signed-in
+        principal use :meth:`get_principal`.
+
+        Raises:
+            ValueError: If the key signs in as no person.
         """
         user_data = await self.get("/current-user")
-        if not user_data:
-            user_data = await self.get("/current-principal")
         if not isinstance(user_data, dict) or "id" not in user_data:
             import json
 

@@ -252,6 +252,18 @@ async def _up(webapp_id: str, *, check: bool, display: str = "") -> ReturnedValu
             continue
         if check:
             return held
+        if which in ("install", "build"):
+            # Installing or building is setup, and setup waits for first-run setup
+            # (`core/wizard/first_run`); starting what is already installed does not.
+            from flow_sdk.core.wizard.first_run import FirstRunPending, require_first_run  # noqa: PLC0415
+
+            try:
+                await require_first_run()
+            except FirstRunPending as exc:
+                answer = _failed("setup", exc.code, str(exc), ran=False, folder=getattr(app, "asset_ref", None))
+                await record.set_state(webapp_id, LifecycleState.FAILED, str(exc), project_id=project_id,
+                                       failure=of_step(answer.value))
+                return answer
         await record.set_state(webapp_id, LifecycleState(_STEP_STATE[which]), held.detail or which,
                                project_id=project_id)
         answer = await step(webapp_id, which, check=False, display=display)

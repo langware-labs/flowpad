@@ -687,7 +687,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                         onCheckedChange={() => toggleSelected(d.id)}
                         aria-label={t`Select ${d.name || 'machine'}`}
                         data-testid="sandbox-card-select"
-                        className={`transition-opacity ${selecting ? 'opacity-100' : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100'}`}
+                        className={`transition-opacity ${selecting ? 'opacity-100' : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100'}`}
                       />
                       <CardGlyph node={d} />
                       {editingId === d.id ? (
@@ -839,7 +839,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                         disabled={!cardEnabled(d) || !currentUser}
                         aria-label={t`Share sandbox`}
                         data-testid="sandbox-share"
-                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100 pointer-coarse:opacity-100"
                       >
                         <UserPlus className="h-4 w-4" />
                       </button>
@@ -850,7 +850,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                         aria-label={t`Login access`}
                         title={t`Who may log in to this sandbox`}
                         data-testid="sandbox-login-access"
-                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100 pointer-coarse:opacity-100"
                       >
                         <ShieldCheck className="h-4 w-4" />
                       </button>
@@ -875,7 +875,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                           aria-label={t`Sign this sandbox out`}
                           title={t`Sign out of this sandbox (you stay signed in here)`}
                           data-testid="sandbox-logout"
-                          className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                          className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100 pointer-coarse:opacity-100"
                         >
                           {loggingOutIds.has(d.id) ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -890,7 +890,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                         disabled={!cardEnabled(d)}
                         aria-label={t`Machine secrets`}
                         data-testid="sandbox-secrets"
-                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 pointer-coarse:opacity-100"
                       >
                         <KeyRound className="h-4 w-4" />
                       </button>
@@ -900,7 +900,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                         disabled={deletingIds.has(d.id) || !cardEnabled(d)}
                         aria-label={t`Delete sandbox`}
                         data-testid="sandbox-delete"
-                        className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                        className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100 pointer-coarse:opacity-100"
                       >
                         {deletingIds.has(d.id) ? (
                           <Loader2 className="h-4 w-4 animate-spin" />

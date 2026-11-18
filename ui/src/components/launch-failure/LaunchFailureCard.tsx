@@ -17,11 +17,11 @@ export type LaunchFailure = Required<Pick<LaunchFailureValue, 'code' | 'fix'>> &
 // One ICU select per line of the card, keyed on the code (button: on the fix). Empty line 2 = first evidence line.
 const LINE1 = msg({
   message:
-    "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}",
+    "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}",
 });
 const LINE2 = msg({
   message:
-    "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} pinned_source_unavailable {It isn't set up on this computer} other {}}",
+    "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}",
 });
 const BUTTON = msg({
   message:
@@ -32,6 +32,7 @@ const LEGACY: [string, string, RegExp][] = [
   ['signed_out', 'connect', /no usable llm/i],
   ['not_installed', 'install', /is not installed/i],
   ['cli_crashed', 'reinstall', /exited .*after launch/i],
+  ['cli_outdated', 'reinstall', /requires a newer version/i],
 ];
 const make = (v: LaunchFailureValue): LaunchFailure => ({
   ...v,

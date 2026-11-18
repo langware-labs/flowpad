@@ -149,8 +149,9 @@ test('a user moves a deployment onto an lg sub-budget of their own allowance, fr
   // red, naming 'lg', when the default cannot run it; clean, showing its lg model, when it can.
   const before = ok(await api(page, 'GET', `/api/v1/graph/deployment/${ids.deployment}/funding`));
   expect(before.kind).toBe('default');
-  if (String(before.exhausted ?? '')) {
-    expect(String(before.exhausted)).toContain("'lg'");
+  const exhausted = typeof before.exhausted === 'string' ? before.exhausted : '';
+  if (exhausted) {
+    expect(exhausted).toContain("'lg'");
     await expect(card.getByTestId('deployment-funding-problem')).toContainText("'lg'");
   } else {
     expect(before.model).toBeTruthy();

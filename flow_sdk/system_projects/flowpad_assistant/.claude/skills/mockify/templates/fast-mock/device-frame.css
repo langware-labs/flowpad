@@ -1,0 +1,20 @@
+/* mockify device frame: a phone step's screen at its own width, 1:1, in a bezel.
+   <div class="mk-device" data-device="iphone" data-camera="island|dot" style="--mk-w:…">…</div>
+   The sizes are assets/devices.json (build_mock.py writes them on the frame); the defaults below are an iPhone.
+   The screen is a size container: real-mode captures have their width media queries rewritten to
+   container queries and vh/vw to cqh/cqw, and env(safe-area-inset-*) to the --mk-safe-* below. */
+.mk-device { --mk-w: 390px; --mk-h: 844px; --mk-safe-top: 47px; --mk-safe-bottom: 34px; --mk-r: 47px;
+  position: relative; width: var(--mk-w); height: var(--mk-h); margin: 24px auto; padding: 12px;
+  border-radius: calc(var(--mk-r) + 12px); background: #0b0b0c; box-shadow: 0 0 0 2px #3a3a3e, 0 24px 60px rgba(0,0,0,.45);
+  box-sizing: content-box; }
+.mk-device > .mk-screen { position: relative; width: var(--mk-w); height: var(--mk-h); overflow: hidden;
+  border-radius: var(--mk-r); container-type: size; container-name: mk-screen; transform: translateZ(0); background: #fff; }
+/* status bar (time, notch / camera) and home indicator sit over the screen, as on the device */
+.mk-device::before { content: "9:41"; position: absolute; z-index: 2147483000; left: 12px; right: 12px; top: 12px;
+  height: var(--mk-safe-top); padding: 0 34px; box-sizing: border-box; display: flex; align-items: center;
+  font: 600 16px -apple-system, system-ui, sans-serif; color: var(--mk-status-ink, #fff); mix-blend-mode: difference; pointer-events: none; }
+.mk-device::after { content: ""; position: absolute; z-index: 2147483001; left: 50%; top: 23px; width: 120px; height: 34px;
+  transform: translateX(-50%); border-radius: 20px; background: #000; pointer-events: none; }
+.mk-device[data-camera="dot"]::after { width: 12px; height: 12px; top: 18px; border-radius: 50%; }
+.mk-device > .mk-home { position: absolute; z-index: 2147483001; left: 50%; bottom: 20px; width: 134px; height: 5px;
+  transform: translateX(-50%); border-radius: 3px; background: currentColor; color: #888; opacity: .8; pointer-events: none; }

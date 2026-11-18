@@ -53,7 +53,6 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   login_denied: boolean = false;
   auth_mode: 'device' | 'api' | null = null;
   api_provider: string | null = null;
-  model_map: Record<string, Record<string, string>> = {};
 
   constructor(entity: Partial<ICapability> = {}) {
     super(entity);
@@ -81,7 +80,6 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     this.login_message = entity.login_message ?? this.login_message;
     this.auth_mode = entity.auth_mode ?? this.auth_mode;
     this.api_provider = entity.api_provider ?? this.api_provider;
-    this.model_map = entity.model_map ?? this.model_map;
   }
 
   static kindMatches(queryKind: string, capabilityKind: string): boolean {

@@ -255,7 +255,7 @@ for (const [i, channel] of WANTED.entries()) {
     // Our copy joins the conversation.
     await expect(bodyOf(`in thread ${nonce}`)).toBeVisible({ timeout: adjusted(15_000) });
 
-    // Reply on the root (⋮ → Reply): the provider sees a reply to the root.
+    // Reply on the root (hover → Reply): the provider sees a reply to the root.
     const rootBubble = page.locator('[data-testid^="message-bubble-"]').filter({ hasText: `root ${nonce}` }).first();
     // Reply is the bubble's own hover action (not in its ⋮ menu).
     await rootBubble.hover();

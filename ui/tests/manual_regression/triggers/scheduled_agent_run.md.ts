@@ -56,7 +56,8 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
   })).json()).data;
 
   await dismissSetupModal(page);
-  await page.goto(`/dock/assets/editor/agent/typeid/agent-${agent.id}`);
+  const agentEditorPath = `/dock/assets/editor/agent/typeid/agent-${agent.id}`;
+  await page.goto(agentEditorPath);
   // The agent's editor, whether it renders under /dock/assets or project-rebased (/dock/project/<id>/editor/…)
   // once opening it switched the app into its project.
   const agentEditorUrl = new RegExp(`/dock/(assets|project/${project.id})/editor/agent/typeid/agent-${agent.id}`);
@@ -78,9 +79,9 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
   const localSwitch = page.getByTestId('project-local-toggle-switch');
   await localSwitch.click();
   await expect(localSwitch).toBeChecked();
-  // Back to the agent: closing the New deployment dialog wrote its own history entry, so Back lands on the
-  // dialog's address (?deploy_main_agent=…), not on the editor — open the editor itself.
-  await page.goto(`/dock/assets/editor/agent/typeid/agent-${agent.id}`);
+  // Back to the editor by its address, not by history: closing the dialog pushed Deployments again
+  // (ProjectDeploymentsPage closeDialog → openDock), so one step back is still Deployments.
+  await page.goto(agentEditorPath);
   await expect(page).toHaveURL(agentEditorUrl);
   await page.getByTestId('agent-tab-deployments').click();
   await expect(page.getByTestId('agent-places-list')).toBeVisible();

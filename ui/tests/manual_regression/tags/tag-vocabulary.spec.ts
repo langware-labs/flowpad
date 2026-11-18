@@ -45,7 +45,8 @@ function graphDoc(name: string, clickTarget: string, backendTag: string, backend
         node_data: {
           status_line: 'Waiting for the tagged control',
           present: { dock: { kind: 'stay' }, highlight: clickTarget },
-          await: { tag: 'app.ui.button.clicked', target: clickTarget },
+          // The gate on Next: the tagged control really clicked (`app.ui.*.clicked` on that tag word).
+          waitFor: [{ click: clickTarget }],
         },
       },
       {
@@ -55,7 +56,8 @@ function graphDoc(name: string, clickTarget: string, backendTag: string, backend
         node_data: {
           status_line: 'Waiting for the backend relay',
           present: { dock: { kind: 'stay' } },
-          await: { tag: backendTag, target: backendTarget },
+          // The gate on Next: the backend tag really relayed to the app over the WebSocket.
+          waitFor: [{ event: { tag: backendTag, target: backendTarget } }],
         },
       },
     ],
@@ -247,8 +249,9 @@ test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity
 test('tag journey advances through UI and backend WebSocket events', async ({ page, request }) => {
   const stamp = Date.now().toString(36);
   const boundTag = `qa.e2e.journey.${stamp}`;
-  // Backend→app forwarding is deliberately allowlisted to ``graph_workflow.*``.
-  const backendTag = `flow.qa.browser.${stamp}`;
+  // Backend→app forwarding is deliberately allowlisted to ``graph_workflow.*`` (flow_sdk/tags/ws_forward.py):
+  // a tag outside it never reaches the app, so step 2's gate would never open.
+  const backendTag = `graph_workflow.qa.browser.${stamp}`;
   const clickTarget = 'ProjectPage';
   const journeyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-tag-journey-'));
   const created: Array<{ type: string; id: string }> = [];
@@ -289,17 +292,22 @@ test('tag journey advances through UI and backend WebSocket events', async ({ pa
 
     await page.goto(`/dock/tag/graph/${encodeURIComponent(boundTag)}?journeyId=${encodeURIComponent(journey.data.id)}&journeyStep=1&${scope}`);
     await expect(page.getByText('Click the tagged control', { exact: true })).toBeVisible();
+    const next = page.getByTestId('journey-tray-continue');
+    // Pressing Next is the commitment; the step's gate holds it until the tagged control is really clicked.
+    await next.click();
+    await expect(next).toHaveText('Waiting…');
+    await expect(page.getByText('Click the tagged control', { exact: true })).toBeVisible();
     await page.locator(`[data-tag="${clickTarget}"]`).first().click();
-    // Pressing Next is the commitment; the awaited click only opens its gate.
-    await page.getByTestId('journey-tray-continue').click();
     await expect(page.getByText('Receive the backend tag', { exact: true })).toBeVisible();
 
+    // The same for the backend: Next is held until the relayed tag arrives.
+    await next.click();
+    await expect(next).toHaveText('Waiting…');
     const relay = await request.post(`${API}/api/v1/debug/emit_tag`, {
       data: { tag: backendTag, target: markdownTarget, data: { source: 'browser-acceptance' } },
     });
     expect(relay.status()).toBe(200);
     expect(((await relay.json()) as EntityResponse).status).toBe('SUCCESS');
-    await page.getByTestId('journey-tray-continue').click();
     await expect
       .poll(async () => {
         const progress = await request.get(`${API}/api/v1/journeys/${journey.data.id}/progress`);

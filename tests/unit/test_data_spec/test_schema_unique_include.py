@@ -196,3 +196,24 @@ async def test_unique_over_http(proj):
     assert synced.json()["data"]["created"] == ["b"]
     check = (await call_local("POST", f"{base}/check-row", {"row": {"key": "c", **_deal("C", crm_id="c1")}})).json()["data"]
     assert check["ok"] is False and check["details"][0]["code"] == "unique"
+
+
+def test_changing_a_referred_kind_rebuilds_the_kinds_that_refer_to_it(tmp_path):
+    """``a.mock`` names ``b.step`` in a field; a new field on the step validates inside a mock once
+    re-registered -- whichever folder is re-read first, transitively, and a removed step is an error."""
+    import shutil
+
+    from flow_sdk.schema.data_spec.declared import load_root, register_folder
+    from flow_sdk.schema.data_spec.spec import DataSpec
+
+    root, ns = tmp_path / "proj", "unittestsoui" + uuid.uuid4().hex[:8]
+    _schema(root, ns, "a.mock", {"journey": _f("[b.step]")})  # sorts BEFORE what it names
+    _schema(root, ns, "a.page", {"mock": _f("a.mock")})
+    step = _schema(root, ns, "b.step", {"title": _f("string")})
+    assert not any(load_root(root).values())
+    _schema(root, ns, "b.step", {"title": _f("string"), "device": _f("?string")})
+    assert not register_folder(root / "agentic-assets/data_schema/a.page")
+    value = {"mock": {"journey": [{"title": "t", "device": "phone"}]}}
+    assert DataSpec.parse(f"--{ns}--.a.page").model_validate(value).mock.journey[0].device == "phone"
+    shutil.rmtree(step)
+    assert "b.step" in load_root(root)[root / "agentic-assets/data_schema/a.mock"]

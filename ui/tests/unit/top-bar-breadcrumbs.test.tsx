@@ -235,6 +235,25 @@ describe('useEntityBreadcrumbs', () => {
     expect(result.current.crumbs[1].pointer).toBeNull();
   });
 
+  it.each([
+    [undefined, 'Token sources'],
+    ['My funding settings', 'My funding settings'],
+  ])('uses the registered view title while preserving explicit tab name %s', (tabName, expected) => {
+    vi.spyOn(Tab, 'resolveDockTarget').mockReturnValue(deferred<any>().promise);
+    vi.spyOn(tabManager, 'findByDockKey').mockReturnValue(tabName ? ({ name: tabName } as never) : undefined);
+    const sourceDock = {
+      pointer: 'llm-sources',
+      tabHash: 'llm-sources',
+      targetTypeId: null,
+      viewType: 'llm-sources',
+      options: {},
+    } as never;
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(sourceDock));
+
+    expect(result.current.crumbs[1].label).toBe(expected);
+  });
+
   it('addresses the organization graph as Organization > Graph, and gets you back', async () => {
     // The graph is a LENS on People & teams, not a separate place. Addressing it
     // as "Worldview" named the widget instead of the subject and made it a dead

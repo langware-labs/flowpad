@@ -26,10 +26,20 @@ import time
 from typing import Iterable, Optional
 from urllib.parse import quote, unquote
 
+from starlette.requests import HTTPConnection
 from starlette.responses import RedirectResponse, Response
 
 from flow_sdk.instance_settings import cookie_gate
-from flow_sdk.server.service_proxy import GRANT_MAX_AGE, TICKET_MAX_AGE, Grant, sign_grant, verify_grant
+from flow_sdk.server import gate_trace
+from flow_sdk.server.service_proxy import (
+    GRANT_MAX_AGE,
+    TICKET_MAX_AGE,
+    Grant,
+    sign_grant,
+)
+from flow_sdk.server.service_proxy import (
+    check_grant as _check_signed,
+)
 
 #: The cookie a door sets. ``__Host-``: no Domain, so a cookie minted on one e2b port host is
 #: never sent to another tenant's; Secure and Path=/ are implied by the prefix.
@@ -42,6 +52,8 @@ GATE_PATH = "/auth/gate"
 RESERVED_PREFIX = "/__flowpad/"
 #: Fresh per process: a restart invalidates every grant.
 _BOOT_NONCE = secrets.token_hex(16)
+#: When this process started — shown on the Forbidden page, since a restart kills every grant.
+BOOT_TIME = int(time.time())
 
 
 def _secret() -> Optional[str]:
@@ -54,10 +66,18 @@ def _grant_key(secret: str, nonce: str) -> str:
     return hmac.new(secret.encode(), f"flowpad.grant.{nonce}".encode(), hashlib.sha256).hexdigest()
 
 
+def check_ticket(
+    value: Optional[str], *, audience: Optional[str] = None, secret: Optional[str] = None, now: Optional[int] = None
+) -> tuple[str, Optional[Grant]]:
+    """THE ticket rule: ``(reason, grant)``, signed with the gate secret, a minute old at most, for *audience*
+    (any door when None). The reason is words for the Forbidden page; it names no secret."""
+    reason, grant = _check_signed(value, secret or _secret(), now=int(now or time.time()), max_age=TICKET_MAX_AGE)
+    return _at_door(reason, grant, audience)
+
+
 def read_ticket(value: Optional[str], *, secret: Optional[str] = None, now: Optional[int] = None) -> Optional[Grant]:
     """The grant a hub ticket carries — verified with the gate secret — or None."""
-    secret = secret or _secret()
-    return verify_grant(value, secret, now=int(now or time.time()), max_age=TICKET_MAX_AGE) if secret else None
+    return check_ticket(value, secret=secret, now=now)[1]
 
 
 def mint_grant(grant: Grant, *, secret: Optional[str] = None, now: Optional[int] = None) -> Optional[str]:
@@ -66,15 +86,33 @@ def mint_grant(grant: Grant, *, secret: Optional[str] = None, now: Optional[int]
     return sign_grant(grant, _grant_key(secret, _BOOT_NONCE), now=int(now or time.time())) if secret else None
 
 
+def check_cookie(
+    value: Optional[str], *, audience: Optional[str] = None, secret: Optional[str] = None, now: Optional[int] = None
+) -> tuple[str, Optional[Grant]]:
+    """THE grant-cookie rule: ``(reason, grant)``, signed by this process, not expired, not revoked, for *audience*
+    (any door when None). A bad signature on a well-formed grant almost always means it was minted before this
+    process started (or by another box), so the reason says so. Names no secret."""
+    secret = secret or _secret()
+    moment = int(now or time.time())
+    key = _grant_key(secret, _BOOT_NONCE) if secret else None
+    # The browser returns the cookie exactly as it was set: percent-encoded (``set_cookie_header``).
+    reason, grant = _check_signed(unquote(value) if value else value, key, now=moment, max_age=GRANT_MAX_AGE)
+    if reason == "bad-signature":
+        return "bad-signature (from before a restart, or another box)", None
+    if grant is not None and is_revoked(grant, now=moment):
+        return "revoked", None
+    return _at_door(reason, grant, audience)
+
+
 def read_grant(value: Optional[str], *, secret: Optional[str] = None, now: Optional[int] = None) -> Optional[Grant]:
     """The grant a cookie carries — this process's signature, not revoked — or None."""
-    secret = secret or _secret()
-    if not secret or not value:
-        return None
-    moment = int(now or time.time())
-    # The browser returns the cookie exactly as it was set: percent-encoded (``set_cookie_header``).
-    grant = verify_grant(unquote(value), _grant_key(secret, _BOOT_NONCE), now=moment, max_age=GRANT_MAX_AGE)
-    return None if grant is None or is_revoked(grant, now=moment) else grant
+    return check_cookie(value, secret=secret, now=now)[1]
+
+
+def _at_door(reason: str, grant: Optional[Grant], audience: Optional[str]) -> tuple[str, Optional[Grant]]:
+    if grant is not None and audience is not None and grant.audience != audience:
+        return "wrong-door", None
+    return reason, grant
 
 
 def set_cookie_header(value: str) -> str:
@@ -99,12 +137,15 @@ def safe_next(candidate: Optional[str]) -> str:
     return candidate
 
 
-def exchange(ticket: Optional[str], *, audience: str, landing: str) -> Optional[Response]:
+def exchange(ticket: Optional[str], *, audience: str, landing: str, conn: HTTPConnection) -> Optional[Response]:
     """The door's trade: a ticket for THIS door becomes its grant cookie and a 302 to *landing*.
 
     None when the ticket is not for this door (forged, stale, another audience's) — the caller
     says how that is refused. On an unarmed box there is nothing to sign with: the redirect
     happens without a cookie, so a stale link still lands in the app.
+
+    Every trade is logged and remembered (``gate_trace``, from *conn*), so a refusal right after it
+    can say this browser was just given a cookie.
     """
     grant = read_ticket(ticket)
     if grant is None or grant.audience != audience:
@@ -113,6 +154,7 @@ def exchange(ticket: Optional[str], *, audience: str, landing: str) -> Optional[
     value = mint_grant(grant)
     if value:
         response.headers.append("set-cookie", set_cookie_header(value))
+    gate_trace.record_admit(conn, audience=audience, caller=grant.caller, value=value, ticket=ticket)
     return response
 
 
@@ -146,11 +188,14 @@ def reset_for_tests() -> None:
 
 
 __all__ = [
+    "BOOT_TIME",
     "COOKIE_NAME",
     "GATE_PATH",
     "RESERVED_PREFIX",
     "TICKET_PARAM",
     "exchange",
+    "check_cookie",
+    "check_ticket",
     "is_revoked",
     "mint_grant",
     "read_grant",

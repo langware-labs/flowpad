@@ -811,7 +811,7 @@ export function AssetManagerPopover({
         side={side}
         sideOffset={4}
         collisionPadding={8}
-        className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-[30rem] max-w-[calc(100vw-2rem)] flex-col p-0"
+        className="flex max-h-[min(calc(100dvh-6rem),var(--radix-popover-content-available-height))] w-[30rem] max-w-[calc(100vw-2rem)] flex-col p-0"
         data-testid="asset-manager-popover"
       >
         {body}

@@ -438,6 +438,35 @@
       "expected": 1
     },
     {
+      "name": "pending membership invitation threaded into a conversation makes that row unread",
+      "conversations": [
+        {
+          "id": "c-invite",
+          "archived_at": null,
+          "pointers": []
+        }
+      ],
+      "messages": {},
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": false,
+          "recipient_email": "me@local.test",
+          "target_type": "project",
+          "target_id": "proj-1",
+          "target_url_path": "/conversation/c-invite"
+        }
+      ],
+      "expected": 1,
+      "facets": {
+        "conversation": "c-invite",
+        "isUnread": true,
+        "isArchived": false,
+        "isInvitation": false,
+        "unreadCount": 1
+      }
+    },
+    {
       "name": "accepted membership invitation counts zero",
       "conversations": [],
       "messages": {},

@@ -20,6 +20,23 @@ wrong" and "the model said nothing" are different things.
 Pinned by `tests/unit/test_llm_endpoint_rows.py` and `tests/unit/test_llm_client.py`; the
 live legs are `tests/long_tests/test_llm_endpoint_live.py`, which skip without a key.
 
+The UI calls the collection **Token sources**, with separate **Device logins**, **API keys**,
+and **Hub endpoints** sections. A source's availability is not a promise that every worker
+can consume its API format.
+
+Local provider credentials support Anthropic, OpenAI, OpenRouter and Vertex. Vertex currently
+requires service-account JSON plus a project and location; raw Vertex API keys are explicitly
+unsupported locally. Its direct completion API supports Gemini and Claude text, JSON and
+streaming; its model list is a declared catalog, not live model discovery. Local limits and
+filters are stored settings, not enforced budgets—the hub enforces budgets.
+
+For `AgenticProcess`, local OpenRouter binds all five workers. Native local Vertex binds
+Claude Code to Claude models using a private, short-lived credential file removed after the
+turn. Native local Anthropic binds Claude Code; native local OpenAI binds Codex through
+the Responses API. These bindings use the configured endpoint URL and isolate competing
+authentication settings. A pinned unsupported source fails explicitly rather than falling back to the hub
+or another credential.
+
 ## 1. From the environment, with no database
 
 Name a provider and you have something callable. Nothing is saved, nothing is seeded, and
@@ -129,7 +146,18 @@ funding a spawn needs both; take `verdict` alone when that is all you want.
 
 ## 5. Completions
 
-`model` defaults to the endpoint's `md` slug; name a tier to pick a cheaper or stronger one.
+An explicit request/session `model` wins. Otherwise text generation uses the endpoint's
+`default_model`, then the nearest upstream declaration on the first resolved chain path,
+then `sm`. A default can be `sm`, `md`, `lg` or a concrete model ID; `null` clears the
+override and restores inheritance. Inherited sizes resolve against the consuming endpoint's
+effective tiers. A missing or invalid default fails rather than choosing another model;
+an explicit valid model can still run. Embeddings, catalogs and credential probes do not
+use this text-generation default.
+
+The Vibe picker calls omission **Endpoint default**. A new worker launch reads fresh hub
+model metadata and freezes its binding for that launch without persisting the derived
+choice as `cli_config.model`. Global model-size preferences do not override endpoint
+defaults. Device logins retain the harness's native default behavior.
 
 ```python
 endpoint = await LLMEndpoint.ensure_for_secret("openrouter")   # the key stored in §2
@@ -211,6 +239,8 @@ import tempfile
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
 from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
 
 PROMPT = 'Reply with exactly the single word "pong" and nothing else.'
 
@@ -227,17 +257,31 @@ async def main() -> None:
         load_flowpad_assistant=False,
     ).save()
     try:
-        await process.prompt(PROMPT)
+        result = await process.prompt(PROMPT)
+        if getattr(result, "status", None) == "FAIL":
+            raise RuntimeError("prompt was refused")
         # ``prompt()`` returning is the turn STARTING. The answer is in the history once the
         # turn is no longer busy.
         while True:
             fresh = await AgenticProcess.get_by_id(process.id) or process
-            if not is_turn_busy(fresh, fresh.fetch_worker_status()):
+            status = fresh.fetch_worker_status()
+            if not is_turn_busy(fresh, status):
+                if status in (WorkerStatus.ERROR, WorkerStatus.INTERRUPTED, WorkerStatus.INACTIVE, WorkerStatus.API_TIMEOUT):
+                    raise RuntimeError(f"turn did not succeed: {status}")
                 history = fresh.driver.load_history(fresh)
-                if history:
+                if status == WorkerStatus.COMPLETE:
+                    if not _last_answer(history or []):
+                        raise RuntimeError("completed turn has no assistant answer")
                     break
             await asyncio.sleep(2.0)
-        print(_last_answer(history))
+        bound = get_hub_llm_endpoint()
+        actual_source = fresh.resolved_llm_endpoint_typeid
+        if not actual_source or (bound is not None and actual_source != bound.endpoint_typeid):
+            raise RuntimeError("turn used a different or unproven endpoint")
+        answer = _last_answer(history)
+        if "pong" not in answer.lower():
+            raise RuntimeError("assistant did not supply the expected answer")
+        print(answer)
     finally:
         await process.exit()
 
@@ -282,8 +326,11 @@ What to know before handing an id out:
 * **The cost limit is the whole defence**, so the hub refuses `public` without one. Spend is
   metered per endpoint, never per caller — there is no caller to meter. Budget for the harness,
   not the prompt: one `pong` from Claude Code is ~60k cache-write tokens (about $0.08 on haiku).
-* **An anonymous caller may `invoke` and list `models`, nothing else** — not read the endpoint,
+* **An anonymous caller may `invoke`, list `models` and read `model-config`** — not read the endpoint,
   its usage or its chain, and a public endpoint appears in no listing, so ids cannot be enumerated.
+  `GET /api/v1/graph/llm_endpoint/<id>/model-config` returns only `endpoint_typeid`, effective
+  `tiers`, the endpoint's own `default_model`, and concrete `effective_default_model`
+  (null when unavailable). The response contains no credentials or upstream identities.
 * **Pick the hosts, not just the model.** OpenRouter serves one slug from several hosts, and one
   bad host is an intermittent failure in every harness at once: Novita answered
   `qwen/qwen3-coder-30b-a3b-instruct` with an empty completion for about a third of requests, which
@@ -306,6 +353,7 @@ What to know before handing an id out:
   on this machine is not one.
 * **The embedding dimension is part of the model.** Changing `tiers["embedding"]` on an
   endpoint something already indexed against means a full re-embed, not an incremental one.
-* **A hub endpoint carries no slugs of its own.** The hub does not serialize model names, so
-  a hub endpoint falls back to its root provider's defaults. Name a model explicitly when the
-  budget's root is not OpenRouter.
+* **Hub model metadata is authoritative.** Failed metadata reads are not unset defaults.
+  An older hub without `model-config` can still serve an explicit concrete model, but
+  omitted-model or tier-based launches require that action. Malformed, unauthorized or
+  unreachable metadata does not trigger a guessed provider default.

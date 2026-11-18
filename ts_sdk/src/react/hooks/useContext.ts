@@ -48,6 +48,7 @@ const CONTEXT_KEYS = [
   'localUser',
   'cloudUser',
   'currentUser',
+  'currentPrincipal',
   'visitorTypeId',
   'someone',
   'manifests',

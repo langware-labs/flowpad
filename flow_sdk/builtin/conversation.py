@@ -75,6 +75,8 @@ class ConversationKind(StrEnum):
     HELPDESK = "helpdesk"
     #: An agent owner's IT message to its deployments: one reply per machine, written by the hub.
     IT = "it"
+    #: A project's Monitoring channel: the hub posts one message per Issue and keeps it current.
+    MONITORING = "monitoring"
 
 
 class ConversationStatus(StrEnum):
@@ -375,9 +377,10 @@ class Conversation(ProjectedFields, Entity):
         """Continue this conversation on its channel — Flowpad's own chat or a data source's.
 
         ``reply_to`` (one of ``messages()``, or its id) answers that message: it quotes it where the
-        channel quotes (WhatsApp, Telegram, Flowpad) and lands in its thread everywhere. ``in_thread``
-        (a ``MessageThread`` of this conversation, or its id) writes into that thread without
-        quoting anyone. On a data source channel the send goes to whom the conversation is with —
+        channel quotes (WhatsApp, Telegram, Flowpad) and lands in its thread when it has one — on
+        Flowpad's chat a reply never opens a thread. ``in_thread`` (a ``MessageThread`` of this
+        conversation, its id, or — on Flowpad's chat — a message to root a new thread at) writes
+        into that thread without quoting anyone. On a data source channel the send goes to whom the conversation is with —
         whether they wrote last or only we have — and answers the channel's ``SendOutcome``;
         ``files`` are paths or ``MessageFile``s, and one the channel cannot take is refused before
         anything is sent. On Flowpad's own chat it is the app's own send (``add_message``) and
@@ -385,13 +388,16 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.schema.data_spec.channel_spec import ChannelTransport  # noqa: PLC0415
 
         reply_id = str(getattr(reply_to, "id", reply_to) or "") or None
-        thread = await self._thread_of(in_thread) if in_thread is not None and reply_id is None else None
         if self.channel_spec.transport == ChannelTransport.FLOWPAD:
             if files:
                 raise ValueError("files on Flowpad's own chat ride add_message's attachments, not send()")
-            return await self._send_native(
-                body, reply_to_id=reply_id, thread_root_id=thread.thread_key if thread else None
-            )
+            # A message with no thread yet roots a new one: only writing into a thread threads.
+            root = None
+            if in_thread is not None and reply_id is None:
+                thread = await self.resolve_thread(in_thread)
+                root = thread.thread_key if thread else str(getattr(in_thread, "id", in_thread))
+            return await self._send_native(body, reply_to_id=reply_id, thread_root_id=root)
+        thread = await self._thread_of(in_thread) if in_thread is not None and reply_id is None else None
 
         from flow_sdk.stream_inbox.outbound import (  # noqa: PLC0415
             outgoing_files,
@@ -463,6 +469,11 @@ class Conversation(ProjectedFields, Entity):
 
         out.sort(key=_event_key)
         return out
+
+    @classmethod
+    def recency(cls, messages: list) -> Optional[datetime]:
+        """The newest ``event_time`` among ``messages`` — the conversation's ``updated_date`` — or None."""
+        return max(filter(None, (cls._as_datetime(m.event_time) for m in messages)), default=None)
 
     @staticmethod
     def count_listed_files(messages: list) -> int:

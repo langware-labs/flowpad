@@ -25,20 +25,29 @@ import { PrefKey } from '@sdk';
  * preferences that happen to share a word don't share a translation.
  */
 
-/** Preferences-screen tab names. Keyed by `PrefInfo.category`. */
-const CATEGORY_LABELS: Record<string, MessageDescriptor> = {
+/** Preferences-screen menu groups and tabs. Keyed by `PrefGroup.id` / `<group>/<tab>` (prefLayout.ts). */
+const LAYOUT_LABELS: Record<string, MessageDescriptor> = {
   general: msg`General`,
   terminal: msg`Terminal`,
-  notifications: msg`Notifications`,
-  advanced: msg`Advanced`,
-  auto_index: msg`Auto Index`,
-  i18n: msg`I18n`,
-  ui: msg`Ui`,
-  chat: msg`Chat`,
-  errors: msg`Errors`,
-  debug: msg`Debug`,
-  onboarding: msg`Onboarding`,
-  llm: msg`LLM`,
+  ai: msg`AI & chat`,
+  indexing: msg`Indexing`,
+  sharing: msg`Sharing & privacy`,
+  developer: msg`Developer`,
+  'general/appearance': msg`Appearance`,
+  'general/notifications': msg`Notifications`,
+  'terminal/behavior': msg`Behavior`,
+  'terminal/display': msg`Display`,
+  'ai/models': msg`Models`,
+  'ai/chat': msg`Chat`,
+  'indexing/auto-index': msg`Auto index`,
+  'indexing/engine': msg`Engine`,
+  'sharing/sharing': msg`Sharing`,
+  'sharing/this-machine': msg`This machine`,
+  'developer/trace-logging': msg`Trace logging`,
+  'developer/hook-sniffer': msg`Hook sniffer`,
+  'developer/errors': msg`Errors`,
+  'developer/smart-navigation': msg`Smart navigation`,
+  'developer/experimental': msg`Experimental`,
 };
 
 /** Row titles. Keyed by the dotted `PrefKey`. */
@@ -119,9 +128,9 @@ const PREF_OPTION_LABELS: Record<string, MessageDescriptor> = {
   'preferences.auto_index.index_function:thread': msg`Thread`,
 };
 
-/** Translate a Preferences tab name, falling back to the humanized category id. */
-export function translatePrefCategory(category: string, fallback: string): string {
-  const descriptor = CATEGORY_LABELS[category];
+/** Translate a Preferences group (`developer`) or tab (`developer/trace-logging`) name. */
+export function translatePrefLayout(id: string, fallback: string): string {
+  const descriptor = LAYOUT_LABELS[id];
   return descriptor ? i18n._(descriptor) : fallback;
 }
 

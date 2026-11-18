@@ -1,8 +1,8 @@
-import { Deployment, Issue, QueryRequest, TypeId, type IDockPointer } from '@sdk';
+import { Deployment, Issue, Project, QueryRequest, TypeId, isIssueActive, type IDockPointer } from '@sdk';
 import { entityDock } from '@src/lib/hub-page-url';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { formatRelative } from '@src/components/git/relative-time';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
@@ -26,7 +26,7 @@ export interface IssueCounts {
 }
 
 export function openIssues<T extends IssueLike>(issues: T[]): T[] {
-  return issues.filter((i) => i.status === 'open');
+  return issues.filter((i) => isIssueActive(i.status));
 }
 
 export function countIssues(issues: IssueLike[]): IssueCounts {
@@ -60,10 +60,43 @@ export function fixPointer(issue: Pick<Issue, 'fix'>): IDockPointer | null {
     const typeId = new TypeId(raw);
     // A deployment lives in the world view, not as an asset of its own.
     if (typeId.type === Deployment.type) return Deployment.dockPointerFor(typeId.id);
+    // A project is a page of its own (where its credentials are set), not a markdown asset ("Missing asset").
+    if (typeId.type === Project.type) return DockPointer.forProject(typeId.id);
     return DockPointer.forAssetEditorByTypeId(typeId.type, typeId);
   } catch {
     return null;
   }
+}
+
+/**
+ * Where a fix button goes once the deployment it names is known: that deployment's page in its project's
+ * Deployments tab. The world view is a desk-only page -- on the hub page it bounces to Home -- so it is used
+ * only for a deployment that belongs to no project.
+ */
+export function fixPointerFor(
+  issue: Pick<Issue, 'fix'>,
+  deployment: Pick<Deployment, 'projectPagePointer'> | null,
+): IDockPointer | null {
+  return deployment?.projectPagePointer ?? fixPointer(issue);
+}
+
+/** `fixPointerFor` with the deployment loaded through the SDK when the fix names one. */
+export async function resolveFixPointer(issue: Pick<Issue, 'fix'>): Promise<IDockPointer | null> {
+  const raw = issue.fix?.pointer;
+  let deployment: Deployment | null = null;
+  if (raw && !raw.startsWith('/')) {
+    try {
+      const typeId = new TypeId(raw);
+      if (typeId.type === Deployment.type) {
+        deployment =
+          Deployment.getByIdFromCache<Deployment>(typeId.id) ??
+          (await Deployment.getById<Deployment>(typeId.id).catch(() => null));
+      }
+    } catch {
+      deployment = null;
+    }
+  }
+  return fixPointerFor(issue, deployment);
 }
 
 export const SEVERITY_DOT: Record<Issue['severity'], string> = { error: 'bg-red-500', warning: 'bg-amber-400' };
@@ -72,23 +105,42 @@ export function SeverityDot({ severity }: { severity: Issue['severity'] }) {
   return <span className={cn('inline-block h-1.5 w-1.5 shrink-0 rounded-full', SEVERITY_DOT[severity])} />;
 }
 
+/** An issue's fix: a link to where it is fixed, or — when the hub can do it (`fix.action`) — the fix itself. */
 export function IssueFixButton({ issue, className }: { issue: Issue; className?: string }) {
   const { navigation } = useDockNavigation();
+  const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle');
   const pointer = fixPointer(issue);
   if (!issue.fix || !pointer) return null;
+  const runs = Boolean(issue.fix.action) && isIssueActive(issue.status);
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      className={cn('h-7', className)}
-      onClick={(e) => {
-        e.stopPropagation();
-        navigation.openDockOnThisPage(pointer);
-      }}
-      data-testid={`issue-fix-${issue.id}`}
-    >
-      {issue.fix.label}
-    </Button>
+    <span className={cn('inline-flex items-center gap-2', className)}>
+      {state === 'failed' && (
+        <span className="text-xs text-destructive" data-testid={`issue-fix-failed-${issue.id}`}>
+          <Trans>It did not work. Try again.</Trans>
+        </span>
+      )}
+      <Button
+        size="sm"
+        variant={runs ? 'default' : 'outline'}
+        className="h-7"
+        disabled={state === 'busy'}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!runs) {
+            void resolveFixPointer(issue).then((target) => navigation.openDockOnThisPage(target ?? pointer));
+            return;
+          }
+          setState('busy');
+          issue.runFix().then(
+            () => setState('idle'),
+            () => setState('failed'),
+          );
+        }}
+        data-testid={`issue-fix-${issue.id}`}
+      >
+        {issue.fix.label}
+      </Button>
+    </span>
   );
 }
 

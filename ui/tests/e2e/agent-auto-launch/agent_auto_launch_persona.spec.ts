@@ -79,7 +79,8 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   try {
-    if (projectId && !process.env.AL_KEEP) await post(`${GRAPH}/project/${projectId}/delete-with-children`);
+    if (projectId && !process.env.AL_KEEP)
+      await post(`${GRAPH}/project/${projectId}/delete-with-children`, { delete_folder: true });
   } catch {
     /* best effort — the instance is disposable */
   }

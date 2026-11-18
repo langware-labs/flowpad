@@ -5,9 +5,10 @@ drawing on another endpoint through the hub's ``partof`` edge to that endpoint. 
 of it — the credential, the limits, the chain, the ledger — and authorizes every ``invoke`` against
 the endpoint named in the URL.
 
-This class exists so the box can *hold* one as an entity rather than as a four-field binding record
-(``instance_settings.llm_endpoint.HubLLMEndpoint``, which stays: it is what the hub PUSHES). It is a
-**read-only projection**:
+One class for every endpoint the box can spend, told apart by ``kind``. An ``api_key`` endpoint is
+a ROOT held on this machine: a stored provider key plus the same ``base_url`` / ``tiers`` /
+``limits`` / ``filters`` a hub root carries (limits are shown, not enforced -- only the hub keeps a
+ledger). A ``hub`` endpoint is a **read-only projection**:
 
 * instances are built from the hub's own serialization (``fetch_hub_llm_endpoints``) and are not
   persisted locally — the hub is ground truth, and a local row could only ever drift from it;
@@ -24,9 +25,10 @@ UI through the ``llm-endpoint`` box action, beside the binding it already report
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from pydantic import BaseModel, Field, PrivateAttr, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
@@ -35,6 +37,7 @@ from flow_sdk.core.urls.service_urls import urls_service
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.credential_contract import LM_SECRET_PREFIX
+from flow_sdk.schema.data_spec.llm_model_spec import VertexConfig
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 if TYPE_CHECKING:
@@ -56,8 +59,9 @@ class LLMEndpointKind(StrEnum):
     #: A provider key the user stored on this machine (``secret_name`` in the sod store). The
     #: only kind with a local row.
     API_KEY = "api_key"
-    #: A vendor CLI's own OAuth session. Per harness, state on ``Capability``, never persisted
-    #: here and never callable in-process — those are credentials for a terminal, not an API.
+    #: A vendor CLI's own OAuth session, per harness. The session itself lives in the vendor CLI;
+    #: the row stored here carries only what the user configures on it (its model sizes and
+    #: custom named models). Never callable in-process — a credential for a terminal, not an API.
     DEVICE = "device"
 
 
@@ -156,7 +160,20 @@ class LLMEndpointConfig(DataSpec):
     #: Slugs to change, by tier (``sm`` / ``md`` / ``lg`` / ``embedding``). Merged over the row's
     #: own, so naming one tier leaves the others alone.
     tiers: dict[str, str] | None = None
+    default_model: str | None = None
     base_url: str | None = None
+    vertex: VertexConfig | None = None
+    name: str | None = None
+    #: Stored on the row and shown; NOT enforced on this machine (only the hub keeps a ledger).
+    limits: LLMLimits | None = None
+    filters: LLMFilters | None = None
+
+    @field_validator("default_model")
+    @classmethod
+    def _clean_default(cls, value):
+        from flow_sdk.external_apis.llm.model_selection import clean_default_model
+
+        return clean_default_model(value)
 
     @model_validator(mode="before")
     @classmethod
@@ -166,7 +183,8 @@ class LLMEndpointConfig(DataSpec):
 
 
 class LLMEndpoint(Entity):
-    # No local rows: instances are transient projections of hub state (see the module docstring).
+    # Served through the ``llm-endpoint`` / ``lm_keys`` box actions, not the generic entity routes:
+    # hub rows are projections, and only ``api_key`` rows are stored here.
     _api_visible: ClassVar[bool] = False
     #: Read by ``share_action``: there is no local row to fetch, so a share of this type is an
     #: invitation to something that already exists on the hub rather than a push of local state.
@@ -185,6 +203,7 @@ class LLMEndpoint(Entity):
     member_default_limits: LLMLimits = APIField(default_factory=LLMLimits)
     #: ``****last4`` of the provider key, when this endpoint is a root. Never the key itself.
     credential_hint: str = APIField(default="")
+    credential_kind: str = APIField(default="api_key")
     #: Is this budget THIS BOX'S USER'S OWN to spend, as opposed to one they merely administer?
     #: The hub's own answer, off the ``expand.mine`` half of the permission expansion the listing
     #: already asks for -- so it is one read with ``can_administer`` and not a second.
@@ -205,9 +224,18 @@ class LLMEndpoint(Entity):
     #: ``{sm, md, lg, embedding}`` model slugs for this credential. Per-credential, not
     #: per-harness: the same map serves a spawned worker and an in-process call.
     tiers: dict[str, str] = APIField(default_factory=dict, sharing=Sharing.PRIVATE)
-    #: DEVICE only: which harness's login this projects. Runtime-only — device rows are derived
-    #: from ``Capability`` on every read and never stored.
-    harness: str = APIField(default="", persist=Persist.FALSE)
+    default_model: str | None = APIField(default=None)
+    effective_default_model: str | None = APIField(default=None, persist=Persist.FALSE)
+
+    @field_validator("default_model")
+    @classmethod
+    def _clean_default(cls, value):
+        from flow_sdk.external_apis.llm.model_selection import clean_default_model
+
+        return clean_default_model(value)
+    #: DEVICE only: which harness's login this row configures (``claude``, ``codex``, ...). Stored:
+    #: it is the device row's natural key (``find_device``).
+    harness: str = APIField(default="")
     #: Whether the backend itself can call this endpoint. False for DEVICE.
     invocable: bool = APIField(default=True, persist=Persist.FALSE)
     #: Whether this box's user may CHANGE this budget, from the hub's own permission expansion.
@@ -261,9 +289,13 @@ class LLMEndpoint(Entity):
     def _fill_local_defaults(self) -> "LLMEndpoint":
         """Give a local key endpoint its provider's base URL, secret name and model slugs.
 
-        Gated on ``API_KEY`` **and** an empty field, so hydrating a stored row or a hub
-        projection can never have a default painted over a value that was read from disk.
+        Gated on ``API_KEY``; model defaults only initialize an omitted tier map.
+        An explicitly empty map stays empty, including when hydrating a saved row.
         """
+        if self.kind == LLMEndpointKind.DEVICE:
+            # ``invocable`` is not persisted, so a device row read back from disk is re-told here.
+            self.invocable = False
+            return self
         if self.kind != LLMEndpointKind.API_KEY or not self.provider:
             return self
         from flow_sdk.external_apis.llm.dialects import get_dialect  # noqa: PLC0415
@@ -276,7 +308,7 @@ class LLMEndpoint(Entity):
             self.base_url = dialect.default_base_url
         if not self.secret_name:
             self.secret_name = f"{LM_SECRET_PREFIX}{self.provider}"
-        if not self.tiers:
+        if "tiers" not in self.model_fields_set:
             self.tiers = dict(dialect.default_models)
         if not self.name:
             self.name = f"{self.provider} key"
@@ -297,12 +329,15 @@ class LLMEndpoint(Entity):
             "limits",
             "member_default_limits",
             "credential_hint",
+            "credential_kind",
             "is_mine",
             # Listed explicitly: ``invocable`` is Persist.FALSE, and a picker that cannot see it
             # would offer the user a device endpoint the backend can never call.
             "kind",
             "secret_name",
             "tiers",
+            "default_model",
+            "effective_default_model",
             "harness",
             "invocable",
             "can_administer",
@@ -314,7 +349,23 @@ class LLMEndpoint(Entity):
     def to_wire(self) -> dict[str, Any]:
         """The endpoint as something choosing between endpoints needs to see it."""
         data = self.model_dump(mode="json", include=self.WIRE_FIELDS)
+        if self.kind == LLMEndpointKind.API_KEY:
+            from flow_sdk.external_apis.llm.errors import LLMError
+            from flow_sdk.external_apis.llm.model_selection import resolve_completion_model
+
+            try:
+                data["effective_default_model"] = resolve_completion_model(self.tiers, default_model=self.default_model)
+            except LLMError:
+                data["effective_default_model"] = None
         data["invoke_path"] = self.invoke_path()
+        if self.kind == LLMEndpointKind.API_KEY and self.provider == LMApiProvider.VERTEX:
+            from flow_sdk.external_apis.llm.vertex import canonical_config
+
+            try:
+                _, vertex = canonical_config(self.base_url)
+                data["vertex"] = vertex.model_dump()
+            except ValueError:
+                pass  # An unconfigured projection has no project yet.
         return data
 
     def invoke_path(self) -> str:
@@ -453,23 +504,30 @@ class LLMEndpoint(Entity):
                 raise LLMNotInvocable(f"{self.name or self.id} is not reachable: this box has no hub origin")
             # No referer/title headers on the hub hop: the bearer is the hub login key and the
             # hub adds the root's own auth on the far side.
+            from flow_sdk.instance_settings.llm_endpoint import fetch_model_config
+
+            async def model_config(model):
+                return await fetch_model_config(str(self.typeid), public=self.public, model=model)
+
             return LLMClient.for_dialect(
                 self._hub_wire_provider(),
                 api_key=self.resolve_api_key(),
                 base_url=base_url,
-                # ``or None`` so an empty map falls back to the ROOT provider's slugs. The hub
-                # serializes no model names, so a hub endpoint carries none of its own, and
-                # without this every hub call had to name a model explicitly — which the docs
-                # said it did not.
+                # Preserve embedding/probe defaults. Text generation never reads
+                # these provider defaults: it uses the live model-config loader.
                 models=tiers or None,
                 extra_headers={},
                 label=self.name or "hub endpoint",
+                relay=True,
+                default_model=self.default_model,
+                model_config_loader=model_config,
             )
         return LLMClient.for_dialect(
             self.provider,
             api_key=self.resolve_api_key(),
             base_url=self.base_url,
-            models=tiers or None,
+            models=tiers,
+            default_model=self.default_model,
             label=self.name or self.provider,
         )
 
@@ -575,6 +633,29 @@ class LLMEndpoint(Entity):
         provider = LMApiProvider(provider)
         if provider is LMApiProvider.FLOWPAD:
             raise ValueError("flowpad is bound by the hub login; it has no local key endpoint")
+        # Validate the entire configuration before either the secret or row is changed.
+        existing = await cls.find_by_secret(f"{LM_SECRET_PREFIX}{provider.value}")
+        canonical_base = None
+        if provider is LMApiProvider.VERTEX:
+            from flow_sdk.external_apis.llm.vertex import canonical_config
+
+            credential = key or cls.key_projection(provider.value).resolve_api_key(allow_environment=False)
+            if not credential:
+                raise LLMNoCredential("no Vertex service account is stored on this machine; pass key=")
+            vertex_config = config.vertex if config else None
+            base = (config.base_url if config else None) or (existing.base_url if existing else "")
+            if vertex_config is not None and not config.base_url and existing:
+                _, previous = canonical_config(existing.base_url, credential=credential)
+                vertex_config = VertexConfig(
+                    project_id=vertex_config.project_id or previous.project_id,
+                    location=vertex_config.location or previous.location,
+                )
+                base = ""  # Explicit settings replace the old derived URL, not a caller's URL.
+            canonical_base, _ = canonical_config(
+                base,
+                vertex_config,
+                credential,
+            )
         if key:
             set_lm_api(key, provider)
         elif not cls.key_projection(provider.value).resolve_api_key(allow_environment=False):
@@ -582,7 +663,19 @@ class LLMEndpoint(Entity):
         endpoint = await cls.ensure_for_secret(provider.value)
         if config is not None:
             endpoint.tiers = {**endpoint.tiers, **(config.tiers or {})}
+            if "default_model" in config.model_fields_set:
+                endpoint.default_model = config.default_model
             endpoint.base_url = config.base_url or endpoint.base_url
+            endpoint.name = config.name or endpoint.name
+            if config.limits is not None:
+                endpoint.limits = config.limits
+            if config.filters is not None:
+                endpoint.filters = config.filters
+        if canonical_base:
+            endpoint.base_url = canonical_base
+            endpoint.credential_kind = "service_account"
+            endpoint.credential_hint = "Service account configured"
+        if config is not None or canonical_base:
             await endpoint.save()
         return endpoint
 
@@ -614,7 +707,7 @@ class LLMEndpoint(Entity):
 
     @classmethod
     def device_projection(cls, worker_type: str, *, name: str = "") -> "LLMEndpoint":
-        """A device login as an endpoint. Derived on every read, never stored.
+        """A device login as an endpoint, before (or without) its stored row (``ensure_device``).
 
         The credential is the vendor CLI's own OAuth session, which the backend can never
         spend — hence ``invocable=False``.
@@ -628,6 +721,34 @@ class LLMEndpoint(Entity):
         )
 
     @classmethod
+    async def find_device(cls, harness: str) -> "LLMEndpoint | None":
+        """The stored row for *harness*'s device login, or ``None`` when nothing was configured."""
+        if not harness:
+            return None
+        rows = await cls.get_all({"kind": LLMEndpointKind.DEVICE.value, "harness": harness})
+        return rows[0] if rows else None
+
+    @classmethod
+    async def ensure_device(cls, harness: str) -> "LLMEndpoint":
+        """The device row for *harness*, created on first need.
+
+        Minted with the projection's id so the row and the source the picker lists
+        (``device_projection``) are one typeid: a pin made before the row existed still names it.
+        """
+        existing = await cls.find_device(harness)
+        if existing is not None:
+            return existing
+        endpoint = cls.device_projection(harness)
+        await endpoint.save()
+        return endpoint
+
+    @classmethod
+    async def device_endpoints(cls) -> dict[str, "LLMEndpoint"]:
+        """Every stored device row, keyed by harness."""
+        rows = await cls.get_all({"kind": LLMEndpointKind.DEVICE.value})
+        return {row.harness: row for row in rows if row.harness}
+
+    @classmethod
     async def key_endpoints(cls) -> dict[str, "LLMEndpoint"]:
         """Every local key endpoint, keyed by secret name.
 
@@ -638,14 +759,28 @@ class LLMEndpoint(Entity):
         rows = await cls.get_all({"kind": LLMEndpointKind.API_KEY.value})
         return {row.secret_name: row for row in rows if row.secret_name}
 
-    async def save(self, owner=None, notify: bool = True) -> "LLMEndpoint":
-        """Only local key endpoints have rows.
+    @classmethod
+    async def stored_key_roots(cls, providers: Iterable[str]) -> list["LLMEndpoint"]:
+        """This machine's key roots: one per provider in *providers* (those with a stored key).
 
-        A hub endpoint is the hub's row and a device login is the vendor CLI's session; storing
-        either here would create a second copy that can only drift from the thing it mirrors.
+        The row when one exists, else the provider's ``key_projection`` -- so a key is a root
+        whatever harness can spend it. Deliberately NOT derived from the harness offers: those
+        exist only for providers some harness supports, and a stored key no harness speaks to
+        vanished from the API keys table while still being counted.
         """
-        if self.kind != LLMEndpointKind.API_KEY:
-            raise ValueError(
-                f"an {self.kind} endpoint is not stored on this box — only api_key endpoints have local rows"
-            )
+        rows = await cls.key_endpoints()
+        return [
+            rows.get(f"{LM_SECRET_PREFIX}{provider}") or cls.key_projection(provider)
+            for provider in sorted(providers)
+            if provider != "flowpad"  # the hub login, never a key root
+        ]
+
+    async def save(self, owner=None, notify: bool = True) -> "LLMEndpoint":
+        """Only local endpoints have rows: stored keys, and device logins' model configuration.
+
+        A hub endpoint is the hub's row; storing it here would create a second copy that can only
+        drift from the thing it mirrors.
+        """
+        if self.kind == LLMEndpointKind.HUB:
+            raise ValueError("a hub endpoint is not stored on this box — only api_key and device endpoints have rows")
         return await super().save(owner=owner, notify=notify)
