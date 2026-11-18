@@ -26,6 +26,7 @@ from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
+from flow_sdk.schema.data_spec.message_draft_spec import MessageDraftOptions
 from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
@@ -156,6 +157,11 @@ class DeliveryStatus(str, Enum):
     """Delivery-receipt lifecycle of a FlowMessage. Monotonic. Single source of
     truth — imported by both the client (here) and the hub.
 
+    DRAFT     — written here and not sent: nobody asked to send it yet. A whole
+                  message (text, files, quote, thread) that only this machine holds,
+                  out of the conversation's pointers, counts and outbox. Sending moves
+                  the SAME row on to PENDING_SEND / CREATED. Outside ``DELIVERY_ORDER``
+                  like PENDING_SEND.
     PENDING_SEND — composed locally while cloud login was unavailable; the user
                   asked to send but we could not even attempt the hub push, so
                   it is queued for a later (manual) re-send. Strictly more local
@@ -167,10 +173,11 @@ class DeliveryStatus(str, Enum):
     DELIVERED — recipient's client pulled it (✓✓).
     RECEIVED  — recipient read it (✓✓ blue).
 
-    The hub never stores PENDING_SEND / CREATED — those are purely client-local
-    pre-accept states.
+    The hub never stores DRAFT / PENDING_SEND / CREATED — those are purely
+    client-local pre-accept states.
     """
 
+    DRAFT = "draft"
     PENDING_SEND = "pending_send"
     CREATED = "created"
     SENT = "sent"
@@ -611,7 +618,7 @@ class MessageEnvelope(DataSpec):
 class FlowMessage(Entity):
     # A FlowMessage owns its body/download and read state locally — see the
     # ``Sharing.HUB_WRITE`` declarations on those fields below (`body_status`,
-    # `is_read`, `is_archived`, `received_at`, `is_draft`, `prompt_auto_handled`):
+    # `is_read`, `is_archived`, `received_at`, `prompt_auto_handled`):
     # they travel outward, but a hub metadata refresh must never reset them.
     # This used to be a ``LOCAL_ONLY_FIELDS`` union of the base set, which a
     # subclass could silently drop by forgetting to union.
@@ -845,7 +852,12 @@ class FlowMessage(Entity):
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
     # unified ``context_entities`` on the base ``Entity``. Read via
     # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.
-    is_draft: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
+    # What a draft remembers beyond the message itself (``DeliveryStatus.DRAFT``): which thread's
+    # composer it is typed in, and the choices made for its send. None on every sent message.
+    draft_options: Optional[MessageDraftOptions] = EntityField(
+        default=None, sharing=Sharing.PRIVATE, persist=Persist.TRUE,
+        description="A draft's composer thread and send choices; None once sent.",
+    )
     # Discriminator for special message kinds. "user" is a normal message
     # (the default for everything the user or hub produces). "invitation"
     # marks a local-only placeholder FlowMessage that represents a pending
@@ -879,6 +891,31 @@ class FlowMessage(Entity):
     # Both PRIVATE: facts about this machine's sending, meaningless anywhere else.
     outbound: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     delivery_failure: Optional[HubFailure] = APIField(default=None, sharing=Sharing.PRIVATE)
+
+    @classmethod
+    async def find_composer_draft(cls, conversation_id: str, thread_id: Optional[str] = None) -> Optional["FlowMessage"]:
+        """The draft typed in a conversation's composer (``thread_id``: that thread's composer) — at
+        most one. A reply held for review is a draft too, but belongs to its session, not a composer."""
+        rows = await cls.get_all(
+            {"match": {"conversation_id": str(conversation_id), "delivery_status": DeliveryStatus.DRAFT.value}}
+        )
+        for row in rows:
+            typed_in = row.draft_options.thread_id if row.draft_options else None
+            if not row.remote_worker_session_id and typed_in == (thread_id or None):
+                return row
+        return None
+
+    @classmethod
+    async def sent_in(cls, conversation_id: str, **match) -> list["FlowMessage"]:
+        """The messages of a conversation — what was sent or received, never a draft: a draft is
+        not in the conversation until it is sent. THE read for "this conversation's messages"."""
+        rows = await cls.get_all({"match": {"conversation_id": str(conversation_id), **match}})
+        return [row for row in rows if row.delivery_status != DeliveryStatus.DRAFT.value]
+
+    @property
+    def is_draft(self) -> bool:
+        """Written here and not sent yet — ``DeliveryStatus.DRAFT``, the one place that says so."""
+        return self.delivery_status == DeliveryStatus.DRAFT.value
 
     @property
     def owes_delivery(self) -> bool:
@@ -1239,6 +1276,16 @@ class FlowMessage(Entity):
         n = len(self._user_attachments())
         suffix = f" (+{n} attachment{'s' if n != 1 else ''})" if n else ""
         return f"[{self.delivery_status}] {sender}: {preview}{suffix}"
+
+    def asset_typeids(self) -> list[str]:
+        """The entities this message carries, as typeid strings (its own two pointers excluded)."""
+        return [str(a.data) for a in self._user_attachments() if a.attachment_type == AttachmentType.TYPE_ID]
+
+    def file_names(self) -> list[str]:
+        """The names of the files uploaded onto this message (``FILE_VFS_PREFIX`` stripped)."""
+        return [
+            str(a.data)[len(FILE_VFS_PREFIX):] for a in (self.attachment or []) if a.attachment_type == AttachmentType.FILE
+        ]
 
     def _user_attachments(self) -> list[Attachment]:
         """The message's attachments minus the two structural self-pointers

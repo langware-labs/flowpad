@@ -194,12 +194,20 @@ export function isAttachmentMissing(
 
 /** Delivery receipt. Mirrors the hub-side schema. Monotonic transitions only:
  *  created → sent → delivered → received.
+ *  - draft:     written here and not sent yet — a whole message only this machine holds
  *  - pending_send: composed while signed out; held locally until a login sends it (🕐 Pending)
  *  - created:   local only, hub has not accepted it (🕐 Pending)
  *  - sent:      accepted/stored on the hub (✓)
  *  - delivered: recipient's client pulled it (✓✓)
  *  - received:  recipient read it (✓✓ blue) */
-export type DeliveryStatus = 'pending_send' | 'created' | 'sent' | 'delivered' | 'received';
+export type DeliveryStatus = 'draft' | 'pending_send' | 'created' | 'sent' | 'delivered' | 'received';
+
+/** What a draft remembers beyond the message itself: its composer's thread and its send choices. */
+export interface MessageDraftOptions {
+  thread_id?: string | null;
+  call?: boolean;
+  task?: boolean;
+}
 
 /** Named event types emitted by ``Conversation`` and ``FlowMessage``. Use
  *  these instead of bare strings so call sites are typo-proof:
@@ -301,8 +309,8 @@ export interface IFlowMessage extends IEntity {
   // NOTE: ``context`` (string[]) was renamed and consolidated into the
   // unified ``context_entities`` on IEntity. Read via
   // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
-  /** Local-only draft message: not appended to conversation.jsonl, not pushed to hub. Flips to false on send-draft. */
-  is_draft?: boolean;
+  /** A draft's composer thread and send choices; null once sent. */
+  draft_options?: MessageDraftOptions | null;
   /** Special-message discriminator. USER (default) is a normal message;
    *  INVITATION marks a local-only placeholder representing a pending hub
    *  Invitation as the first row of a conversation. The invitation TypeId
@@ -463,7 +471,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Set by the hub while the recipient agent works on an answer: the sender's "working…". */
   handling_at?: string | null;
   sent_at?: string | null;
-  is_draft?: boolean;
+  draft_options?: MessageDraftOptions | null;
   kind?: FlowMessageKind;
   invite?: IMessageInvite | null;
   body_status?: BodyStatus;
@@ -566,7 +574,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.received_at = entity.received_at ?? null;
     this.handling_at = entity.handling_at ?? null;
     this.sent_at = entity.sent_at ?? null;
-    this.is_draft = entity.is_draft ?? false;
+    this.draft_options = entity.draft_options ?? null;
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.invite = entity.invite ?? null;
     this.body_status = entity.body_status ?? BodyStatus.NA;
@@ -608,12 +616,26 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     return this.reactions;
   }
 
-  /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
-  async sendDraft(): Promise<{ flow_message_id: string; conversation_id: string; message_count: number }> {
+  /** Written here and not sent yet — the first state of `delivery_status`. */
+  get is_draft(): boolean {
+    return this.delivery_status === 'draft';
+  }
+
+  /** Send this draft: the same message, through the send every message takes. `replyToId` names
+   *  what it answers now and `threadRootId` the native thread it is written in; `call` says whether its
+   *  text goes as a prompt call (default: as it was drafted). */
+  async sendDraft(
+    opts: { replyToId?: string | null; threadRootId?: string | null; call?: boolean } = {},
+  ): Promise<{ id: string; flow_message_id: string; conversation_id: string; message_count: number }> {
     const action = new ActionInfo('send-draft', 'flow_message', this.id ?? null, 'POST');
+    action.bodyParameters = {
+      ...(opts.replyToId ? { reply_to_id: opts.replyToId } : {}),
+      ...(opts.threadRootId ? { thread_root_id: opts.threadRootId } : {}),
+      ...(opts.call === undefined ? {} : { call: opts.call }),
+    };
     const res = await dataManager.callAction<
       unknown,
-      { flow_message_id: string; conversation_id: string; message_count: number }
+      { id: string; flow_message_id: string; conversation_id: string; message_count: number }
     >(action);
     return res!;
   }

@@ -113,7 +113,7 @@ describe('LiveSessionView header', () => {
   it('a review draft reply renders the draft composer for the host, a sent reply renders as a line', () => {
     arrange(
       session({ reply_policy: 'review' }),
-      [promptMsg(START, 'go'), replyMsg('e0e0e0e0-0000-4000-8000-000000000008', 'draft answer', { is_draft: true })],
+      [promptMsg(START, 'go'), replyMsg('e0e0e0e0-0000-4000-8000-000000000008', 'draft answer', { delivery_status: 'draft' })],
       HOST,
     );
     render(

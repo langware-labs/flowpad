@@ -32,7 +32,7 @@ async def _latest_answers(conversation_id: str, form_id: str) -> "tuple[Optional
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
     latest = None
-    for fm in await FlowMessage.get_all({"conversation_id": conversation_id}):
+    for fm in await FlowMessage.sent_in(conversation_id):
         ans = answers_in(fm.attachment)
         if ans is not None and ans.form_id == form_id:
             key = str(getattr(fm, "created_date", "") or "")

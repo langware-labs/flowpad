@@ -491,13 +491,13 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
         from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
-        match: dict = {"conversation_id": str(self.id)}
+        match: dict = {}
         if thread is not None:
             resolved = thread if isinstance(thread, MessageThread) else await self.resolve_thread(thread)
             if resolved is None:
                 return []
             match["thread_id"] = resolved.id
-        rows = await FlowMessage.get_all({"match": match})
+        rows = await FlowMessage.sent_in(self.id, **match)
         # Event time first (a backfill lands in message time), then arrival.
         return sorted(rows, key=lambda m: str(m.sent_at or m.created_date or ""))
 
@@ -1063,7 +1063,7 @@ class Conversation(ProjectedFields, Entity):
         except Exception:  # noqa: BLE001
             pass
         try:
-            for fm in await FlowMessage.get_all({"conversation_id": self.id}):
+            for fm in await FlowMessage.sent_in(self.id):  # a draft has no edge until it is sent
                 if fm.id:
                     candidate_ids.add(fm.id)
         except Exception:  # noqa: BLE001

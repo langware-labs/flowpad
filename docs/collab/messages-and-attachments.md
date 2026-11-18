@@ -45,7 +45,7 @@ load-bearing header fields and their defaults are declared around
 
 A hub metadata refresh must never reset state that only *this* machine owns.
 `LOCAL_ONLY_FIELDS` (`flow_sdk/builtin/flow_message.py:252`) pins
-`body_status`, `is_read`, `is_archived`, `received_at`, `is_draft`, and
+`body_status`, `is_read`, `is_archived`, `received_at`, and
 `prompt_auto_handled` as local. `body_status` is local because the
 download/delivery lifecycle is per-device — resetting it would re-trigger an
 already-completed body download. `prompt_auto_handled` is the host's "I already
@@ -264,6 +264,48 @@ truth imported by **both** the client and the hub. It is monotonic:
    The hub never stores PENDING_SEND or CREATED — both are client-local
    pre-accept states.
 ```
+
+`DRAFT` comes before all of them and is outside `DELIVERY_ORDER` too: see
+[Drafts](#drafts) below.
+
+### Drafts
+
+A draft is a whole `FlowMessage` in `DeliveryStatus.DRAFT`: written here, not
+sent, held by this machine only. Its text, files, assets, quote and thread sit in
+the message's own fields, so sending it changes its state and nothing else — the
+message keeps the draft's id. `is_draft` is a derived read of that status, not a
+stored field.
+
+```
+   DRAFT ──(send-draft)──► PENDING_SEND | CREATED ──► SENT ──► …
+```
+
+A draft is not in the conversation: no jsonl pointer, no child edge, not counted
+in `message_count` or unread, not in `Conversation.messages()`, the stream inbox
+search or the outbox (`owes_delivery`, `written_here`).
+
+Two kinds, one state:
+
+- **The composer's draft** — what is being typed in a conversation. At most one
+  per conversation and thread (`FlowMessage.find_composer_draft`); its
+  `draft_options` (`MessageDraftOptions`) name the thread's composer and the
+  send choices (prompt call, Task it). `POST conversation/<id>/draft` is its one
+  writer: the body states the whole draft, and an empty one is destroyed — row,
+  record folder and files. The composer loads it on mount, stores it as it
+  changes (`useComposerDraft`), and Send promotes it. Only where messages are
+  rows of a local store: the hub page holds its text in memory.
+- **A reply held for review** — a live session's answer under the `review`
+  policy (`remote_worker_session_id` set). It is drawn as its own editable
+  bubble with Send / Discard.
+
+`POST flow_message/<id>/send-draft` sends either, through `handle_add_message`
+with the row handed in (`draft=`), so a draft's send runs every step a fresh send
+does. A send claims its row: a second Send of it, or an edit that would write it
+back as a draft, is refused.
+
+A channel conversation (email, Slack) is the one exception to "the same row": a
+channel send creates no row — the message arrives by ingest — so its composer
+sends the held text and files through `send_external` and the draft is destroyed.
 
 `DELIVERY_ORDER` / `_RANK` (`flow_sdk/builtin/flow_message.py:79`) give O(1) rank
 lookup; because `DeliveryStatus` is a str-Enum, one key serves both enum and raw

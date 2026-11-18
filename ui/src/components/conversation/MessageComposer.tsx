@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { TypeId, type AssetDescriptor, type FlowMessage } from '@sdk';
+import { dataContext, TypeId, type AssetDescriptor, type FlowMessage } from '@sdk';
 import type { TaskableMessage } from '@sdk/entities/task';
 import { sendReply, sendToChannel } from '@sdk/entities/notifications';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -39,7 +39,7 @@ import { buildSessionStartExtras, type SessionHost } from './session-start';
 import { useLocalUser } from './useLocalUser';
 import { TaskItIcon, taskItHint } from './task-it';
 import { useScrollToLatest } from './LatestScroll';
-import { discardDraftFlowMessage } from './flow-message-drafts';
+import { SAVE_DEBOUNCE_MS, useComposerDraft } from './useComposerDraft';
 import { readDraft, writeDraft } from '@src/components/entity-execution-panel/composer-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
@@ -78,10 +78,9 @@ interface MessageComposerProps {
   /** Fires after a successful send (fresh reply OR draft promoted to a reply). */
   onSent?: () => void;
   /**
-   * Draft mode. When set, this composer edits an existing local-only draft
-   * `FlowMessage` (e.g. a headless agent-drafted reply): it auto-saves edits,
-   * renders as a "Draft" bubble with a Discard action, and on Send discards
-   * the draft then ships through the same `sendReply` path as a fresh reply.
+   * Draft mode. When set, this composer edits a reply held for review (a live
+   * session's draft `FlowMessage`): it auto-saves edits, renders as a "Draft"
+   * bubble with a Discard action, and Send sends that same message.
    * When omitted, it's the regular bottom-of-conversation reply box.
    */
   draft?: FlowMessage | null;
@@ -97,6 +96,15 @@ interface MessageComposerProps {
   replyTo?: { id: string; sender: string; text: string; inThread?: boolean } | null;
   /** Dismiss the reply banner (and fires after a send that answered it). */
   onClearReply?: () => void;
+  /**
+   * Keep what is written here as the conversation's draft, so it is there when the conversation is
+   * opened again: null = the conversation's own composer, a thread id = that thread's. Omitted = this
+   * composer keeps no draft. Give the composer a `key` per conversation and thread — a draft belongs to
+   * one composer for its whole life.
+   */
+  draftThread?: string | null;
+  /** The stored draft answers this message: show it as the reply again. */
+  onRestoreReply?: (messageId: string) => void;
   /** The thread this composer writes into (a `?thread=` view). A send with no explicit `replyTo`
    *  lands in it: `rootId` joins a native thread without quoting; `answerId` answers a channel
    *  thread's newest message, which is how an email/Slack reply finds its thread. */
@@ -105,8 +113,6 @@ interface MessageComposerProps {
    *  message here (the same call the bubble's Task it makes). Plain conversation sends only. */
   onTaskIt?: (sent: TaskableMessage) => void;
 }
-
-const SAVE_DEBOUNCE_MS = 400;
 
 /** Ceiling for the auto-growing composer (~10 lines of text). Past this the
  *  textarea scrolls instead of eating the conversation above it. */
@@ -202,6 +208,8 @@ export function MessageComposer({
   onSend = null,
   replyTo = null,
   onClearReply,
+  draftThread,
+  onRestoreReply,
   threadTarget = null,
   onTaskIt,
 }: MessageComposerProps) {
@@ -285,6 +293,31 @@ export function MessageComposer({
   useEffect(() => {
     writeDraft(draftScope, text);
   }, [draftScope, text]);
+
+  // The conversation's draft: what is held here, stored as it changes and handed back on mount.
+  // Only where messages are rows of a local store — the hub page holds it in memory, as before.
+  const keepsDraft = draftThread !== undefined && !isDraftMode && !!effectiveConversationId && dataContext.caps.localFiles;
+  const threadRootId = threadTarget?.rootId ?? null;
+  const draftKey = keepsDraft ? { conversationId: effectiveConversationId!, threadId: draftThread, threadRootId } : null;
+  const stored = useComposerDraft(
+    draftKey,
+    {
+      text,
+      files,
+      assetRefs,
+      replyToId: replyTo?.id ?? null,
+      taskIt: taskItOn,
+      promptCall: promptCallOn,
+    },
+    (saved) => {
+      setText(saved.text);
+      setFiles(saved.files);
+      setAssetRefs(saved.assetRefs);
+      setTaskItOn(saved.taskIt);
+      setPromptCallOn(saved.promptCall);
+      if (saved.replyToId) onRestoreReply?.(saved.replyToId);
+    },
+  );
 
   // A send asked for in the same update as the text/files it sends: `send` reads
   // both from its render, so it must run in the render that already has them.
@@ -417,31 +450,35 @@ export function MessageComposer({
           if (isDraftMode) notify.error({ title: gate.error });
           return;
         }
-        if (draft?.remote_worker_session_id) {
-          // A session reply held for review: promote the ROW (backend
-          // `send-draft`), so its prompt_completion attachment and session id
-          // travel with it and it lands in the guest's session view. Discard +
-          // resend would strip both and drop the text into the thread.
+        if (draft) {
+          // A reply held for review: send the ROW (backend `send-draft`), so its
+          // prompt_completion attachment and session id travel with it and it lands
+          // in the guest's session view.
           if (draft.text !== text) {
             draft.text = text;
             await draft.save();
           }
           await draft.sendDraft();
         } else {
-          // Draft promotion: discard the local-only draft, then send through the
-          // SAME reply pipeline as a fresh send. Single code path beats forking
-          // the upload/push plumbing for drafts.
-          if (draft) await discardDraftFlowMessage(draft);
-          if (!isPromptSend) {
-            if (answering) extras.replyToId = answering;
-            else if (threadTarget?.rootId) extras.threadRootId = threadTarget.rootId;
+          let sent: { id?: string | null };
+          if (draftKey) {
+            // The stored draft IS the message: store what is held now, then send that same row.
+            const row = await stored.flush();
+            if (!row) throw new Error(t`Could not save the message. Try again.`);
+            sent = await row.sendDraft({ replyToId: answering, threadRootId, call: isCallSend });
+            stored.sent();
+          } else {
+            if (!isPromptSend) {
+              if (answering) extras.replyToId = answering;
+              else if (threadRootId) extras.threadRootId = threadRootId;
+            }
+            sent = await sendReply(
+              { conversationId: effectiveConversationId },
+              messageBody,
+              outgoingFiles,
+              Object.keys(extras).length > 0 ? extras : undefined,
+            );
           }
-          const sent = await sendReply(
-            { conversationId: effectiveConversationId },
-            messageBody,
-            outgoingFiles,
-            Object.keys(extras).length > 0 ? extras : undefined,
-          );
           if (replyTo) onClearReply?.();
           if (taskItOn && sent.id) {
             onTaskIt?.({
@@ -498,7 +535,7 @@ export function MessageComposer({
     if (!window.confirm(t`Discard this draft?`)) return;
     setDiscarding(true);
     try {
-      await discardDraftFlowMessage(draft);
+      await draft.delete();
       onAfterDiscard?.();
     } catch (err: unknown) {
       console.error('[MessageComposer] discard failed', err);

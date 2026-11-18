@@ -255,18 +255,16 @@ export function ConversationView({
     [conversation?.message_ids, allowedMessageIds],
   );
 
-  // Local-only drafts attached to this conversation. Filtered to the local
-  // user so a counterparty's stray draft never renders here. Match is built
-  // as an explicit $AND/$EQ tree — the SDK's multi-key plain-object shorthand
-  // doesn't recursively wrap operands, which makes real-time validate() crash.
+  // The replies held for review in this conversation: drafts of a live session, each drawn as its
+  // own editable bubble. The draft typed in the composer is NOT one of them — the composer holds it —
+  // so typing never touches this query. Match is built as an explicit $AND tree — the SDK's multi-key
+  // plain-object shorthand doesn't recursively wrap operands, which makes real-time validate() crash.
   const draftsRequest = useMemo(() => {
     const eqClauses: Array<{ op: string; operands: unknown[] }> = [
       { op: '$EQ', operands: ['conversation_id', conversationId] },
-      { op: '$EQ', operands: ['is_draft', true] },
+      { op: '$EQ', operands: ['delivery_status', 'draft'] },
+      { op: '$IS_NOT_NULL', operands: ['remote_worker_session_id'] },
     ];
-    if (localUser?.id) {
-      eqClauses.push({ op: '$EQ', operands: ['sender_id', localUser.id] });
-    }
     return new QueryRequest({
       type: FlowMessage.type,
       scope: [],
@@ -275,7 +273,7 @@ export function ConversationView({
         match: { op: '$AND', operands: eqClauses } as Record<string, unknown>,
       }),
     });
-  }, [conversationId, localUser?.id]);
+  }, [conversationId]);
   const { data: draftMessages = [] } = useEntitiesQuery<FlowMessage>(draftsRequest, {
     // Drafts are local rows: only a runtime that keeps a local store has any to show.
     enabled: !!conversationId && dataContext.caps.localFiles,
@@ -501,7 +499,7 @@ export function ConversationView({
   // The message the composer answers — local composer state, not navigation (nothing is shown
   // differently; the next send quotes it).
   const [replyTo, setReplyTo] = useState<FlowMessage | null>(null);
-  useEffect(() => setReplyTo(null), [conversationId]);
+  useEffect(() => setReplyTo(null), [conversationId, threadId]);
   // What the channel lets a person do to one message — read off its spec. Reply is the `replies`
   // trait (Flowpad's own chat included); a native message is answered by its hub id, a channel's
   // by its origin.
@@ -1523,6 +1521,13 @@ export function ConversationView({
         // On a phone the composer stays pinned to the bottom of the screen while the feed scrolls.
         <div className="max-md:sticky max-md:bottom-0 max-md:z-10 max-md:bg-background max-md:pb-2">
           <MessageComposer
+            // One composer per conversation and thread: each holds its own draft.
+            key={threadId ?? ''}
+            draftThread={threadId ?? null}
+            onRestoreReply={(id) => {
+              const answered = messagesById.get(id);
+              if (answered) setReplyTo(answered);
+            }}
             conversationId={conversationId}
             onSent={() => void refetch()}
             // A source-backed conversation replies into its channel, not the hub.
