@@ -60,6 +60,7 @@ const loaded = (n: number, sdk?: object) => {
 
 beforeEach(() => {
   __testing.reset();
+  __testing.backendOrigin = () => null; // the unit tier has no backend; the page origin stands in
   defineGlobal(undefined);
   injected = [];
   vi.spyOn(document.head, 'appendChild').mockImplementation(<T extends Node>(node: T): T => {
@@ -176,6 +177,15 @@ describe('loading it', () => {
     injected[0].onerror?.(new Event('error'));
     await settle();
     expect(__testing.activeConfig()).toBeNull();
+  });
+
+  it('a hub UI asks the hub the SDK config layer names, not the page it is served from', async () => {
+    // The split dev harness: the page is Vite's, the hub is another origin and the only one with the route.
+    __testing.backendOrigin = () => 'http://localhost:8093';
+    startSentryReaction();
+    setBootstrap(bootstrap({ runtime: { kind: 'hub' }, desktop_info: undefined }));
+    await tick();
+    expect(injected.map((el) => el.src)).toEqual(['http://localhost:8093/api/v1/sentry-sdk/browser']);
   });
 
   it('a failed load is retried when the backend connection comes back, not before', async () => {

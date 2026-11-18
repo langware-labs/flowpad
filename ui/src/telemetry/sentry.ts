@@ -25,7 +25,7 @@
  */
 
 import { comparer, reaction } from 'mobx';
-import { dataContext, privacyManager, RuntimeKind, SentryEnvironment, type SentryInfo } from '@sdk';
+import { backendOrigin, dataContext, privacyManager, RuntimeKind, SentryEnvironment, type SentryInfo } from '@sdk';
 import {
   SDK_CONTRACT,
   SDK_GLOBAL,
@@ -75,8 +75,9 @@ const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 /**
  * Where the hub's SDK script is: the hub's origin + the fixed path, or `null` when the origin is
  * unknown or not safe to run a script from (not https -- a local dev hub excepted -- or carrying
- * credentials). The hub UI is served BY the hub, so its own origin is the hub; a sandbox learns its
- * hub from the bootstrap (`desktop_info.cloud_app_url`, the hub's browser-app origin).
+ * credentials). `pageOrigin` is the hub's own origin for a hub UI (the SDK config layer's backend
+ * origin, so a split dev harness asks the hub and not the Vite port); a sandbox learns its hub from the
+ * bootstrap (`desktop_info.cloud_app_url`, the hub's browser-app origin).
  */
 export function sdkUrlFor(kind: RuntimeKindReported, bootstrap: unknown, pageOrigin: string): string | null {
   const raw =
@@ -100,7 +101,7 @@ export function effectiveConfig(bootstrap: unknown, isLocal: boolean): Effective
   const kind = info.runtime?.kind;
   if (kind !== RuntimeKind.HUB && kind !== RuntimeKind.SANDBOX) return null;
   if (!isValidSentryInfo(info.sentry_info)) return null;
-  const sdkUrl = sdkUrlFor(kind, bootstrap, window.location.origin);
+  const sdkUrl = sdkUrlFor(kind, bootstrap, __testing.backendOrigin() ?? window.location.origin);
   if (!sdkUrl) return null;
   return { dsn: info.sentry_info.dsn, environment: info.sentry_info.environment, runtimeKind: kind, sdkUrl };
 }
@@ -317,6 +318,7 @@ function loadHubSdk(url: string): Promise<SentrySdk> {
 /** Test seams: the loader and a transport, so tests run an SDK without the hub or a network. */
 export const __testing = {
   load: loadHubSdk,
+  backendOrigin: backendOrigin as () => string | null,
   transport: undefined as unknown,
   activeConfig: (): EffectiveConfig | null => active,
   settled: (): Promise<void> => queue,
@@ -331,6 +333,7 @@ export const __testing = {
     started = false;
     failedLoads.clear();
     __testing.load = loadHubSdk;
+    __testing.backendOrigin = backendOrigin;
     __testing.transport = undefined;
   },
 };
@@ -347,11 +350,10 @@ async function applyConfig(next: EffectiveConfig | null): Promise<void> {
   if (active && sentry) {
     const previous = sentry.getClient();
     active = null;
-    try {
-      await previous?.close(2000);
-    } catch {
-      /* closing is best-effort */
-    }
+    // Not awaited and given no timeout: the old client is its own object and winds itself down, and the
+    // next `init` builds a fresh one. A pending event is sanitized, and `beforeSend` already refuses
+    // anything once privacy is Local.
+    void previous?.close().catch(() => undefined);
   }
   if (!next || failedLoads.has(next.sdkUrl)) return;
   let mod: SentrySdk;

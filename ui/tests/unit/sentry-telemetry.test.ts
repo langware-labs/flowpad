@@ -61,6 +61,7 @@ async function boom(message = 'boom') {
 beforeEach(() => {
   sent = [];
   __testing.reset();
+  __testing.backendOrigin = () => null; // the unit tier has no backend; the page origin stands in
   __testing.transport = captureTransport as any;
   __testing.load = () => Promise.resolve(realSdk); // the hub's script is not reachable here
   setBootstrap(null);
