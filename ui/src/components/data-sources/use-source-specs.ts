@@ -107,7 +107,7 @@ export interface SourceChoice {
   spec: DataDriver;
 }
 
-const choiceKey = (s: DataDriver): string => s.group || s.name || '';
+export const choiceKey = (s: DataDriver): string => s.group || s.name || '';
 
 /** The choices among `specs`, one per group. The add dialog's tiles and a stream inbox's default
  *  channels are both this list, so a mark and the tile it opens cannot disagree. */
@@ -122,18 +122,29 @@ export function sourceChoices(specs: DataDriver[]): SourceChoice[] {
     }));
 }
 
+/** The message channels a person may add — every offered message driver whose group declares `featured`,
+ *  one per group: what an empty stream inbox offers under "Add a message channel". */
+export const messageChannelChoices = (specs: DataDriver[], forAgent: boolean): SourceChoice[] => {
+  const offered = offeredSpecs(specs, forAgent).filter(isMessageDriverSpec);
+  const featured = new Set(offered.filter((s) => s.featured).map(choiceKey));
+  return sourceChoices(offered)
+    .filter((c) => featured.has(c.key))
+    .sort((a, b) => a.label.localeCompare(b.label));
+};
+
 /** A channel still to connect, as a stream inbox draws it by default. */
 export type ChannelOffer = SourceChoice;
 
 /** The channels a stream inbox draws by default for an owner who has connected none of them: every
  *  offered message driver that declares `featured` (one per group). Empty once the owner has a source of
  *  ANY featured channel, whatever its status — from then on the + button is the way to more. */
-export function channelOffers(specs: DataDriver[], rows: Pick<DataSource, 'provider'>[], forAgent: boolean): ChannelOffer[] {
-  const offered = offeredSpecs(specs, forAgent).filter(isMessageDriverSpec);
-  const featured = new Set(offered.filter((s) => s.featured).map(choiceKey));
+export function channelOffers(
+  specs: DataDriver[],
+  rows: Pick<DataSource, 'provider'>[],
+  forAgent: boolean,
+): ChannelOffer[] {
+  const choices = messageChannelChoices(specs, forAgent);
+  const featured = new Set(choices.map((c) => c.key));
   const connected = new Set(rows.map((r) => r.provider));
-  if (specs.some((s) => connected.has(s.name ?? '') && featured.has(choiceKey(s)))) return [];
-  return sourceChoices(offered)
-    .filter((c) => featured.has(c.key))
-    .sort((a, b) => (a.key < b.key ? -1 : 1));
+  return specs.some((s) => connected.has(s.name ?? '') && featured.has(choiceKey(s))) ? [] : choices;
 }

@@ -1,16 +1,17 @@
 /**
- * A rule on messages arriving — two boxes, a fast test, Save (docs/snippets/stream-inbox-automations.md).
+ * A rule on messages arriving — an IF, a list of steps, a fast test, Save (docs/snippets/stream-inbox-automations.md).
  *
- *   Catch messages on [Work mail] that [ asks for a refund or disputes a charge ]
- *   Then  [Billing helper] should    [ draft the reply … ]
+ *   IF a message is tagged [billing] on [Work mail]
+ *   and only if [ it asks for a refund or disputes a charge ]
+ *   THEN 1 Run an agent [Billing helper] [ draft the reply … ]  2 Mark as read  …
  *
- * The sentence IS the rule's `if` (the backend words it into the gate's question); the prompt
- * and the agent are its `then`. Enabled is a toggle at the top; Save only saves. Under the
+ * The tags and the sentence are the rule's `if` (the backend words the sentence into the gate's question);
+ * the steps are its `then` (`ThenStepsEditor`). Enabled is a toggle at the top; Save only saves. Under the
  * sentence, a fast test asks the gate about any text; on the right, the try list asks it about
  * recent real messages. Every call goes through the hooks layer → `Trigger.*`.
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FlowMessage, TypeId, messageRuleFields, parseTarget, type DataSource, type ITrigger, type TryRow } from '@sdk';
+import { FlowMessage, TypeId, messageRuleFields, parseTarget, stepsOfThen, type DataSource, type ITrigger, type RuleStep, type TryRow } from '@sdk';
 import { AlertTriangle, ArrowLeft, Check, ExternalLink, Loader2, Play, Save, Trash2, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
@@ -42,6 +43,7 @@ import { pillClass } from './Pills';
 import type { AutomationsRoute } from './automations-pointer';
 import { TagInput } from '@src/components/tags/TagInput';
 import { ThenSteps } from './ThenSteps';
+import { ThenStepsEditor, missingInSteps, useStepKindWords } from './ThenStepsEditor';
 import { EntityChip } from '@src/components/conversation/EntityChip';
 import { tagChipStyle, useTagDefinitions } from '@src/components/tags/MessageTags';
 import { messageTagReturn } from '@src/components/tags/message-tag-navigation';
@@ -52,9 +54,8 @@ interface Draft {
   catch: string;
   /** Data source ids. Empty = any channel. */
   sources: string[];
-  /** `agent-<uuid>`. */
-  agent: string;
-  prompt: string;
+  /** The Then, in order. Empty on a rule whose `then` this screen does not edit. */
+  steps: RuleStep[];
 }
 
 function draftOf(t: ITrigger): Draft {
@@ -63,8 +64,7 @@ function draftOf(t: ITrigger): Draft {
     enabled: t.enabled ?? true,
     catch: t.gate?.sentence ?? '',
     sources: (t.tag_scope ?? []).map((s) => parseTarget(s)[1] ?? s),
-    agent: t.then?.run_agent?.agent ?? '',
-    prompt: t.then?.run_agent?.prompt ?? '',
+    steps: stepsOfThen(t.then),
   };
 }
 
@@ -73,6 +73,8 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
   const { navigation, currentDock } = useDockNavigation();
   const sourceMessage = useEntity<FlowMessage>(route.message ? new TypeId(FlowMessage.type, route.message) : null).data;
   const tagDefinitions = useTagDefinitions();
+  const tagColors = useMemo(() => new Map(tagDefinitions.map((tag) => [tag.name ?? '', tag.color])), [tagDefinitions]);
+  const stepWords = useStepKindWords();
   const returnContext = { message: route.message ?? '', conversation: route.conversation ?? sourceMessage?.conversation_id ?? '' };
   const returnPointer = messageTagReturn(returnContext, 'queue');
   const triggerId = route.trigger ?? null;
@@ -92,7 +94,7 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
   const { data: sources = [] } = useEntitiesQuery<DataSource>(sourcesQuery);
   const channels = useMemo(() => sources.filter((s) => !!s.channel), [sources]);
 
-  const loadKey = isNew ? `new:${route.recipe ?? ''}:${route.source ?? ''}` : `id:${triggerId}`;
+  const loadKey = isNew ? `new:${route.recipe ?? ''}:${route.source ?? ''}:${route.tag ?? ''}` : `id:${triggerId}`;
   const [loaded, setLoaded] = useState<{ key: string; base: Draft; draft: Draft } | null>(null);
   useEffect(() => {
     if (loaded?.key === loadKey) return;
@@ -100,16 +102,16 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
     if (isNew) {
       const recipe = messageRecipeById(route.recipe);
       base = {
-        message_tags: [],
+        // Started from a tag ("automate this tag"): the tag is already chosen.
+        message_tags: route.tag ? [route.tag] : [],
         enabled: true,
         catch: recipe?.catch ?? '',
         sources: route.source ? [route.source] : [],
-        agent: '',
-        prompt: recipe?.prompt ?? '',
+        steps: [{ kind: 'run_agent', agent: '', prompt: recipe?.prompt ?? '' }],
       };
     } else if (triggerQuery.data) base = draftOf(triggerQuery.data as ITrigger);
     if (base) setLoaded({ key: loadKey, base, draft: base });
-  }, [loadKey, loaded?.key, isNew, route.recipe, route.source, triggerQuery.data]);
+  }, [loadKey, loaded?.key, isNew, route.recipe, route.source, route.tag, triggerQuery.data]);
 
   // Saved rules: Check once, so a missing Decision API is said in one banner.
   useEffect(() => {
@@ -121,9 +123,12 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const draft = loaded?.draft ?? null;
   const setDraft = (patch: Partial<Draft>) => setLoaded((l) => (l ? { ...l, draft: { ...l.draft, ...patch } } : l));
-  const agentName = (agents.data ?? []).find((a) => `agent-${a.id}` === draft?.agent)?.name ?? '';
-  // Script, callback and Wizard actions stay on this existing trigger unchanged.
-  const preserveThen = !isNew && !!triggerQuery.data && !triggerQuery.data.then?.run_agent;
+  // The default name's right-hand side: the first agent, else what the first step does.
+  const firstAgent = draft?.steps.find((s) => s.kind === 'run_agent')?.agent;
+  const agentName =
+    (agents.data ?? []).find((a) => `agent-${a.id}` === firstAgent)?.name ?? (draft?.steps[0] ? stepWords[draft.steps[0].kind].name : '');
+  // A `then` the builder does not write (a callback, a Wizard, older actions) stays on this trigger unchanged.
+  const preserveThen = !isNew && !!triggerQuery.data && !stepsOfThen(triggerQuery.data.then).length;
   // The row shape is the SDK's (`messageRuleFields`): the screen's Save and `Trigger.onMessage` make the same row.
   const fields = draft
     ? messageRuleFields({ ...draft, name: isNew ? null : triggerQuery.data?.name }, agentName)
@@ -134,7 +139,8 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
     fields.action = triggerQuery.data?.action;
   }
   const dirty = !!loaded && JSON.stringify(loaded.draft) !== JSON.stringify(loaded.base);
-  const missing = draft ? [!draft.catch.trim() && !draft.message_tags.length && 'catch', !preserveThen && !draft.agent && 'agent', !preserveThen && !draft.prompt.trim() && 'prompt'].filter(Boolean) : [];
+  const missing = draft ? [!draft.catch.trim() && !draft.message_tags.length && 'catch', ...(preserveThen ? [] : missingInSteps(draft.steps))].filter(Boolean) : [];
+  const byTags = !!draft?.message_tags.length;
   const readOnly = !!automation?.read_only;
   // Check's findings on the `if`: no decider at all is the banner (nothing can be asked); anything else wrong
   // with the sentence is said under it.
@@ -157,8 +163,10 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
         title: t`Not ready to save`,
         message: [
           missing.includes('catch') && t`Say what to catch.`,
+          missing.includes('steps') && t`Add a step.`,
           missing.includes('agent') && t`Pick who handles it.`,
           missing.includes('prompt') && t`Say what they should do.`,
+          missing.includes('script') && t`Say which command to run.`,
         ]
           .filter(Boolean)
           .join(' '),
@@ -275,10 +283,18 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
             <section className="flex flex-col gap-2" data-testid="message-rule-catch">
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Trans>Catch</Trans>
+                  <Trans>If</Trans>
                 </span>
                 <span className="text-muted-foreground">
-                  <Trans>messages on</Trans>
+                  <Trans>a message is tagged</Trans>
+                </span>
+                <span data-testid="message-rule-tags" className="min-w-[8rem] rounded-md border border-border px-1.5 py-0.5" title={t`Includes the tags under it. Runs once per message.`}>
+                  <TagInput tags={draft.message_tags}
+                    onAdd={(tag) => { if (!readOnly) setDraft({ message_tags: [...draft.message_tags, tag] }); }}
+                    onRemove={(tag) => { if (!readOnly) setDraft({ message_tags: draft.message_tags.filter((value) => value !== tag) }); }} />
+                </span>
+                <span className="text-muted-foreground">
+                  <Trans>on</Trans>
                 </span>
                 <span className="flex flex-wrap gap-1.5" role="group" aria-label={t`Channels`}>
                   <button
@@ -305,8 +321,13 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
                     </button>
                   ))}
                 </span>
-                <span className="text-muted-foreground">
-                  <Trans>that</Trans>
+              </div>
+              <div className="flex items-baseline gap-2 text-sm">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <Trans>and only if</Trans>
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  <Trans>optional</Trans>
                 </span>
               </div>
               <Textarea
@@ -314,18 +335,10 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
                 onChange={(e) => setDraft({ catch: e.target.value })}
                 disabled={readOnly}
                 rows={2}
-                placeholder={t`ask for a refund or dispute a charge`}
+                placeholder={t`it asks for a refund or disputes a charge`}
                 className="text-sm"
                 data-testid="message-rule-catch-text"
               />
-              <div data-testid="message-rule-tags" className="rounded-md border border-border p-2">
-                <p className="mb-1 text-xs font-medium"><Trans>When any of these message tags is assigned</Trans></p>
-                {tagLinks(draft.message_tags)}
-                <TagInput tags={draft.message_tags}
-                  onAdd={(tag) => { if (!readOnly) setDraft({ message_tags: [...draft.message_tags, tag] }); }}
-                  onRemove={(tag) => { if (!readOnly) setDraft({ message_tags: draft.message_tags.filter((value) => value !== tag) }); }} />
-                <p className="mt-1 text-xs text-muted-foreground"><Trans>Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional.</Trans></p>
-              </div>
               {!!sourceMessage?.tags?.length && <div data-testid="message-rule-origin-tags" className="space-y-1">
                 <p className="text-xs text-muted-foreground"><Trans>Tags on this message</Trans></p>
                 {tagLinks(sourceMessage.tags)}
@@ -385,39 +398,12 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
                 <h3 className="text-xs font-medium"><Trans>Then</Trans></h3>
                 {automation?.then ? <ThenSteps steps={automation.then} /> : <p className="text-sm text-muted-foreground"><Trans>Keep the existing automation actions</Trans></p>}
               </> : <>
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Trans>Then</Trans>
-                </span>
-                <select
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                  value={draft.agent}
-                  onChange={(e) => setDraft({ agent: e.target.value })}
-                  disabled={readOnly}
-                  data-testid="message-rule-agent"
-                >
-                  <option value="">{t`Pick an agent…`}</option>
-                  {(agents.data ?? []).map((a) => (
-                    <option key={a.id} value={`agent-${a.id}`}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-muted-foreground">
-                  <Trans>should</Trans>
-                </span>
-              </div>
-              <Textarea
-                value={draft.prompt}
-                onChange={(e) => setDraft({ prompt: e.target.value })}
-                disabled={readOnly}
-                rows={3}
-                placeholder={t`confirm which charge is in question, explain the refund path, and draft the reply. Don’t send it.`}
-                className="text-sm"
-                data-testid="message-rule-prompt"
-              />
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <Trans>Then</Trans>
+              </span>
+              <ThenStepsEditor steps={draft.steps} onChange={(steps) => setDraft({ steps })} disabled={readOnly} agents={agents.data ?? []} />
               <p className="text-xs text-muted-foreground">
-                <Trans>The agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered.</Trans>
+                <Trans>Steps run in order. An agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered.</Trans>
               </p>
               </>}
             </section>
@@ -460,7 +446,8 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
             {tries.data && tries.data.length > 0 && (
               <ul className="divide-y divide-border rounded-md border border-border bg-background">
                 {tries.data.map((row, i) => {
-                  const word = caughtWord(row.verdict);
+                  // A tag rule is decided by the message's tags: caught or not, nothing in between.
+                  const word = byTags ? { ...caughtWord(row.verdict), kind: row.verdict.met ? 'yes' : 'no' } : caughtWord(row.verdict);
                   const messageId = String(row.state.message_id ?? '');
                   return (
                     <li key={messageId || i} className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2.5 py-1.5 text-xs" data-testid="message-rule-try-row" data-verdict={word.kind}>
@@ -481,9 +468,20 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
                         <span className="text-muted-foreground"> — {String(row.state.text ?? '').slice(0, 80)}</span>
                       </span>
                       <span className="flex items-center gap-2 whitespace-nowrap text-muted-foreground">
-                        <span title={word.text} className={cn(word.kind === 'yes' && 'text-foreground')}>
-                          {word.sure}%{row.decided_at ? ` · ${t`decided`}` : ''}
-                        </span>
+                        {byTags ? (
+                          <span className="flex items-center gap-1" title={word.text} data-testid="message-rule-try-tags">
+                            {(row.tags ?? []).map((name) => (
+                              <span key={name} title={name} style={tagChipStyle(tagColors.get(name))} className="inline-flex h-5 items-center rounded-full border border-border bg-muted/30 px-2 text-[11px] font-medium">
+                                {name.split('.').at(-1)}
+                              </span>
+                            ))}
+                            {!row.tags?.length && <Trans>no tag</Trans>}
+                          </span>
+                        ) : (
+                          <span title={word.text} className={cn(word.kind === 'yes' && 'text-foreground')}>
+                            {word.sure}%{row.decided_at ? ` · ${t`decided`}` : ''}
+                          </span>
+                        )}
                         {word.kind === 'yes' && messageId && !row.decided_at && !readOnly && (
                           <button
                             type="button"

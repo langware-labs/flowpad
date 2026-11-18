@@ -813,6 +813,7 @@ async def run_session_turn(
 
     guard = contextlib.nullcontext() if _locked else _session_lock(session)
     async with guard:
+        ap = None
         try:
             from flow_sdk.builtin.project import Project
 
@@ -983,7 +984,7 @@ async def run_session_turn(
                     await consume_prompt(fm, someone_typeid)
                 except Exception:  # noqa: BLE001 — reporting the failure comes first
                     logger.warning("[session] could not consume the failed prompt fm=%s", fm.id, exc_info=True)
-            return await _fail_turn(session, e, someone_typeid)
+            return await _fail_turn(session, _what_the_turn_wrote(ap, e), someone_typeid)
 
 
 async def _set_turn_status(
@@ -1009,6 +1010,26 @@ async def _set_turn_status(
 
 class _TurnFailed(Exception):
     """A turn that cannot produce a reply; its message is what the guest is told."""
+
+
+def _what_the_turn_wrote(ap: "Optional[AgenticProcess]", err: Exception) -> Exception:
+    """The failure as the turn itself reported it, when it wrote one.
+
+    However the run failed — a raise from the transcript stream included — the
+    transcript may hold the real ending (a refusal, a 429) or a partial answer, and
+    that is what the guest needs, never only the host's generic line.
+    """
+    if ap is None or isinstance(err, _TurnFailed):
+        return err  # a _TurnFailed already carries the turn's own reason
+    try:
+        transcript = ap._load_transcript()
+    except Exception:  # noqa: BLE001 — the original failure still gets reported
+        transcript = None
+    entries = transcript.entries if transcript is not None else []
+    said = _last_turn_ended_in_error(entries) or _last_turn_assistant_text(entries)
+    if not said or said in str(err):
+        return err
+    return _TurnFailed(said)
 
 
 async def _fail_turn(session: "RemoteWorkerSession", err: Exception, someone_typeid: str) -> ApiFailResponse:

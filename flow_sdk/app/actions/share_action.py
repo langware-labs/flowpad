@@ -360,7 +360,7 @@ async def conversation_add_message() -> ApiResponse:
     blocked, pending_send = add_message_gate(body)
     if blocked:
         return ApiFailResponse(message=blocked)
-    # The session that wrote this (the `flow` CLI inside a worker) — linked after the send, never sent.
+    # The session that wrote this (the `flow` CLI inside a worker) — linked before the message is announced, never sent.
     origin_process = str(body.pop("origin_process", "") or "").strip()
     # `--on-reply`: the session waits for the reply to this message (builtin/reply_callbacks.py).
     on_reply = str(body.pop("on_reply", "") or "").strip()
@@ -372,16 +372,8 @@ async def conversation_add_message() -> ApiResponse:
         body,
         request_info.someone_typeid,
         pending_send=pending_send,
+        origin_process=origin_process,
     )
-    if origin_process and isinstance(response, ApiSuccessResponse) and isinstance(response.data, dict):
-        from flow_sdk.app.actions.notification_action import link_origin_session  # noqa: PLC0415
-
-        await link_origin_session(
-            body["conversation_id"],
-            response.data.get("flow_message_id") or response.data.get("id"),
-            origin_process,
-            request_info.someone_typeid,
-        )
     if on_reply and isinstance(response, ApiSuccessResponse) and isinstance(response.data, dict):
         from datetime import timedelta  # noqa: PLC0415
 

@@ -306,7 +306,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   [ViewType.TAG]: {
     title: msg`Tag Graph`,
-    iconName: 'Hash',
+    iconName: 'Tag',
     tabLocation: 'dedicated',
     canAddAsTab: false,
     // <tag> in the pointer is in-view focus navigation — every focused
@@ -337,6 +337,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.TOKEN_PLAN]: {
     title: msg`Token plan`,
     iconName: 'Gauge',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
+  // Email notification rules (page=hub; the desktop serves the hub page too, so one view).
+  // Pointer = a rule key (`notification.email.issue.budget_exhausted[.<type>.id.<uuid>]`):
+  // an in-view selection, so it folds into one chip (TOKEN_PLAN precedent).
+  [ViewType.NOTIFICATIONS]: {
+    title: msg`Notifications`,
+    iconName: 'BellOff',
     tabLocation: 'dedicated',
     canAddAsTab: false,
     foldsPointer: true,

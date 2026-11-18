@@ -9,6 +9,7 @@ import {
   TypeId,
   User,
 } from '@sdk';
+import type { StreamInboxViewMode } from '@src/navigation/DockPointer';
 
 /** The backend's `owner_of` rule (`flow_sdk/stream_inbox/projection.py`), client-side, for a
  *  row written before `owner` existed: the agent its legacy `config.agent_id` names,
@@ -77,9 +78,18 @@ export function sourceConversationsRequest(sourceId: string): QueryRequest {
   return new QueryRequest({ type: Conversation.type, query: new QueryFilter({ match: sourceMatch(sourceId) }) });
 }
 
+/** Whether ONE source has delivered any conversation: a single row is enough to know. */
+export function sourceHasConversationRequest(sourceId: string): QueryRequest {
+  return new QueryRequest({
+    type: Conversation.type,
+    name: `stream-inbox:source-has:${sourceId}`,
+    query: new QueryFilter({ match: allOf([sourceMatch(sourceId), notDeleted()]), limit: 1 }),
+  });
+}
+
 /** `invites` lists every invite the user received (shares of machines, teams, projects, conversations),
  *  whatever became of it — the record of what was shared, each one openable. */
-export type StreamInboxViewMode = 'all' | 'unread' | 'archived' | 'invites';
+export type { StreamInboxViewMode };
 
 /** How many conversations one page of a stream inbox shows. */
 export const STREAM_INBOX_PAGE_SIZE = 100;
@@ -103,7 +113,11 @@ export const BUILT_IN_CHANNELS: readonly string[] = [FLOWPAD_CHANNEL, DIAGNOSIS_
 /** A scope as a string: what keys a memo or a request on it. */
 export const scopeKey = (scope: ConversationScope) =>
   'owner' in scope
-    ? [scope.owner.toString(), [...(scope.sourceIds ?? [])].sort().join(','), [...(scope.channels ?? [])].sort().join(',')]
+    ? [
+        scope.owner.toString(),
+        [...(scope.sourceIds ?? [])].sort().join(','),
+        [...(scope.channels ?? [])].sort().join(','),
+      ]
         .join('|')
         .replace(/\|+$/, '')
     : scope.sourceId;
@@ -115,7 +129,8 @@ const scopeClauses = (scope: ConversationScope): ExpressionNode[] => {
   const picked: ExpressionNode[] = [];
   if (scope.sourceIds?.length)
     picked.push(new ExpressionNode({ op: '$IN', operands: ['channel_source_id', [...scope.sourceIds]] }));
-  if (scope.channels?.length) picked.push(new ExpressionNode({ op: '$IN', operands: ['channel', [...scope.channels]] }));
+  if (scope.channels?.length)
+    picked.push(new ExpressionNode({ op: '$IN', operands: ['channel', [...scope.channels]] }));
   // A Flowpad conversation with no channel stamped and no source behind it.
   if (scope.channels?.includes(FLOWPAD_CHANNEL))
     picked.push(
@@ -146,7 +161,10 @@ const notDeleted = () => new ExpressionNode({ op: '$IS_NULL', operands: ['delete
 
 /** The view's clause, answered by the backend from the projected `archived` / `is_unread`, so a page
  *  is N rows of the view rather than N rows the browser then thins out. */
-function viewClauses(view: StreamInboxViewMode): ExpressionNode[] {
+function viewClauses(view: StreamInboxViewMode, starredIds: readonly string[] = []): ExpressionNode[] {
+  // Starred is a list of favorites (bookmarks), not a field of the row: the starred ids ride in the
+  // query. Archived rows included — a star outlives the archive, as a search hit does.
+  if (view === 'starred') return [new ExpressionNode({ op: '$IN', operands: ['id', [...starredIds]] })];
   if (view === 'archived') return [new ExpressionNode({ op: '$EQ', operands: ['archived', true] })];
   if (view === 'unread') return [notArchived(), new ExpressionNode({ op: '$EQ', operands: ['is_unread', true] })];
   // Every conversation that carries a share, archived or not — the record of what was shared with you.
@@ -180,9 +198,10 @@ export function conversationsPageRequest(
   scope: ConversationScope,
   view: StreamInboxViewMode,
   before: string | null,
+  starredIds: readonly string[] = [],
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
-  const clauses = viewClauses(view);
+  const clauses = viewClauses(view, starredIds);
   if (before) clauses.push(new ExpressionNode({ op: '$LT', operands: ['updated_date', before] }));
   return pageQuery(scope, clauses, 'desc', { limit: size });
 }
@@ -203,11 +222,12 @@ export function newerBoundaryRequest(
   scope: ConversationScope,
   view: StreamInboxViewMode,
   newest: string,
+  starredIds: readonly string[] = [],
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
   return pageQuery(
     scope,
-    [...viewClauses(view), new ExpressionNode({ op: '$GT', operands: ['updated_date', newest] })],
+    [...viewClauses(view, starredIds), new ExpressionNode({ op: '$GT', operands: ['updated_date', newest] })],
     'asc',
     { limit: size },
   );

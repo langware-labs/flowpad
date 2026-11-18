@@ -463,10 +463,13 @@ def issue_of(payload: dict) -> "dict | None":
 
 def derive_issue_reply(fm: "FlowMessage", payload: dict) -> None:
     """Carry a Monitoring message's ``metadata.issue`` (hub-written) onto ``issue_reply``. Idempotent; absent
-    leaves it as is, so a refresh without metadata keeps the last status the hub sent."""
+    leaves it as is, so a refresh without metadata keeps the last status the hub sent. The "Resolved: …"
+    follow-up arrives READ: the issue's card already shows it, and the conversation does not draw it."""
     issue = issue_of(payload)
     if issue is not None:
         fm.issue_reply = issue
+        if issue.get("follow_up"):
+            fm.is_read = True
 
 
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
@@ -1148,15 +1151,9 @@ class FlowMessage(Entity):
         pack_bundle).
         Body-free:      URL, inline PROMPT (text only).
         """
-        for att in self.attachment or []:
-            t = att.attachment_type
-            if t == AttachmentType.FILE:
-                return True
-            if t == AttachmentType.TYPE_ID:
-                return True
-            if t == AttachmentType.PROMPT and (att.data or "").startswith(PROMPT_FILE_VFS_PREFIX):
-                return True
-        return False
+        from flow_sdk.builtin.message_template import requires_body  # noqa: PLC0415
+
+        return requires_body(self.attachment or [])
 
     def has_downloadable_body(self) -> bool:
         """Receive-side: is there a body bundle to pull for this message?
@@ -1327,49 +1324,21 @@ class FlowMessage(Entity):
         The clone is a NEW entity: fresh id (``allocate_id`` → ``mint_uuid``),
         fresh timestamps and delivery/read/body state (model defaults), the
         forwarder as sender, and ``cloned_from_id`` pointing back at this
-        message. Content (text, instruction, content attachments) is
-        deep-copied; the per-message transport attachments and shared context
-        (``conversation-<id>`` / ``flow_message-<id>``) are rewritten to the
-        target conversation and the clone's id. FILE / PROMPT-file bytes are
+        message. The content is copied and re-tied to the target by the one
+        templating rule (``message_template.template_from`` → ``instantiate``). FILE / PROMPT-file bytes are
         NOT copied here — embedded storage is keyed by entity id, so the
         caller copies those subpaths into the clone's storage.
         """
-        drop = {
-            f"conversation-{self.conversation_id}",
-            f"flow_message-{self.id}",
-        }
-        content_atts = [
-            att.model_copy(deep=True)
-            for att in (self.attachment or [])
-            if not (att.attachment_type == AttachmentType.TYPE_ID and att.data in drop)
-        ]
-        carried_ctx = [str(c) for c in (self.shared_context_entities or []) if str(c) not in drop]
-        clone = FlowMessage.model_validate(
-            {
-                "text": self.text,
-                "instruction": self.instruction,
-                "shared_context_entities": [f"conversation-{conversation_id}", *carried_ctx],
-                "attachment": [],
-                "sender_id": sender_id,
-                "sender_name": sender_name,
-                "conversation_id": conversation_id,
-                "cloned_from_id": self.id,
-                "cloned_from_sender_id": self.sender_id,
-            }
+        from flow_sdk.builtin.message_template import instantiate, template_from  # noqa: PLC0415
+
+        fields = instantiate(
+            template_from(self),
+            conversation_id=conversation_id,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            message_id=FlowMessage.allocate_id({}),
         )
-        clone.id = FlowMessage.allocate_id(clone.model_dump())
-        clone.attachment = [
-            Attachment(
-                attachment_type=AttachmentType.TYPE_ID,
-                data=f"conversation-{conversation_id}",
-            ),
-            Attachment(
-                attachment_type=AttachmentType.TYPE_ID,
-                data=f"flow_message-{clone.id}",
-            ),
-            *content_atts,
-        ]
-        return clone
+        return FlowMessage.model_validate({**fields, "cloned_from_id": self.id, "cloned_from_sender_id": self.sender_id})
 
     async def upload_body(
         self,

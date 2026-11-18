@@ -60,18 +60,20 @@ export function AutomationsList() {
 
   const counts = useMemo(() => {
     const c: Partial<Record<Status, number>> = {};
-    for (const a of automations) if (a.group !== 'builtin') c[statusOf(a)] = (c[statusOf(a)] ?? 0) + 1;
+    for (const a of automations) if (a.group !== 'builtin' && !a.classifier) c[statusOf(a)] = (c[statusOf(a)] ?? 0) + 1;
     return c;
   }, [automations]);
 
-  const visible = automations.filter((a) => !status || statusOf(a) === status);
+  // The message classifier is one fixed line at the top: not a built-in to unfold, not one of yours to count.
+  const classifier = all.find((a) => a.classifier);
+  const visible = automations.filter((a) => !a.classifier && (!status || statusOf(a) === status));
   const groups = {
     project: visible.filter((a) => a.group === 'project' && a.project_id === projectId),
     mine: visible.filter((a) => a.group === 'mine'),
     otherProjects: visible.filter((a) => a.group === 'project' && a.project_id !== projectId),
     builtin: visible.filter((a) => a.group === 'builtin'),
   };
-  const yours = automations.filter((a) => a.group !== 'builtin');
+  const yours = automations.filter((a) => a.group !== 'builtin' && !a.classifier);
   const failing = yours.filter((a) => a.last_run?.status === 'failed');
   // The one failing automation, and what its run said (a data source's own words, a script's last error line).
   const lone = failing.length === 1 ? failing[0] : undefined;
@@ -275,7 +277,12 @@ export function AutomationsList() {
           <div className="mx-auto max-w-3xl">
             <IfThenGraphic />
             <KindGallery onPick={(k, r) => create(k, r)} />
-            {builtinSection && <div className="overflow-hidden rounded-lg border border-border">{builtinSection}</div>}
+            {(classifier || builtinSection) && (
+              <div className="overflow-hidden rounded-lg border border-border [&>div:first-child]:border-t-0">
+                {classifier && rows([classifier])}
+                {builtinSection}
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -305,7 +312,8 @@ export function AutomationsList() {
                 ]}
               />
             </div>
-            <div className="overflow-hidden rounded-lg border border-border [&>section:first-child>h3]:pt-3">
+            <div className="overflow-hidden rounded-lg border border-border [&>div:first-child]:border-t-0 [&>section:first-child>h3]:pt-3">
+              {classifier && rows([classifier])}
               {group('project', t`This project`, groups.project)}
               {group('mine', t`Mine, everywhere`, groups.mine)}
               {group('other', t`Other projects`, groups.otherProjects, true)}

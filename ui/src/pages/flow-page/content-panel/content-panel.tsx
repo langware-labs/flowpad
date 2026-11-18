@@ -110,6 +110,9 @@ const LlmSetupView = lazy(() =>
 );
 // Lazy like its neighbours: one screen (hub page and desk alike) most sessions never open.
 const InboundView = lazy(() => import('@src/components/inbound/InboundView').then((m) => ({ default: m.InboundView })));
+const NotificationsView = lazy(() =>
+  import('@src/components/notifications-view/NotificationsView').then((m) => ({ default: m.NotificationsView })),
+);
 const TokenPlanView = lazy(() =>
   import('@src/components/token-plan/TokenPlanView').then((m) => ({ default: m.TokenPlanView })),
 );
@@ -340,6 +343,12 @@ function ContentPanelBody({
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
             <LlmEndpointsView pointer={currentDock?.pointer} />
+          </Suspense>
+        );
+      case ViewType.NOTIFICATIONS:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <NotificationsView pointer={currentDock?.pointer} />
           </Suspense>
         );
       case ViewType.TOKEN_PLAN:

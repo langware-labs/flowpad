@@ -105,7 +105,7 @@ async def _way(spec: Any, held: set[str]) -> tuple[str, Optional[ResolvedSecrets
         if oauth is not None:
             # A token held for the provider is not enough: it must carry this way's scopes (a Drive grant
             # cannot read mail). Unknown grants (never recorded) are taken as covering, as before.
-            if (grant := await _connector(oauth.provider)).token is not None and await _covers(oauth):
+            if (grant := await _connector(oauth.provider, oauth.group)).token is not None and await _covers(oauth):
                 identity = await _identity(oauth.provider, grant.token.get_secret_value())
                 return way, grant.model_copy(update={"identity": identity})
         elif way == chosen or all(m in held for m in grouped[way]):
@@ -147,21 +147,18 @@ async def _covers(oauth: Any) -> bool:
     """Whether the provider's held grant carries every scope ``oauth`` (a credential's sign-in way) needs."""
     from flow_sdk.core.oauth.provider_registry import missing_granted  # noqa: PLC0415
 
-    return not await missing_granted(oauth.provider, list(getattr(oauth, "scopes", None) or []))
+    return not await missing_granted(oauth.provider, list(getattr(oauth, "scopes", None) or []), group=oauth.group)
 
 
 async def _connector(provider: str, group: str = "", *, first: Optional[str] = None) -> ResolvedSecrets:
     """The provider's grant: a scope group's token, else ``first`` when it is held (a named token the caller wants
     before the person's — a connector source's app token), else the person's own."""
-    from flow_sdk.core.oauth.provider_registry import token_for  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_registry import group_credentials, token_for  # noqa: PLC0415
 
-    if group:
-        # A non-default scope group reads its own token; the default group's is the provider's own.
-        from flow_sdk.core.oauth.hub_oauth import resolve_group  # noqa: PLC0415
-
-        if (names := await resolve_group(provider, group)).sent:
-            token = await token_for(provider, name=names.local_name)
-            return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else ResolvedSecrets()
+    # A non-default scope group reads its own token; the default group's is the provider's own.
+    if name := await group_credentials(provider, group):
+        token = await token_for(provider, name=name)
+        return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else ResolvedSecrets()
     token = (await token_for(provider, name=first) if first else None) or await token_for(provider)
     return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else ResolvedSecrets()
 

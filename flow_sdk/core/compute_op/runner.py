@@ -1279,6 +1279,7 @@ async def _ask_once(ask, spec: ComputeOpSpec, env: Optional[dict], *, timeout, d
         labels=dict(spec.exe_data.labels),
         stage=spec.exe_data.stage.model_dump(mode="json") if spec.exe_data.stage is not None else None,
         verify=spec.exe_data.verify.model_dump(mode="json") if spec.exe_data.verify is not None else None,
+        origin=spec.exe_data.origin.model_dump(mode="json") if spec.exe_data.origin is not None else None,
         secret=spec.exe_data.secret,
         file=spec.exe_data.file,
         auto=spec.exe_data.auto_continue,

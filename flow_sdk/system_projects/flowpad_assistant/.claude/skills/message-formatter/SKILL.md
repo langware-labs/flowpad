@@ -70,6 +70,11 @@ The "no emoji decoration" rule still holds; this one earned mark is the only exc
   never as a code block in the text. The text just says what it does.
 - Questions with bounded answers are not wording either: they go in a form (`--form`, below).
 
+## Changes to someone else's document
+
+The receiver owns the doc and applies your changes → send a change doc (`--file`) and a prompt for
+their agent, never your edited copy. Format: `references/change-doc.md`.
+
 ## A reply stays in its conversation
 
 When the message answers one the user received, or follows up on it, send it in that same

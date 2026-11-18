@@ -67,6 +67,13 @@ describe('conversationsPageRequest', () => {
     expect(archived.validate(row({ archived: false }))).toBe(false);
   });
 
+  it('starred is the starred conversations, archived or not, paged by the same keyset', () => {
+    const starred = conversationsPageRequest(scope, 'starred', '2026-10-15T00:00:00.000Z', ['c1']).query!;
+    expect(starred.validate(row({ id: 'c1', archived: true }))).toBe(true);
+    expect(starred.validate(row({ id: 'c2' }))).toBe(false);
+    expect(starred.validate(row({ id: 'c1', updated_date: '2026-10-20T00:00:00.000Z' }))).toBe(false);
+  });
+
   it('an older page lists only rows older than its bound, so a new arrival never joins it', () => {
     const q = conversationsPageRequest(scope, 'all', '2026-10-10T00:00:00.000Z').query!;
     expect(q.validate(row({ updated_date: '2026-10-09T00:00:00.000Z' }))).toBe(true);

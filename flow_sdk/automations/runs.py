@@ -90,6 +90,8 @@ def _why(row: dict[str, Any], catalog: dict[str, tuple[str, str]]) -> str:
         return f"{words}: {reason}" if reason else words
     if event == "schedule_fire":
         return "Scheduled"
+    if row.get("message_tag"):  # a message rule ran for the tag the message was given, not for a bus event
+        return f"Message tagged {row['message_tag']}"
     if event in ("tag_fire", "tag_fire_done"):
         tag = row.get("cause_tag") or ""
         return catalog.get(tag, ("", ""))[0] or (f"Event {tag}" if tag else "An event")

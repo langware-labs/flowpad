@@ -1,0 +1,7 @@
+{
+  "name": "mark-message-read",
+  "label": "Mark as read",
+  "subkind": "python",
+  "exe_data": {},
+  "id": "8d2aa669-9084-4b39-865a-97a4d1af9467"
+}

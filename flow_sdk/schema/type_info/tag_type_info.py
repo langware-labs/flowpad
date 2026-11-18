@@ -23,7 +23,7 @@ class TagMeta(BaseMeta):
 
 TAG = TypeInfo(
     type_name=EntityType.TAG,
-    icon="Hash",
+    icon="Tag",
     display_name="Tags",
     # Dev-gated browse surface: blessed tags ride the generic Assets browser
     # (max reuse); the observed/anonymous gardening merge is a later slice.

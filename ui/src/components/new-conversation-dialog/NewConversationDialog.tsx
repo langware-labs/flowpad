@@ -9,6 +9,7 @@ import { useSendToConversation, type SendTarget } from '@src/hooks/use-send-to-c
 import { useAutoTitle } from '@src/hooks/use-auto-title';
 import { AutofillInput } from '@src/components/ui/autofill-input';
 import { Button } from '@src/components/ui/button';
+import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { FileAttachmentPicker, useFileStateAttach } from '@src/components/conversation/FileAttachmentPicker';
 import { AttachMenu, AssetRefChips } from '@src/components/conversation/AttachMenu';
@@ -325,14 +326,25 @@ export function NewConversationDialog({ open, onClose, destination = null }: New
                 {destination.note && <span className="text-xs text-muted-foreground">{destination.note}</span>}
               </div>
             ) : (
-              <ContactPicker
-                value={participants}
-                onChange={setParticipants}
-                excludeUserId={cloudUser?.id ?? ctx.user?.id}
-                enabled={open}
-                includeTeams
-                testId="participant-input"
-              />
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <ContactPicker
+                    value={participants}
+                    onChange={setParticipants}
+                    excludeUserId={cloudUser?.id ?? ctx.user?.id}
+                    enabled={open}
+                    includeTeams
+                    testId="participant-input"
+                  />
+                </div>
+                <AddressBookButton
+                  value={participants}
+                  onChange={setParticipants}
+                  excludeUserId={cloudUser?.id ?? ctx.user?.id}
+                  enabled={open}
+                  disabled={busy}
+                />
+              </div>
             )}
           </div>
 

@@ -575,9 +575,9 @@ export function FlowMessageBubble({
   // in `text` (the hub reuses Invitation.message as a conv-id pointer). That
   // string is plumbing, not a message — never render it as bubble content.
   const isConvIdPointer = !!fm.conversation_id && fm.text === `conversation-${fm.conversation_id}`;
-  // An issue's own message is its card (IssueReplyLine) instead of its text; the "Resolved: …" follow-up the
-  // hub posts after it is a line of text alone.
-  const issueCard = fm.issue_reply && !fm.issue_reply.follow_up ? fm.issue_reply : null;
+  // An issue's message is its card (IssueReplyLine) instead of its text (ConversationView hides the hub's
+  // "Resolved: …" follow-up, which the card already shows).
+  const issueCard = fm.issue_reply ?? null;
   const message: ConversationMessage = {
     role,
     content:

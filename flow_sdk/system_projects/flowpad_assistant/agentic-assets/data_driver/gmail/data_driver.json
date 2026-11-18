@@ -21,6 +21,11 @@
       "account_key": true,
       "hint": "Optional when the gmail credential's address is set. The app password comes from the credential and is never stored on the source."
     },
+    "mark_read_in_gmail": {
+      "type": "bool",
+      "label": "Mark as read in Gmail",
+      "hint": "When you read or unread a message in Flowpad, do the same in the Gmail mailbox. Off: Flowpad only follows what you do in Gmail."
+    },
     "imap_host": {
       "type": "text",
       "advanced": true,

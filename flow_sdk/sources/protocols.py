@@ -87,6 +87,23 @@ class Reacting(Protocol):
 
 
 @runtime_checkable
+class ReadMarking(Protocol):
+    """Set the account owner's read state of a message at the provider — what makes a read in
+    Flowpad show there. ``target`` is the message. A provider that keeps a cursor instead of a
+    per-message flag moves it to ``target``; one that cannot mark unread refuses (``Rejected``) —
+    it never pretends. Marking what is already so is not an error.
+
+    ``writes_read_state`` answers the source's own setting: writing changes the person's real
+    mailbox, so the runtime calls ``mark_read`` only while it is true. (A method, not a property: a
+    protocol with a data member refuses ``issubclass``.) READING the state needs no protocol: a
+    driver reports it on ``MessageData.read`` and as ``ReadData`` items."""
+
+    def writes_read_state(self) -> bool: ...
+
+    async def mark_read(self, target: CloudOrigin, read: bool = True) -> None: ...
+
+
+@runtime_checkable
 class Acting(Protocol):
     """Act on a whole conversation (approve, close, merge) — the channel's ``actions`` say which.
     ``conversation`` is the conversation's origin on this source (``kind``/``namespace`` of its
@@ -191,6 +208,7 @@ CAPABILITIES: dict[str, type] = {
     "messaging": Messaging,
     "drafting": Drafting,
     "reacting": Reacting,
+    "read_marking": ReadMarking,
     "acting": Acting,
     "verifiable": Verifiable,
     "choosing": Choosing,
@@ -219,6 +237,7 @@ __all__ = [
     "Mutable",
     "Openable",
     "Reacting",
+    "ReadMarking",
     "Readable",
     "StableHandle",
     "Verdict",

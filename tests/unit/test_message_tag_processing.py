@@ -7,8 +7,9 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.trigger import Trigger
 from flow_sdk.builtin import trigger_callbacks
-from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing, TagAssignment
+from flow_sdk.schema.data_spec.message_processing_spec import MessageClassificationSettings, MessageProcessing, TagAssignment
 from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
+from flow_sdk.schema.data_spec.tag_classification_spec import TagClassification
 from flow_sdk.stream_inbox import message_tags as processing
 from tests.pytest_plugin import async_context
 
@@ -48,21 +49,6 @@ def test_alternative_tag_keeps_queued_and_running_is_not_cancelled():
     state.queue[0].status = "running"
     processing.apply_delta(tags, state, remove=tags, source=TagAssignment(), rules=[trigger])
     assert state.queue[0].status == "running"
-
-
-@async_context
-async def test_real_classifier_flowcall_validates_input_and_returns_tags(monkeypatch):
-    from flow_sdk.core.compute_op import runner
-    from tests.utils.message_tag_classifier import MessageTagEndpoint
-
-    async def endpoint():
-        return MessageTagEndpoint()
-
-    monkeypatch.setattr(runner, "_box_llm", endpoint)
-    answer = await processing.classify(FlowMessage(text="refund please"), [
-        {"name": "--qa--.billing.refund", "description": "Refund request"}])
-    assert answer.has_value, answer.detail
-    assert answer.value.model_dump() == {"tags": ["--qa--.billing.refund"]}
 
 
 @async_context
@@ -138,7 +124,7 @@ async def test_classifier_finishing_after_manual_remove_does_not_restore_tag(exp
     async def classify(*_args):
         entered.set()
         await release.wait()
-        return ReturnedValue.satisfied(value={"tags": [tag]})
+        return ReturnedValue.satisfied(value=TagClassification(tag=tag))
 
     monkeypatch.setattr(processing, "ontology", definitions)
     monkeypatch.setattr(processing, "classify", classify)
@@ -242,11 +228,13 @@ async def test_user_ontology_not_opted_out_by_stream_inbox_flag(monkeypatch):
     await Tag(name=name, stream_inbox=False).save()
     await Tag(name=name + ".deprecated", deprecated=True).save()
     await seed_system_tags()
-    monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings())
+    await Tag(name=f"--qa--.{mint_uuid()}-outside-root").save()
+    monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings(root=name))
     names = {row["name"] for row in await processing.ontology()}
     assert name in names and name + ".deprecated" not in names
+    assert names == {name}, "only the root's subtree is offered"
     assert "message.receipt" not in names
-    monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings(include_flow_tags=True))
+    monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings(root=name, include_flow_tags=True))
     assert "message.receipt" in {row["name"] for row in await processing.ontology()}
 
 
@@ -327,7 +315,7 @@ async def test_request_provenance_requires_exact_running_claim(explicit_drain, m
     info = RequestInfo()
     info.request = request
     monkeypatch.setattr(methods, "get_current_request_info", lambda: info)
-    assert await processing._request_automation(message.id) == (message.id, entry.trigger_id, entry.run_id)
+    assert await processing._request_automation(message.id) == (message.id, entry.trigger_id, entry.run_id, entry.tag)
     assert await processing._request_automation(str(mint_uuid())) is None
 
     def completed(m, state):
@@ -344,7 +332,7 @@ async def test_unknown_classifier_tag_fails_without_partial_assignment(explicit_
         return [{"name": "known.tag", "description": "known"}]
 
     async def invalid(*_args):
-        return ReturnedValue.satisfied(value={"tags": ["known.tag", "invented.tag"]})
+        return ReturnedValue.satisfied(value=TagClassification(tag="invented.tag"))
 
     monkeypatch.setattr(processing, "ontology", definitions)
     monkeypatch.setattr(processing, "classify", invalid)
@@ -453,7 +441,7 @@ async def test_classification_finishes_after_tag_rename_or_delete(explicit_drain
     async def classify(*_args):
         entered.set()
         await release.wait()
-        return ReturnedValue.satisfied(value={"tags": [tag.name]})
+        return ReturnedValue.satisfied(value=TagClassification(tag=tag.name))
 
     monkeypatch.setattr(processing, "ontology", definitions)
     monkeypatch.setattr(processing, "classify", classify)
@@ -517,9 +505,10 @@ async def test_catchup_then_live_create_classifies_once_and_duplicate_keeps_clai
 
     async def classify(*_args):
         calls.append(True)
-        return ReturnedValue.satisfied(value={"tags": [tag.name]})
+        return ReturnedValue.satisfied(value=TagClassification(tag=tag.name))
 
     monkeypatch.setattr(processing, "classify", classify)
+    monkeypatch.setattr(processing, "settings", lambda: MessageClassificationSettings(root=tag.name))
     conversation_id = str(mint_uuid())
     payload = {"id": str(mint_uuid()), "text": "An incoming message", "sender_id": str(mint_uuid())}
 
@@ -537,14 +526,89 @@ async def test_catchup_then_live_create_classifies_once_and_duplicate_keeps_clai
     await materialize(live=True)
     await processing.process_message(live.id)
     completed = await FlowMessage.get_by_id(live.id)
-    claim = completed.message_processing.queue[0].model_dump()
+    mine = lambda m: [e.model_dump() for e in m.message_processing.queue if e.trigger_id == str(trigger.id)]
+    claim, = mine(completed)
     assert completed.message_processing.classification == "succeeded"
     assert claim["status"] == "succeeded"
     assert len(calls) == 1
     await materialize(live=True)
     await processing.process_message(live.id)
     duplicate = await FlowMessage.get_by_id(live.id)
-    assert duplicate.message_processing.queue[0].model_dump() == claim
-    assert len(duplicate.message_processing.queue) == 1
+    assert mine(duplicate) == [claim]
     assert len(calls) == 1
     assert (await Trigger.get_by_id(trigger.id)).counter == 1
+
+
+@async_context
+async def test_classifier_is_the_first_queue_entry_and_its_switch_decides(explicit_drain, monkeypatch):
+    from flow_sdk.builtin.trigger import set_trigger_on
+    from flow_sdk.server.builtin_triggers import set_service_triggers
+
+    tag = f"qa.{mint_uuid()}"
+    answers = iter([tag, ""])  # the first message lands on the tag; the second fits none
+
+    async def definitions():
+        return [{"name": tag, "description": "test"}]
+
+    async def classify(*_args):
+        return ReturnedValue.satisfied(value=TagClassification(tag=next(answers)))
+
+    monkeypatch.setattr(processing, "ontology", definitions)
+    monkeypatch.setattr(processing, "classify", classify)
+    from flow_sdk.builtin.tag import Tag
+
+    await Tag(name=tag, stream_inbox=True).save()
+    await set_service_triggers()
+    classifier = await processing.classifier()
+    assert classifier.switchable and classifier.is_builtin
+    follower = await rule(tag)
+
+    async def arrive():
+        message = await FlowMessage(text="incoming", message_processing=MessageProcessing(
+            classification="pending", queue=processing._classifier_entry(classifier))).save()
+        await processing.process_message(message.id)
+        return await FlowMessage.get_by_id(message.id)
+
+    tagged = await arrive()
+    assert tagged.tags == [tag]
+    assert [(e.trigger_id, e.status) for e in tagged.message_processing.queue] == [
+        (classifier.id, "succeeded"), (follower.id, "succeeded")]
+
+    untagged = await arrive()  # "none of these": classified, no tag, nothing queued behind it
+    assert untagged.tags == [] and untagged.message_processing.classification == "succeeded"
+    assert [e.trigger_id for e in untagged.message_processing.queue] == [classifier.id]
+
+    await set_trigger_on(classifier, False)
+    await set_service_triggers()  # a restart re-seeds the rule: the person's switch stays off
+    assert not await processing.classifier_on()
+    answers = iter([tag])
+    skipped = await arrive()
+    assert skipped.tags == [] and skipped.message_processing.queue[0].status == "skipped"
+    await processing.classify_now(skipped.id)  # a person asks: it runs although the switch is off
+    await processing.process_message(skipped.id)
+    asked = await FlowMessage.get_by_id(skipped.id)
+    assert asked.tags == [tag] and asked.message_processing.queue[0].status == "succeeded"
+    await set_trigger_on(classifier, True)
+
+
+@async_context
+async def test_run_again_requeues_only_a_failed_entry_as_a_new_run(explicit_drain):
+    tag = f"qa.{mint_uuid()}"
+    calls = []
+
+    async def flaky(_trigger, _changes):
+        calls.append(processing.automation_assignment.get()[2])
+        if len(calls) == 1:
+            raise ValueError("first time fails")
+
+    await rule(tag, flaky)
+    message = await FlowMessage(text="incoming").save()
+    await processing.change_tags(message.id, add=[tag])
+    await processing.process_message(message.id)
+    entry = (await FlowMessage.get_by_id(message.id)).message_processing.queue[0]
+    assert entry.status == "failed"
+    assert await processing.run_again(message.id, entry.id) is not None
+    await processing.process_message(message.id)
+    again = (await FlowMessage.get_by_id(message.id)).message_processing.queue[0]
+    assert again.status == "succeeded" and again.id == entry.id and len(set(calls)) == 2
+    assert await processing.run_again(message.id, entry.id) is None  # nothing to run again

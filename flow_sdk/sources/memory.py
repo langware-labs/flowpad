@@ -143,6 +143,8 @@ class MemoryMessages(MessageSource, MemoryStore):
         self._conversations: set[CloudOrigin] = set()
         self._blobs: dict[CloudOrigin, bytes] = {}
         self.reacted: dict[CloudOrigin, str] = {}
+        #: The owner's read state per message, as ``mark_read`` left it.
+        self.read_marks: dict[CloudOrigin, bool] = {}
 
     @classmethod
     def of(cls, schema=None, *, namespace: str = "chat", kind: str = "memory", sender: Optional[UserProfile] = None, **binding: Any):
@@ -214,6 +216,15 @@ class MemoryMessages(MessageSource, MemoryStore):
         self._require_open()
         if not emoji or self.reacted.get(target) == emoji:
             self.reacted.pop(target, None)
+
+    def writes_read_state(self) -> bool:
+        return True
+
+    async def mark_read(self, target: CloudOrigin, read: bool = True) -> None:
+        self._require_open()
+        if self._scope.key(target) not in self._records:
+            raise NotFound("message to mark does not exist", origin=target)
+        self.read_marks[target] = read
 
     async def send(self, data: MessageData) -> MessageItem:
         self._require_open()

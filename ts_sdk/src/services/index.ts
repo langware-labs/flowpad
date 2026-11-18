@@ -10,6 +10,7 @@ export * from './llm-sources-service';
 export * from './status-service';
 export * from './token-plan-service';
 export * from './budgets-service';
+export * from './notification-rules-service';
 export * from './secretApprovalGate';
 export * from './membershipService';
 export * from './navigationService';

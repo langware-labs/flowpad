@@ -13,6 +13,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
+import { MemoryRouter } from 'react-router';
 import type { ConversationParticipant } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { teamMemberParticipants } from '@src/components/contact-picker/use-team-suggestions';
@@ -46,10 +47,10 @@ vi.mock('@src/hooks/entity-hooks', async (importOriginal) => ({
 function Harness({ initial, includeTeams = true }: { initial: ConversationParticipant[]; includeTeams?: boolean }) {
   const [value, setValue] = useState(initial);
   return (
-    <>
+    <MemoryRouter>
       <ContactPicker value={value} onChange={setValue} excludeUserId="hub-me" includeTeams={includeTeams} />
       <output data-testid="picked">{value.map((p) => p.email).join(',')}</output>
-    </>
+    </MemoryRouter>
   );
 }
 

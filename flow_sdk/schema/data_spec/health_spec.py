@@ -73,6 +73,9 @@ class EndpointHealth(DataSpec):
     observed_at: str = Field(default_factory=now_iso)
     detail: str = ""
     latency_ms: Optional[int] = None
+    #: The provider could not be asked about the machine, so nothing is known about this service
+    #: (``state`` is ``unknown``): the machine reports that, never the service. Mirrors the hub's field.
+    provider_silent: bool = False
 
 
 class NodeHealth(DataSpec):

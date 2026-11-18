@@ -16,7 +16,8 @@ Pass normal Playwright flags after the command for focused debugging. The local 
 This suite uses the existing automation Playwright configuration and channel doubles.
 Run only on a disposable `tags-rig-*` instance, never a personal or production instance.
 The backend must run `tests/e2e/mock_worker_backend.py` with
-`MOCK_MESSAGE_CLASSIFIER=1`, `MOCK_DECISION=1`, and a free
+`MOCK_MESSAGE_CLASSIFIER=1`, `MOCK_DECISION=1`, `MOCK_DECISION_MATCH=1` (the Decision API
+double picks the tag whose meaning the message mentions most), and a free
 `MOCK_MESSAGE_TAG_CONTROL_PORT` for correlated external executor release.
 Sign that instance into the local test hub using its own test identity before running;
 the real login-required overlay must not be hidden by the rig.
@@ -26,7 +27,7 @@ From `ui/`, with that instance's frontend and backend already healthy:
 ```sh
 FLOW_INSTANCE=tags-rig-73 VITE_PORT=5073 npx playwright test \
   --config tests/manual_regression/automations/playwright.config.ts \
-  message_tags --output /tmp/message-tags-acceptance
+  message_tags tag_classifier --output /tmp/message-tags-acceptance
 ```
 
 Use the actual frontend port and instance name from your instance environment.

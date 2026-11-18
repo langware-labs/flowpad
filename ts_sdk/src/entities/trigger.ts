@@ -90,12 +90,70 @@ export interface MessageRule {
   message_tags?: string[];
   /** Data source ids (bare or `data_source:`-prefixed). Empty = any channel. */
   sources?: string[];
-  /** `agent-<uuid>`, or the bare uuid. */
-  agent: string;
-  prompt: string;
+  /** The short form of a one-agent Then: `agent-<uuid>` (or the bare uuid) and what it should do. */
+  agent?: string;
+  prompt?: string;
+  /** The Then as a sequence. When given it replaces `agent` + `prompt`. */
+  steps?: RuleStep[];
   name?: string | null;
   enabled?: boolean;
   project_id?: string | null;
+}
+
+/** What one step of a message rule does. `prompt` is `run_agent` on the shipped prompt worker. */
+export type RuleStepKind = 'mark_read' | 'run_script' | 'run_agent' | 'prompt';
+export interface RuleStep {
+  kind: RuleStepKind;
+  /** `agent-<uuid>` (run_agent). */
+  agent?: string;
+  prompt?: string;
+  script?: string;
+}
+/** The shipped agent a bare prompt runs on, and the shipped block that marks the message read. */
+export const PROMPT_WORKER = 'prompt-runner';
+export const MARK_READ_OP = 'mark-message-read';
+
+const agentOf = (step: RuleStep): string =>
+  step.kind === 'prompt' ? PROMPT_WORKER : step.agent && !step.agent.startsWith('agent-') ? `agent-${step.agent}` : step.agent ?? '';
+
+/** The steps as a rule's `then`: one agent or one script is the short form, anything else a sequence. */
+export function thenOfSteps(steps: RuleStep[]): TriggerThen {
+  const [only] = steps;
+  if (steps.length === 1 && (only.kind === 'run_agent' || only.kind === 'prompt')) {
+    return { run_agent: { agent: agentOf(only), prompt: (only.prompt ?? '').trim() } };
+  }
+  if (steps.length === 1 && only.kind === 'run_script') return { run_script: (only.script ?? '').trim() };
+  const ops: Record<string, Record<string, unknown>> = {};
+  const sequence = steps.map((step, index) => {
+    const id = `step-${index + 1}`;
+    if (step.kind === 'mark_read') return { id, ref: MARK_READ_OP };
+    const script = (step.script ?? '').trim();
+    ops[id] = step.kind === 'run_script'
+      ? { subkind: 'cli', exe_data: { commands: { darwin: script, linux: script, win32: script } } }
+      : { subkind: 'agent', exe_data: { agent: agentOf(step), prompt: (step.prompt ?? '').trim() } };
+    return { id, ref: id };
+  });
+  return { steps: sequence, ops };
+}
+
+/** A rule's `then` as the steps the builder edits; empty when there is none or the builder does not write its shape. */
+export function stepsOfThen(then: TriggerThen | null | undefined): RuleStep[] {
+  const agentStep = (agent: string, prompt: string): RuleStep =>
+    agent === PROMPT_WORKER ? { kind: 'prompt', prompt } : { kind: 'run_agent', agent, prompt };
+  if (!then) return [];
+  if (then.run_agent) return [agentStep(then.run_agent.agent, then.run_agent.prompt)];
+  if (then.run_script) return [{ kind: 'run_script', script: then.run_script }];
+  const steps: RuleStep[] = [];
+  for (const step of then.steps ?? []) {
+    const ref = String(step.ref ?? '');
+    const op = then.ops?.[ref];
+    const data = (op?.exe_data ?? {}) as { agent?: string; prompt?: string; commands?: Record<string, string> };
+    if (ref === MARK_READ_OP) steps.push({ kind: 'mark_read' });
+    else if (op?.subkind === 'agent' && data.agent) steps.push(agentStep(data.agent, data.prompt ?? ''));
+    else if (op?.subkind === 'cli' && data.commands) steps.push({ kind: 'run_script', script: Object.values(data.commands)[0] ?? '' });
+    else return [];
+  }
+  return steps;
 }
 
 /** The fields a message rule is saved as — ONE row shape for the SDK builder and the screen's Save, and the
@@ -110,7 +168,7 @@ export function messageRuleFields(rule: MessageRule, agentName = ''): Partial<IT
     tag_scope: (rule.sources ?? []).map((id) => targetOf('data_source', parseTarget(id)[1] ?? id)),
     gate: sentence ? { sentence } : null,
     ...(rule.message_tags !== undefined ? { message_tags: rule.message_tags } : {}),
-    then: { run_agent: { agent: rule.agent && !rule.agent.startsWith('agent-') ? `agent-${rule.agent}` : rule.agent, prompt: rule.prompt.trim() } },
+    then: thenOfSteps(rule.steps ?? [{ kind: 'run_agent', agent: rule.agent, prompt: rule.prompt }]),
     enabled: rule.enabled ?? true,
     ...(rule.project_id !== undefined ? { project_id: rule.project_id } : {}),
   };
@@ -315,6 +373,11 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     if (explicit === undefined) return null;
     const target = explicit || this.parent_type_id || '';
     return target.startsWith('agent-') ? target : null;
+  }
+
+  /** The seeded rule that stands for the message classifier (`MESSAGE_CLASSIFIER` in `trigger_types.py`). */
+  get isMessageClassifier(): boolean {
+    return this.uname === 'builtin_message_classifier';
   }
 
   /** A rule on messages arriving (docs/snippets/stream-inbox-automations.md §2). */

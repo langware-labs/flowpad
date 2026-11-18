@@ -971,11 +971,15 @@ class AgenticProcess(Entity):
         """Only the naming transaction may change an initialized naming state, and
         only the client's own ``update`` may change ``last_mode`` — a server save
         holds an instance loaded before the user switched modes (``switch-mode`` →
-        ``exit()`` wrote the old mode back)."""
+        ``exit()`` wrote the old mode back). ``last_active_at`` is written only by
+        ``activate`` (``stamp_last_active_at``): a turn's own save holds the process
+        loaded before the chat was opened, and wiped the stamp, so ``lastChat`` never
+        found the chat and every open started a new one."""
         naming = ("name", "naming_state", "auto_rename") if current_data.get("naming_state") is not None else ()
+        stamped = ("last_active_at",) if current_data.get("last_active_at") is not None else ()
         info = get_current_request_info()
         client_update = info is not None and info.action == "update"
-        return naming if client_update else (*naming, "last_mode")
+        return (*naming, *stamped) if client_update else (*naming, *stamped, "last_mode")
 
     auto_rename: bool = APIField(
         default=True,
@@ -1847,7 +1851,7 @@ class AgenticProcess(Entity):
             process_assets = await self.prepare_process_assets()
             cmd = self._finalized_restart_cli_options()
             self._apply_process_assets(cmd, process_assets, str(self.id))
-            cmd.prepare_launch(cmd.workdir or self.workdir)
+            cmd.prepare_launch(cmd.workdir or self.workdir, self.__dict__.get("_project_context_dirs") or [])
 
             # Fork & CLAUDE_PROJECT_DIR resume-cwd pinning are Claude-only —
             # Codex/Copilot mint their own session and use ``-C <cwd>``, not
@@ -4079,7 +4083,9 @@ class AgenticProcess(Entity):
             return turn_task is not None and turn_task.done() and not prompt_worker_active(self.id)
 
         def _unfinished_turn() -> RuntimeError:
-            return RuntimeError(getattr(self, "start_failure", None) or "the worker exited without finishing its turn")
+            # The worker's own error line (a refusal, a 429) is the reason every caller needs.
+            said = getattr(self, "start_failure", None) or self._worker_status_detail(_WS.ERROR)
+            return RuntimeError(getattr(said, "text", said) or "the worker exited without finishing its turn")
 
         transcript_path: Path | None = None
         while transcript_path is None:

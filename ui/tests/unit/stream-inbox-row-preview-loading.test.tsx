@@ -2,6 +2,10 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Conversation, dataManager, FlowMessage, type TypeId } from '@sdk';
 
+vi.mock('@src/components/tags/MessageTags', async (load) => ({
+  ...(await load<typeof import('@src/components/tags/MessageTags')>()),
+  MessageTags: () => null,
+}));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }),
 }));

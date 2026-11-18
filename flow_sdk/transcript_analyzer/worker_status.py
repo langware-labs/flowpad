@@ -30,6 +30,11 @@ from typing import NamedTuple
 
 from flow_sdk._compat import StrEnum
 
+# A ``stop_reason`` that ends the turn without an answer. ``refusal`` is the model's
+# safeguards declining (Claude writes it, then an ``isApiErrorMessage`` row with the
+# reason); unknown, it read as WORKING and a finished turn looked like a dead worker.
+_ABNORMAL_STOP_REASONS = frozenset({"stop_sequence", "refusal"})
+
 
 class WorkerStatus(StrEnum):
     """Expert-level worker state. Derived from the Claude JSONL transcript."""
@@ -45,7 +50,7 @@ class WorkerStatus(StrEnum):
 
     # Terminal — session ended, cannot resume
     COMPLETE = "complete"  # finished cleanly (end_turn / last-prompt)
-    ERROR = "error"  # abnormal end (stop_sequence / crash)
+    ERROR = "error"  # abnormal end (_ABNORMAL_STOP_REASONS / crash)
     INTERRUPTED = "interrupted"  # user interrupted (Escape / Ctrl-C)
     INACTIVE = "inactive"  # raw: stale file >5 min with no terminal signal
 
@@ -764,23 +769,21 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         # the trailing ``last-prompt`` is NOT a turn end. Declaring COMPLETE here
         # cuts ``stream_transcript`` off during a long inter-tool pause (Opus can
         # take 20-40 s), so the diagnose runner never scrapes the final report
-        # and falsely reports "not recorded". A ``stop_sequence`` error is also
-        # terminal; Claude may append ``last-prompt`` after synthetic API/limit
-        # errors, and treating that as WORKING pins the UI forever.
-        if last_stop_reason == "stop_sequence":
-            return WorkerStatus.ERROR
-        # Only a genuine ``end_turn`` is success-terminal; otherwise stay
-        # WORKING and keep reading. (Mirrors the ``stop_reason=="end_turn"``
-        # guard on the ``_post_tool_idle`` path.)
-        if last_stop_reason != "end_turn":
+        # and falsely reports "not recorded". Only ``end_turn`` is success; any OTHER
+        # reason behind ``last-prompt`` (stop_sequence, refusal, max_tokens, one not
+        # invented yet) ended the turn without an answer — read as WORKING, a finished
+        # turn looked like a dead worker (a refused live-session turn, 2026-11-17).
+        if last_stop_reason == "tool_use":
             return WorkerStatus.WORKING
-        return WorkerStatus.COMPLETE
+        if last_stop_reason == "end_turn":
+            return WorkerStatus.COMPLETE
+        return WorkerStatus.ERROR
     # (A user interrupt is caught by the priority ``_last_user_is_interrupt`` check
     # above — before the ``last-prompt`` branch — so no separate ``last_type ==
     # "user"`` interrupt case is needed here.)
     if last_stop_reason == "end_turn":
         return WorkerStatus.COMPLETE
-    if last_stop_reason == "stop_sequence":
+    if last_stop_reason in _ABNORMAL_STOP_REASONS:
         return WorkerStatus.ERROR
 
     # Stale file with no clean termination signal → assumed dead
