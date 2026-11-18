@@ -119,7 +119,7 @@ def flowpad(tmp_path, monkeypatch) -> FakeFlowpad:
     project_dir.mkdir()
     fake = FakeFlowpad(project_dir)
     monkeypatch.setattr(_common, "local_request", fake.request)
-    monkeypatch.setattr(process_monitor_cmd, "_discover_port", lambda *a, **k: 4242)
+    monkeypatch.setattr(process_monitor_cmd, "discover_port", lambda *a, **k: 4242)
     monkeypatch.setattr(process_monitor_cmd, "_fork", fake.fork)
     monkeypatch.setattr(process_monitor_cmd, "_ask", fake.ask)
     return fake

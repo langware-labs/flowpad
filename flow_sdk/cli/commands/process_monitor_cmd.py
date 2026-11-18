@@ -26,18 +26,18 @@ from typing_extensions import Annotated
 from flow_sdk.cli.commands._common import (
     EXIT_CONNECTION_ERROR,
     EXIT_INVALID_ARG,
+    delete_graph_json,
+    discover_port,
+    fail,
+    get_graph_json,
+    graph_url,
+    local_post,
+    ok,
+    patch_graph_json,
+    post_graph_json,
+    resolve_process_id,
     run_async,
 )
-from flow_sdk.cli.commands._common import delete_graph_json as _delete_graph_json
-from flow_sdk.cli.commands._common import discover_port as _discover_port
-from flow_sdk.cli.commands._common import fail as _fail
-from flow_sdk.cli.commands._common import get_graph_json as _get_graph_json
-from flow_sdk.cli.commands._common import graph_url as _graph_url
-from flow_sdk.cli.commands._common import local_post as _local_post
-from flow_sdk.cli.commands._common import ok as _ok
-from flow_sdk.cli.commands._common import patch_graph_json as _patch_graph_json
-from flow_sdk.cli.commands._common import post_graph_json as _post_graph_json
-from flow_sdk.cli.commands._common import resolve_process_id as _resolve_process_id
 from flow_sdk.cli.commands.process_cmd import EXIT_ACTION_FAILED, _action_failed, process_app
 
 # ── monitor: a goal watched on a clock ──────────────────────────────────────
@@ -68,14 +68,14 @@ def _monitor_key(process_id: str, name: str) -> str:
 def _split_monitor_key(key: str) -> tuple[str, str]:
     process_id, sep, name = key.partition(_MONITOR_SEP)
     if not (sep and process_id and _MONITOR_NAME.fullmatch(name)):
-        _fail(EXIT_INVALID_ARG, "BAD_KEY", f"{key!r} is not a monitor key (<process id>{_MONITOR_SEP}<name>).")
+        fail(EXIT_INVALID_ARG, "BAD_KEY", f"{key!r} is not a monitor key (<process id>{_MONITOR_SEP}<name>).")
     return process_id, name
 
 
 def _not_found(what: str):
     def on_error(status_code: int, body: dict) -> None:
         if status_code == 404:
-            _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No {what}.")
+            fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No {what}.")
         _action_failed(status_code, body)
 
     return on_error
@@ -83,16 +83,16 @@ def _not_found(what: str):
 
 def _process_and_folder(port: int, process_id: str, name: str) -> tuple[dict, Path]:
     """The session, and its monitor's folder under its project (which may not exist yet)."""
-    process = _get_graph_json(_graph_url(port, f"agentic_process/{process_id}"),
+    process = get_graph_json(graph_url(port, f"agentic_process/{process_id}"),
                               on_error=_not_found(f"session {process_id}"))
     if not process:
-        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No session {process_id}.")
+        fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No session {process_id}.")
     project_id = process.get("project_id")
-    project = _get_graph_json(_graph_url(port, f"project/{project_id}"),
+    project = get_graph_json(graph_url(port, f"project/{project_id}"),
                               on_error=_not_found(f"project {project_id}")) if project_id else None
     mount = (project or {}).get("fs_storage_mount_path")
     if not mount:
-        _fail(EXIT_ACTION_FAILED, "NO_PROJECT_FOLDER",
+        fail(EXIT_ACTION_FAILED, "NO_PROJECT_FOLDER",
               f"Session {process_id} has no project folder to keep a monitor in.")
     return process, Path(mount) / "agentic-assets" / "trigger" / _monitor_key(process_id, name)
 
@@ -100,12 +100,12 @@ def _process_and_folder(port: int, process_id: str, name: str) -> tuple[dict, Pa
 def _index_monitor(port: int, folder: Path) -> str:
     """Index the monitor's folder (which arms it); the trigger's id. Re-indexing an unchanged folder
     answers the same id, so this is also how ``unmonitor`` finds the row."""
-    data = _post_graph_json(_graph_url(port, "compute_node/@local/fs-records/index"), None,
+    data = post_graph_json(graph_url(port, "compute_node/@local/fs-records/index"), None,
                             params={"type": "trigger", "path": str(folder.resolve())}, timeout=120,
                             on_error=_action_failed)
     typeid = next(iter(data.get("typeids") or []), "")
     if not typeid:
-        _fail(EXIT_ACTION_FAILED, "INDEX_FAILED", f"The monitor at {folder} did not index.")
+        fail(EXIT_ACTION_FAILED, "INDEX_FAILED", f"The monitor at {folder} did not index.")
     return typeid.removeprefix("trigger-")
 
 
@@ -113,7 +113,7 @@ def _remove_monitor(port: int, folder: Path) -> str:
     """Folder first, then the row: a row whose folder is still on disk comes back with the next index."""
     trigger_id = _index_monitor(port, folder)
     shutil.rmtree(folder)
-    _delete_graph_json(_graph_url(port, f"trigger/{trigger_id}"), on_error=_action_failed)
+    delete_graph_json(graph_url(port, f"trigger/{trigger_id}"), on_error=_action_failed)
     return trigger_id
 
 
@@ -136,13 +136,13 @@ def monitor_process(
 ) -> None:
     # Everything that can be checked here is checked before anything is asked of the server.
     if not _MONITOR_NAME.fullmatch(name):
-        _fail(EXIT_INVALID_ARG, "BAD_NAME", f"{name!r} cannot name a monitor: use up to 40 letters, digits, '-' or '_'.")
+        fail(EXIT_INVALID_ARG, "BAD_NAME", f"{name!r} cannot name a monitor: use up to 40 letters, digits, '-' or '_'.")
     goal, stop_condition = (goal or "").strip(), (stop_condition or "").strip()
     if not (goal or stop_condition):
-        _fail(EXIT_INVALID_ARG, "MISSING_GOAL", "Give --goal, --stop-condition, or both.")
+        fail(EXIT_INVALID_ARG, "MISSING_GOAL", "Give --goal, --stop-condition, or both.")
     from flow_sdk.automations.spec_file import SpecFileError, validate  # noqa: PLC0415
 
-    process_id = _resolve_process_id(process)
+    process_id = resolve_process_id(process)
     key = _monitor_key(process_id, name)
     try:
         # The automation-file check the server runs: the document, then the clock as the scheduler reads it.
@@ -155,12 +155,12 @@ def monitor_process(
             "then": {"run_script": f"flow process monitor-nudge {key}"},
         })
     except SpecFileError as e:
-        _fail(EXIT_INVALID_ARG, "BAD_CRON", f"Cannot use the cron mask {cron!r}: {e}")
+        fail(EXIT_INVALID_ARG, "BAD_CRON", f"Cannot use the cron mask {cron!r}: {e}")
 
-    port = _discover_port()
+    port = discover_port()
     _, folder = _process_and_folder(port, process_id, name)
     if folder.exists():
-        _fail(EXIT_INVALID_ARG, "ALREADY_MONITORED",
+        fail(EXIT_INVALID_ARG, "ALREADY_MONITORED",
               f"Session {process_id} already has a monitor named {name!r}; `unmonitor` it first.")
     folder.mkdir(parents=True)
     (folder / "trigger.json").write_text(
@@ -174,11 +174,11 @@ def monitor_process(
     try:
         trigger_id = _index_monitor(port, folder)
         # A rule indexed from a project file starts off; this machine's switch is turned on here.
-        _patch_graph_json(_graph_url(port, f"trigger/{trigger_id}"), {"enabled": True}, on_error=_action_failed)
+        patch_graph_json(graph_url(port, f"trigger/{trigger_id}"), {"enabled": True}, on_error=_action_failed)
     except BaseException:
         shutil.rmtree(folder, ignore_errors=True)
         raise
-    _ok({"key": key, "trigger_id": trigger_id, "process_id": process_id, "cron": cron, "folder": str(folder)})
+    ok({"key": key, "trigger_id": trigger_id, "process_id": process_id, "cron": cron, "folder": str(folder)})
 
 
 async def _fork(process_id: str) -> Optional[str]:
@@ -189,7 +189,7 @@ async def _fork(process_id: str) -> Optional[str]:
     await _bootstrap_local()
     parent = await AgenticProcess.get_by_id(process_id)
     if parent is None:
-        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No session {process_id}.")
+        fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No session {process_id}.")
     if not parent.session_id:
         return None
     try:
@@ -220,10 +220,10 @@ async def _ask(process_id: str, prompt: str) -> str:
 
     ap = await AgenticProcess.get_by_id(process_id)
     if ap is None:
-        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No session {process_id}.")
+        fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No session {process_id}.")
     answer = await TurnEngine().run(Turn(session=str(ap.typeid), key=str(uuid.uuid4()), body=prompt), process=ap)
     if not answer.ok:
-        _fail(EXIT_ACTION_FAILED, "ASK_FAILED", answer.detail or f"Session {process_id} did not answer.")
+        fail(EXIT_ACTION_FAILED, "ASK_FAILED", answer.detail or f"Session {process_id} did not answer.")
     return answer.text or ""
 
 
@@ -254,18 +254,18 @@ async def _check(process_id: str, goal: str, stop_condition: str) -> tuple[Optio
 def _prompt_session(port: int, process_id: str, message: str) -> None:
     """Send *message* to the session the way the UI does (its ``prompt`` action). Nothing in the answer is
     read, but the stream is drained: a terminal session's turn is cancelled when its listener hangs up."""
-    url = _graph_url(port, f"agentic_process/{process_id}/prompt")
+    url = graph_url(port, f"agentic_process/{process_id}/prompt")
     try:
-        resp = _local_post(url, json={"message": message}, stream=True, timeout=(10, None))
+        resp = local_post(url, json={"message": message}, stream=True, timeout=(10, None))
     except requests.exceptions.RequestException as e:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
+        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
     with resp:
         if resp.status_code != 200:
             try:
                 body = resp.json()
             except ValueError:
                 body = {}
-            _fail(EXIT_ACTION_FAILED, "PROMPT_REFUSED",
+            fail(EXIT_ACTION_FAILED, "PROMPT_REFUSED",
                   str(body.get("message") or f"Session {process_id} did not take the prompt (HTTP {resp.status_code})."))
         for _chunk in resp.iter_content(chunk_size=None):
             pass
@@ -300,38 +300,38 @@ def _self_check_prompt(goal: str, stop_condition: str, key: str) -> str:
 )
 def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `monitor` printed.")]) -> None:
     process_id, name = _split_monitor_key(key)
-    port = _discover_port()
+    port = discover_port()
     process, folder = _process_and_folder(port, process_id, name)
     if not (folder / "monitor.json").is_file():
-        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No monitor {key}.")
+        fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No monitor {key}.")
     monitor = json.loads((folder / "monitor.json").read_text(encoding="utf-8"))
     goal, stop_condition = str(monitor.get("goal") or ""), str(monitor.get("stop_condition") or "")
     if process.get("busy"):
-        _ok({"key": key, "skipped": "the session is busy"})
+        ok({"key": key, "skipped": "the session is busy"})
         return
     # No lock against a second check: the scheduler runs one instance of a trigger's job at a time
     # (APScheduler's max_instances=1), and the job awaits this command.
     fork_id, verdict = run_async(_check(process_id, goal, stop_condition))
     if fork_id is None:
         _prompt_session(port, process_id, _self_check_prompt(goal, stop_condition, key))
-        _ok({"key": key, "answer": None, "asked": process_id, "note": "cannot fork: the session checks itself"})
+        ok({"key": key, "answer": None, "asked": process_id, "note": "cannot fork: the session checks itself"})
         return
     if verdict is None:
-        _fail(EXIT_ACTION_FAILED, "INVALID_ANSWER",
+        fail(EXIT_ACTION_FAILED, "INVALID_ANSWER",
               f"No valid answer after {_NUDGE_RETRIES} retries; the monitor is unchanged.")
     if verdict.answer == "continue_to_work":
         _prompt_session(port, process_id, _continue_prompt(goal, stop_condition))
-        _ok({"key": key, "answer": verdict.answer, "asked": fork_id})
+        ok({"key": key, "answer": verdict.answer, "asked": fork_id})
         return
     trigger_id = _remove_monitor(port, folder)
-    _ok({"key": key, "answer": verdict.answer, "asked": fork_id, "removed": trigger_id})
+    ok({"key": key, "answer": verdict.answer, "asked": fork_id, "removed": trigger_id})
 
 
 @process_app.command("unmonitor", help="Remove a monitor: its trigger and its folder in the project.")
 def unmonitor_process(key: Annotated[str, typer.Argument(help="The monitor key `monitor` printed.")]) -> None:
     process_id, name = _split_monitor_key(key)
-    port = _discover_port()
+    port = discover_port()
     _, folder = _process_and_folder(port, process_id, name)
     if not folder.is_dir():
-        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No monitor {key}.")
-    _ok({"key": key, "removed": _remove_monitor(port, folder)})
+        fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No monitor {key}.")
+    ok({"key": key, "removed": _remove_monitor(port, folder)})
