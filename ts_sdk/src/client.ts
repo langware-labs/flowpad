@@ -417,7 +417,7 @@ window['client'] = apiClient;
  * (`AgenticProcess.prompt`) classify off ONE string set instead of drifting apart.
  */
 export function isNetworkErrorMessage(message: string | undefined): boolean {
-  if (!message) return false;
+  if (!message || isStaleBuildMessage(message)) return false;
   const m = message.toLowerCase();
   return (
     m.includes('failed to fetch') ||
@@ -425,6 +425,26 @@ export function isNetworkErrorMessage(message: string | undefined): boolean {
     m.includes('network error') ||
     m.includes('load failed')
   );
+}
+
+/**
+ * Did a lazy `import()` of one of the app's own code chunks fail?
+ *
+ * Chunk files are named by content hash, so an upgrade removes the ones an
+ * already-open page still points at. The browser words that as Chrome "Failed
+ * to fetch dynamically imported module", Firefox "error loading dynamically
+ * imported module", Safari "Importing a module script failed" — the Chrome one
+ * contains "failed to fetch", which is how it used to read as an outage while
+ * the backend was answering. The page is stale, not the server: reload it.
+ */
+function isStaleBuildMessage(message: string | undefined): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return m.includes('dynamically imported module') || m.includes('importing a module script failed');
+}
+
+export function isStaleBuildError(error: unknown): boolean {
+  return isStaleBuildMessage((error as { message?: string } | null | undefined)?.message);
 }
 
 export function isBackendUnreachable(error: unknown): boolean {
