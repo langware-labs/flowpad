@@ -447,6 +447,19 @@ def _report_only(cli_config: dict | None) -> dict:
     return config
 
 
+#: How many of the reported words a diagnose process carries in its name.
+_NAME_WORDS = 6
+
+
+def _diagnose_process_name(message: str | None) -> str:
+    """The run's name in the process list: what it is, then the first words of what was reported."""
+    words = (message or "").split()
+    if not words:
+        return "flow diagnose · full check"
+    said = " ".join(words[:_NAME_WORDS]) + ("…" if len(words) > _NAME_WORDS else "")
+    return f"flow diagnose · {said}"
+
+
 async def _build_diagnose_process(**options):
     """The diagnose worker process, exactly as `flow diagnose` launches it.
 
@@ -467,7 +480,7 @@ async def _build_diagnose_process(**options):
     deployment = await get_agent_local_deployment("diagnose")
     return await deployment.create_process(
         workdir=options.pop("workdir", None) or str(Path.cwd()),
-        name="flow diagnose",
+        name=options.pop("name", None) or _diagnose_process_name(None),
         **options,
     )
 
@@ -563,7 +576,9 @@ async def _run_diagnose(
 
     async def _make_process(worker_type: str | None):
         extra = {"worker_type": worker_type} if worker_type else {}
-        process = await _build_diagnose_process(**(process_options or {}), **extra)
+        process = await _build_diagnose_process(
+            **{"name": _diagnose_process_name(message), **(process_options or {}), **extra}
+        )
         if report_only:
             process.cli_config = _report_only(process.cli_config)
         return process
