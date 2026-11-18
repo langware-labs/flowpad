@@ -41,6 +41,7 @@ export function openDisplayTarget(dt: ReceiveShowTarget | null | undefined, navi
     return;
   }
   if (dt.path) {
-    navigation.openFile(dt.path);
+    if (dt.is_dir) navigation.openFolder(dt.path);
+    else navigation.openFile(dt.path);
   }
 }

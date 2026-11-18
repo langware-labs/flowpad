@@ -510,12 +510,8 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
 
         {showMachines && (
           <>
-            {/* Pending invitations.
-            Lives here because the hub page has no Stream Inbox: `renderHubBody`
-            (content-panel.tsx) has no ViewType.STREAM_INBOX case, so `StreamInboxView` — and
-            with it the usual home for `MembershipInvitations` — never renders
-            under page=hub. Without this the rows are fetchable and have nowhere
-            to appear. Above Sandboxes deliberately: a sandbox share is the
+            {/* Pending invitations, also listed here beside the hub's Stream Inbox
+            (`/dock/hub/stream_inbox`). Above Sandboxes deliberately: a sandbox share is the
             invitation this page will mostly receive, and accepting one changes
             the list directly below it. Renders nothing when there are none. */}
             <MembershipInvitations show="pending" recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />

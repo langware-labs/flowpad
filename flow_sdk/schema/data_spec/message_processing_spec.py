@@ -17,6 +17,7 @@ class MessageAutomationEntry(BaseModel):
     id: str
     trigger_id: str
     automation_name: str = ""
+    #: The tag that queued the rule. Empty on the classifier's own entry: it is what gives the tags.
     tag: str
     status: Literal["queued", "running", "succeeded", "failed", "skipped", "cancelled", "interrupted"] = "queued"
     run_id: str | None = None
@@ -29,6 +30,8 @@ class MessageProcessing(BaseModel):
     spec_kind: ClassVar[str] = "stream_inbox.message.processing"
     classification: Literal["pending", "running", "succeeded", "failed", "skipped"] = "skipped"
     classification_error: str = ""
+    #: A person asked for this classification ("Classify now"): it runs whatever the switch says.
+    classification_forced: bool = False
     assignments: dict[str, TagAssignment] = Field(default_factory=dict)
     queue: list[MessageAutomationEntry] = Field(default_factory=list)
     # A classifier finishing after a person's removal must not restore that tag.
@@ -36,5 +39,8 @@ class MessageProcessing(BaseModel):
 
 
 class MessageClassificationSettings(DataSpec):
-    enabled: bool = True
+    """How messages are classified. Whether they are is the classifier automation's own switch."""
+
     include_flow_tags: bool = False
+    #: The tag tree a message is classified into: every tag within it is an option.
+    root: str = "stream_inbox"

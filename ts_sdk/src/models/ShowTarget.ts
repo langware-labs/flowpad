@@ -37,6 +37,8 @@ export interface ShowTarget {
   id?: string;
   /** entity (when shown by path) | vfs: the resolved absolute path. */
   path?: string;
+  /** vfs: the path is a folder — it opens in the folder browser, not as a file. */
+  is_dir?: boolean;
   /** url: an ordinary HTTP(S) page, independent of a process runtime. */
   url?: string;
   /** Source location carried through to the existing file/asset editors. */

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Plus, Trash2 } from 'lucide-react';
-import { Agent, config, DataSource, Markdown, Mcp, Skill, type AssetDescriptor } from '@sdk';
+import { Agent, config, DataSource, Markdown, Mcp, Project, Skill, TypeId, type AssetDescriptor } from '@sdk';
 import apiClient from '@sdk/client';
+import { useEntity } from '@sdk/react/hooks';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import {
   assetScope,
@@ -112,6 +113,16 @@ export function AgentResourcesBody() {
   const { activeEntityTypeId, project } = useContext();
   const editingAgentId = activeEntityTypeId?.type === Agent.type ? activeEntityTypeId : null;
   const editingAgentKey = editingAgentId?.toString() ?? null;
+  // An agent's packages live in ITS project's flow.json walk, not the one that happens to be open:
+  // asked under another project the backend refuses it (400 "not an asset of this project"). An
+  // agent with no project (the personal space "Make an agent" saves to) has no packages to list.
+  const { data: editingAgent } = useEntity<Agent>(editingAgentId);
+  const agentProjectId = editingAgent?.project_id || null;
+  const agentProjectTypeId = useMemo(
+    () => (agentProjectId ? new TypeId(Project.type, agentProjectId) : null),
+    [agentProjectId],
+  );
+  const { data: agentProject = null } = useEntity<Project>(agentProjectTypeId);
 
   const { navigation, currentDock } = useDockNavigation();
 
@@ -262,8 +273,8 @@ export function AgentResourcesBody() {
       </NavigatorSection>
 
       <AgentDataSourcesSection
-        key={`${project?.id ?? ''}:${editingAgentKey ?? ''}`}
-        project={project}
+        key={`${agentProject?.id ?? ''}:${editingAgentKey ?? ''}`}
+        project={agentProject}
         agent={editingAgentId}
         ownedSources={dataSourceRows.map((row) => row.source)}
         sourcesLoading={sourcesLoading}

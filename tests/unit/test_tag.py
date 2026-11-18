@@ -134,4 +134,4 @@ def test_tag_registered():
 
     assert SchemaRegistry.get_entity_cls("tag") is Tag
     assert "tag" in SchemaRegistry.get_all_types()
-    assert SchemaRegistry.get_icon("tag") == "Hash"
+    assert SchemaRegistry.get_icon("tag") == "Tag"

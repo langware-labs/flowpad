@@ -122,7 +122,7 @@ export function sourceChoices(specs: DataDriver[]): SourceChoice[] {
     }));
 }
 
-/** The inbox channels a person may add — every offered message driver whose group declares `featured`,
+/** The message channels a person may add — every offered message driver whose group declares `featured`,
  *  one per group: what an empty stream inbox offers under "Add a message channel". */
 export const messageChannelChoices = (specs: DataDriver[], forAgent: boolean): SourceChoice[] => {
   const offered = offeredSpecs(specs, forAgent).filter(isMessageDriverSpec);
@@ -143,8 +143,8 @@ export function channelOffers(
   rows: Pick<DataSource, 'provider'>[],
   forAgent: boolean,
 ): ChannelOffer[] {
-  const inbox = messageChannelChoices(specs, forAgent);
-  const featured = new Set(inbox.map((c) => c.key));
+  const choices = messageChannelChoices(specs, forAgent);
+  const featured = new Set(choices.map((c) => c.key));
   const connected = new Set(rows.map((r) => r.provider));
-  return specs.some((s) => connected.has(s.name ?? '') && featured.has(choiceKey(s))) ? [] : inbox;
+  return specs.some((s) => connected.has(s.name ?? '') && featured.has(choiceKey(s))) ? [] : choices;
 }

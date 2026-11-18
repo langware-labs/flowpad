@@ -49,6 +49,7 @@ import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
 import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
+import { DocxViewer } from '@src/components/docx-viewer/DocxViewer';
 import { ArchivePreview } from '@src/components/archive-preview/ArchivePreview';
 import { ValueViewer } from '@src/components/value-viewer/ValueViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
@@ -317,6 +318,9 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
   if (ptr.editor === AssetEditor.PDF) {
     // PdfViewer parses both the vpath and plain-path forms itself, like MediaViewer.
     return <PdfViewer path={ptr.value} />;
+  }
+  if (ptr.editor === AssetEditor.DOCX) {
+    return <DocxViewer path={ptr.value} />;
   }
   if (ptr.editor === AssetEditor.ARCHIVE) {
     // A .zip is browsed as its extracted folder (a temp copy), never as text.

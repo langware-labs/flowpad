@@ -34,11 +34,12 @@ export function RowActions({ specs }: { specs: ActionSpec[] }) {
                 disabled={s.disabled}
                 aria-label={s.label}
                 className={`rounded p-1 ${s.tone === 'destructive' ? 'hover:bg-destructive/10' : 'hover:bg-muted'}`}
+                aria-pressed={s.active}
                 data-testid={s.testId}
               >
                 {s.icon && (
                   <s.icon
-                    className={`h-3.5 w-3.5 text-muted-foreground ${s.tone === 'destructive' ? 'hover:text-destructive' : ''}`}
+                    className={`h-3.5 w-3.5 ${s.active ? 'fill-amber-500 text-amber-500' : 'text-muted-foreground'} ${s.tone === 'destructive' ? 'hover:text-destructive' : ''}`}
                   />
                 )}
               </button>

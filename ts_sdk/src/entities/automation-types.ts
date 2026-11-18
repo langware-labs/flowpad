@@ -21,7 +21,7 @@ export type ReasonCode =
   | 'decision_no'
   | 'decision_unavailable';
 export type SchedulePreset = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'every' | 'once' | 'cron';
-export type ThenKind = 'run_agent' | 'run_process' | 'run_script' | 'open_wizard' | 'builtin_step' | 'notify' | 'workflow' | 'nothing';
+export type ThenKind = 'run_agent' | 'run_process' | 'run_script' | 'open_wizard' | 'builtin_step' | 'notify' | 'workflow' | 'mark_read' | 'nothing';
 
 export interface ScheduleWhen {
   preset: SchedulePreset;
@@ -40,6 +40,8 @@ export interface EventWhen {
   title: string;
   description: string;
   target?: string | null;
+  /** A message rule's tags: it runs when a message is given any of them (or a tag under one). */
+  message_tags?: string[];
 }
 
 export interface FileWhen {
@@ -142,6 +144,8 @@ export interface TryRow {
   /** Set when the verdict came from a real run's log — no call was made. */
   decided_at?: string | null;
   agentic_process_id?: string | null;
+  /** A tag rule's rows: the tags the message carries now — what decides it. */
+  tags?: string[];
 }
 
 /** Where an automation runs (`AutomationPlace` in `automation_spec.py`). */
@@ -193,6 +197,8 @@ export interface AutomationSummary {
   read_only: boolean;
   /** A person may turn it on or off here (read-only rules too, when Flowpad ships them off). Older backends omit it. */
   switchable?: boolean;
+  /** The message classifier: the automation that gives each arriving message its tag. */
+  classifier?: boolean;
   asset_ref?: string | null;
   /** Where it runs. Older backends omit it; read it through `placeOf`. */
   place?: AutomationPlace;

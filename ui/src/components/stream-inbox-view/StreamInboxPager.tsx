@@ -34,9 +34,12 @@ export function StreamInboxPager({
   scope,
   view,
   rows,
+  starredIds,
 }: {
   scope: ConversationScope;
   view: StreamInboxViewMode;
+  /** The starred view's conversation ids — what that view pages through. */
+  starredIds?: readonly string[];
   /** The page shown, newest first. */
   rows: Conversation[];
 }) {
@@ -46,8 +49,8 @@ export function StreamInboxPager({
   const oldest = isoOf(rows[rows.length - 1]?.updated_date);
 
   const newerRequest = useMemo(
-    () => (before && newest ? newerBoundaryRequest(scope, view, newest) : null),
-    [before, newest, scope, view],
+    () => (before && newest ? newerBoundaryRequest(scope, view, newest, starredIds) : null),
+    [before, newest, scope, view, starredIds],
   );
   const { data: above = [], hasMore: moreAbove = false } = useEntitiesQuery<Conversation>(newerRequest ?? idle, {
     enabled: newerRequest !== null,
@@ -57,7 +60,9 @@ export function StreamInboxPager({
 
   // An older page the store cannot fill asks the sources, once per page: one page each, older than
   // what is shown (or than the page's bound when nothing is). What arrives joins this live page.
-  const short = !!before && rows.length < STREAM_INBOX_PAGE_SIZE && view !== 'archived';
+  // Archived and Starred page the rows held here; the sources are never asked for more of them.
+  const storeOnly = view === 'archived' || view === 'starred';
+  const short = !!before && rows.length < STREAM_INBOX_PAGE_SIZE && !storeOnly;
   const askBefore = oldest ?? before;
   // Asking the sources for more is the desktop's (its channels); the hub page pages its own rows.
   const askKey = short && askBefore && !isHubOnly() ? `${scopeKey(scope)}|${view}|${askBefore}` : null;
@@ -78,7 +83,9 @@ export function StreamInboxPager({
   const status = askKey && asked?.key === askKey ? asked.status : null;
 
   // Older stays offered while there is a row to step back from, until the sources say nothing is left.
-  const hasOlder = !!oldest && status !== 'exhausted' && status !== 'loading';
+  // A store-only view's short page is its last one.
+  const lastPage = storeOnly && rows.length < STREAM_INBOX_PAGE_SIZE;
+  const hasOlder = !!oldest && !lastPage && status !== 'exhausted' && status !== 'loading';
   if (!currentDock || (!before && !oldest)) return null;
 
   const go = (next: string | null) => navigation.openDock(currentDock.withPageBefore(next));

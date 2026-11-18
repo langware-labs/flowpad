@@ -24,6 +24,8 @@ export interface AutomationWords {
   /** "today 09:00", "yesterday 18:12", "Mon 12 Oct 09:00". */
   at: (iso: string | null | undefined) => string;
   duration: (ms: number | null | undefined) => string;
+  /** The message classifier's sentence: IF a message arrives THEN classify it. */
+  classifier: { when: string; then: string; under: (root: string) => string };
 }
 
 /** A path as its last two parts ("…/docs/notes") — the full one is long and says less. */
@@ -101,7 +103,11 @@ export function useAutomationWords(): AutomationWords {
     const when = (w: WhenPart): string => {
       if (w.kind === 'schedule' && w.schedule) return schedule(w.schedule);
       if (w.kind === 'event' && w.event) {
-        if (isMessagePattern(w.event.pattern)) return t`When a message arrives`;
+        if (isMessagePattern(w.event.pattern)) {
+          // A tag rule names its tags by their last part ("stream_inbox.support.billing" reads "billing").
+          const tags = (w.event.message_tags ?? []).map((tag) => tag.split('.').at(-1)).join(` ${t`or`} `);
+          return tags ? t`When a message is tagged ${tags}` : t`When a message arrives`;
+        }
         const what = w.event.title || w.event.pattern;
         return t`When ${what} happens`;
       }
@@ -134,6 +140,8 @@ export function useAutomationWords(): AutomationWords {
           return t`start the workflow ${name}`;
         case 'builtin_step':
           return t`run the built-in step ${name}`;
+        case 'mark_read':
+          return t`mark it as read`;
         case 'nothing':
           return t`do nothing yet`;
         default:
@@ -228,12 +236,25 @@ export function useAutomationWords(): AutomationWords {
         agent_hook: t`Agent`,
       })[k];
 
-    return { kind, kindPlural, kindShort, when, schedule, then, status, why, at, duration };
+    const classifier = {
+      when: t`a message arrives`,
+      then: t`classify it`,
+      under: (root: string) => t`classify it under ${root}`,
+    };
+
+    return { kind, kindPlural, kindShort, when, schedule, then, status, why, at, duration, classifier };
   }, [t, i18n.locale]);
 }
 
-/** The full sentence for a list row: "Every weekday at 09:00 → run Chief of Staff". */
-export function sentenceOf(words: AutomationWords, when: WhenPart, then: ThenPart[]): { when: string; then: string } {
+/** The full sentence for a list row: "Every weekday at 09:00 → run Chief of Staff". The message classifier
+ *  has its own: "a message arrives → classify it". */
+export function sentenceOf(
+  words: AutomationWords,
+  when: WhenPart,
+  then: ThenPart[],
+  classifier = false,
+): { when: string; then: string } {
+  if (classifier) return { when: words.classifier.when, then: words.classifier.then };
   return { when: words.when(when), then: then.map(words.then).join(', ') };
 }
 

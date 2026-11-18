@@ -22,13 +22,17 @@ async with await source.open() as live:              # a DataSource: its driver 
     sent  = await s.send(MessageData(...))            # Messaging — attachments are local files
     reply = await s.reply(origin, MessageData(...))   # Messaging
     await s.react(origin, "👍"); await s.unreact(origin)   # Reacting
+    await s.mark_read(origin, True)                   # ReadMarking — only while s.writes_read_state()
     await s.notify(DataSourceEvent(...))              # every source; one on_change handler per session
 ```
 
 Values are frozen `DataSpec`s: `CloudOrigin(kind, namespace, key, url|None)` (identity is the
 triple), `SourceItemSpec(origin, data)`, `FileData`, `RecordData`, `MessageData` (+ `UserProfile` for
 sender and recipients, and `MessageFileData` for the files a message carries), `ReactionData` (an emoji on a
-message — a change of state reported as `SET`, `ADD` or `REMOVE`, never a message of its own), `DataPage`,
+message — a change of state reported as `SET`, `ADD` or `REMOVE`, never a message of its own), `ReadData`
+(the account owner's read state of a message changed at the provider — also a change of state, never a
+message; the state at fetch time rides the message itself as `MessageData.read`, `None` when the provider
+does not say), `DataPage`,
 the `DataQuery` family, `DataSourceEvent`. A source class extends one
 **family** — `ObjectSource` (files), `RecordSource` (records) or `MessageSource` (a record source of
 messages) — which is declared, because it is what the items ARE and where the application lands them;
@@ -36,7 +40,7 @@ the conformance kit checks the listed items match it. A family also carries the 
 declared on the class: a `MessageSource` says which files `send` takes (`files: FileSupport` — kinds,
 sizes, files per provider message, captions), whether a reply `quotes` the message it answers, and how many
 reactions one person keeps on a message (`reactions_per_actor`). Capabilities are protocols discovered by
-`isinstance` (`Readable`, `Listable`, `Mutable`, `Openable`, `ByteStore`, `Messaging`, `Drafting`, `Reacting`),
+`isinstance` (`Readable`, `Listable`, `Mutable`, `Openable`, `ByteStore`, `Messaging`, `Drafting`, `Reacting`, `ReadMarking`),
 never declared. Failures are one `SourceError` family (`AccessDenied`, `SourceUnavailable`,
 `NotFound`, `Unsupported`, `InvalidCursor`, `Rejected`, `OutcomeUnknown`), each also subclassing the
 closest built-in. A source class is the same object whether it ships in `flow_sdk`, is authored as an
@@ -70,6 +74,25 @@ Everything the contract deliberately refuses is an **application** concern, and 
 The dependency runs one way: the runtime imports the contract. A special case that only one
 provider needs belongs as a trait or method on that provider's class, never as an `if provider ==`
 on the runtime.
+
+## Read state: one rule, both ways
+
+A message's read state is the account owner's, of a message they received — never a delivery receipt.
+Two facts are kept per message: `SourceItem.read`, the provider's state as last known, and
+`FlowMessage.is_read`, what the person sees. `flow_sdk/stream_inbox/reads.py` holds the one rule between
+them:
+
+- a provider report (`MessageData.read` at birth, a `ReadData` item after) that **differs** from
+  `SourceItem.read` is a change made there — both move to it;
+- one that **equals** it changed nothing there (a redelivery, or the echo of our own write) and is dropped,
+  so it never undoes what the person did here since;
+- a mark made here is written to the provider (`ReadMarking.mark_read`) when the channel can and the
+  source's own setting says to (`writes_read_state()` — off by default: it changes a real mailbox). Once
+  written, `SourceItem.read` holds it.
+
+No timestamps: the rule compares states, so duplicate reports, retries and restarts converge. Gmail is the
+first driver on it: `\Seen` at fetch, flag changes since the last read through CONDSTORE (the cursor
+carries the mailbox's change counter), and `mark_read_in_gmail` on the source for writing back.
 
 ## Two words that are easy to confuse
 

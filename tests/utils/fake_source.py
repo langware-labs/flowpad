@@ -35,6 +35,8 @@ from flow_sdk.sources.values.items import (
     ReactionData,
     ReactionItem,
     ReactionMode,
+    ReadData,
+    ReadItem,
 )
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import DataPage
@@ -66,6 +68,9 @@ class Script:
         self.blobs: dict[str, bytes] = {}
         #: Every ``react``/``unreact``: ``(target key, emoji, removed)``.
         self.reacted: list[tuple[str, str, bool]] = []
+        #: The source's "write reads back" setting, and every ``mark_read``: ``(target key, read)``.
+        self.writes_read = False
+        self.marked: list[tuple[str, bool]] = []
         #: The emoji this channel shows (a stand-in for Telegram's list): anything else is ``Rejected``.
         self.allowed_emoji: frozenset[str] = frozenset({"👍", "👀", "✅", "❤️", "🔥", "🎉", "🙏"})
         #: False keeps the scripted records inside the stream inbox (projected into conversations).
@@ -148,6 +153,12 @@ class ScriptedSource(MessageSource):
     async def unreact(self, target: CloudOrigin, emoji: str = "") -> None:
         self.script.reacted.append((target.key, emoji, True))
 
+    def writes_read_state(self) -> bool:
+        return self.script.writes_read
+
+    async def mark_read(self, target: CloudOrigin, read: bool = True) -> None:
+        self.script.marked.append((target.key, read))
+
     def _sent(self, data: MessageData, quoted: str = "") -> MessageItem:
         external_id = f"<sent-{mint_uuid()}@{self.provider}>"
         files = [
@@ -173,6 +184,9 @@ class ScriptedSource(MessageSource):
                     mode=ReactionMode(r.get("mode", "set")),
                 ),
             )
+        if m.get("read_report"):
+            r = m["read_report"]
+            return ReadItem(origin=self.origin(f"read-{mint_uuid()}"), data=ReadData(target=self.origin(r["target"]), read=r["read"]))
         return self._message(m)
 
     def _message(self, m: dict) -> MessageItem:
@@ -188,6 +202,7 @@ class ScriptedSource(MessageSource):
             in_reply_to=self.origin(reply) if reply else None,
             sent_at=iso_to_utc(m["occurred_at"]) if m.get("occurred_at") else None,
             attachments=tuple(self._file(f) for f in m.get("files", ())),
+            read=m.get("read"),
         )
         # A plain message unless the script names a subject — the kind the scripted channel always had.
         data = EmailMessageData(subject=m["name"], **fields) if m.get("name") else MessageData(**fields)

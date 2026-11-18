@@ -249,6 +249,19 @@ export interface MessageProcessing {
 export interface MessageClassificationSettings {
   enabled: boolean;
   include_flow_tags: boolean;
+  /** The tag tree messages are classified into. */
+  root: string;
+  /** The classifier's own automation: `enabled` is its switch. */
+  trigger_id?: string | null;
+}
+
+/** Where a message lands (dry run): one full dot tag, or why there is none. */
+export interface MessageClassification {
+  exit_code: number;
+  detail: string;
+  value?: { tag: string; confidence: number } | null;
+  /** The decision API's closed reason when it could not be asked (`no_endpoint`, …). */
+  unavailable?: string | null;
 }
 
 export interface IFlowMessage extends IEntity {
@@ -481,9 +494,30 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     return (await dataManager.callAction<unknown, MessageClassificationSettings>(action))!;
   }
 
+  /** Classify this message under the configured root. A dry run: nothing on the message changes. */
+  async classify(): Promise<MessageClassification> {
+    const action = new ActionInfo('classify', FlowMessage.type, this.id ?? null, 'POST');
+    action.bodyParameters = {};
+    return (await dataManager.callAction<unknown, MessageClassification>(action))!;
+  }
+
   async setTags(tags: string[]): Promise<void> {
-    const action = new ActionInfo('set-tags', FlowMessage.type, this.id ?? null, 'POST');
-    action.bodyParameters = { tags };
+    await this.tagAction('set-tags', { tags });
+  }
+
+  /** Classify this message now — whatever the classifier's switch says, and again after a failure. */
+  async classifyNow(): Promise<void> {
+    await this.tagAction('classify-now', {});
+  }
+
+  /** Run one failed or interrupted automation of this message's queue again (`entry` is its id). */
+  async rerunAutomation(entry: string): Promise<void> {
+    await this.tagAction('rerun-automation', { entry });
+  }
+
+  private async tagAction(name: string, body: Record<string, unknown>): Promise<void> {
+    const action = new ActionInfo(name, FlowMessage.type, this.id ?? null, 'POST');
+    action.bodyParameters = body;
     const result = await dataManager.callAction<unknown, { tags: string[]; message_processing?: MessageProcessing | null }>(action);
     if (result) dataManager.deepAssign(this, result);
   }

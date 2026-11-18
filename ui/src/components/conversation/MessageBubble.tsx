@@ -245,6 +245,31 @@ function parseClaudeQuote(content: string): { prefix: string; quoted: string } |
   return { prefix: 'Prompt response:', quoted: unescaped };
 }
 
+/** A body that is a whole HTML document (an email delivered as HTML). */
+const HTML_DOC = /^\s*(<!doctype html|<html[\s>])/i;
+
+/**
+ * Renders an HTML email as the page it is, in a sandbox: no scripts run, links
+ * open in a new window, and the frame grows to the document's own height.
+ */
+function HtmlMessageBody({ html }: { html: string }) {
+  const [height, setHeight] = useState(200);
+  const doc = useMemo(() => html.replace(/<head([^>]*)>/i, '<head$1><base target="_blank">'), [html]);
+  return (
+    <iframe
+      title="Message"
+      srcDoc={doc}
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      className="w-full rounded border-0 bg-white"
+      style={{ height }}
+      onLoad={(e) => {
+        const body = e.currentTarget.contentDocument?.documentElement;
+        if (body) setHeight(body.scrollHeight);
+      }}
+    />
+  );
+}
+
 /**
  * The message body text. `whitespace-pre-wrap` is the single source of truth for
  * preserving authored newlines — keeping it here (rather than on each call-site
@@ -268,6 +293,7 @@ function MessageBody({ content, isBot, links }: { content: string; isBot: boolea
       </div>
     );
   }
+  if (HTML_DOC.test(content)) return <HtmlMessageBody html={content} />;
   // Without a message to resolve against, a link could only fail — keep it text.
   if (!links) return <div className={bodyClass}>{content}</div>;
   return (
@@ -376,6 +402,8 @@ export function MessageBubble({
 
   const handleBubbleClick = (e: MouseEvent<HTMLDivElement>) => {
     if (!onSelect) return;
+    // A click inside a portaled menu still bubbles here through React; only the bubble's own DOM selects.
+    if (!e.currentTarget.contains(e.target as Node)) return;
     // Ignore clicks that originated on interactive children (buttons, links,
     // inputs) so name-edit / attachment actions / attachment downloads keep
     // their native behaviour without double-firing selection.

@@ -7,6 +7,7 @@ import {
   type Project,
   type ProjectContextDirInfo,
 } from '@sdk';
+import { errorMessage } from '@src/lib/error-message';
 
 /** Whether a package about to be added is local (this device only, recorded in no
  *  project file), required (fetched automatically) or optional (fetched only on Install). */
@@ -114,7 +115,7 @@ export function useProjectDependencies(
       setLoadedScope(requestedScope);
     } catch (err) {
       if (tickRef.current !== tick) return;
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err, String(err)));
       setDependencies([]);
       setWarnings([]);
       setResolving(false);

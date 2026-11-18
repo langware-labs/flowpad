@@ -143,7 +143,10 @@ async def resolve_display_target(
             if rec is not None and getattr(rec, "id", None):
                 name = getattr(rec, "name", None) or getattr(rec, "title", None) or None
                 return {**entity_target(str(rec.type), str(rec.id), name=name), "path": resolved}
-        return {"kind": DisplayTargetKind.VFS, "path": resolved}
+        target = {"kind": DisplayTargetKind.VFS, "path": resolved}
+        if os.path.isdir(resolved):
+            target["is_dir"] = True  # else it opens as an empty file with its PARENT listed
+        return target
 
     if artifact_id:
         return await _app_payload(str(artifact_id))

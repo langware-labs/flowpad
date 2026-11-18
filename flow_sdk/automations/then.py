@@ -59,12 +59,23 @@ def as_wizard(then: ThenSpec, *, name: str, scope_key: str = "", parent_type_id:
         )
         return WizardSpec(name=name, steps=[WizardStepSpec(id="run", ref=op.name)]), {op.name: op}
     ops: dict[str, ComputeOpSpec] = {}
-    for key, op in (then.ops or {}).items():
-        spec = op if isinstance(op, ComputeOpSpec) else ComputeOpSpec.model_validate({"name": key, **op})
+    for key, spec in inline_ops(then).items():
         if spec.subkind is OpSubkind.PYTHON:
             raise ValueError("an inline Python op has no code folder; reference a ComputeOp asset instead")
+        if spec.subkind is OpSubkind.AGENT and scope_key:
+            # A step's agent is handed the fire's state and stamped with the run, as the sugar's is:
+            # what it then does to the message is attributed to this automation.
+            data = spec.exe_data
+            spec = spec.model_copy(update={"exe_data": data.model_copy(update={
+                "input": data.input or scope_key, "launch_context": data.launch_context or LAUNCH_KEY})})
         ops[key] = spec if spec.name else spec.model_copy(update={"name": key})
     return WizardSpec(name=name, steps=list(then.steps)), ops
+
+
+def inline_ops(then: ThenSpec) -> dict[str, ComputeOpSpec]:
+    """A sequence's own ops as specs, by the name a step's ``ref`` uses."""
+    return {key: op if isinstance(op, ComputeOpSpec) else ComputeOpSpec.model_validate({"name": key, **op})
+            for key, op in (then.ops or {}).items()}
 
 
 def then_of(trigger: Any) -> Optional[ThenSpec]:

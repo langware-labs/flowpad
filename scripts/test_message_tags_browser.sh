@@ -20,6 +20,7 @@ export FLOWPAD_INSTANCE_SKIP_GC=1
 export FLOWPAD_INSTANCE_BACKEND_MODULE=tests.e2e.mock_worker_backend
 export MOCK_MESSAGE_CLASSIFIER=1
 export MOCK_DECISION=1
+export MOCK_DECISION_MATCH=1
 export MOCK_MESSAGE_TAG_CONTROL_PORT
 MOCK_MESSAGE_TAG_CONTROL_PORT="$(cd "$repo" && uv run python -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
 
@@ -40,4 +41,4 @@ source "$repo/.env.$instance.local"
 set +a
 cd "$repo/ui"
 npx playwright test --config tests/manual_regression/automations/playwright.config.ts \
-  message_tags --output "$run_dir/playwright" "$@"
+  message_tags tag_classifier --output "$run_dir/playwright" "$@"

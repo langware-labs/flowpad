@@ -155,10 +155,13 @@ export function SourceChip({
   attribution,
   className,
   iconOnly,
+  expandOnHover,
 }: {
   attribution: ChannelAttribution | null;
   className?: string;
   iconOnly?: boolean;
+  /** Icon alone until the host row (a `group`) is hovered, then icon + channel. */
+  expandOnHover?: boolean;
 }) {
   if (!attribution) return null;
   const { icon, badge } = attribution;
@@ -178,9 +181,15 @@ export function SourceChip({
     );
   }
   return (
-    <Badge variant="outline" className={cn(SOURCE_CHIP, className)} data-chip-type="source" title={attribution.label}>
+    <Badge
+      variant="outline"
+      className={cn(SOURCE_CHIP, expandOnHover && 'pe-1 group-hover:pe-1.5', className)}
+      data-chip-type="source"
+      title={attribution.label}
+      aria-label={attribution.label}
+    >
       <IconWithBadge Base={icon} Badge={badge} className="size-4 shrink-0" />
-      {attribution.label}
+      {expandOnHover ? <span className="hidden group-hover:inline">{attribution.label}</span> : attribution.label}
     </Badge>
   );
 }

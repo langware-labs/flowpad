@@ -247,6 +247,44 @@ def test_tail_status_end_turn_is_complete(tmp_path: Path):
     assert _tail_status(f) == WorkerStatus.COMPLETE
 
 
+def test_tail_status_a_refused_turn_ends_as_error(tmp_path: Path):
+    """Nir's live-session turn (2026-11-17): the safeguards refused it twice and the CLI
+    ended cleanly. Read as WORKING, the host reported a worker that died mid-turn."""
+    sid = "3b4b38b4-94b4-4a0e-91ca-898cf7badf19"
+    refused = {"role": "assistant", "stop_reason": "refusal"}
+    f = tmp_path / f"{sid}.jsonl"
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "sessionId": sid, "message": {"role": "user", "content": "READ-ONLY ..."}},
+            {
+                "type": "assistant",
+                "sessionId": sid,
+                "message": {**refused, "content": [{"type": "thinking", "thinking": "x"}]},
+            },
+            {
+                "type": "system",
+                "subtype": "model_refusal_no_fallback",
+                "sessionId": sid,
+                "content": "",
+                "level": "warning",
+            },
+            {
+                "type": "assistant",
+                "sessionId": sid,
+                "isApiErrorMessage": True,
+                "message": {
+                    **refused,
+                    "content": [{"type": "text", "text": "API Error: safeguards flagged this message"}],
+                },
+            },
+            {"type": "last-prompt", "lastPrompt": "READ-ONLY ...", "sessionId": sid},
+            *({"type": t, "sessionId": sid} for t in ("ai-title", "mode", "session-owner", "atis-latch", "cost-state")),
+        ],
+    )
+    assert _tail_status(f) == WorkerStatus.ERROR
+
+
 def _task_notification(status: str, summary: str) -> dict:
     text = (
         "<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n"
