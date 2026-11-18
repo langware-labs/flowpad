@@ -21,6 +21,7 @@ function ScopeButton({
   scope,
   installedScope,
   busy,
+  spinning,
   installLabel,
   uninstallLabel,
   installIcon,
@@ -31,6 +32,8 @@ function ScopeButton({
   scope: 'user' | 'project';
   installedScope: 'user' | 'project' | null;
   busy: boolean;
+  /** This button's own action is the one running — only it shows the spinner. */
+  spinning: boolean;
   installLabel: ReactNode;
   uninstallLabel: ReactNode;
   installIcon: ReactNode;
@@ -38,7 +41,7 @@ function ScopeButton({
   onUninstall: () => void;
   disabledTitle: string;
 }) {
-  const spinner = busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
+  const spinner = spinning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
   const testIdSuffix = scope === 'user' ? 'global' : 'project';
   if (installedScope === scope) {
     return (
@@ -90,7 +93,9 @@ export function AssetInstallActions({
   initialOutcome?: OpenShareOutcome | null;
 }) {
   const { t } = useLingui();
-  const [busy, setBusy] = useState(false);
+  // Which action is in flight — ONLY that button spins; the others just disable.
+  const [busyAction, setBusyAction] = useState<null | 'project' | 'user' | 'setup'>(null);
+  const busy = busyAction != null;
   // Why opening the git share failed (from the chip's 1-click open) — shown inline.
   const gitError = initialOutcome?.error ?? null;
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -134,7 +139,7 @@ export function AssetInstallActions({
 
   const doInstall = useCallback(
     async (scope: 'user' | 'project', projectId?: string) => {
-      setBusy(true);
+      setBusyAction(scope);
       try {
         const show = await attachment.install(scope, projectId);
         notify.success({ title: t`Installed`, message: attachment.name ?? attachment.asset_type ?? '' });
@@ -143,7 +148,7 @@ export function AssetInstallActions({
         console.error('[asset-review] install failed', err);
         notify.error({ title: t`Install failed` });
       } finally {
-        setBusy(false);
+        setBusyAction(null);
       }
     },
     [attachment, navigation, t],
@@ -155,7 +160,7 @@ export function AssetInstallActions({
   const downloaded = attachment.effectiveScope != null;
 
   const doGitSetup = useCallback(async () => {
-    setBusy(true);
+    setBusyAction('setup');
     try {
       const show = await attachment.runSetup();
       openDisplayTarget(show, navigation);
@@ -163,12 +168,13 @@ export function AssetInstallActions({
       console.error('[asset-review] git setup failed', err);
       notify.error({ title: t`Setup failed` });
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }, [attachment, navigation, t]);
 
   const doUninstall = useCallback(async () => {
-    setBusy(true);
+    // Only the installed scope's button shows Uninstall — it is the one that spins.
+    setBusyAction(installedScope);
     try {
       await attachment.uninstall();
       notify.success({ title: t`Uninstalled`, message: attachment.name ?? attachment.asset_type ?? '' });
@@ -176,15 +182,15 @@ export function AssetInstallActions({
       console.error('[asset-review] uninstall failed', err);
       notify.error({ title: t`Uninstall failed` });
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
-  }, [attachment, t]);
+  }, [attachment, installedScope, t]);
 
   const handleProjectPick = useCallback(
     async (id: string) => {
       const picked = projectItems.find((item) => item.id === id);
       if (!picked?.path) return;
-      setBusy(true);
+      setBusyAction('project');
       try {
         const project = await ensureProject(picked.path, { select: false });
         if (!project.id) throw new Error('picked project has no id');
@@ -211,7 +217,7 @@ export function AssetInstallActions({
         console.error('[asset-review] project install failed', err);
         notify.error({ title: t`Install failed` });
       } finally {
-        setBusy(false);
+        setBusyAction(null);
       }
     },
     [attachment, ensureProject, projectItems, navigation, t],
@@ -221,10 +227,11 @@ export function AssetInstallActions({
   // setup skill) is a separate optional action offered once the share is open.
   // A git share (with or without a copy): one Open, and only the question the backend cannot answer.
   const both = attachment.transfer_mode === 'both';
-  if ((both || isGit) && !downloaded) return <SharedOpenPanel attachment={attachment} initialOutcome={initialOutcome} />;
+  if ((both || isGit) && !downloaded)
+    return <SharedOpenPanel attachment={attachment} initialOutcome={initialOutcome} />;
 
   if (isGit) {
-    const spinner = busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
+    const spinner = busyAction === 'setup' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
     return (
       <div className="flex flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
@@ -256,6 +263,7 @@ export function AssetInstallActions({
         scope="project"
         installedScope={installedScope}
         busy={busy}
+        spinning={busyAction === 'project'}
         installLabel={setupLabel ?? <Trans>Install in project</Trans>}
         uninstallLabel={<Trans>Uninstall from project</Trans>}
         installIcon={<FolderDown className="h-3.5 w-3.5" />}
@@ -270,6 +278,7 @@ export function AssetInstallActions({
           scope="user"
           installedScope={installedScope}
           busy={busy}
+          spinning={busyAction === 'user'}
           installLabel={<Trans>Install global</Trans>}
           uninstallLabel={<Trans>Uninstall</Trans>}
           installIcon={<Globe className="h-3.5 w-3.5" />}
