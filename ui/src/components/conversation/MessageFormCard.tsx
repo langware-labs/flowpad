@@ -105,7 +105,7 @@ export function MessageFormCard({ form, messageId, conversationId, isMine, answe
   const submit = async () => {
     setSending(true);
     try {
-      await submitFormAnswers(conversationId, messageId, values, files);
+      await submitFormAnswers(conversationId, messageId, form.form_id, values, files);
       sentRef.current = true;
       setEditing(false);
       setFiles([]);

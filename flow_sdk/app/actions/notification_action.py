@@ -1266,6 +1266,12 @@ async def handle_add_message(
         from flow_sdk.schema.data_spec.process_call_spec import call_attachment  # noqa: PLC0415
 
         raw_attachments = [*raw_attachments, call_attachment(prompt_call(call_prompt))]
+    if raw_attachments:
+        from flow_sdk.builtin.flow_message import FlowMessage, check_sent_values  # noqa: PLC0415
+
+        problems = await check_sent_values(raw_attachments, lambda: FlowMessage.sent_in(conv.id))
+        if problems:
+            return ApiFailResponse(message="; ".join(problems), status_code=400, data={"problems": problems})
 
     # Text-only WS fast path. The hub handles fan-out + delivery receipts, then
     # we materialize the hub-confirmed FM locally for the sender's UI. Skipped

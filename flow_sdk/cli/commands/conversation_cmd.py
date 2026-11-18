@@ -228,8 +228,10 @@ def summary_conversation(
     _ok({"conversation_id": cid, "summary": data.get("summary") or ""})
 
 
-def _form_attachment_line(a: dict) -> Optional[str]:
-    """A form or its answers, as an agent reads them — ``None`` for any other attachment."""
+def _form_attachment_line(a: dict, previous: Optional[dict] = None) -> Optional[str]:
+    """A form or its answers, as an agent reads them — ``None`` for any other attachment.
+    ``previous`` maps a form id to its earlier answers in this conversation (oldest first), so an
+    answer's changed fields are derived here, not read from the message."""
     from flow_sdk.schema.data_spec.message_form_spec import (  # noqa: PLC0415
         answers_in,
         answers_line,
@@ -247,11 +249,17 @@ def _form_attachment_line(a: dict) -> Optional[str]:
         return f"  📋 form {form.form_id}: {form_summary(form)} — {asks}"
     answers = answers_in(raw)
     if answers is not None:
-        return f"  ✅ answers to form {answers.form_id}: {answers_line(None, answers)}"
+        changed = None
+        if previous is not None:
+            before = previous.get(answers.form_id)
+            keys = [*answers.values, *(k for k in before or {} if k not in answers.values)]
+            changed = [k for k in keys if before is not None and before.get(k) != answers.values.get(k)]
+            previous[answers.form_id] = answers.values
+        return f"  ✅ answers to form {answers.form_id}: {answers_line(None, answers, changed)}"
     return None
 
 
-def _render_message(m: dict) -> str:
+def _render_message(m: dict, previous: Optional[dict] = None) -> str:
     """One message as an agent reads it: a header line, the full text, then
     one line per attachment saying where its bytes are — or that they are not
     on this machine yet."""
@@ -268,7 +276,7 @@ def _render_message(m: dict) -> str:
     lines.append(text if text else "(no text)")
     for a in m.get("attachments") or []:
         where = a.get("local_path") or ("(not on this machine — body not downloaded)" if not a.get("available") else "")
-        form_line = _form_attachment_line(a)
+        form_line = _form_attachment_line(a, previous)
         if form_line:
             lines.append(form_line)
             continue
@@ -296,7 +304,8 @@ def _render_transcript(data: dict) -> str:
         )
     scope = "in this thread" if data.get("thread_id") else "oldest first"
     lines += [f"Messages: showing {shown} of {total}, {scope}", ""]
-    lines.extend(_render_message(m) + "\n" for m in data.get("messages") or [])
+    previous: dict = {}
+    lines.extend(_render_message(m, previous) + "\n" for m in data.get("messages") or [])
     return "\n".join(lines).rstrip() + "\n"
 
 

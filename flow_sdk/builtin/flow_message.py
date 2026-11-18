@@ -329,9 +329,6 @@ def carried_value(attachments, kind: str) -> "tuple[str, dict] | None":
     a carrier whose preview is missing or not a JSON object reads as none."""
     import json as _json  # noqa: PLC0415
 
-    def _get(a, key):
-        return a.get(key) if isinstance(a, dict) else getattr(a, key, None)
-
     prefix = f"{kind}-"
     for a in attachments or []:
         if _get(a, "attachment_type") != AttachmentType.TYPE_ID:
@@ -353,6 +350,63 @@ def value_attachment(kind: str, value_id: str, payload: dict) -> dict:
     import json as _json  # noqa: PLC0415
 
     return {"attachment_type": "type_id", "data": f"{kind}-{value_id}", "prompt_preview": _json.dumps(payload)}
+
+
+#: Typed values a message carries that every door checks: ``<prefix>-<id>`` → the kind of its
+#: ``prompt_preview``. A new message type is a schema registered here plus a renderer — never
+#: an endpoint. A schema may add ``check_in(value, find) -> list[str]`` for rules that need the
+#: conversation (answers must fit their form).
+VALUE_KINDS: dict[str, str] = {"message_form": "message.form", "form_answers": "message.form_answers"}
+
+
+def check_values(attachments, *, find) -> list[str]:
+    """Problems with the typed values ``attachments`` carry, one line each — ``[]`` when they fit.
+    ``find(prefix, id)`` returns another value carried in the same conversation, or ``None``.
+    Called by both doors (the desktop's ``handle_add_message``, the hub's ``add_message``)."""
+    from flow_sdk.schema.data_spec._kinds import register_builtin_kinds, resolve_kind  # noqa: PLC0415
+
+    problems: list[str] = []
+    for prefix, kind in VALUE_KINDS.items():
+        if not any(str(_get(a, "data") or "").startswith(f"{prefix}-") for a in attachments or []):
+            continue
+        found = carried_value(attachments, prefix)
+        if found is None:
+            problems.append(f"{prefix}: its value is missing or not a JSON object")
+            continue
+        schema = resolve_kind(kind)
+        if schema is Any:
+            register_builtin_kinds()
+            schema = resolve_kind(kind)
+        try:
+            value = schema.model_validate(found[1])
+        except ValueError as exc:
+            problems.append(f"{prefix}: {exc}")
+            continue
+        check_in = getattr(schema, "check_in", None)
+        if check_in is not None:
+            problems.extend(check_in(value, find))
+    return problems
+
+
+async def check_sent_values(attachments, load_messages) -> list[str]:
+    """``check_values`` at a door: ``load_messages()`` (awaited only when a typed value rides the
+    send) returns the conversation's messages, whose carried values ``find`` reads."""
+    if not any(str(_get(a, "data") or "").split("-", 1)[0] in VALUE_KINDS for a in attachments or []):
+        return []
+    sent = await load_messages() or []
+
+    def find(prefix: str, value_id: str):
+        for fm in sent:
+            found = carried_value(fm.attachment, prefix)
+            if found is not None and found[0] == value_id:
+                return found[1]
+        return None
+
+    return check_values(attachments, find=find)
+
+
+def _get(a, key):
+    return a.get(key) if isinstance(a, dict) else getattr(a, key, None)
 
 
 def carrier_marker(attachments) -> "dict | None":
