@@ -33574,6 +33574,10 @@ msgstr "This document no longer exists."
 msgid "This driver takes no config."
 msgstr "This driver takes no config."
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "This endpoint signs in to Google with the hub's own identity. No key is needed, and a key entered here would not be used."
+msgstr "This endpoint signs in to Google with the hub's own identity. No key is needed, and a key entered here would not be used."
+
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "this endpoint's own key"
 msgstr "this endpoint's own key"

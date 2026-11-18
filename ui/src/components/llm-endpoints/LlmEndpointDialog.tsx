@@ -128,6 +128,11 @@ export function LlmEndpointDialog({
   const [busy, setBusy] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [storedHint, setStoredHint] = useState('');
+  // A Vertex root the hub signs in to with its own Google identity stores no key (so there is no hint)
+  // yet reports a credential. It needs none, and a key typed here would be ignored.
+  const ownHop = tierChain.data?.hops.find((hop) => hop.id === editing?.id);
+  const usesHubIdentity =
+    !local && draft.provider === 'vertex' && !!editing && !storedHint && !!ownHop?.is_root && ownHop.has_credential;
 
   useEffect(() => {
     if (!open) return;
@@ -394,16 +399,25 @@ export function LlmEndpointDialog({
                   </div>
                 </div>
               )}
-              <CredentialField
-                endpointId={local ? undefined : editing?.id}
-                provider={draft.provider}
-                credentialHint={storedHint}
-                placeholder={spec?.keyPlaceholder}
-                value={draft.key}
-                onChange={(key) => setDraft((d) => ({ ...d, key }))}
-                onStored={setStoredHint}
-                disabled={readOnly}
-              />
+              {usesHubIdentity ? (
+                <p className="text-sm text-muted-foreground" data-testid="hub-identity-note">
+                  <Trans>
+                    This endpoint signs in to Google with the hub's own identity. No key is needed, and a key entered
+                    here would not be used.
+                  </Trans>
+                </p>
+              ) : (
+                <CredentialField
+                  endpointId={local ? undefined : editing?.id}
+                  provider={draft.provider}
+                  credentialHint={storedHint}
+                  placeholder={spec?.keyPlaceholder}
+                  value={draft.key}
+                  onChange={(key) => setDraft((d) => ({ ...d, key }))}
+                  onStored={setStoredHint}
+                  disabled={readOnly}
+                />
+              )}
               {local && editing?.credential_kind && (
                 <p className="text-xs text-muted-foreground">
                   {editing.credential_kind === 'service_account'
