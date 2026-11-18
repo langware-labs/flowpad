@@ -804,14 +804,16 @@ export function ConversationView({
   // anchor) renders as a slim centered system line.
   /** ``threadTask``: the task a collapsed thread is about — shown on the message the stack shows (its newest),
    *  so a task's thread offers its chips without expanding it. */
-  const diagnosisHeadline = useMemo(() => {
+  const diagnosisArrived = useMemo(() => {
     for (const fm of messagesById.values()) {
       // The kind, or the file every diagnosis carries (a row a channel delivered may have lost its kind).
-      const isDiagnosis =
-        fm.kind === FlowMessageKind.DIAGNOSIS || (fm.attachment ?? []).some((file) => attachmentDataString(file).split('/').pop() === DIAGNOSIS_FILE);
-      if (isDiagnosis) return (fm.text ?? '').trim().split('\n')[0] || null;
+      if (
+        fm.kind === FlowMessageKind.DIAGNOSIS ||
+        (fm.attachment ?? []).some((file) => attachmentDataString(file).split('/').pop() === DIAGNOSIS_FILE)
+      )
+        return true;
     }
-    return null;
+    return false;
   }, [messagesById]);
   const lastTicketEventId = useMemo(() => {
     for (let i = orderedItems.length - 1; i >= 0; i--) {
@@ -894,8 +896,7 @@ export function ConversationView({
           deleteForEveryone={conversation?.remote === true}
           selfIds={selfIds}
           isHelpdesk={isHelpdeskConversation}
-          // Only a request still saying "Diagnosis: on its way" uses it (the bubble matches that line).
-          diagnosisHeadline={diagnosisHeadline}
+          diagnosisArrived={diagnosisArrived}
           viewerCloudUserId={cloudUserId}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}

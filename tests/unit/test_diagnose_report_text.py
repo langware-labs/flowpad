@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.app.actions.ask_for_help_action import bottom_line
+from flow_sdk.app.actions.ask_for_help_action import bottom_line, diagnosis_text
 from flow_sdk.diagnose.report_text import describes_a_problem, no_description_instruction
 from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisCause, DiagnosisSpec, DiagnosisStatus
 
@@ -47,3 +47,17 @@ def test_an_unknown_cause_leads_with_what_the_diagnosis_found() -> None:
 def test_an_unknown_cause_with_nothing_written_down_keeps_the_fixed_sentence() -> None:
     diagnosis = DiagnosisSpec(status=DiagnosisStatus.UNRECOGNIZED, cause=DiagnosisCause.UNKNOWN)
     assert bottom_line(diagnosis) == "The cause is unclear — Flowpad support can look into it."
+
+
+def test_a_diagnosis_the_person_must_act_on_says_the_step_under_its_bottom_line() -> None:
+    diagnosis = DiagnosisSpec(
+        status=DiagnosisStatus.NEEDS_ACTION,
+        cause=DiagnosisCause.PROJECT,
+        title="The folder of publish-flow-browser is gone",
+        fix="Remove it in Projects > Cleanup, Missing folder tab.",
+    )
+    assert diagnosis_text(diagnosis) == (
+        "In your project: The folder of publish-flow-browser is gone\n\nRemove it in Projects > Cleanup, Missing folder tab."
+    )
+    fixed = diagnosis.model_copy(update={"status": DiagnosisStatus.FIXED})
+    assert diagnosis_text(fixed) == bottom_line(fixed), "a fix already made is the bottom line itself"

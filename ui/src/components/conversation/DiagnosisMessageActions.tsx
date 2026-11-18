@@ -89,7 +89,7 @@ export function DiagnosisMessageActions({ conversationId, isMine }: { conversati
           {[
             [t`What happened`, d.symptoms || d.summary],
             [t`Root cause`, d.rca],
-            [t`What was done`, d.fix],
+            [d.status === 'needs_action' ? t`What to do` : t`What was done`, d.fix],
             [t`Cause`, d.cause_asset ? `${d.cause} — ${d.cause_asset}` : d.cause],
           ]
             .filter(([, v]) => v)

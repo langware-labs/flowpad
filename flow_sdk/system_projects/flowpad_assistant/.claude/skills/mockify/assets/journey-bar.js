@@ -138,7 +138,7 @@
     const id = J[cur].id;
     if (open.startsWith('change:')) { open = ''; panel.hidden = true; }   // a change belongs to its screen
     if (typeof hoverEl !== 'undefined' && mini) { mini = null; hoverEl.hidden = true; }
-    if (record && location.hash.slice(1) !== id) history.pushState(null, '', '#' + id);
+    if (record && location.hash.slice(1) !== id) history.pushState(null, '', location.href.split('#')[0] + '#' + id);   // absolute: a <base> on another origin makes a bare '#id' cross-origin, and pushState throws
     show(id);
     if (typeof nextIx !== 'undefined') nextIx = 0;
     if (allMode) changesOf(J[cur]).forEach((c) => { if (!isRev(J[cur], c)) setRev(J[cur], c, true); });

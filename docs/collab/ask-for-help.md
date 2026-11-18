@@ -211,7 +211,7 @@ drops the `kind` field (`derive_help_request_kind` re-derives it on arrival). Th
 
 - `ask-for-help` writes the conversation and the person's `help_request` message at once and answers; the diagnosis
   runs in the background (`_diagnose_then_deliver`) and lands as a `diagnosis` message of its own — its text the one
-  bottom line (`bottom_line`), `diagnosis.value.json` the details (held here unless the context is shared). Only then is
+  bottom line (`bottom_line`) and, when the person must act, the step to take under it (`diagnosis_text`), `diagnosis.value.json` the details (held here unless the context is shared). Only then is
   the request delivered.
 - **Diagnose & fix** (warnings popover, error toasts, the error screen, Error details — `diagnoseAndFix`) is one click,
   no window: `recipients: []`, `purpose: repair` (the repairing agent, told it was asked to fix and which folders are

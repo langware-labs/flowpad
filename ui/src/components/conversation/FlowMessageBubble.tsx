@@ -243,9 +243,8 @@ interface FlowMessageBubbleProps {
    *  responder's `sender_id` is intentionally absent from the guest's roster,
    *  so we suppress the unresolved-sender alert and its telemetry. */
   isHelpdesk?: boolean;
-  /** The diagnosis this help request was waiting for, once it arrived: its bottom line replaces the request's
-   *  "Diagnosis: on its way". */
-  diagnosisHeadline?: string | null;
+  /** A diagnosis message is in this conversation: a help request stops saying "Diagnosis: on its way". */
+  diagnosisArrived?: boolean;
   /** The viewer's hub user id. A hub-mirrored row names its sender by hub
    *  id while a locally written row names the local user, so "this is me"
    *  has to accept both — otherwise my own replies wear two names. */
@@ -317,7 +316,7 @@ export function FlowMessageBubble({
   rosterReady = false,
   isHelpdesk = false,
   viewerCloudUserId = null,
-  diagnosisHeadline = null,
+  diagnosisArrived = false,
   attachmentProjectId,
   messageAttachments,
   messageTask = null,
@@ -583,8 +582,8 @@ export function FlowMessageBubble({
     content:
       isConvIdPointer || issueCard
         ? ''
-        : diagnosisHeadline
-          ? (fm.text ?? '').replace(/Diagnosis: on its way\s*$/, `Diagnosis: ${diagnosisHeadline}`)
+        : diagnosisArrived
+          ? (fm.text ?? '').replace(/\s*Diagnosis: on its way\s*$/, '')
           : (fm.text ?? ''),
     sender_id: fm.sender_id ?? '',
     timestamp,

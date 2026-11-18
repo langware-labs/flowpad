@@ -371,6 +371,18 @@ def bottom_line(d) -> str:
     return "In your " + ("project" if d.cause is DiagnosisCause.PROJECT else "computer") + ": " + (d.title or d.summary)
 
 
+def diagnosis_text(d) -> str:
+    """A diagnosis message's text: the bottom line, then -- when the person has something to do -- that step.
+    A diagnosis nobody can act on from the message is not an answer."""
+    from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisStatus  # noqa: PLC0415
+
+    line = bottom_line(d)
+    step = (d.fix or "").strip()
+    if d.status is not DiagnosisStatus.NEEDS_ACTION or not step or step in line:
+        return line
+    return f"{line}\n\n{step}"
+
+
 #: "Diagnose & fix" is the person asking for the fix -- the diagnose agent otherwise only reports.
 _REPAIR_ASK = (
     "The person pressed Diagnose & fix on this error: they ASKED you to fix it. Repair the cause when the "
@@ -458,7 +470,7 @@ async def _post_diagnosis(conv, ask: AskForHelpRequest, diagnosis, diagnosis_id,
     if diagnosis is None:
         text, files = "The diagnosis could not run. You can still report it.", {}
     else:
-        text = bottom_line(diagnosis)
+        text = diagnosis_text(diagnosis)
         files = {DIAGNOSIS_FILE: value_json(diagnosis.model_copy(update={"logs": [], "context": None}))}
     shared = _shares_context(ask) and DIAGNOSIS_FILE not in set(ask.left_out)
     if files and not shared:
