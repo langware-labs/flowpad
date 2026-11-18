@@ -11,9 +11,9 @@ body{margin:0;background:var(--surface-0);color:var(--text-primary);font:14px/1.
 header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin-bottom:16px}
 header>div:first-child{flex:1;min-width:240px}
 h1{margin:0;font-size:20px;font-weight:600}
-.desc{margin:4px 0 0;color:var(--text-secondary);font-size:13px;max-width:900px}
+.desc,.sum{margin:4px 0 0;color:var(--text-secondary);font-size:13px}
+.desc{max-width:900px}
 .desc:empty{display:none}
-.sum{margin:4px 0 0;color:var(--text-secondary);font-size:13px}
 .toggle{display:inline-flex;background:var(--surface-2);border-radius:8px;padding:3px}
 .toggle button{border:0;background:none;color:var(--text-secondary);font:inherit;font-size:13px;font-weight:500;padding:4px 12px;border-radius:6px;cursor:pointer}
 .toggle button[aria-pressed=true]{background:var(--surface-1);color:var(--text-primary);box-shadow:0 1px 2px rgba(0,0,0,.08)}
@@ -112,19 +112,21 @@ const zoom=(f,cx,cy)=>{const r=svg.getBoundingClientRect();const fx=cx===undefin
   const w=Math.min(W*4,Math.max(W/12,v.w*f)),h=w/v.w*v.h;v={x:v.x+(v.w-w)*fx,y:v.y+(v.h-h)*fy,w,h};apply()};
 svg.addEventListener('wheel',e=>{e.preventDefault();if(e.ctrlKey||e.metaKey)zoom(e.deltaY>0?1.1:.9,e.clientX,e.clientY);else{const k=v.w/svg.getBoundingClientRect().width;v.x+=e.deltaX*k;v.y+=e.deltaY*k;apply()}},{passive:false});
 let drag=null;
-svg.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,v:{...v}};svg.setPointerCapture(e.pointerId)});
-svg.addEventListener('pointermove',e=>{if(!drag)return;const k=v.w/svg.getBoundingClientRect().width;v.x=drag.v.x-(e.clientX-drag.x)*k;v.y=drag.v.y-(e.clientY-drag.y)*k;apply()});
+svg.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,v:{...v},k:v.w/svg.getBoundingClientRect().width};svg.setPointerCapture(e.pointerId)});
+svg.addEventListener('pointermove',e=>{if(!drag)return;v.x=drag.v.x-(e.clientX-drag.x)*drag.k;v.y=drag.v.y-(e.clientY-drag.y)*drag.k;apply()});
 svg.addEventListener('pointerup',()=>drag=null);svg.addEventListener('pointercancel',()=>drag=null);
 document.getElementById('z-fit').onclick=fit;document.getElementById('z-in').onclick=()=>zoom(.8);document.getElementById('z-out').onclick=()=>zoom(1.25);
 addEventListener('resize',fit);fit();
-const light=id=>{document.querySelectorAll('.hot').forEach(el=>el.classList.remove('hot'));if(!id)return;
+let lit=null;
+const light=id=>{if(id===lit)return;lit=id;document.querySelectorAll('.hot').forEach(el=>el.classList.remove('hot'));if(!id)return;
   document.querySelectorAll('.node,[data-for]').forEach(el=>{if((el.dataset.id||el.dataset.for)===id)el.classList.add('hot')});
   document.querySelectorAll('.edge').forEach(el=>{if(el.dataset.from===id||el.dataset.to===id)el.classList.add('hot')})};
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 document.querySelectorAll('.node').forEach(el=>{
-  const show=e=>{if(drag)return;const i=INFO[el.dataset.id];light(el.dataset.id);
-    tip.innerHTML='<b>'+(i.n?i.n+'. ':'')+esc(i.label)+'</b><span class="k">'+esc(i.kind)+(i.state?' · '+esc(i.state):'')+'</span>'+(i.note?'<span class="n">'+esc(i.note)+'</span>':'');
-    tip.style.display='block';tip.style.left=Math.min(innerWidth-328,e.clientX+14)+'px';tip.style.top=Math.max(8,e.clientY-72)+'px'};
+  // The tooltip is built once per node; a move only carries it along.
+  const show=e=>{if(drag)return;const i=INFO[el.dataset.id];
+    if(lit!==el.dataset.id||tip.style.display!=='block')tip.innerHTML='<b>'+(i.n?i.n+'. ':'')+esc(i.label)+'</b><span class="k">'+esc(i.kind)+(i.state?' · '+esc(i.state):'')+'</span>'+(i.note?'<span class="n">'+esc(i.note)+'</span>':'');
+    light(el.dataset.id);tip.style.display='block';tip.style.left=Math.min(innerWidth-328,e.clientX+14)+'px';tip.style.top=Math.max(8,e.clientY-72)+'px'};
   const hide=()=>{tip.style.display='none';light(null)};
   el.addEventListener('pointermove',show);el.addEventListener('pointerleave',hide);
   el.addEventListener('focus',()=>{const r=el.getBoundingClientRect();show({clientX:r.right,clientY:r.top+72})});el.addEventListener('blur',hide)});

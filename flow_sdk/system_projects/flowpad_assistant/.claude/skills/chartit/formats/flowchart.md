@@ -45,3 +45,14 @@ Three rules — they are the whole point of this type:
   python3 -I <this skill>/templates/flowchart/check_flowchart.py "$D"
   DM check --<ns>--.chartit.flowchart "$(cat "$D/flowchart.json")"     # the schema; data-management skill
   ```
+- Then write the copy that opens anywhere — **one HTML file**, next to `flowchart.json`:
+  ```bash
+  python3 -I <this skill>/templates/flowchart/export_html.py "$D"     # writes "$D/<name>.html"
+  ```
+  It holds the flow, the State and Notes panels, hover, zoom and a Table view, in light and dark, with
+  nothing loaded from the network — the file to send to someone, or to open where there is no Flowpad.
+  Run it again after every change to `flowchart.json`; the file is a copy, never the source, so never
+  edit it by hand. Show it with `flow show file "$D/<name>.html"` when the user asks for the file, or
+  when this Flowpad cannot draw a `flowchart` chart. It leaves out what needs Flowpad: change requests
+  and **Open ↗**. Its positions come from the script's own simple top-down layout, so they can differ
+  from the editor's; look at the file once before you hand it over.
