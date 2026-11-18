@@ -106,8 +106,8 @@ class FakeFlowpad:
             return response
         return _Response(404, message=f"not found: {method} {path}")
 
-    async def fork(self, process_id: str):
-        self.forked.append(process_id)
+    async def fork(self, process_id: str, name: str):
+        self.forked.append((process_id, name))
         return None if self.fork_refused else FORK_ID
 
     async def ask(self, process_id: str, prompt: str) -> str | None:
@@ -291,7 +291,7 @@ def test_nudge_skips_a_busy_process(monitored):
 def test_nudge_asks_a_fork_not_the_session(monitored):
     monitored.answers = [_reply("continue_to_work")]
     assert nudge().exit_code == 0
-    assert monitored.forked == [AP_ID]
+    assert monitored.forked == [(AP_ID, f"goal and stop condition check for monitor {NAME}")]
     assert [pid for pid, _ in monitored.asked] == [FORK_ID]
     question = monitored.asked[0][1]
     assert GOAL in question and STOP in question

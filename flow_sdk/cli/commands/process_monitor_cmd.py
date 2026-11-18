@@ -208,10 +208,11 @@ def monitor_process(
         "folder": str(monitor_folder)})
 
 
-async def _try_fork_agentic_process(process_id: str) -> Optional[str]:
-    """A headless fork of the session, made here through the SDK: its id, or None when there is no session
-    to fork or its worker cannot fork. The caller decides what None means."""
+async def _try_fork_agentic_process(process_id: str, name: str) -> Optional[str]:
+    """A headless fork of the session named *name*, made here through the SDK: its id, or None when there is
+    no session to fork or its worker cannot fork. The caller decides what None means."""
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.naming.state import SessionNameState, reduce_name  # noqa: PLC0415
     from flow_sdk.migrations.runner import _bootstrap_local  # noqa: PLC0415
 
     await _bootstrap_local()
@@ -229,7 +230,10 @@ async def _try_fork_agentic_process(process_id: str) -> Optional[str]:
             # Only asked a question: no terminal, whatever the session runs in.
             pty_mode=False,
             shared_context_entities=list(parent.shared_context_entities or []),
-            name=None,
+            # Pinned, as a person's rename is: the question it is asked must not rename it.
+            name=name,
+            auto_rename=False,
+            naming_state=reduce_name(SessionNameState(), user_name=name),
         )
     except NotImplementedError:
         return None
@@ -263,9 +267,9 @@ class GoalCheck(NamedTuple):
     problem: Optional[str]
 
 
-async def try_check_goal(process_id: str, goal: str, stop_condition: str) -> GoalCheck:
+async def try_check_goal(process_id: str, goal: str, stop_condition: str, monitor_name: str) -> GoalCheck:
     """Fork the session and ask the fork, here."""
-    fork_id = await _try_fork_agentic_process(process_id)
+    fork_id = await _try_fork_agentic_process(process_id, f"goal and stop condition check for monitor {monitor_name}")
     if fork_id is None:
         return GoalCheck(fork_id=None, verdict=None, problem=None)
     prompt = _check_prompt(goal, stop_condition)
@@ -347,7 +351,7 @@ def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `moni
         return
     # No lock against a second check: the scheduler runs one instance of a trigger's job at a time
     # (APScheduler's max_instances=1), and the job awaits this command.
-    check = run_async(try_check_goal(process_id, goal, stop_condition))
+    check = run_async(try_check_goal(process_id, goal, stop_condition, name))
     fork_id, verdict, problem = check.fork_id, check.verdict, check.problem
     if fork_id is None:
         _prompt_session(port, process_id, _self_check_prompt(goal, stop_condition, key))
