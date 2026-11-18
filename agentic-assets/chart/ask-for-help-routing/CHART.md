@@ -7,7 +7,7 @@ description: Where a help request goes today, from the click to the hub. The use
   2026-11-18.
 format: excalidraw
 session: cb455f48-3c7e-4352-9f5c-a83fcc90d6d3
-version: 12
+version: 13
 ---
 The real flow, not a design. Sources: `flow_sdk/app/actions/ask_for_help_action.py` (capture, `help-recipients`, `_open_ticket`, `_open_person_ask`, `_report_target`), `flow_sdk/app/actions/flow_message_action.py` (`resolve_helpdesk`, `_hub_default_helpdesk`), `flow_sdk/app/helpdesk_resolver.py`, `ui/src/components/help/AskForHelpDialog.tsx`, and the hub's `flowpad/config.py` (`HELPDESK_PROJECT_ID`).
 
@@ -192,8 +192,8 @@ or startup"]
   N23 --> N24
   N23 -->|none| N26
   N24 --> N25
-  N27 --> N28
-  N28 --> N29
+  N28 --> N28
+  N29 --> N29
   N29 --> N30
   N29 --> N31
   N17 --> N18
