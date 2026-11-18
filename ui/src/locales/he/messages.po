@@ -157,6 +157,10 @@ msgstr "…"
 msgid "…or a repository URL"
 msgstr "…או כתובת URL של מאגר"
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "./open-ticket.sh"
+msgstr ""
+
 #: src/components/credentials/EnvLocalBlockedNotice.tsx
 msgid ".env.local is not ignored by git here, so a value written there would be committable. Add it to .gitignore first, or keep this credential in the encrypted vault."
 msgstr ".env.local אינו מוחרג מ-git כאן, לכן ערך שייכתב שם עלול להיכלל ב-commit. הוסיפו אותו ל-.gitignore קודם, או שמרו את האישור הזה בכספת המוצפנת."
@@ -1033,6 +1037,8 @@ msgstr "{0} סוד{1}"
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/StreamInboxTags.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "{0} selected"
@@ -1207,6 +1213,10 @@ msgstr ""
 msgid "{answererName}'s answers — updated"
 msgstr ""
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "{applied} applied · no automation started"
+msgstr ""
+
 #: src/components/conversation/conversation-category.ts
 msgid "{base} help desk"
 msgstr "דסק עזרה של {base}"
@@ -1311,6 +1321,15 @@ msgstr "החיבור ל-{displayName} נכשל"
 #: src/components/rag/RagView.tsx
 msgid "{documentCount} docs · {chunkCount} chunks"
 msgstr "{documentCount} מסמכים · {chunkCount} מקטעים"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "{done} classified · {wouldChange} would change · {failed} failed"
+msgstr ""
+
+#. placeholder {0}: ids.length
+#: src/components/tags/ClassifyTable.tsx
+msgid "{done} of {0} classified"
+msgstr ""
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "{done} of {total} set up"
@@ -1579,6 +1598,10 @@ msgstr "{n} דולגו: לא זמינות."
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr "תמונת הפרופיל של {name}"
+
+#: src/components/tags/MessageTags.tsx
+msgid "{name} failed"
+msgstr ""
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "{name} has no account to sign into — it runs on an LLM key or endpoint."
@@ -2438,6 +2461,10 @@ msgstr "קריאה כאן משתמשת ב"
 msgid "A capped sub-budget of yours, for an agent or app."
 msgstr ""
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "a command in the project folder"
+msgstr ""
+
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "a credential"
 msgstr ""
@@ -2469,6 +2496,10 @@ msgstr "מופע Desktop או מחשב, ומזהה ערוץ בתוכו"
 #: src/components/automations/KindGallery.tsx
 msgid "A document is saved, a folder gets a new file."
 msgstr "מסמך נשמר, לתיקייה נוסף קובץ חדש."
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "A dry run: nothing is tagged until you apply, and no automation starts."
+msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "A few words about what went wrong help us look in the right place."
@@ -2527,6 +2558,14 @@ msgstr "מכונה"
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "A member"
+msgstr ""
+
+#: src/components/automations/automation-words.ts
+msgid "a message arrives"
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "a message is tagged"
 msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
@@ -2654,6 +2693,10 @@ msgstr "לפני זמן מה"
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "a wizard name"
 msgstr "שם של אשף"
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "a worker runs it"
+msgstr ""
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "A workspace is a folder of related projects. It starts empty."
@@ -2893,6 +2936,7 @@ msgstr "פעילות"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
+#: src/components/tags/StreamInboxTags.tsx
 #: src/hooks/use-add-dependency.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Add"
@@ -2972,6 +3016,14 @@ msgstr "הוספת מקור"
 msgid "Add a staff member by email"
 msgstr ""
 
+#: src/components/automations/MessageRulePage.tsx
+msgid "Add a step."
+msgstr ""
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Add a tag under {nodeName}"
+msgstr ""
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
 msgstr "חיפוש סוכן להוספה…"
@@ -3022,6 +3074,10 @@ msgstr "יש להוסיף לפחות כתובת דוא״ל אחת."
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Add at least one variable"
 msgstr "יש להוסיף לפחות משתנה אחד"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Add automation"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Add Bookmark"
@@ -3234,6 +3290,7 @@ msgid "Add source"
 msgstr "הוספת מקור"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Add step"
 msgstr "הוספת שלב"
 
@@ -4145,6 +4202,10 @@ msgstr "טווח זמן עוגן"
 msgid "and {more} more"
 msgstr "ועוד {more}"
 
+#: src/components/automations/MessageRulePage.tsx
+msgid "and only if"
+msgstr ""
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Annotate image"
 msgstr "הערות על התמונה"
@@ -4477,6 +4538,10 @@ msgstr ""
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "הוספה לתור הפרומפטים של העובד הנוכחי, מסומנת בהודעה זו."
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "applied"
+msgstr ""
+
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Applied to each member's own default endpoint; a member's budget can only be narrower."
 msgstr "חל על נקודת הקצה ברירת המחדל של כל חבר. תקציב של חבר יכול להיות רק נמוך יותר."
@@ -4489,8 +4554,14 @@ msgstr "חל על"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
+#: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "Apply"
 msgstr "החילו"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Apply to message"
+msgstr ""
 
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Applying a known fix"
@@ -4699,8 +4770,8 @@ msgid "Ask Flowpad Assistant to change {displayName}"
 msgstr "בקשו מ-Flowpad Assistant לשנות את {displayName}"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "ask for a refund or dispute a charge"
-msgstr "מבקשות החזר כספי או מערערות על חיוב"
+#~ msgid "ask for a refund or dispute a charge"
+#~ msgstr "מבקשות החזר כספי או מערערות על חיוב"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
@@ -5165,6 +5236,7 @@ msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/BusView.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/conversation/channel-attribution.tsx
@@ -5300,11 +5372,10 @@ msgid "Back to stream inbox"
 msgstr "חזרה לדואר הנכנס"
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Back to tag"
-msgstr ""
+#~ msgid "Back to tag"
+#~ msgstr ""
 
 #: src/components/graph-view/TagGraphView.tsx
-#: src/components/tags/StreamInboxTags.tsx
 msgid "Back to tags"
 msgstr ""
 
@@ -5992,6 +6063,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/tags/StreamInboxTags.tsx
+#: src/components/tags/StreamInboxTags.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -6155,8 +6227,8 @@ msgid "Catalog unavailable. Enter a model ID explicitly."
 msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "Catch"
-msgstr "לתפוס"
+#~ msgid "Catch"
+#~ msgstr "לתפוס"
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Caught by"
@@ -6258,6 +6330,7 @@ msgstr ""
 msgid "Change your answers"
 msgstr ""
 
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "changed"
 msgstr "השתנה"
@@ -6303,8 +6376,8 @@ msgid "Changes queued on this doc"
 msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Changes saved"
-msgstr ""
+#~ msgid "Changes saved"
+#~ msgstr ""
 
 #: src/components/asset-counters/channel-project-counters.tsx
 #: src/components/data-sources/MessageChannelsList.tsx
@@ -6723,8 +6796,35 @@ msgstr ""
 msgid "classification.json"
 msgstr "classification.json"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/MessageTags.tsx
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Classify"
+msgstr ""
+
+#. placeholder {0}: ids.length
+#: src/components/tags/ClassifyTable.tsx
+msgid "Classify {0} messages"
+msgstr ""
+
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Classify arriving messages"
+msgstr ""
+
+#: src/components/automations/automation-words.ts
+msgid "classify it"
+msgstr ""
+
+#: src/components/automations/automation-words.ts
+msgid "classify it under {root}"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Classify now"
+msgstr ""
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Classifying…"
 msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
@@ -6938,6 +7038,7 @@ msgstr "נקו את אינדקס החיפוש?"
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Clear selection"
 msgstr "נקו בחירה"
@@ -7128,6 +7229,7 @@ msgstr "משבוט…"
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/tabs/TabStrip.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/LaunchDialog.tsx
@@ -7238,8 +7340,8 @@ msgid "Close tab"
 msgstr "סגרו כרטיסייה"
 
 #: src/components/tags/MessageTags.tsx
-msgid "Close tags"
-msgstr ""
+#~ msgid "Close tags"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Close terminal"
@@ -7751,7 +7853,7 @@ msgstr "אישור"
 msgid "Confirm deletion"
 msgstr "אישור מחיקה"
 
-#: src/components/automations/MessageRulePage.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "confirm which charge is in question, explain the refund path, and draft the reply. Don’t send it."
 msgstr "לוודא על איזה חיוב מדובר, להסביר את דרך ההחזר ולנסח את התשובה. לא לשלוח אותה."
 
@@ -8079,6 +8181,7 @@ msgstr "קביעת רמת מאמץ החשיבה"
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
 msgid "Conversation"
@@ -8470,6 +8573,10 @@ msgstr "לא ניתן היה להפעיל את הארגון"
 msgid "Could not add codes"
 msgstr "הוספת הקודים נכשלה"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Could not add tag"
+msgstr ""
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Could not add the help desk."
 msgstr "לא ניתן היה להוסיף את דסק העזרה."
@@ -8486,6 +8593,10 @@ msgstr "לא ניתן להוסיף הערות לתצוגה"
 #: src/components/conversation/PromptCallCard.tsx
 msgid "Could not answer the prompt"
 msgstr "לא ניתן היה לענות על הפרומפט"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Could not apply"
+msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Could not ask for help"
@@ -8525,6 +8636,7 @@ msgid "Could not change enabled state"
 msgstr "לא ניתן היה לשנות את מצב ההפעלה"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Could not change it"
 msgstr "לא ניתן לשנות"
@@ -8544,7 +8656,7 @@ msgid "Could not change role"
 msgstr "לא ניתן היה לשנות את התפקיד"
 
 #: src/components/tags/MessageTags.tsx
-#: src/components/tags/MessageTags.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Could not change tags"
 msgstr ""
 
@@ -8563,6 +8675,11 @@ msgstr "לא ניתן לשנות את מקום הרצת הפרויקט"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not check sign-in"
 msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
+
+#: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Could not classify"
+msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Could not collect the context"
@@ -8788,8 +8905,8 @@ msgid "Could not grant access."
 msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Could not inspect tag usage"
-msgstr ""
+#~ msgid "Could not inspect tag usage"
+#~ msgstr ""
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Could not install the package"
@@ -8979,6 +9096,11 @@ msgstr "לא ניתן היה לפתוח את תת-הזרימה"
 msgid "Could not open the workspace folder"
 msgstr "לא ניתן לפתוח את תיקיית סביבת העבודה"
 
+#. placeholder {0}: error ?? path
+#: src/components/docx-viewer/DocxViewer.tsx
+msgid "Could not open this document: {0}"
+msgstr ""
+
 #: src/components/assets/editor/document-file/DocumentFileViewer.tsx
 msgid "Could not open this document: {error}"
 msgstr "לא ניתן לפתוח את המסמך הזה: {error}"
@@ -9021,8 +9143,8 @@ msgid "Could not read {what}: {message}"
 msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Could not read classification settings"
-msgstr ""
+#~ msgid "Could not read classification settings"
+#~ msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
@@ -9203,6 +9325,10 @@ msgstr "לא ניתן להריץ את {0}"
 msgid "Could not run it"
 msgstr "לא ניתן היה להריץ אותה"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Could not run it again"
+msgstr ""
+
 #: src/components/conversation/use-it-reply-actions.ts
 msgid "Could not run it there"
 msgstr "לא ניתן להריץ שם"
@@ -9237,7 +9363,6 @@ msgstr "לא ניתן לשמור"
 msgid "Could not save allowed senders"
 msgstr "לא ניתן לשמור את השולחים המורשים"
 
-#: src/components/tags/StreamInboxTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Could not save classification settings"
 msgstr ""
@@ -9297,6 +9422,10 @@ msgstr "לא ניתן היה לשמור את המפתח"
 #: src/components/agents/MailboxListsEditor.tsx
 msgid "Could not save the mailbox lists"
 msgstr "לא ניתן לשמור את רשימות תיבת הדואר"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Could not save the message. Try again."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Could not save the override"
@@ -10051,6 +10180,7 @@ msgstr "קישורים צולבים"
 msgid "current"
 msgstr "נוכחי"
 
+#: src/components/tags/StreamInboxTags.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Current"
@@ -10093,6 +10223,10 @@ msgstr "שורת המאגר הנוכחית שנפתרה — הערות פרומ�
 msgid "Current resolved buffer row (may differ from stored line if terminal scrolled)"
 msgstr "שורת המאגר שזוהתה כעת (עשויה להיות שונה מהשורה השמורה אם הטרמינל נגלל)"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Current tags"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Current Time"
 msgstr "הזמן הנוכחי"
@@ -10120,6 +10254,10 @@ msgstr "סוכנים מותאמים"
 #: src/components/settings-view/settings-utils.ts
 msgid "Custom API base URL for Anthropic"
 msgstr "כתובת URL בסיסית מותאמת אישית עבור Anthropic"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Custom colour"
+msgstr ""
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Custom credentials"
@@ -11068,7 +11206,6 @@ msgstr "יש לתאר את היישום, השירות, המשאב או התוכ�
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/project-home/EditDependencyDialog.tsx
-#: src/components/tags/StreamInboxTags.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "תיאור"
@@ -11622,6 +11759,7 @@ msgstr "הושלם"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
+#: src/components/tags/MessageTags.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
@@ -11968,6 +12106,10 @@ msgstr ""
 msgid "Each machine is shut down and removed. This cannot be undone."
 msgstr "כל מכונה תיכבה ותוסר. לא ניתן לבטל פעולה זו."
 
+#: src/components/automations/ClassifierPage.tsx
+msgid "Each new incoming message gets one tag from your tag tree, or none when nothing fits. A tag can start automations."
+msgstr ""
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
 msgstr "לכל אדם מוקצה תקציב אישי מתוך תקציב הצוות. השאירו את הסכום ריק כדי לא להגביל. מי שכבר חבר בצוות יעודכן הסכום שלו, במקום להתווסף פעמיים."
@@ -12010,7 +12152,6 @@ msgstr "קצוות לפי סוג"
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
-#: src/components/tags/StreamInboxTags.tsx
 msgid "Edit"
 msgstr "ערכו"
 
@@ -12115,7 +12256,15 @@ msgid "Edit SubAgent Hook"
 msgstr "עריכת SubAgent Hook"
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Edit tag"
+#~ msgid "Edit tag"
+#~ msgstr ""
+
+#: src/components/automations/ClassifierPage.tsx
+msgid "Edit tags"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Edit tags…"
 msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
@@ -12306,6 +12455,7 @@ msgid "Enable/Disable hook"
 msgstr "הפעלה או השבתה של הוק"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
@@ -13111,6 +13261,7 @@ msgstr "מחלץ…"
 #: src/components/inbound/RouteCheck.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
+#: src/components/tags/MessageTags.tsx
 msgid "failed"
 msgstr "נכשל"
 
@@ -14415,7 +14566,9 @@ msgstr "מאת"
 msgid "From"
 msgstr "מאת"
 
+#. placeholder {0}: from.split('.').at(-1)
 #. placeholder {0}: item.sourceProjectName
+#: src/components/tags/StreamInboxTags.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "from {0}"
 msgstr "מ-{0}"
@@ -14495,6 +14648,10 @@ msgstr ""
 #: src/components/settings-view/settings-utils.ts
 msgid "Full environment variable dictionary"
 msgstr "מילון משתני סביבה מלא"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Full name"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Full path to the plan .md file written by the agent"
@@ -14666,6 +14823,10 @@ msgstr "קבלו כאן את ההודעות שלכם מ-{label}, וענו עלי
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Get your messages here"
 msgstr "קבלו את ההודעות שלכם כאן"
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "gets the message, can reply"
+msgstr ""
 
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
@@ -15524,6 +15685,10 @@ msgstr "איך נקבע שזה הושלם"
 msgid "How it runs"
 msgstr ""
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "How it was decided"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "How many hook-sniffer events to retain in the buffer."
 msgstr "כמה אירועי סניפר הוקים לשמור במאגר."
@@ -15699,6 +15864,7 @@ msgstr "במצב המתנה"
 
 #: src/components/automations/IfThenGraphic.tsx
 #: src/components/automations/IfThenLine.tsx
+#: src/components/automations/MessageRulePage.tsx
 msgid "If"
 msgstr "אם"
 
@@ -15934,7 +16100,11 @@ msgid "Included through this source's packages. Changes apply to new sessions."
 msgstr "נכלל דרך החבילות של מקור זה. השינויים יחולו על הפעלות חדשות."
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+#~ msgid "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+#~ msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Includes the tags under it. Runs once per message."
 msgstr ""
 
 #: src/components/entity-actions/ContextMenuButton.tsx
@@ -16548,6 +16718,10 @@ msgstr "משנה גם:"
 msgid "It answered without using any tool."
 msgstr "התשובה ניתנה בלי להשתמש בכלים."
 
+#: src/components/automations/MessageRulePage.tsx
+msgid "it asks for a refund or disputes a charge"
+msgstr ""
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
 msgstr "הוא יכול לקרוא את ערוצי ה-Slack שלכם."
@@ -16556,6 +16730,7 @@ msgstr "הוא יכול לקרוא את ערוצי ה-Slack שלכם."
 msgid "It cannot be removed from the project"
 msgstr ""
 
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "It did not work"
@@ -16986,6 +17161,18 @@ msgstr "תווית"
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "label / pattern"
 msgstr "תווית / דפוס"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "lands here"
+msgstr ""
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Lands on"
+msgstr ""
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Lands on (stale — instructions changed)"
+msgstr ""
 
 #: src/components/project-home/ProjectLanguageCard.tsx
 #: src/components/settings-view/settings-utils.ts
@@ -18054,6 +18241,7 @@ msgstr "טוען..."
 #: src/components/conversation/ContactDialog.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/data-sources/ChoiceField.tsx
+#: src/components/docx-viewer/DocxViewer.tsx
 #: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -18357,6 +18545,10 @@ msgstr "צרו סוכן תוך 60 שניות — איפה תדברו איתו?"
 msgid "Make me an agent"
 msgstr ""
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Make the new tags the messages' tags. No automation runs."
+msgstr ""
+
 #: src/components/data-sources/source-attention.ts
 msgid "Make the two the same — edit either one — then Pull, or wait for the next sync."
 msgstr "השוו בין השניים — ערכו את אחד מהם — ואז לחצו על משיכה, או המתינו לסנכרון הבא."
@@ -18364,6 +18556,10 @@ msgstr "השוו בין השניים — ערכו את אחד מהם — ואז 
 #: src/components/harness-login/StatusRow.tsx
 msgid "Make this the default assistant"
 msgstr "הגדירו כעוזר ברירת המחדל"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Make this the message's tag. No automation runs."
+msgstr ""
 
 #: src/components/search-index/index-copy.ts
 msgid "Make your records searchable"
@@ -18415,12 +18611,20 @@ msgstr "יש למפות את השיחה הזו לפרויקט מקומי תחי�
 msgid "Mark all read"
 msgstr "סמנו הכל כנקרא"
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Mark as read"
+msgstr ""
+
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark Done"
 msgstr "סמנו כבוצע"
 
 #: src/components/conversation/IssueReplyLine.tsx
 msgid "Mark in progress"
+msgstr ""
+
+#: src/components/automations/automation-words.ts
+msgid "mark it as read"
 msgstr ""
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
@@ -18791,8 +18995,8 @@ msgid "Message Suggest"
 msgstr "הצעה להודעה"
 
 #: src/components/tags/MessageTags.tsx
-msgid "Message tags"
-msgstr ""
+#~ msgid "Message tags"
+#~ msgstr ""
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Message the agent"
@@ -18828,8 +19032,8 @@ msgid "Messages list, events and settings"
 msgstr "רשימת הודעות, אירועים והגדרות"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "messages on"
-msgstr "הודעות ב"
+#~ msgid "messages on"
+#~ msgstr "הודעות ב"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta app › App settings › Basic. Checks every delivery came from Meta. Stored write-only."
@@ -19178,6 +19382,14 @@ msgstr "חברו את Flowpad Assistant"
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Move {0} to {1}?"
 msgstr "להעביר את {0} אל {1}?"
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Move step {number} down"
+msgstr ""
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Move step {number} up"
+msgstr ""
 
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "Move the folder to the Trash and remove the project"
@@ -19660,8 +19872,8 @@ msgid "New help desk"
 msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "New incoming messages use your ontology. Existing messages are not reclassified."
-msgstr ""
+#~ msgid "New incoming messages use your ontology. Existing messages are not reclassified."
+#~ msgstr ""
 
 #: src/components/rag/RagView.tsx
 msgid "New index"
@@ -19742,7 +19954,11 @@ msgstr "כרטיסייה חדשה"
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
-msgid "New tag"
+#~ msgid "New tag"
+#~ msgstr ""
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "New tags"
 msgstr ""
 
 #: src/components/organization/org-detail-panel.tsx
@@ -19932,14 +20148,6 @@ msgstr ""
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No archived conversations"
 msgstr "אין שיחות מאורכבות"
-
-#: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "Starred"
-msgstr "מסומנות בכוכב"
-
-#: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "No starred conversations"
-msgstr "אין שיחות מסומנות בכוכב"
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "No artifacts yet"
@@ -20627,8 +20835,8 @@ msgid "No matching sessions"
 msgstr "אין סשנים תואמים"
 
 #: src/components/tags/MessageTags.tsx
-msgid "No matching tags"
-msgstr ""
+#~ msgid "No matching tags"
+#~ msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "No MCP servers found"
@@ -21124,6 +21332,10 @@ msgstr "אין עדיין מקורות. חברו הזנה, תיבת דואר א�
 msgid "No spec specified."
 msgstr "לא צוין spec."
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No starred conversations"
+msgstr "אין שיחות מסומנות בכוכב"
+
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No stored filters."
 msgstr ""
@@ -21154,6 +21366,28 @@ msgstr "אין ממצאים מבוססים ליישום עבור המיומנו�
 
 #: src/components/automations/blocks/TimeZonePicker.tsx
 msgid "No such time zone."
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "no tag"
+msgstr ""
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "no tag fits"
+msgstr ""
+
+#: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/MessageTags.tsx
+#: src/components/tags/StreamInboxTags.tsx
+msgid "No tags"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "No tags — add one"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "No tags yet — tick one below"
 msgstr ""
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
@@ -22040,6 +22274,10 @@ msgstr "לא הופעל דבר. ניתן לסגור את הלשונית הזו."
 msgid "Nothing would arrive for this, so it was not sent:"
 msgstr "לא היה מגיע דבר עבור זה, ולכן לא נשלח:"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Nothing yet."
+msgstr ""
+
 #: src/components/automations/BusStream.tsx
 msgid "Nothing yet. Only some event families reach the app; the counts above cover every event."
 msgstr "עדיין כלום. רק חלק ממשפחות האירועים מגיעות לאפליקציה; הספירות שלמעלה כוללות כל אירוע."
@@ -22184,6 +22422,7 @@ msgstr "הקובץ הישן ביותר בדיסק"
 msgid "oldest in Git history"
 msgstr "הישן ביותר בהיסטוריית Git"
 
+#: src/components/automations/MessageRulePage.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "on"
 msgstr "פעיל"
@@ -23487,6 +23726,7 @@ msgstr "הפעולה נכשלה"
 
 #: src/components/assets/DependencyChips.tsx
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/automations/MessageRulePage.tsx
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "optional"
@@ -23528,6 +23768,10 @@ msgstr "הודעה לחברים (אופציונלי)…"
 #: src/components/assets/editor/task/OwnerButton.tsx
 msgid "Optional message to the owner…"
 msgstr "הודעה לבעלים (אופציונלי)…"
+
+#: src/components/automations/automation-words.ts
+msgid "or"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Or copy an invite link"
@@ -24224,6 +24468,10 @@ msgstr "בחרו זרימה מהתפריט השמאלי, או צרו חדשה ע
 msgid "Pick a group in any conversation to add all its members at once."
 msgstr "ניתן לבחור קבוצה בכל שיחה כדי להוסיף את כל החברים שלה בבת אחת."
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Pick a message"
+msgstr ""
+
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick a project"
 msgstr "בחרו פרויקט"
@@ -24248,8 +24496,12 @@ msgstr "בחרו הרצה כדי לראות למה רצה, מה עשתה ומה 
 msgid "Pick a size to see the price"
 msgstr "בחרו גודל כדי לראות את המחיר"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Pick a tag to say when a message belongs there."
+msgstr ""
+
 #: src/components/automations/blocks/ThenBlock.tsx
-#: src/components/automations/MessageRulePage.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Pick an agent…"
 msgstr "בחרו סוכן…"
 
@@ -25088,6 +25340,7 @@ msgid "prompt"
 msgstr "הנחיה"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 #: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/PromptRunSummaryDialog.tsx
@@ -26289,8 +26542,8 @@ msgid "Remove access"
 msgstr "הסרת גישה"
 
 #: src/components/tags/MessageTags.tsx
-msgid "Remove all"
-msgstr ""
+#~ msgid "Remove all"
+#~ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove attachment"
@@ -26432,6 +26685,10 @@ msgstr "הסרת הכלל"
 msgid "Remove service"
 msgstr ""
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Remove step {number}"
+msgstr ""
+
 #: src/components/tags/MessageTags.tsx
 msgid "Remove tag {name}"
 msgstr ""
@@ -26465,11 +26722,9 @@ msgstr "להסיר את המספר הזה ואת {0} הכללים שלו? ה-hub
 msgid "Remove this row from the manifest"
 msgstr "הסרת השורה הזו מהמניפסט"
 
-#. placeholder {0}: impact.messages
-#. placeholder {1}: impact.automations
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Remove this tag from {0} messages and disable {1} automations. Messages are kept."
-msgstr ""
+#~ msgid "Remove this tag from {0} messages and disable {1} automations. Messages are kept."
+#~ msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Remove this tag's assignments and disable matching automations. Messages are kept."
@@ -26866,6 +27121,7 @@ msgid "Requires a git repository with at least one commit"
 msgstr "דורש ריפוזיטורי git עם לפחות קומיט אחד"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Rerun"
 msgstr "הריצו שוב"
 
@@ -27477,6 +27733,7 @@ msgstr "חוקים"
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Run"
 msgstr "הריצו"
 
@@ -27528,11 +27785,13 @@ msgid "run a script"
 msgstr "הרצת סקריפט"
 
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Run a script"
 msgstr "הרצת סקריפט"
 
 #: src/components/conversation/SessionCard.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/tags/MessageTags.tsx
 msgid "Run again"
 msgstr "להריץ שוב"
 
@@ -27545,6 +27804,7 @@ msgid "run an agent"
 msgstr "הרצת סוכן"
 
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Run an agent"
 msgstr "הרצת סוכן"
 
@@ -28067,8 +28327,8 @@ msgid "Save failed"
 msgstr "השמירה נכשלה"
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Save preferences"
-msgstr ""
+#~ msgid "Save preferences"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
@@ -28176,6 +28436,10 @@ msgstr "ציינו מה הסוכן צריך לעשות."
 #: src/components/automations/MessageRulePage.tsx
 msgid "Say what to catch."
 msgstr "ציינו מה לתפוס."
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Say which command to run."
+msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "says:"
@@ -28511,6 +28775,7 @@ msgstr "חיפוש שפות…"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Search messages"
 msgstr "חפשו הודעות"
 
@@ -28791,6 +29056,7 @@ msgstr "בחרו גרסה להתקנה:"
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "Select all"
 msgstr "בחרו הכל"
 
@@ -28827,12 +29093,18 @@ msgid "Select Chrome profile"
 msgstr "בחירת פרופיל Chrome"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Select conversation"
 msgstr "בחרו שיחה"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Select every project"
 msgstr "בחרו כל פרויקט"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Select message"
+msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Select parent folder"
@@ -29883,8 +30155,8 @@ msgid "Short-lived key for Open-in-FlowPad deep link"
 msgstr "מפתח קצר-טווח לקישור העמוק של Open-in-FlowPad"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "should"
-msgstr "צריך"
+#~ msgid "should"
+#~ msgstr "צריך"
 
 #. placeholder {0}: '{permissionDecision: allow or deny}'
 #: src/components/hooks-view/HookEditor.tsx
@@ -31014,12 +31286,17 @@ msgid "Standard mode"
 msgstr "מצב סטנדרטי"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/conversation/conversation-category.ts
 msgid "Star"
 msgstr "כוכב"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "Star chat"
 msgstr "סימון כוכב"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Starred"
+msgstr "מסומנות בכוכב"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
@@ -31248,6 +31525,10 @@ msgstr "מתחיל…"
 msgid "Starting…"
 msgstr "מתחיל…"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Starts an automation"
+msgstr ""
+
 #: src/components/automations/PackageRow.tsx
 msgid "Starts when any of these happens"
 msgstr ""
@@ -31345,6 +31626,10 @@ msgstr "שלב {0} מתוך {1}"
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "שלבים"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Steps run in order. An agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "Steps taken"
@@ -31487,7 +31772,6 @@ msgid "Stream Inbox Manager"
 msgstr "מנהל הדואר הנכנס"
 
 #: src/components/graph-view/TagGraphView.tsx
-#: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Stream Inbox tags"
 msgstr ""
@@ -31836,12 +32120,12 @@ msgid "Tag"
 msgstr "תגית"
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Tag created"
-msgstr ""
+#~ msgid "Tag created"
+#~ msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Tag deleted"
-msgstr ""
+#~ msgid "Tag deleted"
+#~ msgstr ""
 
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 #: src/components/tags/StreamInboxTags.tsx
@@ -32157,8 +32441,8 @@ msgid "Thank you — sent."
 msgstr "תודה — נשלח."
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "that"
-msgstr "ש"
+#~ msgid "that"
+#~ msgstr "ש"
 
 #: src/navigation/agentic-process-open.ts
 #: src/navigation/agentic-process-open.ts
@@ -32232,8 +32516,8 @@ msgid "The Agent bundle is not available."
 msgstr "חבילת הסוכן אינה זמינה."
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "The agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
-msgstr "הסוכן מקבל את ההודעה ויכול להשיב בשיחה. מוצעים רק סוכנים שניתן להריץ במחשב הזה."
+#~ msgid "The agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
+#~ msgstr "הסוכן מקבל את ההודעה ויכול להשיב בשיחה. מוצעים רק סוכנים שניתן להריץ במחשב הזה."
 
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 msgid "The agent has asked a question — answer it in the terminal."
@@ -32346,6 +32630,10 @@ msgstr ""
 #: src/components/data-sources/use-source-verify.ts
 msgid "The check did not run."
 msgstr "הבדיקה לא בוצעה."
+
+#: src/components/tags/MessageTags.tsx
+msgid "The classifier was off when this arrived."
+msgstr ""
 
 #: src/notifications/ingest.ts
 msgid "The cloud service returned an error. Please try again in a moment."
@@ -32662,6 +32950,10 @@ msgstr "המניפסט לא שונה."
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "משימות החברים נוצרו; {messageFailures} הודעות התראה לא נשלחו."
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "the message stops showing as new"
+msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "The message you came from — or paste any message"
@@ -32987,6 +33279,10 @@ msgstr "העובד יצא מיד לאחר ההפעלה, ולכן ההפעלה מ
 #: src/components/automations/MessageRulePage.tsx
 msgid "Then"
 msgstr "אז"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Then — when a message lands here"
+msgstr ""
 
 #: src/pages/entry/DesktopDownload.tsx
 msgid "Then install it:"
@@ -33554,6 +33850,10 @@ msgstr "ההודעה הזו אינה מכילה נכסים."
 #: src/components/conversation/MessageComposer.tsx
 msgid "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
 msgstr "ההודעה הזו היא פרומפט — הוא ממתין לאישור של {hostName}, ירוץ פעם אחת במחשב של {hostName}, ותקבלו עדכון על הסטטוס"
+
+#: src/components/tags/MessageTags.tsx
+msgid "This message was not classified."
+msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "This message will also become a task"
@@ -34135,7 +34435,6 @@ msgstr "מספר הפעמים שהאירוע התרחש מאז הפעלת Flowpa
 #: src/components/account/system-diagnoses.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-#: src/components/tags/StreamInboxTags.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Title"
 msgstr "כותרת"
@@ -34532,6 +34831,10 @@ msgstr "הופעל"
 msgid "Triggers"
 msgstr "טריגרים"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Try"
+msgstr ""
+
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/tabs/OrgView.tsx
@@ -34603,11 +34906,13 @@ msgid "Turn failed"
 msgstr "הסבב נכשל"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Turn off"
 msgstr "כבו"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Turn on"
 msgstr "הפעילו"
@@ -34891,6 +35196,7 @@ msgid "Unstage"
 msgstr "הסרה"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/conversation/conversation-category.ts
 msgid "Unstar"
 msgstr "הסירו כוכב"
 
@@ -35910,6 +36216,10 @@ msgstr "אזהרה: {warning}"
 msgid "Warnings"
 msgstr ""
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "was {previous}"
+msgstr ""
+
 #: src/components/ask/AskAssist.tsx
 msgid "Watch the agent"
 msgstr "צפייה בסוכן"
@@ -36233,6 +36543,10 @@ msgstr "כשקובץ משתנה"
 msgid "When a message arrives"
 msgstr "כשמגיעה הודעה"
 
+#: src/components/automations/automation-words.ts
+msgid "When a message is tagged {tags}"
+msgstr ""
+
 #: src/components/automations/KindGallery.tsx
 msgid "When a task changes"
 msgstr "כשמשימה משתנה"
@@ -36249,7 +36563,11 @@ msgid "When an agent reports {events}"
 msgstr "כשסוכן מדווח על {events}"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "When any of these message tags is assigned"
+#~ msgid "When any of these message tags is assigned"
+#~ msgstr ""
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "When does a message belong here?"
 msgstr ""
 
 #: src/i18n/pref-labels.ts
@@ -36405,6 +36723,10 @@ msgstr "מי שמפעיל את ה-hub יכול להדליק אותו. בינתי
 #: src/components/explorer-view/ExplorerNavigator.tsx
 msgid "Whole computer"
 msgstr "כל המחשב"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Why"
+msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Why is this needed?"
