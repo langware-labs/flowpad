@@ -33,12 +33,9 @@ function buildBidiDomAttrs(node: PMNode): Record<string, string> {
   const out: Record<string, string> = {};
   const dir = normalizeDir(node.attrs.dir);
   const align = normalizeAlign(node.attrs.align);
-  // No explicit override ⇒ dir="auto": base direction follows the paragraph's
-  // first strong character instead of the app UI locale, so RTL content
-  // renders RTL in an LTR-locale app. Render-time only — `normalizeDir`
-  // rejects "auto", so parseDOM reads it back as null and `hasBidiOverride`
-  // stays false (markdown output remains unwrapped CommonMark).
-  out.dir = dir ?? 'auto';
+  // No explicit override ⇒ no dir here: `auto-dir.ts` decorates the paragraph
+  // with the direction its words resolve to.
+  if (dir) out.dir = dir;
   if (align) out.style = `text-align: ${align}`;
   return out;
 }

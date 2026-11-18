@@ -119,8 +119,8 @@
  *
  * `:has()` + `:dir()` let the container pick up the inner paragraph's
  * *resolved* direction purely in CSS — covering both an explicit
- * `dir="rtl"/"ltr"` override and the default `dir="auto"` (resolved from
- * the paragraph's first strong character). The container's `direction`
+ * `dir="rtl"/"ltr"` override and the word-majority direction `auto-dir.ts`
+ * decorates the paragraph with. The container's `direction`
  * property then cascades through `border-inline-start`,
  * `padding-inline-start`, and `::marker` placement, so the quote bar /
  * bullet flips automatically.
@@ -444,8 +444,12 @@ html.light .milkdown-editor-wrapper .token.important {
 }
 
 /* Find bar (Cmd/Ctrl+F) matches */
-::highlight(md-find) { background-color: rgb(250 204 21 / 0.4); }
-::highlight(md-find-active) { background-color: rgb(249 115 22 / 0.7); }
+::highlight(md-find) {
+  background-color: rgb(250 204 21 / 0.4);
+}
+::highlight(md-find-active) {
+  background-color: rgb(249 115 22 / 0.7);
+}
 
 /* Queued "change this" requests (plugins/change-marks.ts) */
 .flowpad-change-mark {
@@ -453,15 +457,30 @@ html.light .milkdown-editor-wrapper .token.important {
   border-bottom: 2px solid hsl(var(--primary) / 0.7);
   border-radius: 2px;
 }
-.flowpad-change-mark-sent { background-color: hsl(var(--primary) / 0.08); border-bottom-style: dashed; }
-.flowpad-change-pin {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 16px; height: 16px; margin-inline-start: 3px; padding: 0 3px;
-  border-radius: 9999px; font-size: 10px; font-weight: 600; line-height: 1;
-  vertical-align: super; user-select: none;
-  background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
+.flowpad-change-mark-sent {
+  background-color: hsl(var(--primary) / 0.08);
+  border-bottom-style: dashed;
 }
-.flowpad-change-pin[data-sent='true'] { opacity: 0.6; }
+.flowpad-change-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-inline-start: 3px;
+  padding: 0 3px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: super;
+  user-select: none;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.flowpad-change-pin[data-sent='true'] {
+  opacity: 0.6;
+}
 
 /* Doc comments: the quoted passage, and the card drawn after its block. */
 .flowpad-comment-mark {
@@ -469,10 +488,23 @@ html.light .milkdown-editor-wrapper .token.important {
   border-bottom: 2px solid hsl(45 90% 55% / 0.7);
   border-radius: 2px;
 }
-.flowpad-comment-slot { display: block; margin: 0.25rem 0 1rem; white-space: normal; }
-.flowpad-comment-slot:empty { display: none; }
-.flowpad-comment-flash > * { animation: flowpad-comment-flash 1.6s ease-out; }
+.flowpad-comment-slot {
+  display: block;
+  margin: 0.25rem 0 1rem;
+  white-space: normal;
+}
+.flowpad-comment-slot:empty {
+  display: none;
+}
+.flowpad-comment-flash > * {
+  animation: flowpad-comment-flash 1.6s ease-out;
+}
 @keyframes flowpad-comment-flash {
-  0%, 40% { box-shadow: 0 0 0 3px hsl(var(--primary) / 0.55); }
-  100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+  0%,
+  40% {
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
+  }
 }

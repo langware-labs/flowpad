@@ -17,12 +17,14 @@ import { bidiSchemaPlugins } from './schema';
 import { bidiRemarkPlugin } from './parser';
 import { bidiCommandPlugins } from './commands';
 import { bidiEnterInheritPlugin } from './enter-inherit';
+import { bidiAutoDirPlugin } from './auto-dir';
 
 export const bidiPlugins: MilkdownPlugin[] = [
   bidiRemarkPlugin,
   ...bidiSchemaPlugins,
   ...bidiCommandPlugins,
   bidiEnterInheritPlugin,
+  bidiAutoDirPlugin,
 ];
 
 export { setDirCommand, unsetDirCommand, setAlignCommand, unsetAlignCommand } from './commands';
