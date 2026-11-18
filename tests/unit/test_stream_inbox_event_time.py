@@ -6,10 +6,8 @@ year-old Slack backfill read "11h ago" in the stream inbox. The fence:
 
 * ``FlowMessage.sent_at`` — projection-owned event time, stamped from the
   item's ``occurred_at`` on every (re)projection;
-* TWO read rules, one per question — ``occurred_at = sent_at or created_date``
-  drives pointer ts and order (WHERE a message sits), while
-  ``event_time = sent_at or updated_date or created_date`` drives conversation
-  recency (WHEN it last changed). ``sent_at`` leads both, which is why a
+* ONE read rule — ``occurred_at = sent_at or created_date`` drives pointer ts,
+  order and conversation recency. ``sent_at`` leads it, which is why a
   projected item pins every derivation to its event time;
 * convergence — re-projecting a placed item heals a missing/drifted stamp,
   and the reconcile sweep re-projects placed-but-unstamped rows, so a plain
@@ -86,7 +84,6 @@ class TestEventTimeSurvivesEveryLayer:
         want = iso_to_utc(YEAR_OLD)
         assert iso_to_utc(fm.sent_at) == want, "the row carries EVENT time"
         assert iso_to_utc(fm.occurred_at) == want, "the order/bubble clock pins to it"
-        assert iso_to_utc(fm.event_time) == want, "the recency clock pins to it too"
 
         conv = await _conv_for(thread_id)
         ptrs = _pointers(conv)
@@ -171,12 +168,10 @@ class TestTheOtherLanesAreUntouched:
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # do not increase timeout without approval
     async def test_an_authored_message_falls_through_to_its_own_clocks(self):
-        # No sent_at → the two clocks part company exactly as intended: an
-        # edit still bumps recency, while the message's place stays put.
+        # No sent_at → the message's place and its conversation's time are its birth time.
         fm = FlowMessage(text="typed by a person")
         await fm.save(notify=False)
         assert fm.sent_at is None
-        assert iso_to_utc(fm.event_time) == iso_to_utc(fm.updated_date or fm.created_date)
         assert iso_to_utc(fm.occurred_at) == iso_to_utc(fm.created_date)
 
 

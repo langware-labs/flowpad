@@ -844,7 +844,7 @@ class FlowMessage(Entity):
     #: EVENT time — when the human sent this, on its original channel. Stamped
     #: (and convergently re-stamped) ONLY by the stream inbox projection, from
     #: ``SourceItem.occurred_at``; every other lane leaves it None and falls
-    #: through ``event_time`` to the clocks it already trusts. PRIVATE like
+    #: through ``occurred_at`` to ``created_date``. PRIVATE like
     #: ``source_item_id``: hub sync's LWW refresh rebuilds the row from the
     #: hub's schema, which does not carry this field — a SHARED classification
     #: would blank it on every pass (the ``parent_type_id`` trap below).
@@ -1217,29 +1217,19 @@ class FlowMessage(Entity):
     @property
     def occurred_at(self) -> Optional[datetime]:
         """WHEN THIS MESSAGE ENTERED THE CONVERSATION — its position in the
-        feed and the time on its bubble. Read this for anything about WHERE a
-        message sits in the timeline, never ``event_time``.
+        feed, the time on its bubble, and (for the newest one) the time its
+        conversation shows in the Stream Inbox.
 
         ``sent_at`` pins a channel-projected message (a Slack/email backfill)
         to when the human actually sent it; otherwise ``created_date`` is the
         birth time, hub-stamped for a received message and compose time for
         one of ours. ``updated_date`` is deliberately excluded: it is a
-        PROCESSING clock, and a message's place is fixed when it is sent.
+        PROCESSING clock — the hub re-saves a message on a read receipt, a
+        body transfer, a status change — and a message's place is fixed when
+        it is sent.
         ``project_pointers_to_entity`` documents the two-clock split and the
         incident that forced it."""
         return self.sent_at or self.created_date
-
-    @property
-    def event_time(self) -> Optional[datetime]:
-        """WHEN THIS MESSAGE LAST CHANGED — the conversation's recency clock,
-        i.e. the stream inbox's "Xm ago". Read this for anything about ACTIVITY;
-        for a message's place in the feed read ``occurred_at`` instead.
-
-        Here ``updated_date`` is correct and load-bearing: a genuine edit is
-        new activity and must float the conversation. It is kept honest at the
-        other end by ``FlowMessage.is_stale``, which refuses to advance the
-        local clock for a bare touch."""
-        return self.sent_at or self.updated_date or self.created_date
 
     def attachments(self) -> list[Attachment]:
         """Return the underlying attachment list (not a copy).

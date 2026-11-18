@@ -307,7 +307,7 @@ export interface IFlowMessage extends IEntity {
   /** EVENT time — when the human sent this on its original channel. Written
    *  only by the backend stream inbox projection (from SourceItem.occurred_at);
    *  None for authored and hub-synced messages, whose event time is their
-   *  own created/updated clock. Read through `eventTime`, never directly. */
+   *  own `created_date`. Read through `occurredAt`, never directly. */
   sent_at?: string | null;
   // NOTE: ``context`` (string[]) was renamed and consolidated into the
   // unified ``context_entities`` on IEntity. Read via
@@ -663,16 +663,6 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
    *  replies already written. Render THIS, never created_date/updated_date. */
   get occurredAt(): string | null {
     const pick = this.sent_at ?? this.created_date ?? null;
-    // Base-entity clocks are string|Date on the wire type; normalize to ISO.
-    return pick instanceof Date ? pick.toISOString() : pick;
-  }
-
-  /** WHEN THIS MESSAGE LAST CHANGED — mirrors FlowMessage.event_time on the
-   *  backend: the recency/activity clock behind the stream inbox's "Xm ago". Includes
-   *  `updated_date` because a genuine edit IS new activity. For a message's
-   *  place in the feed read `occurredAt` instead. */
-  get eventTime(): string | null {
-    const pick = this.sent_at ?? this.updated_date ?? this.created_date ?? null;
     // Base-entity clocks are string|Date on the wire type; normalize to ISO.
     return pick instanceof Date ? pick.toISOString() : pick;
   }

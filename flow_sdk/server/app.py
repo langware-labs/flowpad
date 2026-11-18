@@ -315,7 +315,7 @@ async def _on_server_startup():
     await _boot_lift("migration_2026_11_project_deployments", "Project deployments")
     await _boot_lift("migration_2026_11_attachment_count", "Conversation attachment counts")
     await _boot_lift("migration_2026_11_draft_status", "Draft message status")
-    await _boot_lift("migration_2026_11_offset_recency", "Conversation recency (sender offsets)")
+    await _boot_lift("migration_2026_11_offset_recency", "Conversation recency")
     await _boot_lift("migration_2026_11_context_relationships", "Context relationships")
     await _lift_credential_stores()
     await _lift_place_settings()

@@ -555,7 +555,7 @@ export const ConversationListRow = memo(function ConversationListRow({
     isHidden = !matchesColumnFilter(columnFilter, {
       senders: senderLabel,
       subjectLine: `${subject} ${snippet}`,
-      updated: conv.updated_date,
+      updated: conv.recency,
     });
   }
 
@@ -574,8 +574,8 @@ export const ConversationListRow = memo(function ConversationListRow({
 
   const count = pointers.length || conv.message_count || 0;
   const fileCount = conv.attachment_count ?? 0;
-  const time = formatGmailTime(conv.updated_date);
-  const ago = formatTimeAgo(conv.updated_date);
+  const time = formatGmailTime(conv.recency);
+  const ago = formatTimeAgo(conv.recency);
   const isUnread = facets.isUnread;
 
   const handleClick = () => {
