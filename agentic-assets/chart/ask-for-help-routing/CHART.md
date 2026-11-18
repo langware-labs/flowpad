@@ -7,7 +7,7 @@ description: Where a help request goes today, from the click to the hub. The use
   2026-11-18.
 format: excalidraw
 session: cb455f48-3c7e-4352-9f5c-a83fcc90d6d3
-version: 15
+version: 16
 ---
 The real flow, not a design. Sources: `flow_sdk/app/actions/ask_for_help_action.py` (capture, `help-recipients`, `_open_ticket`, `_open_person_ask`, `_report_target`), `flow_sdk/app/actions/flow_message_action.py` (`resolve_helpdesk`, `_hub_default_helpdesk`), `flow_sdk/app/helpdesk_resolver.py`, `ui/src/components/help/AskForHelpDialog.tsx`, and the hub's `flowpad/config.py` (`HELPDESK_PROJECT_ID`).
 
@@ -107,8 +107,8 @@ flowchart TD
   N4["1 · Dialog opens: which desk is pre-checked (help-recipients)"]
   N5["User clicks Ask for help<br>top bar, a desk's page, a credential page, a
 diagnosis"]
-  N6["User clicks Diagnose & fix<br>on a
-warning or an error"]
+  N6["User clicks Diagnose &
+fix<br>on a warning or an error"]
   N7{{"Is this project
 itself<br>a help
 desk portal?"}}
