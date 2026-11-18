@@ -86,6 +86,10 @@ logger = logging.getLogger(__name__)
 # never stored — the open conversation draws it.
 # `stream_inbox.*.reply.failed` is a reply the person sent that did not go (the channel refused it): one frame
 # per failed send — the send runs after its request returned, so this is how the person hears.
+# `sentry_info.changed` says this box's browser error-reporting config was set, replaced or cleared (the hub
+# pushed a new value, or stopped vouching for it): one frame per CHANGE of the effective value -- the sync that
+# merely re-confirms it emits nothing -- carrying the public DSN and environment (or null), the same fields the
+# bootstrap already hands every page. An open tab starts, reconfigures or stops Sentry without a reload.
 FORWARDED_TAG_PATTERNS: list[str] = [
     "app.ready",
     "graph_workflow.*",
@@ -100,6 +104,7 @@ FORWARDED_TAG_PATTERNS: list[str] = [
     "deployment.timeline",
     "deployment.synced",
     "dataset.rows.changed",
+    "sentry_info.changed",
 ]
 
 #: Envelopes retained for the Signals feed's initial paint. Bounded because the
