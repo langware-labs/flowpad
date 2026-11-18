@@ -1,0 +1,25 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "title": {
+      "shape": "?string",
+      "description": "The chart's title, shown over the canvas."
+    },
+    "nodes": {
+      "shape": [
+        "chartit.flowchart_node"
+      ],
+      "description": "The start, the questions and the outcomes, in reading order."
+    },
+    "edges": {
+      "shape": [
+        "chartit.flowchart_edge"
+      ],
+      "description": "The exits: one per answer of a question."
+    },
+    "notes": {
+      "shape": "?[string]",
+      "description": "Chart-level notes, about no one node: shown in the Notes panel."
+    }
+  }
+}

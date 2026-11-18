@@ -13,12 +13,13 @@ from flow_sdk.fs_store.record_types import RecordType
 CHART_MD = "CHART.md"
 
 # Format source files: ``board.json`` (excalidraw), ``chart.json`` (sequence), ``c4.json`` (c4),
-# ``architecture.json`` (architecture).
+# ``architecture.json`` (architecture), ``flowchart.json`` (flowchart).
 # A mermaid chart keeps its source in the ```mermaid``` block of CHART.md.
 BOARD_JSON = "board.json"
 CHART_JSON = "chart.json"
 C4_JSON = "c4.json"
 ARCHITECTURE_JSON = "architecture.json"
+FLOWCHART_JSON = "flowchart.json"
 
 CHART_FORMATS: tuple[str, ...] = get_args(ChartFormat)
 DEFAULT_CHART_FORMAT = "excalidraw"
@@ -30,6 +31,7 @@ CHART_SOURCES: dict[str, tuple[str, str]] = {
     "excalidraw": (BOARD_JSON, '{"kind": "excalidraw", "version": 1, "data": {"elements": []}}\n'),
     "c4": (C4_JSON, '{"level": "context", "elements": [], "boundaries": [], "relations": []}\n'),
     "architecture": (ARCHITECTURE_JSON, '{"groups": [], "links": [], "steps": []}\n'),
+    "flowchart": (FLOWCHART_JSON, '{"nodes": [], "edges": [], "notes": []}\n'),
 }
 CHART_ICON_LISTS: dict[str, str] = {"sequence": "participants", "c4": "elements"}
 

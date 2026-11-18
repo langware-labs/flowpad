@@ -226,9 +226,9 @@ export function ViewToggle({ view, onChange }: { view: 'chart' | 'table'; onChan
 }
 
 /** Props for a clickable pill or chip inside a pickable chart element: it acts, it never picks. */
-export function chartAct(fn: () => void, role: 'link' | 'button' = 'link') {
+export function chartAct(fn: () => void, role: 'link' | 'button' = 'link', className = 'act') {
   return {
-    className: 'act',
+    className,
     tabIndex: 0,
     role,
     onClick: (e: React.MouseEvent) => {
