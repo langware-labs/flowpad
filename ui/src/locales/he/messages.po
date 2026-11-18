@@ -2632,6 +2632,10 @@ msgstr "נושא כגון task:* או data_source:<id>. ריק = כל נושא."
 msgid "A task is assigned, the app opens, an agent finishes."
 msgstr "משימה מוקצית, האפליקציה נפתחת, סוכן מסיים."
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "a team member sends the response to the customer"
+msgstr "איש צוות שולח את התשובה ללקוח"
+
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "A team without a budget gets its own pool, drawn from this one."
 msgstr ""
@@ -3527,8 +3531,8 @@ msgid "Agent stream inbox not found"
 msgstr "הדואר הנכנס של הסוכן לא נמצא"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Agent tagged"
-msgstr "תיוג הסוכן"
+#~ msgid "Agent tagged"
+#~ msgstr "תיוג הסוכן"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -4241,6 +4245,10 @@ msgstr "עדכון אחר מתבצע כעת. נסו שוב כשיסתיים."
 msgid "Answer"
 msgstr ""
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Answer in the customer's language."
+msgstr "לענות בשפת הלקוח."
+
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "Answer or ask the agent…"
 msgstr ""
@@ -4248,6 +4256,10 @@ msgstr ""
 #: src/components/conversation/TicketDraftLine.tsx
 msgid "Answer to the customer"
 msgstr "תשובה ללקוח"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Answer when a teammate tags @agent."
+msgstr "לענות כשחבר צוות מתייג @agent."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Answered by"
@@ -4269,6 +4281,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Answers fast and hands longer work to its staff as tasks. Their progress arrives on the agent's Tasks channel; only the agent talks to people."
 msgstr "עונה מהר ומעביר עבודה ארוכה לצוות כמשימות. ההתקדמות מגיעה לערוץ המשימות של הסוכן; רק הסוכן מדבר עם אנשים."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Answers wait for the team"
+msgstr "תשובות ממתינות לצוות"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Anthropic"
@@ -4735,6 +4751,10 @@ msgstr ""
 msgid "Ask the agent to connect one"
 msgstr "בקשו מהסוכן לחבר מקור"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Ask the customer for what the team needs."
+msgstr "לבקש מהלקוח את מה שהצוות צריך."
+
 #: src/components/top-nav-bar/AddressAskField.tsx
 msgid "Ask the Flowpad Assistant"
 msgstr "שאלו את עוזר Flowpad"
@@ -4742,6 +4762,10 @@ msgstr "שאלו את עוזר Flowpad"
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "Ask the Flowpad Assistant anything about this page."
 msgstr "ניתן לשאול את עוזר Flowpad כל דבר על הדף הזה."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Ask the support agent when you need more from the customer."
+msgstr "לבקש מסוכן התמיכה כשצריך עוד מהלקוח."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
@@ -7253,6 +7277,10 @@ msgstr ""
 msgid "Close terminal"
 msgstr "סגרו טרמינל"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Close the ticket when the customer confirms."
+msgstr "לסגור את הפנייה כשהלקוח מאשר."
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Close ticket"
 msgstr "סגירת הפנייה"
@@ -8102,8 +8130,8 @@ msgid "Conversation not found"
 msgstr "השיחה לא נמצאה"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Conversation not picked up"
-msgstr "השיחה לא נלקחה לטיפול"
+#~ msgid "Conversation not picked up"
+#~ msgstr "השיחה לא נלקחה לטיפול"
 
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Conversation project set"
@@ -10155,8 +10183,8 @@ msgstr "פעלים מותאמים אישית למחוון ההתקדמות"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #: src/components/helpdesk/HelpDeskPage.tsx
-msgid "Customer agent"
-msgstr "סוכן לקוחות"
+#~ msgid "Customer agent"
+#~ msgstr "סוכן לקוחות"
 
 #: src/components/project-home/ProjectHome.tsx
 msgid "Customize"
@@ -12037,6 +12065,7 @@ msgstr "קצוות לפי סוג"
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/SourceMenu.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
@@ -16697,8 +16726,12 @@ msgid "It will run {0}."
 msgstr "היא תרוץ {0}."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "it writes a draft and does not send it; a team member sends"
-msgstr "הסוכן כותב טיוטה ולא שולח אותה; איש צוות שולח"
+#~ msgid "it writes a draft and does not send it; a team member sends"
+#~ msgstr "הסוכן כותב טיוטה ולא שולח אותה; איש צוות שולח"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "It writes to the team only, never to the customer."
+msgstr "הוא כותב לצוות בלבד, אף פעם ללקוח."
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 msgid "It's in your projects list, marked new."
@@ -17193,6 +17226,7 @@ msgstr "האחרון ב-PyPI"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
@@ -19110,8 +19144,8 @@ msgid "Models Used"
 msgstr "מודלים בשימוש"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Moderated replies"
-msgstr "תשובות באישור"
+#~ msgid "Moderated replies"
+#~ msgstr "תשובות באישור"
 
 #: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -21346,8 +21380,8 @@ msgid "Nobody may write to this agent yet — add their address under Allowed se
 msgstr "אף אחד עדיין לא יכול לכתוב לסוכן הזה — הוסף את הכתובת שלו תחת שולחים מורשים."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "nobody on the team has taken the ticket"
-msgstr "אף אחד בצוות לא לקח את הפנייה"
+#~ msgid "nobody on the team has taken the ticket"
+#~ msgstr "אף אחד בצוות לא לקח את הפנייה"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Nobody picked: it stays a private conversation on this computer, with the diagnosis."
@@ -22481,7 +22515,6 @@ msgstr "אופס! הדף לא נמצא"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
-#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/items/item-state.ts
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -24607,6 +24640,10 @@ msgstr "פורט ל-SOCKS proxy ב-sandbox"
 msgid "Ports"
 msgstr "פורטים"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Post the RCA report for the team."
+msgstr "לפרסם את דוח ה-RCA לצוות."
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -26718,8 +26755,8 @@ msgid "Reply to sender…"
 msgstr "הגיבו למשלח…"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Reply when (pick any)"
-msgstr "להגיב כאשר (אפשר לבחור כמה)"
+#~ msgid "Reply when (pick any)"
+#~ msgstr "להגיב כאשר (אפשר לבחור כמה)"
 
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "Reply…"
@@ -27515,6 +27552,10 @@ msgstr "הריצו את {0}"
 #: src/components/automations/automation-words.ts
 msgid "run {name}"
 msgstr "הרצת {name}"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Run /rca on every request."
+msgstr "להריץ /rca על כל בקשה."
 
 #: src/components/conversation/SessionCard.tsx
 msgid "Run & Update {guest}"
@@ -30817,8 +30858,8 @@ msgid "Someone else is using this machine"
 msgstr "מישהו אחר משתמש במחשב הזה"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "someone writes @agent in the conversation"
-msgstr "מישהו כותב @agent בשיחה"
+#~ msgid "someone writes @agent in the conversation"
+#~ msgstr "מישהו כותב @agent בשיחה"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Something went wrong"
@@ -31667,6 +31708,11 @@ msgstr "סיכום"
 msgid "Support"
 msgstr "תמיכה"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Support agent (customer facing)"
+msgstr "סוכן תמיכה (מול הלקוח)"
+
 #. placeholder {0}: result.shadowed_by?.display_name ?? t`the existing desk`
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Support requests from this project keep going to <0>{0}</0>. Remove that one first if you want this desk to answer."
@@ -32008,8 +32054,13 @@ msgstr ""
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #: src/components/helpdesk/HelpDeskPage.tsx
-msgid "Team agent"
-msgstr "סוכן צוות"
+#~ msgid "Team agent"
+#~ msgstr "סוכן צוות"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Team agent (internal)"
+msgstr "סוכן צוות (פנימי)"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Team collaboration mode"
@@ -32191,6 +32242,10 @@ msgstr "נבדק כאן: הספק מקבל את המפתח."
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "text"
 msgstr "טקסט"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Thank the customer at once, then follow the ticket."
+msgstr "להודות ללקוח מיד, ואז לעקוב אחרי הפנייה."
 
 #: src/components/ask/AskForm.tsx
 msgid "Thank you — sent."
@@ -34599,6 +34654,7 @@ msgstr "נסו את זה"
 msgid "Try it on recent messages"
 msgstr "נסו על הודעות אחרונות"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Try:"
 msgstr "נסו:"
@@ -36288,16 +36344,16 @@ msgid "When any of these message tags is assigned"
 msgstr ""
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "When it replies"
-msgstr "מתי הוא מגיב"
+#~ msgid "When it replies"
+#~ msgstr "מתי הוא מגיב"
 
 #: src/i18n/pref-labels.ts
 msgid "When on, the server re-creates the Welcome bookmark + feed entry on the next start, then turns this off."
 msgstr "כשמופעל, השרת יוצר מחדש בהפעלה הבאה את סימניית קבלת הפנים ואת רשומת הפיד, ולאחר מכן מכבה הגדרה זו."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "When should it reply on {deskName}?"
-msgstr "מתי הוא יגיב ב-{deskName}?"
+#~ msgid "When should it reply on {deskName}?"
+#~ msgstr "מתי הוא יגיב ב-{deskName}?"
 
 #: src/components/automations/automation-words.ts
 msgid "When something happens"

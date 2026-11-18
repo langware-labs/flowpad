@@ -308,7 +308,11 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
               return (
                 <div key={side} className={row} data-testid={`help-desk-agent-${side}`}>
                   <span className="w-32 shrink-0 text-muted-foreground">
-                    {side === HelpDeskAgentSide.CUSTOMER ? <Trans>Customer agent</Trans> : <Trans>Team agent</Trans>}
+                    {side === HelpDeskAgentSide.CUSTOMER ? (
+                      <Trans>Support agent (customer facing)</Trans>
+                    ) : (
+                      <Trans>Team agent (internal)</Trans>
+                    )}
                   </span>
                   <span className="flex-1 text-xs text-muted-foreground">
                     {agent ? (
@@ -334,7 +338,7 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
                         )
                       }
                     >
-                      <Trans>Open</Trans>
+                      <Trans>Edit</Trans>
                     </Button>
                   ) : (
                     <Button

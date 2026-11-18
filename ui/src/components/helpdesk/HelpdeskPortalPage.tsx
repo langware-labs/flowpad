@@ -32,10 +32,7 @@ export function HelpdeskPortalPage() {
     [currentDock?.pointer],
   );
 
-  const projectTypeId = useMemo(
-    () => (projectId ? new TypeId(Project.type, projectId) : null),
-    [projectId],
-  );
+  const projectTypeId = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
   const { data: project } = useEntity<Project>(projectTypeId);
   const brand = useHelpdeskBrand(project);
 

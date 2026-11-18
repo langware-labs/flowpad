@@ -847,7 +847,7 @@ export function ConversationView({
       // A ticket's close or reopen: a line, not a bubble. The person who asked can reopen from the line
       // that says it is closed (they have no ticket controls of their own).
       if (fm?.kind === FlowMessageKind.TICKET_EVENT) {
-        // The person who asked is told by the bar under the composer (``TicketClosedBar``), not by a line.
+        // The person who asked is told by the bar that takes the composer's place (``TicketClosedBar``), not by a line.
         if (isClosed && isConversationOwner && id === lastTicketEventId) return null;
         return (
           <div
@@ -1531,43 +1531,42 @@ export function ConversationView({
       {feedLoaded && (
         // On a phone the composer stays pinned to the bottom of the screen while the feed scrolls.
         <div className="max-md:sticky max-md:bottom-0 max-md:z-10 max-md:bg-background max-md:pb-2">
-          <MessageComposer
-            conversationId={conversationId}
-            onSent={() => void refetch()}
-            // A source-backed conversation replies into its channel, not the hub.
-            channel={channel}
-            onChannelSent={(text) => {
-              setNotSent(null);
-              setSendingText(text);
-            }}
-            mentionable={participants}
-            viewerId={cloudUserId}
-            placeholder={lockedText ?? embed?.placeholder ?? composerPlaceholder}
-            disabled={!!lockedText}
-            onSend={sendItAgain}
-            agentId={agentId ?? undefined}
-            sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
-            onStartLiveSession={() => void startLiveSession()}
-            channelAcceptsFiles={!!channelSpec?.accepts_attachments}
-            replyTo={
-              replyTo
-                ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
-                : null
-            }
-            onClearReply={() => setReplyTo(null)}
-            threadTarget={threadTarget}
-            onTaskIt={handleTaskIt}
-          />
-          {closedNotice && (
-            <div className="mt-2">
-              <TicketClosedBar
-                closedBy={closedNotice.closedBy}
-                at={closedNotice.at}
-                busy={settling}
-                onReopen={() => void handleSettle()}
-                onAskNew={() => requestUiAction('ask-for-help-dialog')}
-              />
-            </div>
+          {closedNotice ? (
+            <TicketClosedBar
+              closedBy={closedNotice.closedBy}
+              at={closedNotice.at}
+              busy={settling}
+              onReopen={() => void handleSettle()}
+              onAskNew={() => requestUiAction('ask-for-help-dialog')}
+            />
+          ) : (
+            <MessageComposer
+              conversationId={conversationId}
+              onSent={() => void refetch()}
+              // A source-backed conversation replies into its channel, not the hub.
+              channel={channel}
+              onChannelSent={(text) => {
+                setNotSent(null);
+                setSendingText(text);
+              }}
+              mentionable={participants}
+              viewerId={cloudUserId}
+              placeholder={lockedText ?? embed?.placeholder ?? composerPlaceholder}
+              disabled={!!lockedText}
+              onSend={sendItAgain}
+              agentId={agentId ?? undefined}
+              sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
+              onStartLiveSession={() => void startLiveSession()}
+              channelAcceptsFiles={!!channelSpec?.accepts_attachments}
+              replyTo={
+                replyTo
+                  ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
+                  : null
+              }
+              onClearReply={() => setReplyTo(null)}
+              threadTarget={threadTarget}
+              onTaskIt={handleTaskIt}
+            />
           )}
         </div>
       )}

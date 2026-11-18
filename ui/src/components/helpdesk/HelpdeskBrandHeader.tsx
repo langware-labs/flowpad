@@ -41,12 +41,8 @@ export function HelpdeskBrandHeader({ brand }: { brand: HelpdeskBrand }) {
         )}
 
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-sm font-semibold leading-tight">
-            {brand.name ?? <Trans>Help desk</Trans>}
-          </h1>
-          {brand.tagline && (
-            <p className="truncate text-xs text-muted-foreground">{brand.tagline}</p>
-          )}
+          <h1 className="truncate text-sm font-semibold leading-tight">{brand.name ?? <Trans>Help desk</Trans>}</h1>
+          {brand.tagline && <p className="truncate text-xs text-muted-foreground">{brand.tagline}</p>}
         </div>
 
         <HelpdeskResetButton />

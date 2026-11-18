@@ -2632,6 +2632,10 @@ msgstr "موضوع مثل task:* أو data_source:<id>. الحقل الفارغ 
 msgid "A task is assigned, the app opens, an agent finishes."
 msgstr "تُسنَد مهمة، أو يُفتح التطبيق، أو ينتهي وكيل من عمله."
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "a team member sends the response to the customer"
+msgstr "يرسل أحد أعضاء الفريق الرد إلى العميل"
+
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "A team without a budget gets its own pool, drawn from this one."
 msgstr ""
@@ -3527,8 +3531,8 @@ msgid "Agent stream inbox not found"
 msgstr "لم يتم العثور على صندوق التدفق الوارد للوكيل"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Agent tagged"
-msgstr "الإشارة إلى الوكيل"
+#~ msgid "Agent tagged"
+#~ msgstr "الإشارة إلى الوكيل"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -4241,6 +4245,10 @@ msgstr "يجري تحديث آخر حاليًا. حاول مرة أخرى عند
 msgid "Answer"
 msgstr ""
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Answer in the customer's language."
+msgstr "الرد بلغة العميل."
+
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "Answer or ask the agent…"
 msgstr ""
@@ -4248,6 +4256,10 @@ msgstr ""
 #: src/components/conversation/TicketDraftLine.tsx
 msgid "Answer to the customer"
 msgstr "الرد على العميل"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Answer when a teammate tags @agent."
+msgstr "الرد عندما يشير أحد أعضاء الفريق إلى @agent."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Answered by"
@@ -4269,6 +4281,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Answers fast and hands longer work to its staff as tasks. Their progress arrives on the agent's Tasks channel; only the agent talks to people."
 msgstr "يُجيب بسرعة، ويُسنِد الأعمال الأطول إلى فريقه في صورة مهام. يصل تقدّم هذه المهام إلى قناة المهام الخاصة بالوكيل، ولا يتحدث إلى الناس سوى الوكيل نفسه."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Answers wait for the team"
+msgstr "الردود تنتظر الفريق"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Anthropic"
@@ -4735,6 +4751,10 @@ msgstr ""
 msgid "Ask the agent to connect one"
 msgstr "اطلبوا من الوكيل ربط مصدر"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Ask the customer for what the team needs."
+msgstr "طلب ما يحتاجه الفريق من العميل."
+
 #: src/components/top-nav-bar/AddressAskField.tsx
 msgid "Ask the Flowpad Assistant"
 msgstr "اسألوا مساعد Flowpad"
@@ -4742,6 +4762,10 @@ msgstr "اسألوا مساعد Flowpad"
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "Ask the Flowpad Assistant anything about this page."
 msgstr "اسألوا مساعد Flowpad عن أي شيء يخص هذه الصفحة."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Ask the support agent when you need more from the customer."
+msgstr "اطلب من وكيل الدعم عندما تحتاج المزيد من العميل."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
@@ -7253,6 +7277,10 @@ msgstr ""
 msgid "Close terminal"
 msgstr "إغلاق الطرفية"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Close the ticket when the customer confirms."
+msgstr "إغلاق التذكرة عندما يؤكد العميل."
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Close ticket"
 msgstr "إغلاق التذكرة"
@@ -8102,8 +8130,8 @@ msgid "Conversation not found"
 msgstr "المحادثة غير موجودة"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Conversation not picked up"
-msgstr "لم يتم استلام المحادثة"
+#~ msgid "Conversation not picked up"
+#~ msgstr "لم يتم استلام المحادثة"
 
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Conversation project set"
@@ -10155,8 +10183,8 @@ msgstr "أفعال مخصصة لمؤشر التقدم الدوار"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #: src/components/helpdesk/HelpDeskPage.tsx
-msgid "Customer agent"
-msgstr "وكيل العملاء"
+#~ msgid "Customer agent"
+#~ msgstr "وكيل العملاء"
 
 #: src/components/project-home/ProjectHome.tsx
 msgid "Customize"
@@ -12037,6 +12065,7 @@ msgstr "الحواف حسب النوع"
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/SourceMenu.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
@@ -16697,8 +16726,12 @@ msgid "It will run {0}."
 msgstr "سيعمل {0}."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "it writes a draft and does not send it; a team member sends"
-msgstr "يكتب مسودة ولا يرسلها؛ ويرسلها أحد أعضاء الفريق"
+#~ msgid "it writes a draft and does not send it; a team member sends"
+#~ msgstr "يكتب مسودة ولا يرسلها؛ ويرسلها أحد أعضاء الفريق"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "It writes to the team only, never to the customer."
+msgstr "يكتب للفريق فقط، وليس للعميل أبداً."
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 msgid "It's in your projects list, marked new."
@@ -17193,6 +17226,7 @@ msgstr "الأحدث على PyPI"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
@@ -19110,8 +19144,8 @@ msgid "Models Used"
 msgstr "النماذج المستخدمة"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Moderated replies"
-msgstr "ردود بموافقة"
+#~ msgid "Moderated replies"
+#~ msgstr "ردود بموافقة"
 
 #: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -21346,8 +21380,8 @@ msgid "Nobody may write to this agent yet — add their address under Allowed se
 msgstr "لا يمكن لأحد مراسلة هذا الوكيل بعد — أضف عنوانه ضمن المرسلين المسموح لهم."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "nobody on the team has taken the ticket"
-msgstr "لم يستلم أحد من الفريق التذكرة"
+#~ msgid "nobody on the team has taken the ticket"
+#~ msgstr "لم يستلم أحد من الفريق التذكرة"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Nobody picked: it stays a private conversation on this computer, with the diagnosis."
@@ -22481,7 +22515,6 @@ msgstr "عذرًا! الصفحة غير موجودة"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
-#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/items/item-state.ts
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -24607,6 +24640,10 @@ msgstr "منفذ وسيط SOCKS في الحاوية الرملية"
 msgid "Ports"
 msgstr "المنافذ"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Post the RCA report for the team."
+msgstr "نشر تقرير تحليل السبب الجذري للفريق."
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -26718,8 +26755,8 @@ msgid "Reply to sender…"
 msgstr "الرد على المرسل…"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Reply when (pick any)"
-msgstr "الرد عندما (اختر ما تشاء)"
+#~ msgid "Reply when (pick any)"
+#~ msgstr "الرد عندما (اختر ما تشاء)"
 
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "Reply…"
@@ -27515,6 +27552,10 @@ msgstr "تشغيل {0}"
 #: src/components/automations/automation-words.ts
 msgid "run {name}"
 msgstr "تشغيل {name}"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Run /rca on every request."
+msgstr "تشغيل /rca على كل طلب."
 
 #: src/components/conversation/SessionCard.tsx
 msgid "Run & Update {guest}"
@@ -30817,8 +30858,8 @@ msgid "Someone else is using this machine"
 msgstr "شخص آخر يستخدم هذا الجهاز"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "someone writes @agent in the conversation"
-msgstr "يكتب أحدهم @agent في المحادثة"
+#~ msgid "someone writes @agent in the conversation"
+#~ msgstr "يكتب أحدهم @agent في المحادثة"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Something went wrong"
@@ -31667,6 +31708,11 @@ msgstr "الملخص"
 msgid "Support"
 msgstr "الدعم"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Support agent (customer facing)"
+msgstr "وكيل الدعم (يواجه العميل)"
+
 #. placeholder {0}: result.shadowed_by?.display_name ?? t`the existing desk`
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Support requests from this project keep going to <0>{0}</0>. Remove that one first if you want this desk to answer."
@@ -32008,8 +32054,13 @@ msgstr ""
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #: src/components/helpdesk/HelpDeskPage.tsx
-msgid "Team agent"
-msgstr "وكيل الفريق"
+#~ msgid "Team agent"
+#~ msgstr "وكيل الفريق"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Team agent (internal)"
+msgstr "وكيل الفريق (داخلي)"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Team collaboration mode"
@@ -32191,6 +32242,10 @@ msgstr "تم الاختبار هنا: المزوّد يقبل المفتاح."
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "text"
 msgstr "نص"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Thank the customer at once, then follow the ticket."
+msgstr "شكر العميل فوراً ثم متابعة التذكرة."
 
 #: src/components/ask/AskForm.tsx
 msgid "Thank you — sent."
@@ -34599,6 +34654,7 @@ msgstr "جرّبوه"
 msgid "Try it on recent messages"
 msgstr "جرِّبوها على الرسائل الأخيرة"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Try:"
 msgstr "جرّبوا:"
@@ -36288,16 +36344,16 @@ msgid "When any of these message tags is assigned"
 msgstr ""
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "When it replies"
-msgstr "متى يرد"
+#~ msgid "When it replies"
+#~ msgstr "متى يرد"
 
 #: src/i18n/pref-labels.ts
 msgid "When on, the server re-creates the Welcome bookmark + feed entry on the next start, then turns this off."
 msgstr "عند التفعيل، يعيد الخادم إنشاء إشارة الترحيب ومدخل الموجز عند التشغيل التالي، ثم يوقف هذا الخيار."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "When should it reply on {deskName}?"
-msgstr "متى يجب أن يرد في {deskName}؟"
+#~ msgid "When should it reply on {deskName}?"
+#~ msgstr "متى يجب أن يرد في {deskName}؟"
 
 #: src/components/automations/automation-words.ts
 msgid "When something happens"
