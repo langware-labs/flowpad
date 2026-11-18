@@ -112,6 +112,12 @@ export interface OrgScopeBudget extends ScopeBudget {
    */
   can_set_up_budget: boolean;
   /**
+   * May the caller start this organization on Flowpad's own Google identity, with no key? `true` only while
+   * the hub is configured for it AND the caller is allowed. The setup form offers the choice only then.
+   * Absent on an older hub, which reads as `false`.
+   */
+  hub_identity_available?: boolean;
+  /**
    * May the caller share this organization — invite people, re-role them, remove them? Admin and
    * above, and so deliberately WIDER than everything else on this row: running the people is what
    * an organization is shared for.
@@ -189,7 +195,9 @@ function budgetsRead(type: 'organization' | 'team', id: string) {
 export class BudgetsService {
   /** Every org and team the caller is on, with `can_read_budgets` answered by the hub's own policy. */
   async myScopes(): Promise<MyScope[]> {
-    const data = await dataManager.callAction<undefined, { scopes: MyScope[] }>(hubAction('scopes', 'token_plan', null, 'GET'));
+    const data = await dataManager.callAction<undefined, { scopes: MyScope[] }>(
+      hubAction('scopes', 'token_plan', null, 'GET'),
+    );
     return data.scopes;
   }
 

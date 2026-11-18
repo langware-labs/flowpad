@@ -60,7 +60,13 @@ export interface PayingProviderSetupProps {
   orgId: string;
   org: Pick<
     OrgScopeBudget,
-    'endpoint_id' | 'is_root' | 'provider' | 'credential_hint' | 'can_set_credential' | 'can_set_up_budget'
+    | 'endpoint_id'
+    | 'is_root'
+    | 'provider'
+    | 'credential_hint'
+    | 'can_set_credential'
+    | 'can_set_up_budget'
+    | 'hub_identity_available'
   >;
 }
 
@@ -71,7 +77,11 @@ export function PayingProviderSetup({ orgId, org }: PayingProviderSetupProps) {
   // told the owner of a brand new org "its owner sets one up" and gave them no way to be that
   // owner. The right question is asked of the organization, and it is answerable before setup.
   if (!org.endpoint_id) {
-    return org.can_set_up_budget ? <OrgKeyCreateForm orgId={orgId} /> : <PayingProviderSummary org={org} />;
+    return org.can_set_up_budget ? (
+      <OrgKeyCreateForm orgId={orgId} hubIdentityAvailable={org.hub_identity_available === true} />
+    ) : (
+      <PayingProviderSummary org={org} />
+    );
   }
 
   // Same statement of fact for everyone: bringing a key is not offered on a pool that already
@@ -181,10 +191,13 @@ function ProviderSelect({
 /** Provider + key entry when the org has no pool yet. One submit, two hub calls. */
 function OrgKeyCreateForm({
   orgId,
+  hubIdentityAvailable = false,
   onSwitched,
   onCancel,
 }: {
   orgId: string;
+  /** The hub says this person may start the organization on Flowpad's own Google identity. */
+  hubIdentityAvailable?: boolean;
   /** Present when this form moves an EXISTING root to another provider instead of creating one. */
   onSwitched?: (result: SwitchPayingProviderResult) => void;
   onCancel?: () => void;
@@ -340,7 +353,7 @@ function OrgKeyCreateForm({
           </Button>
         )}
       </div>
-      {providerId === 'vertex' && !switching && (
+      {providerId === 'vertex' && !switching && hubIdentityAvailable && (
         <button
           type="button"
           className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"

@@ -209,6 +209,7 @@ describe("PayingProviderSetup — Vertex on Flowpad's own Google identity (no ke
     credential_hint: '',
     can_set_credential: true,
     can_set_up_budget: true,
+    hub_identity_available: true,
   };
 
   async function chooseVertexWithoutKey(user: ReturnType<typeof userEvent.setup>) {
@@ -217,6 +218,15 @@ describe("PayingProviderSetup — Vertex on Flowpad's own Google identity (no ke
     await user.click(await screen.findByTestId('org-root-provider-vertex'));
     await user.click(screen.getByTestId('org-root-hub-identity-toggle'));
   }
+
+  it('offers nothing new when the hub says the choice is not available to this person', async () => {
+    const user = userEvent.setup();
+    render(<PayingProviderSetup orgId={ORG_ID} org={{ ...org, hub_identity_available: false }} />);
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-vertex'));
+    expect(screen.queryByTestId('org-root-hub-identity-toggle')).toBeNull();
+    expect(screen.getByTestId('credential-input')).toBeTruthy();
+  });
 
   it('offers the choice only for Vertex', async () => {
     const user = userEvent.setup();
