@@ -105,7 +105,7 @@ describe('runtime configuration changes, without a reload', () => {
     expect(sent.map((s) => [s.url.includes('/11/'), s.event.environment])).toEqual([[true, 'staging']]);
     expect(sent[0].event.tags).toEqual({ runtime_kind: 'sandbox', where: 'boundary' });
 
-    // A live `sentry_info_msg` lands through `applySentryInfo`: same value, no restart.
+    // A live `sentry_info.changed` lands through `applySentryInfo`: same value, no restart.
     const before = realSdk.getClient();
     dataContext.applySentryInfo({ dsn: DSN_A, environment: 'staging' });
     await settle();

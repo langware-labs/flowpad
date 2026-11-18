@@ -28,8 +28,6 @@ class WSMessageType(Enum):
     CLOUD_LOGIN_STATUS_MSG = "cloud_login_status_msg"
     CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
     PRIVACY_MODE_MSG = "privacy_mode_msg"
-    # The hub-pushed browser error-reporting config changed (``instance_settings/sentry_info.py``).
-    SENTRY_INFO_MSG = "sentry_info_msg"
     TOPLOG_STATE_MSG = "toplog_state_msg"
     # A status fact changed (harness install/login, a stored key, the hub login): re-read
     # ``status`` and ``funding``. A signal, not a payload -- the GET stays the one reader.

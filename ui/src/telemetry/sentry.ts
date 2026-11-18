@@ -3,7 +3,7 @@
  *
  * Driven by state the existing bootstrap lifecycle already writes, never by a fetch of its own:
  * `dataContext.bootstrapInfo` (written by `initSdk`, `refreshSession`, and a sandbox's live
- * `sentry_info_msg`) and the privacy mode. Whenever the effective config changes, Sentry is
+ * `sentry_info.changed`) and the privacy mode. Whenever the effective config changes, Sentry is
  * started, restarted with the new DSN/environment, or closed — no reload.
  *
  * On only when ALL hold: the backend sent a valid `sentry_info`, the page is the hub or a sandbox
@@ -422,7 +422,7 @@ function reconcile(): void {
 /**
  * Follow the effective config for the life of the page. Call once at startup, before the router
  * renders: it fires immediately (off until `initSdk` stores the bootstrap) and again on every
- * later write — sign-in refresh, a sandbox's live `sentry_info_msg`, a privacy toggle.
+ * later write — sign-in refresh, a sandbox's live `sentry_info.changed`, a privacy toggle.
  */
 export function startSentryReaction(): void {
   if (started) return;

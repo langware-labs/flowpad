@@ -13,6 +13,15 @@ export function createDeployEnv(value: string): DeployEnv {
   return env;
 }
 
+/**
+ * The origin the backend answers on, or `null` when none is configured. A packaged UI served by its own
+ * backend gets the page origin here; a split dev harness (Vite on one port, the hub on another) gets the
+ * hub's -- which is exactly where a backend route lives and `window.location.origin` is not.
+ */
+export function backendOrigin(): string | null {
+  return Number.isFinite(sdkConfig.api_port) ? new URL(sdkConfig.apiUrl).origin : null;
+}
+
 // Use the new configuration system
 export const config = {
   SUBPATH: '',

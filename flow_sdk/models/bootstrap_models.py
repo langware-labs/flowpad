@@ -202,7 +202,7 @@ class BootstrapInfo(BaseModel):
     privacy_mode: str = "connected"
     # Browser error reporting (flow_sdk/schema/data_spec/sentry_info_spec.py). Set per request in
     # ``_with_runtime``: the value the hub pushed on a sandbox, ``null`` everywhere else -- a desktop
-    # never reports. Live changes arrive over WS (``sentry_info_msg``).
+    # never reports. Live changes arrive as the ``sentry_info.changed`` tag.
     sentry_info: Optional[SentryInfo] = None
     # One-time, UI-facing notice surfaced as a toast on startup (e.g. the
     # secrets file was reset after the keychain key was lost). None normally.

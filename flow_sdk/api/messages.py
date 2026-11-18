@@ -24,7 +24,6 @@ from flow_sdk.api.api_types.messages import (  # noqa: F401  (re-exports)
     ResponseMessage,
     WSMessageType,
 )
-from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfo
 
 
 class PrivacyModeMessage(BaseMessage):
@@ -33,16 +32,6 @@ class PrivacyModeMessage(BaseMessage):
 
     message_type: str = WSMessageType.PRIVACY_MODE_MSG.value
     privacy_mode: str  # "local" | "connected"
-
-
-class SentryInfoMessage(BaseMessage):
-    """Broadcast when this sandbox's browser error-reporting config changes (set, replaced or
-    cleared), so every open client starts, reconfigures or stops Sentry without a reload.
-    ``None`` means off. Expiry is NOT announced: a value the hub stopped confirming reads as null
-    from the next bootstrap on, so a tab that stays open keeps its config until it reloads."""
-
-    message_type: str = WSMessageType.SENTRY_INFO_MSG.value
-    sentry_info: Optional[SentryInfo] = None
 
 
 class ToplogStateMessage(BaseMessage):

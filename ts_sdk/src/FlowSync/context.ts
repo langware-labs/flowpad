@@ -169,7 +169,7 @@ class DataContext extends EventEmitter {
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
-  /** Replace just the error-reporting slice, from a live `sentry_info_msg`. Same copy-on-write as
+  /** Replace just the error-reporting slice, from a live `sentry_info.changed` tag. Same copy-on-write as
    *  `applyInfo`, so observers of `bootstrapInfo` (the UI's Sentry reaction) see the change. */
   applySentryInfo(info: SentryInfo | null): void {
     if (!this.bootstrapInfo) return;

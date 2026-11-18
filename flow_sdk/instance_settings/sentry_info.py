@@ -37,6 +37,8 @@ from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfo, SentryInfoSta
 logger = logging.getLogger(__name__)
 
 _CONFIG_KEY = "sentry_info"
+#: The tag an effective change rides to every open page (forwarded: ``tags/ws_forward.py``).
+SENTRY_INFO_CHANGED = "sentry_info.changed"
 #: How long a value lives without the hub re-confirming it. The hub syncs on every workspace
 #: open and (throttled) on every READY poll, so a reachable hub re-confirms many times a day.
 MAX_STALENESS_SECONDS = 7 * 24 * 3600
@@ -112,15 +114,19 @@ def _store(info: SentryInfo | None) -> bool:
 
 
 async def _announce(info: SentryInfo | None) -> None:
-    """Tell every open client. Best-effort: a failed broadcast leaves the next bootstrap right (it stamps
-    ``sentry_info`` per request, outside the bootstrap cache, so there is nothing to invalidate)."""
+    """Tell every open client, on the tag bus. Best-effort: a missed event leaves the next bootstrap right (it
+    stamps ``sentry_info`` per request, outside the bootstrap cache, so there is nothing to invalidate)."""
     try:
-        from flow_sdk.api.messages import SentryInfoMessage  # noqa: PLC0415
-        from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
+        from flow_sdk.tags.bus import emit_tag  # noqa: PLC0415
+        from flow_sdk.tags.envelope import target_of  # noqa: PLC0415
 
-        await broadcast(SentryInfoMessage(sentry_info=info).model_dump_json())
+        emit_tag(
+            SENTRY_INFO_CHANGED,
+            target_of("sentry_info", "local"),
+            {"sentry_info": info.model_dump(mode="json") if info else None},
+        )
     except Exception:  # noqa: BLE001
-        logger.debug("sentry_info: broadcast failed", exc_info=True)
+        logger.debug("sentry_info: tag emit failed", exc_info=True)
 
 
 async def _sync_once() -> SyncOutcome:

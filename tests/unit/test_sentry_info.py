@@ -274,16 +274,24 @@ async def test_a_newer_hub_answer_with_extra_fields_still_syncs(announced):
     assert box.get_sentry_info() == SentryInfo(**A)
 
 
-def test_the_ws_frame_and_the_action_results_are_typed_values_with_the_shape_the_ui_reads():
-    import json
+@pytest.mark.asyncio
+async def test_a_change_rides_the_tag_bus_to_open_pages_and_the_tag_is_forwarded():
+    from flow_sdk.tags.bus import event_bus
+    from flow_sdk.tags.ws_forward import FORWARDED_TAG_PATTERNS
 
-    from flow_sdk.api.messages import SentryInfoMessage
+    assert box.SENTRY_INFO_CHANGED in FORWARDED_TAG_PATTERNS
+    heard: list = []
+    off = event_bus.on(box.SENTRY_INFO_CHANGED, lambda event: heard.append(event.data))
+    try:
+        await box._announce(SentryInfo(**A))
+        await box._announce(None)
+    finally:
+        off()
+    assert heard == [{"sentry_info": A}, {"sentry_info": None}]
+
+
+def test_the_action_results_are_typed_values_with_the_shape_the_ui_reads():
     from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfoStatus, SentryInfoSyncResult
-
-    frame = json.loads(SentryInfoMessage(sentry_info=SentryInfo(**A)).model_dump_json())
-    assert frame["message_type"] == "sentry_info_msg"
-    assert frame["sentry_info"] == A
-    assert json.loads(SentryInfoMessage().model_dump_json())["sentry_info"] is None
 
     status = SentryInfoStatus(sentry_info=SentryInfo(**A), synced_at="2026-11-16T10:00:00+00:00")
     assert status.model_dump(mode="json") == {

@@ -5,7 +5,8 @@
  */
 import { runInAction } from 'mobx';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dataContext, privacyManager } from '@sdk';
+import { dataContext, EventBus, privacyManager } from '@sdk';
+import { sentryInfoListener } from '@sdk/services/sentry_info';
 import { __testing, effectiveConfig, sdkUrlFor, startSentryReaction } from '@src/telemetry/sentry';
 
 const DSN_A = 'https://0123456789abcdef0123456789abcdef@o1.ingest.us.sentry.io/11';
@@ -186,6 +187,17 @@ describe('loading it', () => {
     setBootstrap(bootstrap({ runtime: { kind: 'hub' }, desktop_info: undefined }));
     await tick();
     expect(injected.map((el) => el.src)).toEqual(['http://localhost:8093/api/v1/sentry-sdk/browser']);
+  });
+
+  it('the sentry_info.changed tag from the backend updates the config the UI reads', async () => {
+    setBootstrap(bootstrap());
+    await sentryInfoListener.startSubscriptions();
+    const deliver = (info: Record<string, unknown> | null) =>
+      EventBus.deliver({ id: 'e', timestamp: 't', tag: 'sentry_info.changed', target: 'sentry_info:local', data: { sentry_info: info }, ctx: { origin: 'local_server' } } as never);
+    deliver({ dsn: DSN_B, environment: 'production' });
+    expect(dataContext.bootstrapInfo?.sentry_info).toEqual({ dsn: DSN_B, environment: 'production' });
+    deliver(null);
+    expect(dataContext.bootstrapInfo?.sentry_info).toBeNull();
   });
 
   it('a failed load is retried when the backend connection comes back, not before', async () => {

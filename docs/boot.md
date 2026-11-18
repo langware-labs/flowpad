@@ -156,7 +156,7 @@ and `flow_sdk/instance_settings/sentry_info.py` reads `GET compute_node/sentry-i
 with the box's own login and keeps it in `config.json`. Only a 404/422 ("this hub has no such
 action") clears it; any other refusal, or an unreachable hub, keeps it; and a value the hub has not
 re-confirmed for 7 days reads as `null` from the next bootstrap on (nothing is broadcast on expiry).
-A change broadcasts `sentry_info_msg` over the WebSocket. In the UI,
+A change emits the `sentry_info.changed` tag, which `tags/ws_forward.py` forwards to every open page. In the UI,
 `ui/src/telemetry/sentry.ts` follows `dataContext.bootstrapInfo` and starts, restarts or stops
 Sentry without a reload. **The Sentry SDK is not in this repository's bundle**: the UI loads it at
 runtime, only once a valid `sentry_info` is present, from the hub's own origin at the fixed path
