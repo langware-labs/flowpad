@@ -315,7 +315,7 @@ msgid "(overridden)"
 msgstr "(overridden)"
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
-#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
+#: src/components/conversation/PromptToRunDialog.tsx
 msgid "(prompt content unavailable)"
 msgstr "(prompt content unavailable)"
 
@@ -1177,6 +1177,12 @@ msgstr "{0}: {1} participants, {2} messages"
 msgid "{0}: {partCount} parts, {1} links"
 msgstr "{0}: {partCount} parts, {1} links"
 
+#. placeholder {0}: value.title || t`Flowchart`
+#. placeholder {1}: value.nodes.length
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "{0}: {questions} questions, {1} steps"
+msgstr "{0}: {questions} questions, {1} steps"
+
 #. placeholder {0}: m[1]
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "{0}: agent, again"
@@ -1751,6 +1757,11 @@ msgstr "{provider} connection"
 msgid "{provider} is used by {0} project(s): {list}. Deleting removes access for all of them, and you'll have to sign in again."
 msgstr "{provider} is used by {0} project(s): {list}. Deleting removes access for all of them, and you'll have to sign in again."
 
+#. placeholder {0}: value.nodes.length
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "{questions} questions · {0} steps"
+msgstr "{questions} questions · {0} steps"
+
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "{registeredCount, plural, one {# watcher active.} other {# watchers active.}}"
 msgstr "{registeredCount, plural, one {# watcher active.} other {# watchers active.}}"
@@ -2013,6 +2024,7 @@ msgid "/run reclaimable "
 msgstr "/run reclaimable "
 
 #: src/components/assets/editor/chart/C4ChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "#"
 msgstr "#"
@@ -2473,6 +2485,10 @@ msgstr "a credential"
 msgid "A cron expression has five parts."
 msgstr "A cron expression has five parts."
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "a decision flow: short questions and outcomes, with state and notes beside it"
+msgstr "a decision flow: short questions and outcomes, with state and notes beside it"
+
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "A deploy uploads this project to Flowpad cloud."
 msgstr "A deploy uploads this project to Flowpad cloud."
@@ -2548,6 +2564,14 @@ msgstr "A harness has sessions here, or the project was opened recently."
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a key the hub holds (the chain could not be read from here)"
 msgstr "a key the hub holds (the chain could not be read from here)"
+
+#: src/components/page-allow/LinkAllowDialog.tsx
+msgid "A link opened outside Flowpad wants to download a project or task onto this computer. Allow it only if you expected this."
+msgstr "A link opened outside Flowpad wants to download a project or task onto this computer. Allow it only if you expected this."
+
+#: src/components/page-allow/LinkAllowDialog.tsx
+msgid "A link opened outside Flowpad wants to start an agent on a project on this computer. Allow it only if you expected this."
+msgstr "A link opened outside Flowpad wants to start an agent on a project on this computer. Allow it only if you expected this."
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A machine"
@@ -3879,9 +3903,15 @@ msgstr "Allocation"
 msgid "Allocation saved"
 msgstr "Allocation saved"
 
+#: src/components/page-allow/LinkAllowDialog.tsx
+#: src/components/page-allow/PageAllowGate.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "Allow"
+
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "Allow “{title}” to run in Flowpad?"
+msgstr "Allow “{title}” to run in Flowpad?"
 
 #. placeholder {0}: entries.join(', ')
 #: src/components/organization/budgets/EndpointControls.tsx
@@ -3919,6 +3949,10 @@ msgstr "Allow login — who may sign in to this sandbox from a browser."
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Allow public deployments"
 msgstr "Allow public deployments"
+
+#: src/components/page-allow/LinkAllowDialog.tsx
+msgid "Allow this link?"
+msgstr "Allow this link?"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Unix Sockets"
@@ -4026,6 +4060,10 @@ msgstr "Also delete the project folder from my computer"
 msgid "Also deliver to…"
 msgstr "Also deliver to…"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Also noticed"
+msgstr "Also noticed"
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "Also open sidecar OS Terminal"
@@ -4041,6 +4079,10 @@ msgstr "Also to"
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Always"
 msgstr "Always"
+
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "Always allow this page"
+msgstr "Always allow this page"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Always on"
@@ -4591,8 +4633,8 @@ msgid "Approve now"
 msgstr "Approve now"
 
 #: src/components/conversation/PromptCallCard.tsx
-msgid "Approve once"
-msgstr "Approve once"
+#~ msgid "Approve once"
+#~ msgstr "Approve once"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Approve this live session only"
@@ -4775,6 +4817,7 @@ msgstr "Ask Flowpad Assistant to change {displayName}"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/HelpdeskAsk.tsx
@@ -6235,8 +6278,8 @@ msgid "Caught by"
 msgstr "Caught by"
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-msgid "Cause"
-msgstr "Cause"
+#~ msgid "Cause"
+#~ msgstr "Cause"
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "chain"
@@ -8081,6 +8124,7 @@ msgid "Content"
 msgstr "Content"
 
 #: src/components/conversation/ConversationPanel.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/entity-actions/ContextMenuButton.tsx
@@ -8117,8 +8161,8 @@ msgid "Context list actions"
 msgstr "Context list actions"
 
 #: src/components/conversation/HelpRequestLine.tsx
-msgid "Context not shared"
-msgstr "Context not shared"
+#~ msgid "Context not shared"
+#~ msgstr "Context not shared"
 
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Context of {title}"
@@ -8437,6 +8481,7 @@ msgid "Copy name"
 msgstr "Copy name"
 
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 msgid "Copy path"
@@ -8585,6 +8630,10 @@ msgstr "Could not add the help desk."
 msgid "Could not allocate"
 msgstr "Could not allocate"
 
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "Could not allow this page."
+msgstr "Could not allow this page."
+
 #: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
@@ -8598,6 +8647,7 @@ msgstr "Could not answer the prompt"
 msgid "Could not apply"
 msgstr "Could not apply"
 
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Could not ask for help"
 msgstr "Could not ask for help"
@@ -9025,6 +9075,10 @@ msgstr "Could not load your token plan."
 msgid "Could not make the agent public"
 msgstr "Could not make the agent public"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Could not mark it done"
+msgstr "Could not mark it done"
+
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Could not move the project"
 msgstr "Could not move the project"
@@ -9046,6 +9100,7 @@ msgstr "Could not name the invites"
 msgid "Could not open {0}"
 msgstr "Could not open {0}"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Could not open in Finder"
 msgstr "Could not open in Finder"
@@ -9272,8 +9327,8 @@ msgid "Could not replay {0}."
 msgstr "Could not replay {0}."
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-msgid "Could not report it"
-msgstr "Could not report it"
+#~ msgid "Could not report it"
+#~ msgstr "Could not report it"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Could not request access"
@@ -9494,7 +9549,7 @@ msgstr "Could not set up Git"
 msgid "Could not set up vault {vault}"
 msgstr "Could not set up vault {vault}"
 
-#: src/components/conversation/HelpRequestLine.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 msgid "Could not share"
 msgstr "Could not share"
 
@@ -9571,6 +9626,10 @@ msgstr "Could not start the {0} sign-in."
 #: src/notifications/diagnose/diagnose-and-fix.ts
 msgid "Could not start the diagnosis"
 msgstr "Could not start the diagnosis"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Could not start the fix"
+msgstr "Could not start the fix"
 
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Could not start the install"
@@ -11264,7 +11323,7 @@ msgstr "Detail"
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/conversation/ContactDialog.tsx
-#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
@@ -11343,9 +11402,13 @@ msgstr "Diagnose this warning"
 msgid "Diagnosed: {0}"
 msgstr "Diagnosed: {0}"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Diagnosing"
+msgstr "Diagnosing"
+
 #: src/components/conversation/HelpRequestLine.tsx
-msgid "Diagnosing privately… you can leave, the answer lands here."
-msgstr "Diagnosing privately… you can leave, the answer lands here."
+#~ msgid "Diagnosing privately… you can leave, the answer lands here."
+#~ msgstr "Diagnosing privately… you can leave, the answer lands here."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Diagnosing…"
@@ -11712,6 +11775,11 @@ msgstr "Does this source actually work?"
 msgid "Domains accessible from sandbox"
 msgstr "Domains accessible from sandbox"
 
+#: src/components/page-allow/LinkAllowDialog.tsx
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "Don’t allow"
+msgstr "Don’t allow"
+
 #: src/i18n/pref-labels.ts
 #: src/i18n/pref-labels.ts
 msgid "Don't ask"
@@ -11755,6 +11823,8 @@ msgstr "done"
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/conversation/ContactDialog.tsx
+#: src/components/conversation/DiagnosisCard.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/footer/BrowserChip.tsx
@@ -12663,6 +12733,7 @@ msgid "Env:"
 msgstr "Env:"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Environment"
 msgstr "Environment"
@@ -14148,6 +14219,7 @@ msgid "Fit Atlas"
 msgstr "Fit Atlas"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Fix"
@@ -14175,6 +14247,10 @@ msgstr "Fix the configuration — credentials or settings — then press Verify 
 msgid "Fix…"
 msgstr "Fix…"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Fixed"
+msgstr "Fixed"
+
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
 msgstr "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
@@ -14183,6 +14259,10 @@ msgstr "Fixed once created, and you must be able to administer it — this endpo
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Fixed: {0}"
 msgstr "Fixed: {0}"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Fixing"
+msgstr "Fixing"
 
 #: src/components/project-setup/SetupFailureActions.tsx
 msgid "Fixing the setup…"
@@ -14215,6 +14295,11 @@ msgstr "Flow Message"
 #: src/components/graph-workflows/GraphWorkflowsNavigator.tsx
 msgid "flow name…"
 msgstr "flow name…"
+
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Flowchart"
+msgstr "Flowchart"
 
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/token-plan/FundingChain.tsx
@@ -14386,6 +14471,10 @@ msgstr "Flowpad tab"
 #: src/components/version-popover/version-chip.tsx
 msgid "Flowpad version"
 msgstr "Flowpad version"
+
+#: src/components/agent-layout/error-screen/error-screen.tsx
+msgid "Flowpad was updated"
+msgstr "Flowpad was updated"
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Flowpad will propose the install on <0>{INSTALL_REVIEW_BRANCH}</0>. Your default branch is not changed and no pull request is opened automatically."
@@ -15342,8 +15431,12 @@ msgid "Help desks or skills repos to load alongside it."
 msgstr "Help desks or skills repos to load alongside it."
 
 #: src/components/conversation/HelpRequestLine.tsx
-msgid "Help request"
-msgstr "Help request"
+#~ msgid "Help request"
+#~ msgstr "Help request"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Help requested"
+msgstr "Help requested"
 
 #: src/components/credentials/VariableDetails.tsx
 msgid "Help URL"
@@ -16680,6 +16773,7 @@ msgid "Is it usable?"
 msgstr "Is it usable?"
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/items/IssueView.tsx
 msgid "Issue"
 msgstr "Issue"
@@ -16800,6 +16894,10 @@ msgstr "It gets the changed file paths in its environment when a file starts it.
 #: src/components/automations/AutomationPage.tsx
 msgid "It has not run yet. Use Run once now on the Setup tab to try it."
 msgstr "It has not run yet. Use Run once now on the Setup tab to try it."
+
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "It has not run. A page can read and change what Flowpad holds, so run only pages you trust."
+msgstr "It has not run. A page can read and change what Flowpad holds, so run only pages you trust."
 
 #: src/components/conversation/it-reply.ts
 msgid "IT is disabled on this machine"
@@ -17433,6 +17531,10 @@ msgstr "Launching…"
 msgid "Layers"
 msgstr "Layers"
 
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "Leads to"
+msgstr "Leads to"
+
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Learn about duplicates"
 msgstr "Learn about duplicates"
@@ -17978,10 +18080,9 @@ msgstr "Loading capabilities…"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
-#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+#: src/components/assets/editor/chart/chartBase.tsx
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/assets/editor/chart/MermaidChartView.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Loading chart…"
 msgstr "Loading chart…"
 
@@ -18121,6 +18222,7 @@ msgid "Loading people…"
 msgstr "Loading people…"
 
 #: src/components/html-preview/HtmlPreview.tsx
+#: src/components/page-allow/PageAllowGate.tsx
 msgid "Loading preview…"
 msgstr "Loading preview…"
 
@@ -18435,6 +18537,10 @@ msgstr "Logs"
 #: src/components/automations/TestPanel.tsx
 msgid "Looking for recent events…"
 msgstr "Looking for recent events…"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Looking into it…"
+msgstr "Looking into it…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Looking up project…"
@@ -19022,6 +19128,10 @@ msgstr "Message this deployed agent…"
 #: src/i18n/type-labels.ts
 msgid "Message Thread"
 msgstr "Message Thread"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Message to {hostName}…"
+msgstr "Message to {hostName}…"
 
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourcePage.tsx
@@ -20981,6 +21091,10 @@ msgstr "No place of its own: it falls through to \"everything else\""
 msgid "No plugins installed"
 msgstr "No plugins installed"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "No problem found"
+msgstr "No problem found"
+
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "No process ID specified"
 msgstr "No process ID specified"
@@ -21946,6 +22060,10 @@ msgstr "Not set up for publishing"
 msgid "Not set up yet. Add your own provider key to start spending."
 msgstr "Not set up yet. Add your own provider key to start spending."
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Not shared"
+msgstr "Not shared"
+
 #: src/components/credentials-view/CredentialView.tsx
 msgid "not signed in"
 msgstr "not signed in"
@@ -22017,6 +22135,7 @@ msgid "Not yet published"
 msgstr "Not yet published"
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 msgid "Note"
 msgstr "Note"
 
@@ -22032,6 +22151,10 @@ msgstr "Note to team"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Note: File is missing"
 msgstr "Note: File is missing"
+
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "Notes"
+msgstr "Notes"
 
 #. placeholder {0}: notes.length
 #. placeholder {0}: target.name
@@ -22704,7 +22827,8 @@ msgstr "Oops! Page not found"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
-#: src/components/conversation/HelpRequestLine.tsx
+#: src/components/conversation/DiagnosisCard.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/SealedTypedCard.tsx
@@ -22712,6 +22836,7 @@ msgstr "Oops! Page not found"
 #: src/components/conversation/task-it.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/footer/ActivityDetailsModal.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
 #: src/components/items/item-state.ts
@@ -22740,6 +22865,7 @@ msgstr "Open"
 #. placeholder {0}: file.path
 #. placeholder {0}: item.label
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
@@ -22803,6 +22929,7 @@ msgstr "Open {workerName} terminal"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Open ↗"
@@ -22910,6 +23037,7 @@ msgid "Open authorization page"
 msgstr "Open authorization page"
 
 #: src/components/conversation/AutomationMessageActions.tsx
+#: src/components/footer/ActivityDetailsModal.tsx
 msgid "Open automation"
 msgstr "Open automation"
 
@@ -23416,8 +23544,7 @@ msgstr "Open the copy"
 msgid "Open the data source"
 msgstr "Open the data source"
 
-#: src/components/conversation/DiagnosisMessageActions.tsx
-#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 msgid "Open the diagnosis worker"
 msgstr "Open the diagnosis worker"
 
@@ -23711,6 +23838,11 @@ msgstr "OpenRouter"
 msgid "OpenRouter hosts to avoid (one per line)"
 msgstr "OpenRouter hosts to avoid (one per line)"
 
+#. placeholder {0}: state.desk
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Opens a support conversation with {0}"
+msgstr "Opens a support conversation with {0}"
+
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Opens in"
@@ -23932,6 +24064,10 @@ msgstr "Other projects"
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Other sessions"
 msgstr "Other sessions"
+
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "Outcome"
+msgstr "Outcome"
 
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Outgoing"
@@ -25432,21 +25568,13 @@ msgstr "Prompt sent to the agentic process when this trigger fires…"
 msgid "Prompt text"
 msgstr "Prompt text"
 
-#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
+#: src/components/conversation/PromptToRunDialog.tsx
 msgid "Prompt to run"
 msgstr "Prompt to run"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Prompt to run on {hostName}'s machine…"
 msgstr "Prompt to run on {hostName}'s machine…"
-
-#: src/components/conversation/MessageComposer.tsx
-msgid "Message to {hostName}…"
-msgstr "Message to {hostName}…"
-
-#: src/components/conversation/PromptCallCard.tsx
-msgid "Read the full prompt"
-msgstr "Read the full prompt"
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run:"
@@ -25792,6 +25920,10 @@ msgstr "Python (flow SDK)"
 msgid "question"
 msgstr "question"
 
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "Question"
+msgstr "Question"
+
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "Questions"
 msgstr "Questions"
@@ -25921,6 +26053,10 @@ msgstr "read only"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Read only"
 msgstr "Read only"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "Read the full prompt"
+msgstr "Read the full prompt"
 
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
@@ -26471,6 +26607,7 @@ msgstr "Release notes"
 msgid "Release notes version"
 msgstr "Release notes version"
 
+#: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -26675,6 +26812,9 @@ msgstr "Remove Project"
 msgid "Remove Project & Delete Files"
 msgstr "Remove Project & Delete Files"
 
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Remove prompt"
 msgstr "Remove prompt"
@@ -27001,17 +27141,16 @@ msgid "Report"
 msgstr "Report"
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-msgid "Report it"
-msgstr "Report it"
+#~ msgid "Report it"
+#~ msgstr "Report it"
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-msgid "Report it for me"
-msgstr "Report it for me"
+#~ msgid "Report it for me"
+#~ msgstr "Report it for me"
 
-#. placeholder {0}: state.desk
 #: src/components/conversation/DiagnosisMessageActions.tsx
-msgid "Report it to {0}"
-msgstr "Report it to {0}"
+#~ msgid "Report it to {0}"
+#~ msgstr "Report it to {0}"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Report page errors"
@@ -27041,6 +27180,7 @@ msgstr "Repository URL"
 
 #: src/components/account/network-errors.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/notifications/error-detail.ts
 msgid "Request"
 msgstr "Request"
@@ -27492,6 +27632,8 @@ msgid "Reveal in Finder"
 msgstr "Reveal in Finder"
 
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Reveal in Finder/Explorer"
 msgstr "Reveal in Finder/Explorer"
@@ -27532,6 +27674,7 @@ msgstr "Reveal the message this task was derived from"
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Review"
@@ -27662,7 +27805,8 @@ msgid "Root"
 msgstr "Root"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
-#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisCard.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Root cause"
 msgstr "Root cause"
@@ -27740,6 +27884,7 @@ msgstr "Rules"
 #: src/components/code-block-run-button.tsx
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -28117,6 +28262,7 @@ msgstr "runs"
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/footer/ActivityDetailsModal.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/types/ViewType.ts
 msgid "Runs"
@@ -29883,7 +30029,7 @@ msgstr "Several matches"
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
-#: src/components/conversation/HelpRequestLine.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -30106,7 +30252,7 @@ msgstr "Sharing options"
 msgid "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
 msgstr "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
 
-#: src/components/conversation/HelpRequestLine.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Sharing…"
@@ -31312,6 +31458,7 @@ msgstr "Starred"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 #: src/components/assets/editor/task/ParentTaskBlock.tsx
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -31545,6 +31692,8 @@ msgstr "Starts an automation"
 msgid "Starts when any of these happens"
 msgstr "Starts when any of these happens"
 
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "State"
 msgstr "State"
@@ -31566,6 +31715,7 @@ msgstr "status"
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/conversation/ItSendTable.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
@@ -31616,6 +31766,8 @@ msgid "status: {0}"
 msgstr "status: {0}"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 msgid "Step"
 msgstr "Step"
 
@@ -31909,6 +32061,10 @@ msgstr "Subprocess runs the file walk in a separate process, so a large or slow 
 msgid "Succeeded"
 msgstr "Succeeded"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Suggested fix"
+msgstr "Suggested fix"
+
 #. placeholder {0}: redirects.map(([from]) => from).join(', ')
 #. placeholder {1}: redirects.map(([, to]) => to).join(', ')
 #: src/components/organization/budgets/PayingProviderSetup.tsx
@@ -31976,6 +32132,10 @@ msgstr "Survey Data:"
 #: src/components/survey/SurveyView.tsx
 msgid "Survey Error"
 msgstr "Survey Error"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Suspected bug"
+msgstr "Suspected bug"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweep {scopeTotal} ({actionWord})"
@@ -32718,6 +32878,10 @@ msgstr "The diagnosis came back. Open it in FlowPad to read every run, or have a
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "The diagnosis could not run — you can report it from the conversation"
 msgstr "The diagnosis could not run — you can report it from the conversation"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "The diagnosis could not run."
+msgstr "The diagnosis could not run."
 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "The document could not be put on the hub the last time it was published."
@@ -33860,8 +34024,8 @@ msgid "This message carries no assets."
 msgstr "This message carries no assets."
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
-msgstr "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
+#~ msgid "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
+#~ msgstr "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
 
 #: src/components/tags/MessageTags.tsx
 msgid "This message was not classified."
@@ -33920,6 +34084,18 @@ msgstr "This organization spends against its own provider key. Everything you al
 #: src/components/organization/tabs/OrgView.tsx
 msgid "This organization's budgets could not be read."
 msgstr "This organization's budgets could not be read."
+
+#: src/components/agent-layout/error-screen/error-screen.tsx
+msgid "This page is from the previous version. Reload to continue."
+msgstr "This page is from the previous version. Reload to continue."
+
+#: src/components/mcp-app-preview/McpAppPreview.tsx
+msgid "This page is not attached to a session, so what you sent reached no one. Nothing you typed was lost; open the page again from the session."
+msgstr "This page is not attached to a session, so what you sent reached no one. Nothing you typed was lost; open the page again from the session."
+
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "This page was opened by a link, not by Flowpad. Once it runs it can read and change what Flowpad holds, so allow it only if you trust where it came from."
+msgstr "This page was opened by a link, not by Flowpad. Once it runs it can read and change what Flowpad holds, so allow it only if you trust where it came from."
 
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "This permanently deletes it from disk. This cannot be undone."
@@ -35300,7 +35476,7 @@ msgstr "Update channel for auto-updates"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartBase.tsx
 msgid "Update CHART.md"
 msgstr "Update CHART.md"
 
@@ -36351,7 +36527,7 @@ msgstr "What do you want to work on"
 msgid "What Flowpad found when it checked this project's Git setup."
 msgstr "What Flowpad found when it checked this project's Git setup."
 
-#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/items/IssueView.tsx
 msgid "What happened"
 msgstr "What happened"
@@ -36487,7 +36663,7 @@ msgstr "What this source places in the project is added to .gitignore — it may
 msgid "What to look at"
 msgstr "What to look at"
 
-#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 msgid "What was done"
 msgstr "What was done"
 
@@ -36735,6 +36911,10 @@ msgstr "Whoever runs the hub can turn it on. Gmail works here meanwhile."
 #: src/components/explorer-view/ExplorerNavigator.tsx
 msgid "Whole computer"
 msgstr "Whole computer"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Whose it is"
+msgstr "Whose it is"
 
 #: src/components/tags/ClassifyTable.tsx
 msgid "Why"
