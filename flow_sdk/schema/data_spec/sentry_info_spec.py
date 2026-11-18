@@ -67,7 +67,7 @@ class SentryInfoStatus(DataSpec):
 
 
 class SentryInfoSyncResult(SentryInfoStatus):
-    """What ``POST @local/sentry-info/sync`` answers: the status after the sync, and how it went."""
+    """What ``POST @local/sentry-info`` answers: the status after the sync, and how it went."""
 
     outcome: SyncOutcome
 

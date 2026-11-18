@@ -151,7 +151,7 @@ time when the complete bootstrap response body has been sent.
 `sentry_info` (browser error reporting) is stamped the same way, per request and outside the
 cache, and only for a sandbox runtime; a desktop, a browser tab and an agent always get an
 explicit `null`. A sandbox PULLS the value: the hub POSTs
-`compute_node/@local/sentry-info/sync` (no body, and no write endpoint exists) on workspace-ready,
+`POST compute_node/@local/sentry-info` (no body, and no write endpoint exists) on workspace-ready,
 and `flow_sdk/instance_settings/sentry_info.py` reads `GET compute_node/sentry-info` from the hub
 with the box's own login and keeps it in `config.json`. Only a 404/422 ("this hub has no such
 action") clears it; any other refusal, or an unreachable hub, keeps it; and a value the hub has not
@@ -171,7 +171,7 @@ check (the shape of 8 functions), **not** a security check, and `no-referrer` an
 change that. The origin comes from the box's own config (`cloud_app_url`), so whoever controls that
 config controls which hub's code runs; that is the same control that already decides which hub the box
 signs in to. A failed load is remembered per script URL for the page, and forgotten when the backend
-connection comes back (no timer, no retry budget). `POST .../sentry-info/sync` is not rate-limited on
+connection comes back (no timer, no retry budget). `POST .../sentry-info` is not rate-limited on
 the box: concurrent calls share one hub read, sequential ones each ask the hub, and the hub-side
 throttle on its own triggers is the only limit.
 

@@ -252,14 +252,14 @@ async def test_a_caller_cannot_set_the_dsn_through_the_action(announced):
     """The body is never read: whatever a browser or a worker sends, the stored value is the hub's."""
     evil = {"sentry_info": {"dsn": DSN_B, "environment": "production"}, "dsn": DSN_B}
     with _hub({"sentry_info": A}):
-        response = await _call_action("POST", "sync", evil)
+        response = await _call_action("POST", "", evil)
     assert response.data["outcome"] == "updated"
     assert box.get_sentry_info() == SentryInfo(**A)
 
 
-@pytest.mark.parametrize(("method", "sub_path"), [("POST", ""), ("POST", "set"), ("PUT", ""), ("DELETE", "")])
+@pytest.mark.parametrize(("method", "sub_path"), [("POST", "sync"), ("POST", "set"), ("PUT", ""), ("DELETE", "")])
 @pytest.mark.asyncio
-async def test_anything_but_get_and_sync_is_refused_and_stores_nothing(announced, method, sub_path):
+async def test_anything_but_get_and_a_bare_post_is_refused_and_stores_nothing(announced, method, sub_path):
     with _hub({"sentry_info": A}) as call:
         response = await _call_action(method, sub_path, A)
     assert response.status != "success"

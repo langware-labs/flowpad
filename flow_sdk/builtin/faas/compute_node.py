@@ -1786,10 +1786,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @action.all(action_name="sentry-info", methods=["get", "post"])
     async def _sentry_info_action(self) -> ApiResponse:
-        """GET the browser error-reporting config and its freshness; POST ``sync`` to re-read it
-        from the hub. There is deliberately NO write: a body is never read, so no HTTP caller -- a
-        browser, a worker on the box -- can point this box's error reports anywhere but where its
-        hub says (``instance_settings/sentry_info.py``). The hub POSTs ``sync`` on workspace-ready."""
+        """GET the browser error-reporting config and its freshness; POST (no sub-path, no body) to
+        re-read it from the hub. There is deliberately NO write: a body is never read, so no HTTP
+        caller -- a browser, a worker on the box -- can point this box's error reports anywhere but
+        where its hub says (``instance_settings/sentry_info.py``). The hub POSTs on workspace-ready."""
         from flow_sdk.instance_settings.sentry_info import (  # noqa: PLC0415
             sentry_info_status,
             sync_sentry_info_from_hub,
@@ -1801,7 +1801,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
         if method == "GET" and not sub_path:
             return ApiSuccessResponse(data=sentry_info_status().model_dump(mode="json"))
-        if method == "POST" and sub_path == "sync":
+        if method == "POST" and not sub_path:
             outcome = await sync_sentry_info_from_hub()
             result = SentryInfoSyncResult(outcome=outcome, **sentry_info_status().model_dump())
             return ApiSuccessResponse(data=result.model_dump(mode="json"))

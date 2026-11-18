@@ -169,7 +169,7 @@ row's `auth_mode` field:
   `flow_sdk/instance_settings/llm_endpoint.py`). The hub pushes the binding over the
   `llm-endpoint` box action after login. That push is an **offer**, not an order: it
   no longer rewrites `auth_mode`, so a user's stored choice survives it. The same hub→box channel
-  carries the browser error-reporting config (`sentry-info/sync`; see `docs/boot.md` §5).
+  carries the browser error-reporting config (`POST sentry-info`; see `docs/boot.md` §5).
 
   A **public** endpoint is the one hub budget that needs no hub login: the hub admits
   whoever holds its id, so `flow llm user use <endpoint-id> [--hub URL]` binds a box that

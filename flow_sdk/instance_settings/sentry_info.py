@@ -1,6 +1,6 @@
 """The sandbox's browser error-reporting config — pulled from the hub, never accepted from a caller.
 
-The hub TRIGGERS a sync (``POST /api/v1/graph/compute_node/@local/sentry-info/sync``, no body) on
+The hub TRIGGERS a sync (``POST /api/v1/graph/compute_node/@local/sentry-info``, no body) on
 every workspace-ready; the box then READS the value from the hub it is logged in to::
 
     GET /api/v1/graph/compute_node/sentry-info   (hub action, authenticated with the box's login)
