@@ -167,8 +167,9 @@ async def _rules():
 
 
 def apply_delta(tags: list[str], state: MessageProcessing, *, add=(), remove=(), replace=None,
-                source: TagAssignment, rules=()) -> list[str]:
-    """Pure state transition: a once claim is the entry, including cancelled entries."""
+                source: TagAssignment, rules=(), start_automations=True) -> list[str]:
+    """Pure state transition: a once claim is the entry, including cancelled entries.
+    ``start_automations=False`` changes the tags without queueing anything (a person applied a classification)."""
     before = list(tags)
     desired = to_tags(replace) if replace is not None else list(tags)
     desired = list(dict.fromkeys([*desired, *to_tags(add)]))
@@ -189,7 +190,7 @@ def apply_delta(tags: list[str], state: MessageProcessing, *, add=(), remove=(),
             if rule is not None and not matching_tag(rule, desired):
                 entry.status, entry.error = "cancelled", "The message no longer carries a qualifying tag."
     spent = {entry.trigger_id for entry in state.queue}
-    for rule in rules:
+    for rule in rules if start_automations else ():
         tag = matching_tag(rule, added)
         if tag and str(rule.id) not in spent:
             identity = str(mint_uuid())
@@ -484,6 +485,22 @@ async def classify_now(message_id: str):
         return m.tags
 
     return await _mutate(message_id, ask, wake_worker=True)
+
+
+async def apply_classification(message_id: str, tag: str):
+    """A person makes a dry run's answer the message's classification: the tag the classifier gave before
+    goes, ``tag`` takes its place, tags a person added stay. Starts no automation."""
+    if tag not in {d["name"] for d in await ontology()}:
+        raise ValueError("The tag is outside the configured classification tree.")
+
+    async def change(m, s):
+        given = [t for t, a in s.assignments.items() if a.source == "classification" and t != tag]
+        s.suppressed_tags = [t for t in s.suppressed_tags if t != tag]
+        return apply_delta(m.tags, s, add=[tag], remove=given,
+                           source=TagAssignment(source="classification"),
+                           rules=await scoped_rules(m, await _rules()), start_automations=False)
+
+    return await _mutate(message_id, change)
 
 
 async def run_again(message_id: str, entry_id: str):

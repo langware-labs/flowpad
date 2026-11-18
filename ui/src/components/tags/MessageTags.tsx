@@ -1,4 +1,13 @@
-import { forwardRef, useMemo, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
+import {
+  forwardRef,
+  lazy,
+  Suspense,
+  useMemo,
+  useState,
+  type ButtonHTMLAttributes,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { Tag as TagIcon, X, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { FlowMessage, QueryRequest, Tag, tagIsWithin, tagTree } from '@sdk';
@@ -13,6 +22,9 @@ import { errorMessage } from '@src/lib/error-message';
 import { TagInput } from './TagInput';
 import { TagOffIcon } from './TagOffIcon';
 import { messageTagContext, messageTagReturn } from './message-tag-navigation';
+
+// Loaded on demand: the table draws these chips, so a static import would be a cycle.
+const ClassifyDialog = lazy(() => import('./ClassifyTable').then((m) => ({ default: m.ClassifyDialog })));
 
 export const streamInboxTagsQuery = new QueryRequest({ type: Tag.type, scope: [], name: 'tags:definitions' });
 export const classificationSettingsKey = ['tags', 'classification-settings'];
@@ -249,8 +261,14 @@ function useTagChange(message: FlowMessage) {
 /** The quick menu around `children` (its trigger). Content mounts only while open. */
 function QuickMenu({ message, children }: { message: FlowMessage; children: ReactNode }) {
   const { isOpen, setOpen } = useMessagePanel(message);
+  const [classifying, setClassifying] = useState(false);
   return (
     <Popover open={isOpen('picker')} onOpenChange={(open) => setOpen('picker', open)}>
+      {classifying && message.id && (
+        <Suspense fallback={null}>
+          <ClassifyDialog messageIds={[message.id]} onClose={() => setClassifying(false)} />
+        </Suspense>
+      )}
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         // The tree is the menu: opening must not focus the add field, whose suggestions would cover it.
@@ -259,13 +277,28 @@ function QuickMenu({ message, children }: { message: FlowMessage; children: Reac
         className="w-72 p-3"
         data-testid="message-tags-picker"
       >
-        <TagPicker message={message} onDone={() => setOpen('picker', false)} />
+        <TagPicker
+          message={message}
+          onDone={() => setOpen('picker', false)}
+          onClassify={() => {
+            setOpen('picker', false);
+            setClassifying(true);
+          }}
+        />
       </PopoverContent>
     </Popover>
   );
 }
 
-function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => void }) {
+function TagPicker({
+  message,
+  onDone,
+  onClassify,
+}: {
+  message: FlowMessage;
+  onDone: () => void;
+  onClassify: () => void;
+}) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const definitions = useTagDefinitions();
@@ -296,6 +329,8 @@ function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => vo
       ),
     [definitions, root],
   );
+  // The add field suggests this tree's tags, not every tag in use anywhere.
+  const names = useMemo(() => rows.map((row) => row.name), [rows]);
   return (
     <>
       <div className="mb-2 flex min-h-6 flex-wrap items-center gap-1" data-testid="message-picker-tags">
@@ -313,6 +348,7 @@ function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => vo
       <TagInput
         tags={tags}
         hideTags
+        suggestions={names}
         onAdd={(name) => void mutate(name, false)}
         onRemove={(name) => void mutate(name, true)}
       />
@@ -372,6 +408,12 @@ function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => vo
         </p>
       )}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
+        {!message.outbound && (
+          // The dry run for this one message: where it would land, why, and Apply.
+          <button type="button" className="text-xs underline" data-testid="message-tags-classify" onClick={onClassify}>
+            <Trans>Classify</Trans>
+          </button>
+        )}
         <span className="flex-1" />
         <button
           type="button"

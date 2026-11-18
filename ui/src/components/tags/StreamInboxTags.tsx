@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Plus, Tag as TagIcon, Zap } from 'lucide-react';
+import { ChevronDown, Plus, Tag as TagIcon, Tags, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataManager, FlowMessage, QueryFilter, QueryRequest, Tag, TypeId } from '@sdk';
-import { profileLabel } from '@sdk/models/MessageEnvelope';
 import type { MessageClassification, MessageClassificationSettings } from '@sdk/entities/flow-message';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
+import { Checkbox } from '@src/components/ui/checkbox';
 import { Switch } from '@src/components/ui/switch';
 import { IfThenLine } from '@src/components/automations/IfThenLine';
 import { useAutomationWords } from '@src/components/automations/automation-words';
@@ -19,12 +19,13 @@ import { cn } from '@src/lib/utils';
 import {
   classificationSettingsKey,
   streamInboxTagsQuery,
-  tagChipStyle,
   treeRows,
   useClassificationSettings,
   useTagAutomations,
 } from './MessageTags';
 import { TagOffIcon } from './TagOffIcon';
+import { ClassifyDialog } from './ClassifyTable';
+import { messageLabel, TagChip } from './tag-chip';
 
 const SWATCHES = ['#3b82f6', '#8b5cf6', '#f97316', '#ef4444', '#22c55e', '#14b8a6', '#eab308', '#a1a1aa'];
 const recentMessagesQuery = new QueryRequest({
@@ -32,11 +33,6 @@ const recentMessagesQuery = new QueryRequest({
   name: 'tags:try-messages',
   query: new QueryFilter({ limit: 30, order_by: { created_date: 'desc' } }),
 });
-
-function messageLabel(message: FlowMessage | null | undefined): [string, string] {
-  const subject = message?.envelope?.subject || message?.text?.slice(0, 80) || '';
-  return [message?.sender_name || profileLabel(message?.envelope?.sender), subject];
-}
 
 /** The classification tree under the stream_inbox root: build it, say what each tag means, and try it on a message. */
 export function StreamInboxTags() {
@@ -135,6 +131,9 @@ export function StreamInboxTags() {
   const picking = options.pick === '1' || !messageId;
   const { data: recent = [] } = useEntitiesQuery<FlowMessage>(recentMessagesQuery, { enabled: picking });
   const [search, setSearch] = useState('');
+  // Ticked in the picker: Classify opens the dry-run table for them.
+  const [ticked, setTicked] = useState<string[]>([]);
+  const [classifying, setClassifying] = useState<string[] | null>(null);
 
   const updateSettings = async (patch: Partial<MessageClassificationSettings>) => {
     try {
@@ -435,12 +434,21 @@ export function StreamInboxTags() {
                   .map((m) => {
                     const [who, what] = messageLabel(m);
                     return (
-                      <li key={m.id}>
+                      <li key={m.id} className="flex items-center gap-2 px-1">
+                        <Checkbox
+                          checked={ticked.includes(m.id!)}
+                          onCheckedChange={() =>
+                            setTicked((all) => (all.includes(m.id!) ? all.filter((id) => id !== m.id) : [...all, m.id!]))
+                          }
+                          aria-label={t`Select conversation`}
+                          data-testid={`stream-inbox-tag-try-tick-${m.id}`}
+                          className="h-3.5 w-3.5 border-muted-foreground"
+                        />
                         <button
                           type="button"
                           data-testid={`stream-inbox-tag-try-pick-${m.id}`}
                           onClick={() => open({ message: m.id, conversation: m.conversation_id ?? null, pick: null })}
-                          className="w-full truncate rounded px-2 py-1.5 text-start text-xs hover:bg-muted"
+                          className="min-w-0 flex-1 truncate rounded px-2 py-1.5 text-start text-xs hover:bg-muted"
                         >
                           <b>{who}</b> — {what}
                         </button>
@@ -448,6 +456,17 @@ export function StreamInboxTags() {
                     );
                   })}
               </ul>
+              {ticked.length > 0 && (
+                <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+                  <span className="text-xs text-muted-foreground">
+                    <Trans>{ticked.length} selected</Trans>
+                  </span>
+                  <Button size="sm" onClick={() => setClassifying(ticked)} data-testid="stream-inbox-tag-try-classify">
+                    <Tags className="size-3.5" />
+                    <Trans>Classify</Trans>
+                  </Button>
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -546,6 +565,7 @@ export function StreamInboxTags() {
           )}
         </div>
       </div>
+      {classifying && <ClassifyDialog messageIds={classifying} onClose={() => setClassifying(null)} />}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(isOpen) => {
@@ -571,17 +591,5 @@ export function StreamInboxTags() {
         }}
       />
     </section>
-  );
-}
-
-function TagChip({ name, color }: { name: string; color?: string | null }) {
-  return (
-    <span
-      style={tagChipStyle(color)}
-      className="inline-flex items-center gap-1 rounded-full border border-border px-2 text-[11px] text-foreground"
-    >
-      <TagIcon className="size-3" />
-      {name.split('.').at(-1)}
-    </span>
   );
 }

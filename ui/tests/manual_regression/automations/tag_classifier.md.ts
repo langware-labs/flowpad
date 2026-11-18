@@ -199,3 +199,21 @@ test('Another message → pick → Run; Apply tags the message', async ({ page }
   await page.getByTestId('stream-inbox-tag-try-apply').click();
   await expect.poll(() => tagsOf('one')).toContain('stream_inbox.sales.intro');
 });
+
+test('ticked inbox rows → Classify: a dry-run table; Why shows the decision; Apply tags without running anything', async ({ page }) => {
+  await graph('post', `flow_message/${arrived.one.id}/set-tags`, { tags: [] });
+  await page.goto('/dock/stream_inbox');
+  for (const key of ['one', 'many'] as const) await row(page, key).getByTestId('stream-inbox-row-select').click();
+  await page.getByTestId('stream-inbox-selection-classify').click();
+  const one = page.getByTestId(`classify-row-${arrived.one.id}`);
+  await expect(one.getByTestId('classify-row-new')).toContainText('intro');
+  expect(await tagsOf('one'), 'the table is a dry run').toEqual([]);
+  await one.getByTestId('classify-row-why').click();
+  await expect(page.getByTestId('classify-row-run')).toContainText('sure');
+  await one.getByRole('checkbox').click();
+  await page.getByTestId('classify-selection-apply').click();
+  await expect(page.getByTestId('classify-summary')).toHaveText('1 applied · no automation started');
+  expect(await tagsOf('one')).toEqual(['stream_inbox.sales.intro']);
+  const applied = await graph<{ message_processing: { queue: Array<{ tag: string }> } }>('get', `flow_message/${arrived.one.id}`);
+  expect(applied.message_processing.queue.filter((entry) => entry.tag)).toEqual([]);
+});

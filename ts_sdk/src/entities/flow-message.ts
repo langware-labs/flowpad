@@ -1,4 +1,5 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import type { DecisionRun } from '../decision/types';
 import type { InvitationState } from './invitation';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
@@ -262,6 +263,8 @@ export interface MessageClassification {
   value?: { tag: string; confidence: number } | null;
   /** The decision API's closed reason when it could not be asked (`no_endpoint`, …). */
   unavailable?: string | null;
+  /** The decision as it happened (`decision.run`): what was asked, every tag's probability, the wire. */
+  run?: DecisionRun | null;
 }
 
 export interface IFlowMessage extends IEntity {
@@ -496,9 +499,22 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
 
   /** Classify this message under the configured root. A dry run: nothing on the message changes. */
   async classify(): Promise<MessageClassification> {
-    const action = new ActionInfo('classify', FlowMessage.type, this.id ?? null, 'POST');
+    return FlowMessage.classifyById(this.id!);
+  }
+
+  /** `classify()` by id, for a caller that holds many ids and no entities (the classification table). */
+  static async classifyById(id: string): Promise<MessageClassification> {
+    const action = new ActionInfo('classify', FlowMessage.type, id, 'POST');
     action.bodyParameters = {};
     return (await dataManager.callAction<unknown, MessageClassification>(action))!;
+  }
+
+  /** Make a dry run's answer the message's classification: `tag` replaces the tag the classifier gave
+   *  before; tags a person added stay. No automation starts. */
+  static async applyClassification(id: string, tag: string): Promise<void> {
+    const action = new ActionInfo('apply-classification', FlowMessage.type, id, 'POST');
+    action.bodyParameters = { tag };
+    await dataManager.callAction(action);
   }
 
   async setTags(tags: string[]): Promise<void> {

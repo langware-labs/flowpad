@@ -5091,7 +5091,8 @@ async def message_classify(self: FlowMessage) -> ApiResponse:
     from flow_sdk.stream_inbox.message_tags import classify, ontology
 
     answer = await classify(self, await ontology())
-    return ApiSuccessResponse(data=answer.model_dump(mode="json"))
+    run = answer.run.model_dump(mode="json", exclude_none=True) if answer.run is not None else None
+    return ApiSuccessResponse(data={**answer.model_dump(mode="json"), "run": run})
 
 
 def _tag_state(message) -> dict:
@@ -5106,6 +5107,22 @@ async def message_classify_now(self: FlowMessage) -> ApiResponse:
     from flow_sdk.stream_inbox.message_tags import classify_now
 
     return ApiSuccessResponse(data=_tag_state(await classify_now(str(self.id))))
+
+
+@action.post(action_name="apply-classification", types=["flow_message"])
+async def message_apply_classification(self: FlowMessage) -> ApiResponse:
+    """A person makes a dry run's answer this message's classification. No automation starts."""
+    from flow_sdk.stream_inbox.message_tags import apply_classification
+
+    info = get_current_request_info()
+    body = await info.get_post_data() if info is not None else None
+    if not isinstance(body, dict) or not isinstance(body.get("tag"), str):
+        return ApiFailResponse(message="Expected the tag to apply", status_code=400)
+    try:
+        message = await apply_classification(str(self.id), body["tag"])
+    except ValueError as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+    return ApiSuccessResponse(data=_tag_state(message))
 
 
 @action.post(action_name="rerun-automation", types=["flow_message"])

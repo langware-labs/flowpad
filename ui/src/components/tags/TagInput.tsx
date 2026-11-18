@@ -21,20 +21,24 @@ export function TagInput({
   onAdd,
   onRemove,
   hideTags = false,
+  suggestions,
 }: {
   tags: string[];
   onAdd: (tag: string) => void;
   onRemove: (tag: string) => void;
   hideTags?: boolean;
+  /** The names to suggest. Absent: every tag name in use, fetched on first focus. */
+  suggestions?: string[];
 }) {
   const { t } = useLingui();
   const [input, setInput] = useState('');
   const [focused, setFocused] = useState(false);
   /** Names in use, fetched the first time the field is focused. */
-  const [names, setNames] = useState<string[] | null>(null);
+  const [fetched, setNames] = useState<string[] | null>(null);
+  const names = suggestions ?? fetched;
 
   const loadNames = () => {
-    if (names !== null) return;
+    if (suggestions || fetched !== null) return;
     setNames([]);
     void apiClient
       .get<{ names?: string[] }>('/api/v1/tags/names')

@@ -154,6 +154,15 @@ of each arriving message's queue (an entry with no `tag`), moved with
 `POST flow_message/<id>/classify-now` classifies one message on a person's request,
 whatever the switch says, and again after a failure.
 
+**Dry runs.** `POST flow_message/<id>/classify` answers where a message would land and writes
+nothing; its answer carries `run`, the decision as it happened (a `decision.run`: every tag's
+probability, what was asked, the wire), which the `decision.run` viewer draws. The classification
+table (ticked inbox rows, the tag editor's message picker, or a message's tag menu → Classify) is
+one such call per message. `POST flow_message/<id>/apply-classification` with `{"tag": <name>}`
+makes an answer real on a person's request: the tag the classifier gave before goes, the new one
+takes its place, tags a person added stay — and no automation is queued for it (a queued one whose
+tag went is cancelled, as on any removal).
+
 Only new incoming messages enter classification. Historical imports and reads do
 not backfill work, and outgoing/own-automation messages are excluded. A failed
 classifier leaves the message editable: a person can still add tags and trigger
