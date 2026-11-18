@@ -657,7 +657,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * before the worker boots, so the driver's `--add-dir` set is correct on the
    * first launch.
    *
-   * @returns The launched AgenticProcess (terminal dock already opened).
+   * @returns The launched AgenticProcess (terminal dock already opened, unless `background`).
    */
   static async launch(opts: {
     workerType?: WorkerType;
@@ -686,10 +686,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     /** Transport intent: true → interactive PTY, false → headless JSON-stream
      *  (no PTY/xterm). Omitted → {@link AgenticProcess.defaultPtyMode}. */
     ptyMode?: boolean;
+    /** Run headless (whatever `ptyMode` says) and open no tab; the caller shows the run (found again by
+     *  `target`) and its way in. */
+    background?: boolean;
   }): Promise<AgenticProcess> {
     const computeNode = opts.computeNode ?? dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
-    const ptyMode = opts.ptyMode ?? AgenticProcess.defaultPtyMode();
+    const ptyMode = opts.background ? false : (opts.ptyMode ?? AgenticProcess.defaultPtyMode());
     const process = await computeNode.createProcess(
       {
         workdir: opts.workdir,
@@ -705,12 +708,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       {
         visible: ptyMode,
         pty_mode: ptyMode,
-        watchProcess: false,
+        // A background run has no terminal to stream into; the row that shows it reads the stream.
+        watchProcess: !!opts.background,
         ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}),
         ...(opts.title ? { title: opts.title } : {}),
       },
     );
-    process.openTerminalDock();
+    if (!opts.background) process.openTerminalDock();
     return process;
   }
 

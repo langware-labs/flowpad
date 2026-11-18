@@ -1,6 +1,7 @@
 /**
- * A worker-update warning carries an Install button: one click starts a session whose first prompt is the
- * warning itself (which worker, from and to which version, the update command).
+ * A worker-update warning carries an Install button: one click starts a background session whose first
+ * prompt is the warning itself (which worker, from and to which version, the update command). No tab
+ * opens; the card stays and shows the run's status line, with the way into its terminal.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -25,7 +26,14 @@ vi.mock('@sdk/react/hooks/useLazyAsset', () => {
   };
   return { useLazyAsset: (asset: string) => ({ data: asset === 'status' ? status : null, isLoading: false }) };
 });
-vi.mock('@src/navigation', () => ({ useDockNavigation: () => ({ navigation: { openTab: vi.fn() } }) }));
+const openDock = vi.fn();
+vi.mock('@src/navigation', () => ({ useDockNavigation: () => ({ navigation: { openTab: vi.fn(), openDock } }) }));
+// The card finds its run by target; the run appears once Install has created it.
+const runs: { byTarget: Record<string, unknown[]> } = { byTarget: {} };
+vi.mock('@src/components/entity-execution-panel/hooks/useProcessesForTarget', () => ({
+  useProcessesForTarget: (target: string | null) => ({ processes: (target && runs.byTarget[target]) || [] }),
+}));
+vi.mock('@src/hooks/use-flow-data-trace', () => ({ useFlowDataTrace: () => ({ events: [] }) }));
 
 beforeEach(() => {
   dataContext.bootstrapInfo = { env: { env_name: 'desktop' } };
@@ -36,12 +44,14 @@ afterEach(() => {
   vi.restoreAllMocks();
   dataContext.bootstrapInfo = null;
   dataContext.setWarnings([]);
+  runs.byTarget = {};
+  openDock.mockClear();
 });
 
-it('Install starts a session that carries the update', async () => {
+it('Install starts a background session that carries the update, and the card shows its run', async () => {
   const launch = vi.spyOn(AgenticProcess, 'launch').mockResolvedValue({} as AgenticProcess);
   const user = userEvent.setup();
-  render(<WarningsPopover />);
+  const view = render(<WarningsPopover />);
 
   await user.click(await screen.findByTestId('warnings-popover-trigger'));
   expect(screen.queryByTestId('warnings-popover-warning-review')).toBeNull();
@@ -52,4 +62,40 @@ it('Install starts a session that carries the update', async () => {
   expect(opts.scratch).toBe(true);
   expect(opts.launchPrompt).toContain('Codex 0.154.0 → 0.169.0 available');
   expect(opts.launchPrompt).toContain('brew upgrade codex');
+  expect(opts.background).toBe(true);
+
+  // The popover stays, and no run line is drawn before there is a run.
+  expect(screen.getByTestId('warnings-popover-warning-action')).toBeTruthy();
+  expect(screen.queryByTestId('process-status-line')).toBeNull();
+
+  const run = Object.assign(Object.create(AgenticProcess.prototype), {
+    id: 'run-1',
+    name: 'Codex update',
+    status: 'running',
+    worker_status: 'pending_user',
+    pty_mode: false,
+    session_id: 's1',
+  });
+  runs.byTarget[opts.target as string] = [run];
+  view.rerender(<WarningsPopover />);
+
+  await screen.findByTestId('process-status-line');
+  await user.click(screen.getByTestId('process-status-line-open-terminal'));
+  expect(openDock).toHaveBeenCalledWith(run.terminalDockPointer);
+});
+
+it('a background launch is headless and opens no tab', async () => {
+  const proc = Object.create(AgenticProcess.prototype) as AgenticProcess;
+  const createProcess = vi.fn(() => Promise.resolve(proc));
+  const computeNode = { createProcess } as unknown as NonNullable<
+    Parameters<typeof AgenticProcess.launch>[0]['computeNode']
+  >;
+  const openTerminalDock = vi.spyOn(proc, 'openTerminalDock').mockImplementation(() => {});
+
+  await AgenticProcess.launch({ computeNode, scratch: true, background: true });
+  expect(createProcess.mock.calls[0][1]).toMatchObject({ visible: false, pty_mode: false });
+  expect(openTerminalDock).not.toHaveBeenCalled();
+
+  await AgenticProcess.launch({ computeNode, scratch: true });
+  expect(openTerminalDock).toHaveBeenCalledTimes(1);
 });
