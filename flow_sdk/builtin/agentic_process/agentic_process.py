@@ -2579,11 +2579,14 @@ class AgenticProcess(Entity):
         Uses the parent provider's native fork command.
         Returns the new AgenticProcess entity data so the caller can open it.
         `visible` (bool, default False) controls whether the new process appears in the tabs view.
+        `headless` (bool, default False) makes the fork a chat (print-mode) process whatever the
+        parent is: a fork made only to be asked a question (``flow process monitor-nudge``) needs no terminal.
         """
         try:
             request_info = get_current_request_info()
             body = await request_info.get_post_data() if request_info else {}
             visible = bool((body or {}).get("visible", False))
+            headless = bool((body or {}).get("headless", False))
             owner = request_info.someone_typeid if request_info else None
 
             # The fork establishes its own name from its prompt/provider evidence.
@@ -2596,7 +2599,7 @@ class AgenticProcess(Entity):
                 visible=visible,
                 # A chat (headless) fork stays headless: its first prompt boots the
                 # forked worker through ``headless_prompt`` instead of a PTY.
-                pty_mode=self.pty_mode,
+                pty_mode=False if headless else self.pty_mode,
                 shared_context_entities=list(self.shared_context_entities or []),
                 name=None,
             )
@@ -9056,6 +9059,8 @@ class AgenticProcess(Entity):
             durable = await AgenticProcess.get_by_id(str(self.id))
             if durable is None or durable.status != self.status:
                 return
+            # The persisted report is the one before this flush: busy → idle across it ends a turn.
+            was_busy = bool((durable.status_report or {}).get("busy"))
             persisted, updated = await self._db.update_existing_data_field(
                 str(self.id),
                 self.type,
@@ -9073,9 +9078,12 @@ class AgenticProcess(Entity):
                 return
             # Unified-bus dual-publish AFTER the persist (a law-5 subscriber
             # fetching on receipt reads the post-write row).
-            from flow_sdk.builtin.agentic_process.agent_on_tag import emit_agent_status
+            from flow_sdk.builtin.agentic_process.agent_on_tag import emit_agent_status, emit_agent_turn_ended
 
-            emit_agent_status(self.id, current.value if current is not None else "", self.status, current_busy)
+            worker_status = current.value if current is not None else ""
+            emit_agent_status(self.id, worker_status, self.status, current_busy)
+            if was_busy and not current_busy:
+                emit_agent_turn_ended(self.id, worker_status)
             await self.emit_flow_data(
                 {
                     "attributes": {

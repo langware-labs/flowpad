@@ -110,6 +110,29 @@ async def test_the_server_route_streams_the_turn_as_ndjson(mock_driver, tmp_path
     assert events[-1]["kind"] == "done" and events[-1]["ok"] is True and events[-1]["exit_code"] == 0
 
 
+async def test_an_existing_session_takes_the_turn_and_is_left_running(mock_driver, tmp_path):
+    """``process`` names a session to ask (``flow process monitor-nudge``): no new process, the
+    final message in ``reply``, and the session is not exited -- it is someone's."""
+    from flow_sdk.core.headless_turn import headless_turn
+
+    mock_driver(response_for=lambda prompt: '{"answer": "goal_met"}')
+    ap = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE, workdir=str(tmp_path), pty_mode=False).save()
+    with patch.object(AgenticProcess, "exit", new_callable=AsyncMock) as exited:
+        events = [e async for e in headless_turn(_req("is the goal met?", process=str(ap.typeid)))]
+    assert events[0] == {"kind": "process", "id": str(ap.typeid)}
+    assert events[-1]["ok"] is True
+    assert events[-1]["reply"] == '{"answer": "goal_met"}'
+    exited.assert_not_awaited()
+
+
+async def test_an_unknown_session_is_a_failed_turn_not_a_new_one():
+    from flow_sdk.core.headless_turn import headless_turn
+
+    events = [e async for e in headless_turn(_req("hi", process="agentic_process-00000000-0000-0000-0000-00000000dead"))]
+    assert [e["kind"] for e in events] == ["done"]
+    assert events[0]["ok"] is False and "No session" in events[0]["detail"]
+
+
 def test_beside_a_running_backend_the_cli_prints_the_servers_stream(capsys):
     """The CLI half: a live HTTP server answering NDJSON is printed exactly like an in-process turn."""
     import threading

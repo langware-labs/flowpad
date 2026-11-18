@@ -24,6 +24,6 @@ async def run_headless_turn(body: HeadlessTurnRequest) -> StreamingResponse:
             async for event in headless_turn(body):
                 yield json.dumps(event) + "\n"
         except Exception as exc:  # noqa: BLE001 -- the stream has started; the error is the last event
-            yield json.dumps({"kind": "done", "ok": False, "exit_code": 1, "text": "", "detail": str(exc)}) + "\n"
+            yield json.dumps({"kind": "done", "ok": False, "exit_code": 1, "text": "", "detail": str(exc), "reply": ""}) + "\n"
 
     return StreamingResponse(lines(), media_type="application/x-ndjson")

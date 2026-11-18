@@ -7,7 +7,8 @@ written to the instance's SQLite and a second writer beside a live server is loc
 
 Events are dicts so they cross HTTP as NDJSON unchanged:
 ``{"kind": "process", "id"}``, ``{"kind": "text", "text"}``, ``{"kind": "tool", "name"}``, and a
-last ``{"kind": "done", "ok", "exit_code", "text", "detail"}``.
+last ``{"kind": "done", "ok", "exit_code", "text", "detail", "reply"}`` -- ``reply`` is the turn's final
+message whatever was streamed before it, for a caller that reads the answer rather than prints it.
 """
 
 from __future__ import annotations
@@ -28,6 +29,9 @@ class HeadlessTurnRequest(BaseModel):
     model: Optional[str] = None
     workdir: Optional[str] = None
     llm: Optional[str] = None  # an endpoint typeid; the CLI resolves row numbers and names first
+    #: An EXISTING session to take the turn (``agentic_process-<id>`` or the bare id) instead of a new
+    #: one. It is left as it was found: never exited, since it is someone's session.
+    process: Optional[str] = None
 
 
 async def headless_turn(request: HeadlessTurnRequest) -> AsyncIterator[dict]:
@@ -37,19 +41,28 @@ async def headless_turn(request: HeadlessTurnRequest) -> AsyncIterator[dict]:
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
     from flow_sdk.core.capabilities.registry import resolve_builtin_worker_type  # noqa: PLC0415
 
-    cli_config: dict = {"permission_mode": "bypassPermissions"}
-    if request.model:
-        cli_config["model"] = request.model
-    ap = await AgenticProcess(
-        worker_type=request.worker or await resolve_builtin_worker_type(),
-        workdir=request.workdir or tempfile.mkdtemp(prefix="flow-process-"),
-        cli_config=cli_config,
-        pty_mode=False,
-        visible=False,
-        # Flowpad's own skills (web-app-builder and its templates) come with the assistant.
-        load_flowpad_assistant=True,
-        llm_endpoint_typeid=request.llm,
-    ).save()
+    owned = not request.process
+    if request.process:
+        found = await AgenticProcess.get_by_id(request.process.removeprefix("agentic_process-"))
+        if found is None:
+            yield {"kind": "done", "ok": False, "exit_code": 1, "text": "", "reply": "",
+                   "detail": f"No session {request.process}."}
+            return
+        ap = found
+    else:
+        cli_config: dict = {"permission_mode": "bypassPermissions"}
+        if request.model:
+            cli_config["model"] = request.model
+        ap = await AgenticProcess(
+            worker_type=request.worker or await resolve_builtin_worker_type(),
+            workdir=request.workdir or tempfile.mkdtemp(prefix="flow-process-"),
+            cli_config=cli_config,
+            pty_mode=False,
+            visible=False,
+            # Flowpad's own skills (web-app-builder and its templates) come with the assistant.
+            load_flowpad_assistant=True,
+            llm_endpoint_typeid=request.llm,
+        ).save()
     yield {"kind": "process", "id": str(ap.typeid)}
     answer = None
     said = False
@@ -64,8 +77,9 @@ async def headless_turn(request: HeadlessTurnRequest) -> AsyncIterator[dict]:
             elif event.kind == "done":
                 answer = event.answer
     finally:
-        with contextlib.suppress(Exception):
-            await ap.exit()
+        if owned:
+            with contextlib.suppress(Exception):
+                await ap.exit()
     ok = bool(answer and answer.ok)
     yield {
         "kind": "done",
@@ -75,4 +89,5 @@ async def headless_turn(request: HeadlessTurnRequest) -> AsyncIterator[dict]:
         # session closes) is still the answer: the engine re-reads the transcript.
         "text": "" if said or answer is None else (answer.text or ""),
         "detail": "" if ok else ((answer.detail if answer else "") or "The turn did not finish."),
+        "reply": (answer.text or "") if answer else "",
     }

@@ -188,6 +188,31 @@ session id is one machine's, so no `trigger.json` can say it.
 - **Gone with the session.** Deleting a session deletes its waiting callbacks (`drop_callbacks`); a
   fired one stays, as every spent one-shot does.
 
+## A monitor on a session's goal
+
+`flow process monitor -p <session> --name <n> --goal "<g>" [--stop-condition "<s>"] --triggered-by turn_end | cron --cron '<mask>'`
+watches a goal until it is met. Unlike a callback it is a **trigger asset** in the session's project:
+`agentic-assets/trigger/<session id>_monitor_<name>/` holds `trigger.json` and `monitor.json` (the goal), and
+that key is what `monitor-nudge` and `unmonitor` take. All input — the name, a goal or stop condition, the cron
+mask — is checked before the server is asked anything.
+
+- **When.** `turn_end` is a TAG rule on `agent.turn_ended` targeted at the session (`agentic_process:<id>`):
+  emitted once per turn, on the busy → idle edge of the status report (`agent.status` fires on every report
+  change). Targeted at the session, never its forks. `cron` is an ordinary cron `schedule`.
+- **On.** Indexed from a file, a rule starts off; `monitor` indexes it and switches it on (`PATCH trigger/<id>
+  {"enabled": true}`). `recommended: false` — a clone of the project has no such session to watch.
+- **The check** (`flow process monitor-nudge <key>`, what the rule's `then.run_script` runs). Skipped while the
+  session is busy or another check of the same monitor runs. Otherwise it forks the session headless (`fork`
+  with `{"headless": true}`) and asks the fork through `headless-turn` with `process` set — the turn's final
+  message comes back in the `done` event's `reply`. The answer is a `MonitorVerdict`
+  (`{"answer": "goal_met" | "stop_condition_reached" | "continue_to_work"}`, nothing else); an invalid one is
+  asked again with pydantic's error, three times, then the check fails and changes nothing.
+- **The outcome.** `continue_to_work`: the session is prompted (queued) to go on toward the goal. `goal_met` /
+  `stop_condition_reached`: the monitor removes itself — folder, then row — and tells no one.
+- **A session that cannot fork** is asked itself. Its answer is a turn of its own, so the next `turn_end` of a
+  `turn_end` monitor is skipped once (when it comes within two minutes); the bookkeeping lives in the machine's
+  temp dir, never in the project.
+
 ## Rules that are easy to break
 
 - **A one-shot whose time passed still runs, once.** The scheduler drops a run more than 60s late and a
