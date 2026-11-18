@@ -140,30 +140,28 @@ def monitor_process(
     goal, stop_condition = (goal or "").strip(), (stop_condition or "").strip()
     if not (goal or stop_condition):
         _fail(EXIT_INVALID_ARG, "MISSING_GOAL", "Give --goal, --stop-condition, or both.")
-    from apscheduler.triggers.cron import CronTrigger  # noqa: PLC0415
-
-    try:
-        CronTrigger.from_crontab(cron)
-    except ValueError as e:
-        _fail(EXIT_INVALID_ARG, "BAD_CRON", f"Cannot read the cron mask {cron!r}: {e}")
-
-    from flow_sdk.schema.data_spec.trigger_spec import ScheduleTriggerSpec, ThenSpec, TriggerSpec  # noqa: PLC0415
+    from flow_sdk.automations.spec_file import SpecFileError, validate  # noqa: PLC0415
 
     process_id = _resolve_process_id(process)
+    key = _monitor_key(process_id, name)
+    try:
+        # The automation-file check the server runs: the document, then the clock as the scheduler reads it.
+        spec = validate({
+            "name": f"Monitor {name}",
+            "description": goal or stop_condition,
+            # One machine's session: nothing to offer a clone of the project.
+            "recommended": False,
+            "schedule": {"every": "cron", "expr": cron},
+            "then": {"run_script": f"flow process monitor-nudge {key}"},
+        })
+    except SpecFileError as e:
+        _fail(EXIT_INVALID_ARG, "BAD_CRON", f"Cannot use the cron mask {cron!r}: {e}")
+
     port = _discover_port()
     _, folder = _process_and_folder(port, process_id, name)
     if folder.exists():
         _fail(EXIT_INVALID_ARG, "ALREADY_MONITORED",
               f"Session {process_id} already has a monitor named {name!r}; `unmonitor` it first.")
-    key = _monitor_key(process_id, name)
-    spec = TriggerSpec(
-        name=f"Monitor {name}",
-        description=goal or stop_condition,
-        # One machine's session: nothing to offer a clone of the project.
-        recommended=False,
-        schedule=ScheduleTriggerSpec(every="cron", expr=cron),
-        then=ThenSpec(run_script=f"flow process monitor-nudge {key}"),
-    )
     folder.mkdir(parents=True)
     (folder / "trigger.json").write_text(
         json.dumps(spec.model_dump(mode="json", exclude_defaults=True, by_alias=True), indent=2) + "\n",

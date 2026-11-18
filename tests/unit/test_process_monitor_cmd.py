@@ -212,6 +212,13 @@ def test_a_bad_cron_mask_is_refused(flowpad, mask):
     assert flowpad.calls == []
 
 
+def test_a_mask_the_server_accepts_is_accepted(flowpad):
+    """Sunday as 7: the server's own check (``spec_file.validate``) reads it; a bare CronTrigger does not."""
+    result = _monitor(cron="0 9 * * 7")
+    assert result.exit_code == 0, result.output
+    assert _spec(flowpad).schedule.expr == "0 9 * * 7"
+
+
 # ── monitor: bad state ──────────────────────────────────────────────────────
 
 
