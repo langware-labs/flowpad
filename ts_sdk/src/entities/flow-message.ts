@@ -6,8 +6,31 @@ import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
 import { IMessageEnvelope } from '../models/MessageEnvelope';
 import { IMessageSender } from '../models/MessageSender';
 import type { ItReplyMeta, ItRequestMeta } from './agent';
+import { issueStatusOf, type IssueFix, type IssueSeverity, type IssueStatus } from './issue';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
+
+/** A Monitoring message's issue, as the hub stamps it (`metadata.issue`) and keeps it current. */
+export interface IssueReplyMeta {
+  issue_typeid: string;
+  kind: string;
+  severity: IssueSeverity;
+  status: IssueStatus;
+  count: number;
+  title: string;
+  detail: string;
+  fix: IssueFix | null;
+  subject_typeid: string;
+  /** The technical failure behind `detail`, as the hub saw it. */
+  cause: string;
+  /** Whose machine it is about ("visitor 8f99"), or ''. */
+  machine: string;
+  /** When it last opened and when it ended (epoch seconds). */
+  opened_at: number | null;
+  resolved_at: number | null;
+  /** The short "Resolved: …" / "Closed: …" line the hub posts after the issue's own message. */
+  follow_up: boolean;
+}
 
 export enum DeliveryMode {
   EMAIL = 'email',
@@ -60,6 +83,8 @@ export enum FlowMessageKind {
   DIAGNOSIS = 'diagnosis',
   /** What an automation answered: its text the headline, a ``<kind>.value.json`` the details. */
   AUTOMATION_RESULT = 'automation_result',
+  /** A help-desk ticket was closed or reopened: the hub's line in the ticket, how the other side learns of it. */
+  TICKET_EVENT = 'ticket_event',
 }
 
 /** The file a diagnosis message carries once shared -- re-derives the kind when the hub drops it. */
@@ -200,7 +225,47 @@ export interface IMessageInvite {
   resolved_at?: string | null;
 }
 
+export interface MessageTagAssignment {
+  source: 'manual' | 'classification' | 'automation';
+  trigger_id?: string;
+  run_id?: string;
+}
+export interface MessageAutomationEntry {
+  id: string;
+  trigger_id: string;
+  automation_name: string;
+  tag: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled' | 'interrupted';
+  run_id?: string;
+  error?: string;
+}
+export interface MessageProcessing {
+  classification: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
+  classification_error?: string;
+  assignments: Record<string, MessageTagAssignment>;
+  queue: MessageAutomationEntry[];
+  suppressed_tags: string[];
+}
+export interface MessageClassificationSettings {
+  enabled: boolean;
+  include_flow_tags: boolean;
+  /** The tag tree messages are classified into. */
+  root: string;
+  /** The classifier's own automation: `enabled` is its switch. */
+  trigger_id?: string | null;
+}
+
+/** Where a message lands (dry run): one full dot tag, or why there is none. */
+export interface MessageClassification {
+  exit_code: number;
+  detail: string;
+  value?: { tag: string; confidence: number } | null;
+  /** The decision API's closed reason when it could not be asked (`no_endpoint`, …). */
+  unavailable?: string | null;
+}
+
 export interface IFlowMessage extends IEntity {
+  message_processing?: MessageProcessing | null;
   text?: string;
   instruction?: string | null;
   attachment?: Attachment[];
@@ -284,6 +349,8 @@ export interface IFlowMessage extends IEntity {
   it_reply?: ItReplyMeta | null;
   /** The owner's request in an IT conversation: its agent, operation and send (kept locally as `it_request`). */
   it_request?: ItRequestMeta | null;
+  /** An Issue in a project's Monitoring conversation: the hub's `metadata.issue` (kept locally as `issue_reply`). */
+  issue_reply?: IssueReplyMeta | null;
   /** Hub-relayed opaque metadata (a hub-page read carries it raw). */
   metadata?: Record<string, unknown> | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
@@ -337,6 +404,30 @@ export function itReplyOf(metadata: Record<string, unknown> | null | undefined):
   return it && typeof it === 'object' && (it as ItReplyMeta).node_typeid ? (it as ItReplyMeta) : null;
 }
 
+/** The Issue a Monitoring message's `metadata.issue` carries (it names `issue_typeid`), else null. */
+export function issueReplyOf(metadata: Record<string, unknown> | null | undefined): IssueReplyMeta | null {
+  const issue = metadata?.issue as Record<string, unknown> | undefined;
+  if (!issue || typeof issue !== 'object' || typeof issue.issue_typeid !== 'string' || !issue.issue_typeid) return null;
+  const fix = issue.fix as Partial<IssueFix> | null | undefined;
+  return {
+    issue_typeid: issue.issue_typeid,
+    kind: typeof issue.kind === 'string' ? issue.kind : '',
+    severity: issue.severity === 'warning' ? 'warning' : 'error',
+    status: issueStatusOf(issue.status),
+    count: typeof issue.count === 'number' ? issue.count : 1,
+    title: typeof issue.title === 'string' ? issue.title : '',
+    detail: typeof issue.detail === 'string' ? issue.detail : '',
+    fix:
+      fix && typeof fix.pointer === 'string' && fix.pointer ? { label: fix.label ?? '', pointer: fix.pointer } : null,
+    subject_typeid: typeof issue.subject_typeid === 'string' ? issue.subject_typeid : '',
+    cause: typeof issue.cause === 'string' ? issue.cause : '',
+    machine: typeof issue.machine === 'string' ? issue.machine : '',
+    opened_at: typeof issue.opened_at === 'number' ? issue.opened_at : null,
+    resolved_at: typeof issue.resolved_at === 'number' ? issue.resolved_at : null,
+    follow_up: issue.follow_up === true,
+  };
+}
+
 /** The IT request a hub message's `metadata.it` names (the owner's message of a send), else null. */
 export function itRequestOf(metadata: Record<string, unknown> | null | undefined): ItRequestMeta | null {
   const it = metadata?.it as Record<string, unknown> | undefined;
@@ -350,6 +441,7 @@ export function itRequestOf(metadata: Record<string, unknown> | null | undefined
 
 @registerEntity
 export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage {
+  message_processing?: MessageProcessing | null;
   text?: string;
   instruction?: string | null;
   attachment?: Attachment[];
@@ -385,6 +477,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   origin_local?: ICloudOriginLocal | null;
   it_reply?: ItReplyMeta | null;
   it_request?: ItRequestMeta | null;
+  issue_reply?: IssueReplyMeta | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
   envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
@@ -394,6 +487,40 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   reactions?: IMessageReaction[];
   mark?: IMessageMark | null;
   static type: string = 'flow_message';
+
+  static async classificationSettings(patch?: Partial<MessageClassificationSettings>): Promise<MessageClassificationSettings> {
+    const action = new ActionInfo('classification-settings', FlowMessage.type, null, patch ? 'POST' : 'GET');
+    if (patch) action.bodyParameters = patch;
+    return (await dataManager.callAction<unknown, MessageClassificationSettings>(action))!;
+  }
+
+  /** Classify this message under the configured root. A dry run: nothing on the message changes. */
+  async classify(): Promise<MessageClassification> {
+    const action = new ActionInfo('classify', FlowMessage.type, this.id ?? null, 'POST');
+    action.bodyParameters = {};
+    return (await dataManager.callAction<unknown, MessageClassification>(action))!;
+  }
+
+  async setTags(tags: string[]): Promise<void> {
+    await this.tagAction('set-tags', { tags });
+  }
+
+  /** Classify this message now — whatever the classifier's switch says, and again after a failure. */
+  async classifyNow(): Promise<void> {
+    await this.tagAction('classify-now', {});
+  }
+
+  /** Run one failed or interrupted automation of this message's queue again (`entry` is its id). */
+  async rerunAutomation(entry: string): Promise<void> {
+    await this.tagAction('rerun-automation', { entry });
+  }
+
+  private async tagAction(name: string, body: Record<string, unknown>): Promise<void> {
+    const action = new ActionInfo(name, FlowMessage.type, this.id ?? null, 'POST');
+    action.bodyParameters = body;
+    const result = await dataManager.callAction<unknown, { tags: string[]; message_processing?: MessageProcessing | null }>(action);
+    if (result) dataManager.deepAssign(this, result);
+  }
 
   /** An unnamed message reads as a short quote of its text (chips, tabs); a given name wins. */
   getDisplayName(): string | null {
@@ -405,6 +532,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
 
   constructor(entity: Partial<IFlowMessage> = {}) {
     super(entity);
+    this.message_processing = entity.message_processing;
     this.text = entity.text;
     this.instruction = entity.instruction;
     this.attachment = entity.attachment;
@@ -439,6 +567,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.origin_local = entity.origin_local ?? null;
     this.it_reply = entity.it_reply ?? itReplyOf(entity.metadata);
     this.it_request = entity.it_request ?? itRequestOf(entity.metadata);
+    // The hub rewrites `metadata.issue` as the issue moves; a raw hub read's metadata is the newest copy.
+    this.issue_reply = issueReplyOf(entity.metadata) ?? entity.issue_reply ?? null;
     this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;

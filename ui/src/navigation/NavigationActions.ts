@@ -48,8 +48,7 @@ import { allScope, projectScope } from '@src/lib/scope-filter';
 import { contentAssetTargetForDock, isContentAssetDock, offersDocChat } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
 import { isHostDock } from './tab-hosts';
-import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
-import { vfsLocatorForComputeNode } from './vfs-locator';
+import { folderDockPointer } from './folder-pointer';
 import { dockForDisplayTarget } from './display-target-pointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
@@ -317,11 +316,13 @@ export class NavigationActions {
 
   /** `tab_switch` start line: a navigation that will actually move the app. */
   static logTabSwitchStart(via: string, target: DockPointer | null): void {
-    if (!toplog.isOn('tab_switch')) return;
+    if (!toplog.isOn(['tab_switch', 'flow_show'])) return;
     const sw = beginTabSwitch();
+    // The caller: which code moved the app (a click, a show, a restore, a fallback).
+    const caller = (new Error().stack ?? '').split('\n').slice(2, 9).map((l) => l.trim()).join(' < ');
     toplog.log(
-      'tab_switch',
-      `start sw=${sw} via=${via} from=${dockLabel(NavigationActions.currentBrowserDock())} to=${dockLabel(target) ?? '-'} visibility=${document.visibilityState}`,
+      ['tab_switch', 'flow_show'],
+      `start sw=${sw} via=${via} from=${dockLabel(NavigationActions.currentBrowserDock())} to=${dockLabel(target) ?? '-'} visibility=${document.visibilityState} caller=${caller}`,
     );
   }
 
@@ -482,8 +483,8 @@ export class NavigationActions {
       return;
     }
     // `homePage`: ask for the project's home page, which the root's load
-    // redirect resolves (`project-home-page-redirect`) — closing a project's last
-    // tab and finishing a wizard ask. The Home button does not: it is Flowpad's home.
+    // redirect resolves (`project-home-page-redirect`) — the Home button, closing a
+    // project's last tab and finishing a wizard ask; with none declared, Flowpad's home.
     this.openDock(options?.homePage ? withHomePage(DockPointer.root()) : DockPointer.root());
   }
 
@@ -943,19 +944,7 @@ export class NavigationActions {
    * `select` names an entry of the folder to show selected.
    */
   openFolder(machinePath: string, select?: string): void {
-    const parsed = VFSPath.parse(machinePath);
-    if (parsed.isAbsolute) {
-      this.openDock(DockPointer.forAssetFs(parsed, Layout.DOCK, select));
-      return;
-    }
-
-    const liveTypeId = dataContext.computeNodeTypeId ?? LOCAL_COMPUTE_NODE;
-    const locatorTypeId = vfsLocatorForComputeNode(dataContext.computeNode) ?? liveTypeId;
-    const vfsPath =
-      machinePath.startsWith('/') || /^[A-Za-z]:[/\\]/.test(machinePath)
-        ? VFSPath.fromMachinePath(machinePath, locatorTypeId)
-        : VFSPath.fromTypeId(locatorTypeId, machinePath);
-    this.openDock(DockPointer.forAssetFs(vfsPath, Layout.DOCK, select));
+    this.openDock(folderDockPointer(machinePath, select));
   }
 
   /** Navigate to the default shell view (no specific session) */
@@ -1312,10 +1301,10 @@ export class NavigationActions {
 
   /**
    * Open the user Preferences screen
-   * @param category - Optional category whose tab should be active
+   * @param tab - Optional `<group>/<tab>` to open (`developer/trace-logging`)
    */
-  openPreferences(category?: string): void {
-    const pointer = DockPointer.forPreferences(category);
+  openPreferences(tab?: string): void {
+    const pointer = DockPointer.forPreferences(tab);
     this.openDock(pointer);
   }
 
@@ -1351,6 +1340,15 @@ export class NavigationActions {
     });
     if (!canGoBack) return;
     void this.navigate(-1);
+  }
+
+  /**
+   * Leave this screen: one step back when this tab has history, else Home — a screen
+   * loaded straight from a link has nothing behind it, and must never be a dead end.
+   */
+  backOrHome(): void {
+    if (getHistoryPosition().canGoBack) this.goBack();
+    else this.goHome();
   }
 
   goForward(): void {

@@ -444,6 +444,50 @@ def test_a_record_on_a_port_other_than_the_settings_default_is_still_borrowed():
     assert _strict_record_generation(foreign, info, Table()) is None
 
 
+# The states one listening socket read on Windows 26300.9818 (our VM, 2026-11-12), plus no owner pid.
+@pytest.mark.parametrize("status,pid", [("LISTEN", 0), ("NONE", 81), ("CLOSE", 81), ("FIN_WAIT1", 81), ("NONE", 0)])
+def test_a_backend_whose_listener_row_windows_garbles_is_still_borrowed(monkeypatch, status, pid):
+    """Windows 11 build 26300.9818 (KB5127936) returns listener rows with a garbage state (the same
+    socket reads LISTEN, NONE, CLOSE or FIN_WAIT1 call to call) or with owner pid 0. The scan dropped both, so a healthy
+    backend held no port and every attach failed "not conclusively down" (a Windows 11 desktop,
+    2026-11-10). A state-0 row still listens; an ownerless row makes the scan ask each process."""
+    import socket
+
+    import psutil
+
+    from flow_sdk.core.connections.service import _strict_record_generation
+    from flow_sdk.instances.liveness import ProcInfo, ProcTable, _attach_listen_ports
+    from flow_sdk.instances.model import Role, Tier
+
+    def proc(pid, cmdline):
+        return ProcInfo(pid=pid, ppid=1, create_time=5.0, name=cmdline[0], cmdline=cmdline,
+                        instance=None, tier=Tier.NONE, role=Role.BACKEND if len(cmdline) > 1 else None)
+
+    def row(owner):
+        return SimpleNamespace(status=getattr(psutil, f"CONN_{status}"), type=socket.SOCK_STREAM,
+                               laddr=SimpleNamespace(port=9007), raddr=(), pid=owner)
+
+    udp = SimpleNamespace(status=psutil.CONN_NONE, type=socket.SOCK_DGRAM, laddr=SimpleNamespace(port=9008), raddr=(), pid=81)
+    monkeypatch.setattr(psutil, "net_connections", lambda kind="inet": [row(pid), udp])
+    owns = {81}
+    monkeypatch.setattr(psutil, "Process", lambda p: SimpleNamespace(
+        net_connections=lambda kind="inet": [row(p), udp] if p in owns else []))
+    settings = SimpleNamespace(instance_name="prod", port=9007)
+    info = {"server_pid": 81, "port": 9007, "server_create_time": 5.0, "generation": None}
+
+    table = ProcTable(procs={81: proc(81, ("python.exe", "-m", "flow_sdk.server.run"))})
+    _attach_listen_ports(table)
+    assert table.port_in_use(9007) and not table.port_in_use(9008) and not table.ports_degraded
+    assert _strict_record_generation(settings, info, table) == ServiceGeneration("prod", 81, 5.0, 9007, "borrowed:81:5.0")
+
+    if not pid:
+        # An ownerless row is attributed only to a process that holds the socket itself.
+        owns.clear()
+        stranger = ProcTable(procs={81: proc(81, ("node.exe",))})
+        _attach_listen_ports(stranger)
+        assert _strict_record_generation(settings, info, stranger) is None
+
+
 def _adoption_rig(monkeypatch, *, held_after: bool):
     """A hub provider whose owner already holds a valid grant: the delegated probe
     passes on the FIRST call, while this machine holds nothing yet."""
@@ -640,3 +684,50 @@ async def test_testing_the_account_row_reads_the_hub_login(monkeypatch):
     result = await test_connection("flowpad_account")
 
     assert (result.ok, result.code) == (False, "cloud_login_required")
+
+
+async def test_connect_with_scopes_asks_only_when_the_grant_lacks_them(monkeypatch):
+    """`Connection.connect(scopes=[...])` is the public way to add an optional scope (full Drive):
+    a grant lacking it runs the consent with the scope on `/auth`; a grant that covers it does not."""
+    import flow_sdk.core.connections.orchestrator as orchestrator
+    import flow_sdk.core.connections.service as service_module
+    import flow_sdk.core.connections.specs as specs_module
+
+    readonly, full = "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive"
+    held = ConnectionSpec(provider="google", display_name="Google", credential_ref="google_credentials",
+                          connected=True, scopes=(readonly,), granted_scopes=(readonly,))
+
+    async def catalogue(_client):
+        return [held]
+
+    monkeypatch.setattr(specs_module, "_list_connection_specs_with_client", catalogue)
+    monkeypatch.setattr(orchestrator, "_acquire_provider_lock", lambda _p: SimpleNamespace(is_locked=False))
+    calls: list[str] = []
+
+    class Client:
+        async def request(self, method, path, json=None):
+            calls.append(path)
+            if path.endswith("/secrets/is-enabled"):
+                return SimpleNamespace(success=True, data={"enabled": True}, error_code=None, message=None)
+            if path.endswith("/oauth/google/test"):
+                return SimpleNamespace(success=True, data={"ok": True, "identity": "me"}, error_code=None, message=None)
+            if "/oauth/google/auth" in path:
+                data = {"provider": "google", "oauth_request_id": "r1", "status": "success"}
+                return SimpleNamespace(success=True, data=data, error_code=None, message=None)
+            raise AssertionError(path)
+
+    class Lease:
+        async def __aenter__(self):
+            return SimpleNamespace(client=Client())
+
+        async def __aexit__(self, *_a):
+            return False
+
+    monkeypatch.setattr(service_module, "flow_service", Lease)
+
+    await orchestrator.connect("google", SimpleNamespace(), scopes=[readonly])
+    assert not [c for c in calls if "/auth" in c]  # already granted: no consent
+
+    await orchestrator.connect("google", SimpleNamespace(), scopes=[full])
+    auth = [c for c in calls if "/auth" in c]
+    assert auth == ["/api/v1/graph/oauth/google/auth?reauthorize=true&scopes=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive"]

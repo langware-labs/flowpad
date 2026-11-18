@@ -3180,10 +3180,10 @@
     },
     "model_tier_sm": {
       "linux": {
-        "error": "Model size 'sm' has no mapping for this worker; configure Capability.model_map['device'] or name a concrete model"
+        "error": "Model size 'sm' has no mapping for this worker; set the model sizes on the device login endpoint or name a concrete model"
       },
       "win32": {
-        "error": "Model size 'sm' has no mapping for this worker; configure Capability.model_map['device'] or name a concrete model"
+        "error": "Model size 'sm' has no mapping for this worker; set the model sizes on the device login endpoint or name a concrete model"
       }
     },
     "non_ephemeral": {
@@ -4468,10 +4468,10 @@
     },
     "model_tier_lg": {
       "linux": {
-        "error": "Model size 'lg' has no mapping for this worker; configure Capability.model_map['device'] or name a concrete model"
+        "error": "Model size 'lg' has no mapping for this worker; set the model sizes on the device login endpoint or name a concrete model"
       },
       "win32": {
-        "error": "Model size 'lg' has no mapping for this worker; configure Capability.model_map['device'] or name a concrete model"
+        "error": "Model size 'lg' has no mapping for this worker; set the model sizes on the device login endpoint or name a concrete model"
       }
     },
     "perm_default": {

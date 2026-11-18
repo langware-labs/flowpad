@@ -22,6 +22,7 @@ from tests.long_tests._deployments import WRAPPER, agent, alive, end, run, until
 
 pytestmark = [pytest.mark.timeout(90)]  # do not increase timeout without approval
 
+# gdrive and gcs verify their connection at the case's loopback ``base_url`` (``connection_probe_url``), not on Google.
 SOURCES = ["folder", "git", "rss", "hackernews", "gdrive", "gcs"]
 
 

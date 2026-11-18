@@ -13,7 +13,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const nav = vi.hoisted(() => ({ openDock: vi.fn() }));
 const dock = vi.hoisted(() => ({ current: null as null | { pointer?: string; options?: Record<string, string> } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: nav, currentDock: dock.current }),
+  // A plain dock, plus the one DockPointer method the rule page calls to put an option in the URL.
+  useDockNavigation: () => ({
+    navigation: nav,
+    currentDock: dock.current && {
+      ...dock.current,
+      withOption: (key: string, value: string | null) => ({ ...dock.current, options: { ...dock.current?.options, [key]: value } }),
+    },
+  }),
   useCurrentDock: () => dock.current,
 }));
 vi.mock('@src/hooks/use-default-scope-filter', () => ({
@@ -29,6 +36,13 @@ vi.mock('@src/components/assets/editor/agent-profile/use-agent-places', () => ({
 vi.mock('@src/hooks/entity-hooks', () => ({
   // One answer for every entity query the screen makes: an agent to pick, and (as a data source) a channel.
   useEntitiesQuery: () => ({ data: [{ id: 'a1', name: 'Chief of Staff', channel: 'gmail' }] }),
+  // The message a rule was started from: none here.
+  useEntity: () => ({ data: null }),
+}));
+// No tags are defined here: the rule page lists none to pick.
+vi.mock('@src/components/tags/MessageTags', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/tags/MessageTags')>()),
+  useTagDefinitions: () => [],
 }));
 
 const state = vi.hoisted(() => ({
@@ -238,20 +252,21 @@ describe('My automations', () => {
     expect([pointer.pointer, pointer.options]).toEqual(['runs', { status: 'failed' }]);
   });
 
-  it('kind chips filter, and only kinds that exist are offered', () => {
+  it('status tabs filter, and an ended automation has no switch', () => {
     state.automations = [
-      automation({ id: 's' }),
-      automation({
-        id: 'e',
-        kind: 'event',
-        when: { kind: 'event', text: '', event: { pattern: 'app.ready', title: 'App ready', description: '' } },
-      }),
+      automation({ id: 'live', status: 'active' }),
+      automation({ id: 'paused', enabled: false, status: 'off' }),
+      automation({ id: 'once', status: 'done', fires: 1 }),
     ];
     render(<AutomationsView />);
-    expect(screen.queryByTestId('automations-chip-file')).toBeNull();
-    fireEvent.click(screen.getByTestId('automations-chip-event'));
-    expect(screen.queryByTestId('automation-row-s')).toBeNull();
-    expect(screen.getByTestId('automation-row-e').textContent).toContain('When App ready happens');
+    expect(screen.getByTestId('automations-status-done').textContent).toContain('1');
+    expect(screen.getByTestId('automations-status-expired').textContent).toContain('0');
+    expect(screen.queryByTestId('automation-toggle-once')).toBeNull();
+    expect(screen.getByTestId('automation-toggle-live')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('automations-status-done'));
+    expect(screen.queryByTestId('automation-row-live')).toBeNull();
+    expect(screen.queryByTestId('automation-row-paused')).toBeNull();
+    expect(screen.getByTestId('automation-row-once').textContent).toContain('Done · ran 1');
   });
 
   it('the switch and Run now act without opening the automation', () => {

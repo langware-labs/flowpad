@@ -1,19 +1,21 @@
 import { t } from '@lingui/core/macro';
 import type { LucideIcon } from 'lucide-react';
 import {
+  Activity,
   Archive,
   ArchiveRestore,
   CheckSquare,
   CircleCheck,
   Clock,
   LifeBuoy,
+  Star,
   Trash2,
   UserCheck,
   Wrench,
 } from 'lucide-react';
 import { Conversation, FlowMessage, FlowMessageKind, Invitation, isHelpdeskKind } from '@sdk';
 import type { EntityMember } from '@sdk/APIEntity';
-import { isClosedConversation, isItKind } from '@sdk/entities/conversation';
+import { isClosedConversation, isItKind, isMonitoringKind } from '@sdk/entities/conversation';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 
 // ── Conversation category — the single source of truth ──────────────────────
@@ -113,7 +115,7 @@ export function deskChipLabel(deskName: string): string {
 }
 
 export interface ConversationFacets {
-  kind: 'direct' | 'helpdesk' | 'it';
+  kind: 'direct' | 'helpdesk' | 'it' | 'monitoring';
   /** Viewer is the pending recipient of an unaccepted invitation. */
   isInvitation: boolean;
   /** `archived_at` is set and not yet revived by newer activity. */
@@ -130,7 +132,13 @@ export interface ConversationFacets {
 export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const { conv, firstMessage, latestMessage, latestPtrTs, invitation, viewer } = inp;
 
-  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : isItKind(conv.kind) ? 'it' : 'direct';
+  const kind = isHelpdeskKind(conv.kind)
+    ? 'helpdesk'
+    : isItKind(conv.kind)
+      ? 'it'
+      : isMonitoringKind(conv.kind)
+        ? 'monitoring'
+        : 'direct';
 
   // Invitation — viewer-relative. The first message stays `kind === invitation`
   // forever, so the sender (and everyone post-accept) must see a normal row;
@@ -234,7 +242,8 @@ export function ticketChip(tk: TicketFacet): ChipSpec | null {
   if (tk.state === 'closed')
     return { key: 'ticket-closed', icon: CircleCheck, label: t`Closed`, className: MUTED_CHIP };
   if (tk.perspective !== 'staff') return null;
-  if (tk.state === 'waiting') return { key: 'ticket-waiting', icon: Clock, label: t`Not picked up`, className: AMBER_CHIP };
+  if (tk.state === 'waiting')
+    return { key: 'ticket-waiting', icon: Clock, label: t`Not picked up`, className: AMBER_CHIP };
   const by = tk.pickedBy;
   const label = !by ? t`Picked up` : by === 'you' ? t`Picked up by you` : t`Picked up by ${by}`;
   return { key: 'ticket-picked', icon: UserCheck, label, className: EMERALD_CHIP };
@@ -249,6 +258,9 @@ export function chipsFor(f: ConversationFacets): ChipSpec[] {
   }
   if (f.kind === 'it') {
     chips.push({ key: 'it', icon: Wrench, label: t`IT`, className: SKY_CHIP });
+  }
+  if (f.kind === 'monitoring') {
+    chips.push({ key: 'monitoring', icon: Activity, label: t`Monitoring`, className: AMBER_CHIP });
   }
   // The asker's side is just a conversation: the queue state is the desk's to show, not theirs.
   const state = f.ticket && f.ticket.perspective === 'staff' ? ticketChip(f.ticket) : null;
@@ -275,6 +287,8 @@ export interface ActionSpec {
   text?: string;
   tone?: ActionTone;
   disabled?: boolean;
+  /** A toggle that is on (a starred row's star): the icon is drawn filled. */
+  active?: boolean;
   testId?: string;
 }
 
@@ -285,6 +299,9 @@ export interface RowActionContext {
   accepting?: boolean;
   /** Resolved up-front so the delete tooltip distinguishes delete/leave/decline. */
   deleteLabel: string;
+  /** The conversation is a favorite; absent `onToggleFavorite` = the row offers no star. */
+  isFavorited?: boolean;
+  onToggleFavorite?: () => void;
   onAccept: () => void;
   onDecline: () => void;
   onToggleRead: () => void;
@@ -320,7 +337,21 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
     return specs;
   }
 
+  const star: ActionSpec[] = ctx.onToggleFavorite
+    ? [
+        {
+          key: 'favorite',
+          kind: 'icon',
+          icon: Star,
+          active: !!ctx.isFavorited,
+          label: ctx.isFavorited ? t`Unstar` : t`Star`,
+          onClick: ctx.onToggleFavorite,
+          testId: 'stream-inbox-row-favorite',
+        },
+      ]
+    : [];
   return [
+    ...star,
     {
       key: 'toggle-read',
       kind: 'icon',

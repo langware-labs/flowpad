@@ -111,7 +111,7 @@ def test_conversation_kind_values_are_exactly_the_stored_contract() -> None:
     lets stale values live on forever. Changing either value is therefore a
     breaking change that requires migrating existing rows.
     """
-    assert {k.value for k in ConversationKind} == {"direct", "helpdesk", "it"}
+    assert {k.value for k in ConversationKind} == {"direct", "helpdesk", "it", "monitoring"}
 
 
 def test_conversation_kind_rejects_any_other_value() -> None:

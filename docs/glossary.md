@@ -119,6 +119,12 @@ asset whose `format` (`sequence` / `excalidraw` / `mermaid`) says which source f
 WHITEBOARD entity (a whiteboard is an excalidraw chart; migrated in 0.2.215). Not a
 data-viz chart over a dataset, and not the `graph-view`.
 
+**Flowmap** (the `flowmap` skill, kinds `flowmap.*` in the assistant's `agentic-assets/data_schema/`) is ours:
+the map of one skill or agent — its **entries** (ways to start it), **steps** (typed `instructions` / `code` /
+`screen`; the viewer calls them blocks), **links** and **outcomes** — kept as `<skill>/flowmap/map.value.json`.
+A `flowmap.run` is one real run laid on it as **run frames** (node, seconds, cost), drawn by `flowmap-viewer`.
+Not a FlowCall block (`ComputeOp`), not an agent trace (`AgentTraceSpec`), not a `GraphWorkflow`.
+
 ## Contexts — three different things
 
 | Name | What it holds | Owner / scope |
@@ -157,6 +163,9 @@ mechanism: [`ontology.md`](ontology.md).
   `--flow--` is never written.** An externally authored asset declares `ns` in its
   document and every kind its code mints is prefixed; a data driver that declares
   none is refused at load.
+- **Email kind** (2026-11-17) — the dot path naming what an email is about
+  (`notification.email.issue.budget_exhausted`). It is a NAME, not a schema. A mute rule's key is
+  the same path, optionally narrowed to one entity (`….deployment.id.<uuid>`); the longest prefix wins.
 - Don't reuse `kind` for a registry key. `Capability.kind` and `DataDriver.kind`
   hold a driver's own *name*, which is neither an ontology kind nor a subkind.
 
@@ -464,6 +473,16 @@ of which may be absent. Say which one you mean.
 | `TypeInfo.mint` / `TypeInfo.stamp_id` / `TypeInfo.read_id` / `TypeInfo.layout_of` | `flow_sdk/fs_store/schema_registry.py` | `mint` answers a `Found` id, raises on `Foreign`, else mints and (with `write`) stamps; `stamp_id` is the create seam; `read_id` never writes. The walk orders carrier → owning row → mint in `indexer/reconcile.py`. No `observe`/`derive`/`overwrite` vocabulary. |
 | `resolve_asset` / `index_one` / `ensure_entity` | `flow_sdk/fs_store/resolve.py` | One path → `Resolved(type, id, root, body, editor)`; the interactive counterpart of the walk, behind `GET /api/v1/assets/resolve?path=`. A path no type claims is `NotAnAsset`. |
 | "capsule" | `flow_sdk/capsules/` | The generic named-block carrier: `tag` blocks in source files, and the `identity` folder capsule the `Sidecar` carrier stores. Not an identity form for markdown — a file still carrying the HTML-comment `identity` block reads as `Foreign` (`flow_sdk/migrations/migration_2026_09_identity_live_forms.py`). |
+
+## Principal · Identity (2026-11-11)
+
+Not the identity carriers above: those say where an ASSET's id lives. These say WHO is signed in.
+
+| Ours | One place | Notes |
+|---|---|---|
+| **principal** | `get_principal()` (`flow_sdk/cli/app_config.py`), `dataContext.currentPrincipal`, hub `GET /current-principal` | Who an instance is signed in to the hub as: a `User` (a person) or an `Identity`. Reported as itself (`user-<id>` / `identity-<id>`), never disguised. |
+| `Identity` | hub `flowpad/hub/builtin/identity.py`, `ts_sdk/src/entities/identity.ts` | A non-human principal. `subject_typeid` is what it acts for: an `agent-<id>` (the agent's own, shared by its boxes) or a `deployment-<id>` (one placement's alone). Minted by the hub only. |
+| `get_user()` / `currentUser` / `/current-user` | same places | The signed-in PERSON only — empty on a box signed in as an `Identity`. Ask the principal for "is this me". |
 
 ## Activity (2026-09-03)
 

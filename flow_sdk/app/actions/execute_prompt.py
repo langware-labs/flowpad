@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
+    from flow_sdk.schema.data_spec.prompt_run_summary_spec import PromptRunSummary
 
 logger = logging.getLogger(__name__)
 
@@ -372,9 +373,11 @@ async def _emit_prompt_completion(
     session_id: str,
     host_process_id: str,
     source_session_id: Optional[str],
-) -> dict:
-    """Mint a PromptCompletion entity for this turn and return the TYPE_ID attachment
-    dict (``prompt_completion-<id>`` + inline ``result_preview``) to ride the reply."""
+    summary: Optional["PromptRunSummary"] = None,
+) -> list[dict]:
+    """Mint a PromptCompletion entity for this turn and return the attachments that ride
+    the reply: the TYPE_ID marker (``prompt_completion-<id>`` + inline ``result_preview``)
+    and, with a ``summary``, what the run did (``prompt_run_summary-<id>``)."""
     from flow_sdk.builtin.flow_message import AttachmentType
     from flow_sdk.builtin.prompt_completion import PromptCompletion
     from flow_sdk.schema.types import EntityType
@@ -388,11 +391,16 @@ async def _emit_prompt_completion(
         source_session_id=source_session_id,
     )
     await pr.save()
-    return {
+    marker = {
         "attachment_type": AttachmentType.TYPE_ID.value,
         "data": str(TypeId(type=EntityType.PROMPT_COMPLETION.value, id=pr.id)),
         "prompt_preview": reply,
     }
+    if summary is None:
+        return [marker]
+    from flow_sdk.schema.data_spec.prompt_run_summary_spec import summary_attachment  # noqa: PLC0415
+
+    return [marker, summary_attachment(pr.id, summary)]
 
 
 #: Entries that are the agent DOING something rather than saying something.
@@ -671,8 +679,10 @@ async def resolve_or_mint_session(
       guest minted it with uuid4). An invalid/foreign id is ignored.
     - Without a usable id, the prompt is looked up as a STARTING message
       (``starting_message_id == fm.id``) so a re-delivered op finds the row it
-      already created, then joins the conversation's OPEN session (one per
-      conversation); only then is a fresh uuid4 minted. Never a deterministic
+      already created, then joins the SENDER's open session in the conversation
+      (one per guest); only then is a fresh uuid4 minted.
+    - A session id that names another person's session is not adopted: the
+      sender gets a session of their own, which waits for its own Approve. Never a deterministic
       id — idempotency is the natural-key lookup.
     - A missing row materializes at PENDING with the guest's opening proposal
       (``session_start`` marker → ``reply_policy``); a DRAFT row that landed
@@ -687,11 +697,16 @@ async def resolve_or_mint_session(
         logger.warning("[session] ignoring foreign session id %r on fm=%s", sid, fm.id)
         sid = None
     session = await RemoteWorkerSession.resolve_state(sid) if sid else None
+    sender = getattr(fm, "sender_id", None)
+    if session is not None and not session.admits(sender):
+        # Someone else's session: the sender gets one of their own, waiting for its own Approve.
+        logger.warning("[session] fm=%s from %s names %s's session %s — not joined", fm.id, sender, session.guest_user_id, session.id)
+        session, sid = None, None
     if session is None and not sid:
         # A re-delivered opening prompt finds its own row; any other unstamped
-        # prompt joins the conversation's open session — one per conversation.
+        # prompt joins the sender's open session — one per guest.
         session = await RemoteWorkerSession.get_one({"starting_message_id": fm.id})
-        session = session or await RemoteWorkerSession.open_for_conversation(conv.id)
+        session = session or await RemoteWorkerSession.open_for_conversation(conv.id, sender)
         sid = session.id if session else mint_uuid()
     start = session_start_settings(fm)
     changed = session is None
@@ -798,6 +813,7 @@ async def run_session_turn(
 
     guard = contextlib.nullcontext() if _locked else _session_lock(session)
     async with guard:
+        ap = None
         try:
             from flow_sdk.builtin.project import Project
 
@@ -915,14 +931,17 @@ async def run_session_turn(
             await session.save()
 
             from flow_sdk.app.actions.notification_action import handle_add_message
+            from flow_sdk.schema.data_spec.prompt_run_summary_spec import summarize_last_turn  # noqa: PLC0415
 
             review = session.effective_reply_policy is ReplyPolicy.REVIEW
-            result_att = await _emit_prompt_completion(
+            reply_atts = await _emit_prompt_completion(
                 reply,
                 prompt_id=_first_prompt_id(fm),
                 session_id=session.id,
                 host_process_id=ap.id,
                 source_session_id=getattr(ap, "session_id", None),
+                # What the run did, for the sender's "View run": tools and files only.
+                summary=summarize_last_turn(transcript.entries if transcript is not None else [], root=workdir),
             )
             # The reply is a session message: the session id groups it and
             # handle_add_message appends the snapshot carrier, so every reply
@@ -932,7 +951,7 @@ async def run_session_turn(
                     "conversation_id": conversation.id,
                     "message": _wrap_as_claude_quote(reply),
                     "is_draft": "true" if review else "",
-                    "attachment": [result_att],
+                    "attachment": reply_atts,
                     "remote_worker_session_id": session.id,
                 },
                 someone_typeid,
@@ -965,7 +984,7 @@ async def run_session_turn(
                     await consume_prompt(fm, someone_typeid)
                 except Exception:  # noqa: BLE001 — reporting the failure comes first
                     logger.warning("[session] could not consume the failed prompt fm=%s", fm.id, exc_info=True)
-            return await _fail_turn(session, e, someone_typeid)
+            return await _fail_turn(session, _what_the_turn_wrote(ap, e), someone_typeid)
 
 
 async def _set_turn_status(
@@ -991,6 +1010,26 @@ async def _set_turn_status(
 
 class _TurnFailed(Exception):
     """A turn that cannot produce a reply; its message is what the guest is told."""
+
+
+def _what_the_turn_wrote(ap: "Optional[AgenticProcess]", err: Exception) -> Exception:
+    """The failure as the turn itself reported it, when it wrote one.
+
+    However the run failed — a raise from the transcript stream included — the
+    transcript may hold the real ending (a refusal, a 429) or a partial answer, and
+    that is what the guest needs, never only the host's generic line.
+    """
+    if ap is None or isinstance(err, _TurnFailed):
+        return err  # a _TurnFailed already carries the turn's own reason
+    try:
+        transcript = ap._load_transcript()
+    except Exception:  # noqa: BLE001 — the original failure still gets reported
+        transcript = None
+    entries = transcript.entries if transcript is not None else []
+    said = _last_turn_ended_in_error(entries) or _last_turn_assistant_text(entries)
+    if not said or said in str(err):
+        return err
+    return _TurnFailed(said)
 
 
 async def _fail_turn(session: "RemoteWorkerSession", err: Exception, someone_typeid: str) -> ApiFailResponse:
@@ -1020,7 +1059,8 @@ async def _fail_turn(session: "RemoteWorkerSession", err: Exception, someone_typ
 
 async def _queued_turns(session: "RemoteWorkerSession") -> list["FlowMessage"]:
     """This session's unconsumed prompts, oldest first — the guest's and the
-    host's own (the host may type into its session too; it runs here)."""
+    host's own (the host may type into its session too; it runs here). A prompt
+    from anyone else is never this session's turn, whatever id it carries."""
     from flow_sdk.app.actions.notification_action import _is_prompt_attachment  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
@@ -1036,6 +1076,7 @@ async def _queued_turns(session: "RemoteWorkerSession") -> list["FlowMessage"]:
         if not getattr(fm, "prompt_auto_handled", False)
         and not fm.is_draft
         and any(_is_prompt_attachment(a) for a in (fm.attachment or []))
+        and session.admits(fm.sender_id)
     ]
     queued.sort(key=lambda m: str(getattr(m, "created_date", "") or ""))
     return queued

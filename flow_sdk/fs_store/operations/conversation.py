@@ -216,11 +216,7 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
         else None
     )
 
-    new_updated = None
-    for m in messages:
-        ts = Conversation._as_datetime(m.event_time)
-        if ts is not None and (new_updated is None or ts > new_updated):
-            new_updated = ts
+    new_updated = Conversation.recency(messages)
     if new_updated is None:
         # No messages ⇒ no message activity ⇒ the honest recency is the birth
         # time. NEVER ``now()``: an empty conversation has not just happened, and

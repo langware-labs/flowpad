@@ -87,12 +87,12 @@ async def test_a_session_that_is_gone_is_not_found():
 
 
 @async_context
-async def test_a_callback_must_be_a_one_shot_on_a_real_session_under_the_cap(monkeypatch):
+async def test_a_callback_must_end_and_stay_under_the_cap(monkeypatch):
     monkeypatch.setattr(trigger_module, "MAX_PENDING_CALLBACKS", 2)
     process = await _session()
     recurring = rule(TriggerType.SCHEDULE, actions=[
         TriggerAction(action_type=ActionType.PROMPT_PROCESS, target_type_id=str(process.typeid), prompt="p")])
-    assert "once" in await recurring.bind_callback()
+    assert "needs an end" in await recurring.bind_callback()
     for _ in range(2):
         await _callback(process)
         process = await AgenticProcess.get_by_id(process.id)
@@ -126,3 +126,59 @@ async def test_an_overdue_one_shot_runs_once_when_armed():
     await asyncio.gather(*list(detached._DETACHED))
 
     assert FIRED.count(trigger.id) == 1
+
+
+async def _repeating(process: AgenticProcess, max_runs: int = 3) -> Trigger:
+    trigger = rule(TriggerType.SCHEDULE, sched_trigger_type="interval", expr="10s", max_runs=max_runs, actions=[
+        TriggerAction(action_type=ActionType.PROMPT_PROCESS, target_type_id=str(process.typeid), prompt="check X")])
+    assert await trigger.bind_callback() is None
+    await trigger.save()
+    await trigger.link_process()
+    return trigger
+
+
+async def _tick(trigger: Trigger) -> None:
+    await trigger_module._fire_schedule_job(trigger.id)
+
+
+@async_context
+async def test_a_repeating_callback_is_one_rule_that_counts_and_ends():
+    from flow_sdk.automations.lifecycle import status  # noqa: PLC0415
+
+    process = await _session()
+    trigger = await _repeating(process)
+    for _ in range(4):  # one tick past its limit
+        await _tick(trigger)
+        assert [t.id for t in await pending_callbacks(await AgenticProcess.get_by_id(process.id))] in ([trigger.id], [])
+
+    done = await Trigger.get_by_id(trigger.id)
+    assert (done.counter, status(done), done.ended_reason) == (3, "done", "max_runs")
+    assert len(process.queue.read()["entries"]) == 3
+    assert "run 2 of 3" in process.queue.read()["entries"][1]["prompt"]
+    assert done.typeid not in (await AgenticProcess.get_by_id(process.id)).private_context_entities  # off the chip
+
+
+@async_context
+async def test_a_repeating_callback_past_its_end_time_never_runs():
+    from flow_sdk.automations.lifecycle import status  # noqa: PLC0415
+
+    process = await _session()
+    trigger = await _repeating(process)
+    trigger.max_runs, trigger.expires_at = None, datetime.now(timezone.utc) - timedelta(seconds=1)
+    await trigger.update()
+
+    await _tick(trigger)
+
+    assert status(await Trigger.get_by_id(trigger.id)) == "expired" and process.queue.read()["entries"] == []
+
+
+@async_context
+async def test_cancel_ends_it_and_keeps_the_row():
+    from flow_sdk.automations.lifecycle import end, status  # noqa: PLC0415
+
+    process = await _session()
+    trigger = await _repeating(process)
+    await end(trigger, "cancelled")
+    await _tick(trigger)
+
+    assert status(await Trigger.get_by_id(trigger.id)) == "cancelled" and process.queue.read()["entries"] == []

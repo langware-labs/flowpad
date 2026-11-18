@@ -1,5 +1,6 @@
 import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
 import { AssetEditor, editorForPath, FSRef, fsManager, TypeId, VFSPath } from '@sdk';
+import { isHtmlPath } from '@src/lib/open-in-browser';
 
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app';
 export const FLOWPAD_LOCAL_UI_PREFIX = 'ui://flowpad-local/';
@@ -86,7 +87,7 @@ export async function readVfsResource(uri: string): Promise<ReadResourceResult> 
   const bytes = await fsManager.download(vfsPath.typeId, vfsPath.entitySubPath);
   const text = typeof bytes === 'string' ? bytes : await bytes.text();
   const mimeType =
-    uri.startsWith('ui://') && /\.html?$/i.test(vfsPath.entitySubPath)
+    uri.startsWith('ui://') && isHtmlPath(vfsPath.entitySubPath)
       ? MCP_APP_MIME_TYPE
       : inferTextMimeType(vfsPath.entitySubPath);
   return { contents: [{ uri, mimeType, text }] };

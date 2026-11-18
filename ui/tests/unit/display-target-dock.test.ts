@@ -81,3 +81,14 @@ describe('dockForDisplayTarget — kind: dock', () => {
     expect(dock!.tabHash).not.toBeNull();
   });
 });
+
+// A folder shown by path (Nir, 2026-11-17: `flow show file ~/Downloads/Langware legal`)
+// opened as an empty FILE whose tree listed the parent — all of Downloads.
+describe('a vfs folder', () => {
+  it('opens in the folder browser at that folder, not as a file', () => {
+    const path = '/Users/x/Downloads/Langware legal';
+    const dock = dockForDisplayTarget({ kind: 'vfs', path, is_dir: true });
+    expect(dock?.viewType).not.toBe(ViewType.EDITOR);
+    expect(dock?.resourceVfsPath?.machinePath).toBe(path);
+  });
+});

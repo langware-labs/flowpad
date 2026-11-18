@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { Agent, AgenticProcess, lastChatQuery, mostRecentProcess, tabManager } from '@sdk';
+import { Agent, AgenticProcess, lastChatQuery, mostRecentProcess, tabManager, TypeId } from '@sdk';
 
 import { notify } from '@src/notifications';
 import { ViewMode } from '@src/contexts/view-mode-context';
@@ -95,6 +95,12 @@ export async function agentSessionDock(agent: Agent, projectId: string): Promise
     processId = await startAgentSession(agent, projectId);
   }
   return DockPointer.forSession(processId).withViewMode(ViewMode.Vibe);
+}
+
+/** `agentSessionDock` for an agent known only by its typeid; null when the agent is gone. */
+export async function agentDockById(agentTypeId: string, projectId: string): Promise<DockPointer | null> {
+  const agent = await Agent.getById<Agent>(new TypeId(agentTypeId).id);
+  return agent ? agentSessionDock(agent, projectId) : null;
 }
 
 export function useAgentLauncher(): {

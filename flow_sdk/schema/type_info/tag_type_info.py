@@ -14,6 +14,8 @@ from flow_sdk.schema.view_mode import ViewMode
 class TagMeta(BaseMeta):
     title: Optional[str] = None
     description: Optional[str] = None
+    color: Optional[str] = None
+    stream_inbox: Optional[bool] = None
     alias_of: Optional[str] = None
     deprecated: Optional[bool] = None
     system: Optional[bool] = None
@@ -21,7 +23,7 @@ class TagMeta(BaseMeta):
 
 TAG = TypeInfo(
     type_name=EntityType.TAG,
-    icon="Hash",
+    icon="Tag",
     display_name="Tags",
     # Dev-gated browse surface: blessed tags ride the generic Assets browser
     # (max reuse); the observed/anonymous gardening merge is a later slice.

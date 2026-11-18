@@ -19,6 +19,14 @@ const h = vi.hoisted(() => ({
   save: vi.fn(),
   setCredential: vi.fn(() => Promise.resolve({ ok: true, credential_hint: '****1234' })),
   allocate: vi.fn(),
+  modelConfig: vi.fn(() =>
+    Promise.resolve({
+      endpoint_typeid: 'llm_endpoint-test',
+      tiers: { md: 'backend/resolved' },
+      default_model: 'md',
+      effective_default_model: 'backend/resolved',
+    }),
+  ),
   onOpenChange: vi.fn(),
 }));
 
@@ -31,6 +39,7 @@ vi.mock('@sdk', async (importOriginal) => {
       ...(actual.llmEndpointsService as object),
       setCredential: h.setCredential,
       allocate: h.allocate,
+      getModelConfig: h.modelConfig,
     },
   };
 });
@@ -64,6 +73,16 @@ describe('LlmEndpointDialog', () => {
   });
   afterEach(() => cleanup());
 
+  it('shows the model-config transport error without displaying a guessed default', async () => {
+    h.modelConfig.mockRejectedValueOnce(new Error('Model configuration denied'));
+    const root = saved({ id: uuid(), name: 'Denied metadata', provider: 'openai' });
+    renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={root} all={[root]} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('llm-resolved-default').textContent).toContain('Model configuration denied'),
+    );
+    expect(screen.getByTestId('llm-resolved-default').textContent).not.toContain('backend/resolved');
+  });
+
   it('root create: name optional, then saves provider + base_url and sends the key separately', async () => {
     renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} all={[]} />);
 
@@ -71,6 +90,7 @@ describe('LlmEndpointDialog', () => {
     expect(screen.queryByTestId('llm-problems')?.textContent ?? '').not.toContain('Name is required.');
 
     await userEvent.type(screen.getByTestId('llm-name'), 'Anthropic prod');
+    await userEvent.type(screen.getByTestId('llm-default-model'), 'provider/manual-model');
     await userEvent.click(screen.getByTestId('provider-anthropic'));
     expect(screen.getByTestId<HTMLInputElement>('llm-base-url').value).toBe('https://api.anthropic.com');
     await userEvent.type(screen.getByTestId('credential-input'), 'sk-ant-secret');
@@ -91,6 +111,7 @@ describe('LlmEndpointDialog', () => {
       enabled: true,
       provider: 'anthropic',
       base_url: 'https://api.anthropic.com',
+      default_model: 'provider/manual-model',
     });
     expect(json).not.toHaveProperty('sources');
     expect(JSON.stringify(json)).not.toContain('sk-ant-secret');
@@ -163,6 +184,7 @@ describe('LlmEndpointDialog', () => {
     expect(screen.queryByTestId('credential-field')).toBeNull();
 
     await userEvent.selectOptions(screen.getByTestId('source-select'), `llm_endpoint-${rootB.id}`);
+    await userEvent.type(screen.getByTestId('llm-default-model'), 'lg');
     expect(screen.queryByTestId('llm-problems')).toBeNull();
 
     await userEvent.click(screen.getByTestId('llm-submit'));
@@ -172,6 +194,7 @@ describe('LlmEndpointDialog', () => {
     const [parentId, body] = h.allocate.mock.calls[0] as unknown as [string, Record<string, unknown>];
     expect(parentId).toBe(rootB.id);
     expect(body.name).toBe('Team chain');
+    expect(body.default_model).toBe('lg');
     expect(body).not.toHaveProperty('sources');
     expect(body).not.toHaveProperty('provider');
 
@@ -198,6 +221,7 @@ describe('LlmEndpointDialog', () => {
       provider: 'openai',
       base_url: 'https://api.openai.com',
       credential_hint: '****9999',
+      default_model: 'md',
     });
     renderDialog(<LlmEndpointDialog open onOpenChange={h.onOpenChange} editing={root} all={[root]} />);
 
@@ -206,6 +230,9 @@ describe('LlmEndpointDialog', () => {
     expect(screen.getByTestId('credential-hint').textContent).toContain('****9999');
     // Save/Test appear because the endpoint exists.
     expect(screen.getByTestId('credential-save')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('llm-resolved-default').textContent).toContain('backend/resolved'));
+    expect(h.modelConfig).toHaveBeenCalledWith(root.id);
+    await userEvent.clear(screen.getByTestId('llm-default-model'));
 
     await userEvent.clear(screen.getByTestId('llm-name'));
     await userEvent.type(screen.getByTestId('llm-name'), 'Prod v2');
@@ -215,6 +242,7 @@ describe('LlmEndpointDialog', () => {
     const [typeId, , json] = h.save.mock.calls[0] as unknown as [{ id: string }, unknown, Record<string, unknown>];
     expect(typeId.id).toBe(root.id);
     expect(json.name).toBe('Prod v2');
+    expect(json.default_model).toBeNull();
     expect(json).not.toHaveProperty('provider');
     expect(json).not.toHaveProperty('base_url');
     expect(json).not.toHaveProperty('credential_hint');

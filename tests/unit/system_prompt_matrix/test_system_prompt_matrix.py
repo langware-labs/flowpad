@@ -60,6 +60,7 @@ MARKERS: dict[L, str] = {
     L.AUTO_OPEN: "# Opened for you at session start",
     L.LANGUAGE: "# Language\nAlways respond in Hebrew.",
     L.CREDENTIALS: "Credentials:\n",
+    L.SUBJECT: "The user opened this chat from the file `/w/docs/report/index.html`.",
 }
 PERSONA_HEADER = "# You are the '{name}' agent"
 CATALOGUE_HEADER = "# Embedded agent specs"
@@ -236,6 +237,16 @@ async def _app_vibe(e: Env) -> AgenticProcess:
     return await e.embed(process, "vibe.md", as_persona=True)
 
 
+async def _app_doc_chat(e: Env) -> AgenticProcess:
+    # NavigationActions.enterChat: a vibe chat keyed to the file on screen (no entity row needed).
+    process = await e.create_from_app({
+        "output_format": "stream-json",
+        "process_type": "chat",
+        "target_typeid_str": "compute_node-@local/w/docs/report/index.html",
+    })
+    return await e.embed(process, "vibe.md", as_persona=True)
+
+
 async def _app_new_chat(e: Env) -> AgenticProcess:
     # open-new-chat.ts (chat view): createProcess, then embedStandardAgent.
     process = await e.create_from_app({"output_format": "stream-json", "process_type": "chat"})
@@ -312,6 +323,7 @@ ROWS: tuple[Row, ...] = (
     Row("project_always_use_skills", _project_always_use_skills, (L.COMMON, L.ALWAYS_USE_SKILLS)),
     Row("ts_sdk_script", _ts_sdk_script, (L.COMMON,), sites=("flow_sdk/builtin/faas/scan_actions.py",)),
     Row("app_vibe", _app_vibe, (L.COMMON, L.COMMON_UI, L.AGENTS), persona="vibe"),
+    Row("app_doc_chat", _app_doc_chat, (L.COMMON, L.COMMON_UI, L.AGENTS, L.SUBJECT), persona="vibe"),
     Row("app_new_chat", _app_new_chat, (L.COMMON, L.COMMON_UI, L.AGENTS), persona="standard"),
     Row("app_new_terminal", _app_new_terminal, (L.COMMON, L.COMMON_UI)),
     Row("app_assistant_chat", _app_assistant_chat, (L.COMMON, L.COMMON_UI, L.INSTRUCTIONS)),

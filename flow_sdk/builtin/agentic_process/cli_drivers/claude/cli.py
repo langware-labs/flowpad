@@ -9,16 +9,16 @@ Auto-injects CLAUDE_PROJECT_DIR from workdir.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from collections.abc import Sequence
 
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.trust import claude_trusts, trust_mounted_dirs
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
     quote_shell_arg,
     serialize_json_cli_value,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_MODEL_TIERS
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.trust import claude_trusts
 from flow_sdk.config import PLATFORM_WIN32
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,9 @@ class ClaudeAgentOptions(AgentOptions):
     EXECUTABLE = "claude"
     PROMPT_CHANNEL = "argv"  # claude takes the prompt as a `-- <text>` positional
     SYSTEM_PROMPT_FILE_FLAG = "--append-system-prompt-file"
+    EXTENSION_FLAG = "--chrome"
+    EXTENSION_ID = "fcoeoabgfenejglbffodgkkbkcdhcgfn"  # Claude in Chrome
+    STRICT_MCP_FLAG = "--strict-mcp-config"
 
     def configure_fork(self, source_session_id: str) -> None:
         self.resume = True
@@ -165,9 +168,11 @@ class ClaudeAgentOptions(AgentOptions):
                 return [comspec, "/c", resolved]
         return ["claude"]
 
-    def prepare_launch(self, workdir: str | None) -> None:
+    def prepare_launch(self, workdir: str | None, dependency_dirs: Sequence[str] = ()) -> None:
         """Claude exits on --worktree in a folder whose workspace trust it has not been given: launch it plainly
-        there so its own trust prompt shows (accepting it is the person's step); then Open in Worktree works."""
+        there so its own trust prompt shows (accepting it is the person's step); then Open in Worktree works.
+        The folders Flowpad mounts with --add-dir are trusted here, so they never stop the launch."""
+        trust_mounted_dirs(self.add_dirs, dependency_dirs)
         if self.worktree and not claude_trusts(workdir):
             logger.info("claude: %s is not trusted yet, launching without --worktree", workdir)
             self.worktree = False
@@ -181,8 +186,8 @@ class ClaudeAgentOptions(AgentOptions):
         elif self.permission_mode in ("plan", "default", "acceptEdits"):
             # ``plan`` is required for the model to call ``ExitPlanMode``.
             flags.extend(["--permission-mode", self.permission_mode])
-        if self.chrome:
-            flags.append("--chrome")
+        # ``chrome``: a caller that asked for the extension in its persisted options.
+        flags.extend(self.extension_flags(extension=self.chrome))
         if self.debug:
             flags.append("--debug")
         if self.debug_file:
@@ -216,7 +221,8 @@ class ClaudeAgentOptions(AgentOptions):
             # to disk for a process's attached servers. ``--strict`` always rides
             # with it: without it the process gets this set PLUS ~/.claude.json,
             # and "which servers does this process have" has no answer.
-            flags.extend(["--mcp-config", self.mcp_config_json, "--strict-mcp-config"])
+            flags.extend(["--mcp-config", self.mcp_config_json])
+        flags.extend(self.strict_mcp_flags())
         for directory in self.plugin_dirs:
             flags.extend(["--plugin-dir", directory])
         if self.print_mode:

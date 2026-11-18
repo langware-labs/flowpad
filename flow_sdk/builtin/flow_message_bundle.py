@@ -3146,3 +3146,76 @@ async def _check_entity_exists(entity_type: str, entity_id: str) -> bool:
         return False
     result = await cls.get_one({"id": entity_id})
     return result is not None
+
+
+# ---------------------------------------------------------------------------
+# Re-homing a packed body onto a new message (message templating)
+# ---------------------------------------------------------------------------
+
+#: Packed-header fields that belong to one send; a re-homed header takes them from the new message.
+_SEND_FIELDS = ("id", "conversation_id", "sender_id", "sender_name", "receiver_address", "receiver_address_type",
+                "created_date", "updated_date")
+
+
+def _rehome_header(raw: bytes, new_message: dict) -> bytes:
+    """A packed message header re-tied to ``new_message`` (from ``message_template.instantiate``).
+
+    The content is re-derived from THIS header (its attachment paths are the packed form,
+    ``attachment/files/<name>``, not the stored row's); of the other header fields
+    (``_FM_FIELDS``) only those that are not about one send are kept.
+    """
+    from flow_sdk.builtin.message_template import instantiate, template_from  # noqa: PLC0415
+
+    packed = json.loads(raw)
+    fresh = instantiate(
+        template_from(packed),
+        conversation_id=new_message["conversation_id"],
+        sender_id=new_message.get("sender_id"),
+        sender_name=new_message.get("sender_name") or "",
+        message_id=new_message["id"],
+    )
+    kept = {k: v for k, v in packed.items() if k in _FM_FIELDS and k not in _SEND_FIELDS}
+    return json.dumps({**kept, **fresh}, default=_json_default, ensure_ascii=False).encode("utf-8")
+
+
+def rehome_bundle(bundle: bytes, new_message: dict) -> bytes:
+    """A stored ``.flowmsg`` re-homed onto ``new_message``: bytes in, bytes out, in memory.
+
+    The envelope and the source message's own entry are rewritten to the new message (the entry
+    renamed to its id); the source conversation's entry — its id, members, title and history — is
+    dropped. Every other entry (files, assets, a conversation shared AS content) is copied as is,
+    without re-compressing it.
+    """
+    import io  # noqa: PLC0415
+
+    with zipfile.ZipFile(io.BytesIO(bundle)) as src:
+        names = set(src.namelist())
+        envelope = _FLOW_MESSAGE_FILE if _FLOW_MESSAGE_FILE in names else _LEGACY_HEADER_FILE
+        source = json.loads(src.read(envelope))
+        own_message = f"attachment/{_entry_key(BuiltinEntityType.FLOW_MESSAGE.value, source.get('id') or '')}/"
+        own_conversation = f"attachment/{_entry_key(BuiltinEntityType.CONVERSATION.value, source.get('conversation_id') or '')}/"
+        new_entry = f"attachment/{_entry_key(BuiltinEntityType.FLOW_MESSAGE.value, new_message['id'])}/"
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as dst:
+            for info in src.infolist():
+                name = _canonical_member(info.filename)
+                if name.startswith(own_conversation):
+                    continue
+                if name == envelope or name == own_message + "header.json":
+                    target = envelope if name == envelope else new_entry + "header.json"
+                    dst.writestr(target, _rehome_header(src.read(info), new_message), zipfile.ZIP_DEFLATED)
+                    continue
+                if name.startswith(own_message):
+                    name = new_entry + name[len(own_message):]
+                copy = zipfile.ZipInfo(name, info.date_time)
+                copy.compress_type, copy.external_attr = info.compress_type, info.external_attr
+                dst.writestr(copy, src.read(info))
+        return out.getvalue()
+
+
+def _canonical_member(name: str) -> str:
+    """A member path with a legacy ``<type>-@<id>`` entry dir read as the canonical ``<type>-<id>``."""
+    parts = name.split("/")
+    if len(parts) > 1 and parts[0] == "attachment" and (parsed := _parse_entry_key(parts[1])):
+        parts[1] = _entry_key(*parsed)
+    return "/".join(parts)

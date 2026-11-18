@@ -19,6 +19,7 @@ from flow_sdk import toplog
 from flow_sdk.api.messages import PtyOutputMessage, PtySessionStatusMessage, ResponseMessage
 from flow_sdk.core.network.connection import Connection
 from flow_sdk.core.network.connection_manager import get_connection_handler
+from flow_sdk.core.network.connections import is_client_gone
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -29,6 +30,63 @@ if TYPE_CHECKING:
 # When active PTY sessions reach this count, the oldest _PTY_EVICT_COUNT are closed automatically.
 # Prevents OS PTY device exhaustion (macOS default limit: 511).
 _PTY_CAP = 70
+
+#: Bytes of PTY output a connection may have queued before it is parked. A client
+#: that stops reading (a sleeping laptop, a frozen tab) would otherwise grow the
+#: queue without bound; parked, it gets a repaint from the stream file on re-attach.
+_OUTBOX_MAX_BYTES = 8 * 1024 * 1024
+
+
+class _PtyOutbox:
+    """PTY output for ONE connection, sent by one task at a time, in order.
+
+    Each output chunk used to be its own coroutine sending straight to the socket.
+    Once a client stopped reading, the first send blocked on drain and every later
+    one tried to drain the same socket at once, which websockets rejects with a
+    bare ``AssertionError`` — one blank WARNING and one lost chunk per chunk
+    (~32k lines per 40s). Here the chunks queue and a single sender drains them.
+    """
+
+    _by_connection: dict[str, "_PtyOutbox"] = {}
+
+    def __init__(self, connection_id: str):
+        self.connection_id = connection_id
+        self.chunks: list[tuple] = []
+        self.queued_bytes = 0
+        self.sending = False
+
+    @classmethod
+    def put(cls, connection_id: str, send: Callable, chunk: tuple, size: int) -> None:
+        box = cls._by_connection.setdefault(connection_id, cls(connection_id))
+        if box.queued_bytes + size > _OUTBOX_MAX_BYTES:
+            box._park(f"{box.queued_bytes + size} bytes queued")
+            return
+        box.chunks.append(chunk)
+        box.queued_bytes += size
+        if not box.sending:
+            box.sending = True
+            asyncio.get_running_loop().create_task(box._drain(send))
+
+    async def _drain(self, send: Callable) -> None:
+        try:
+            while self.chunks:
+                chunk = self.chunks.pop(0)
+                self.queued_bytes -= len(chunk[4])
+                if not await send(*chunk):
+                    self._park("send failed")
+                    return
+        finally:
+            self.sending = False
+            if not self.chunks:
+                type(self)._by_connection.pop(self.connection_id, None)
+
+    def _park(self, why: str) -> None:
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry  # noqa: PLC0415
+
+        self.chunks.clear()
+        self.queued_bytes = 0
+        logging.info(f"[PTY] parking connection {self.connection_id}: {why}")
+        asyncio.get_running_loop().create_task(pty_registry.on_ws_disconnect(self.connection_id, reason=why))
 _PTY_EVICT_COUNT = 10
 
 
@@ -347,14 +405,11 @@ class PtyActionsMixin:
                 current_session = await pty_registry.get_session(current_pty_key)
                 if current_session and current_session.attached_connections:
                     for current_connection_id in current_session.attached_connections:
-                        await self._send_pty_output_to_client(
-                            request_message_id,
+                        _PtyOutbox.put(
                             current_connection_id,
-                            self.node_provider_id,
-                            shell_id,
-                            data,
-                            seq,
-                            chunk_timestamp,
+                            self._send_pty_output_to_client,
+                            (request_message_id, current_connection_id, self.node_provider_id, shell_id, data, seq, chunk_timestamp),
+                            len(data),
                         )
                     logging.debug(
                         f"[PTY] on_pty_output (machine): sent to {len(current_session.attached_connections)} client(s)"
@@ -895,8 +950,8 @@ class PtyActionsMixin:
     @staticmethod
     async def _send_pty_output_to_client(
         request_message_id, request_connection_id, provider_node_id, shell_id, data, seq, timestamp: float = 0.0
-    ):
-        """Send PTY output to a single WebSocket client (no buffer append).
+    ) -> bool:
+        """Send PTY output to a single WebSocket client (no buffer append). True when it was sent.
 
         Args:
             request_message_id: Message ID for the response
@@ -917,7 +972,7 @@ class PtyActionsMixin:
             logging.warning(
                 f"[PTY] Dropping output for shell {shell_id}: invalid connection id {request_connection_id!r} ({e})"
             )
-            return None
+            return False
         if not handler:
             # No live WS for this connection (e.g. its socket died and the
             # client re-attached over HTTP with an id that never re-dialed).
@@ -928,7 +983,7 @@ class PtyActionsMixin:
                 f"[PTY] Dropping output for shell {shell_id}: no live WS for connection "
                 f"{request_connection_id} (seq={seq})"
             )
-            return None
+            return False
         if handler:
             try:
                 pty_msg = PtyOutputMessage.from_bytes(provider_node_id, shell_id, data, seq=seq, timestamp=timestamp)
@@ -940,29 +995,15 @@ class PtyActionsMixin:
                 )
                 logging.debug(f"[PTY] Sending PTY output to client: seq={seq}, size={len(data)} bytes")
                 await handler.send_message(response_msg.model_dump())
+                return True
             except Exception as e:
                 # A closed socket (tab closed mid-stream) is normal, not a
                 # warning — the PTY keeps running and reattach repaints the frame.
-                _m = str(e).lower()
-                if any(
-                    s in _m
-                    for s in (
-                        "close message has been sent",
-                        "websocket.close",
-                        "after sending",
-                        "disconnect",
-                    )
-                ):
+                if is_client_gone(e) or "disconnect" in str(e).lower():
                     logging.debug(f"PTY output send skipped — client gone: {e}")
                 else:
-                    logging.warning(f"Failed to send PTY output to client: {e}")
-                response_msg = ResponseMessage(
-                    session_id=shell_id,
-                    message_id=request_message_id,
-                    response_message_id=request_message_id,
-                    error=f"Failed to send PTY output: {e}",
-                )
-                return ApiFailResponse(message=f"Failed to send PTY output: {str(e)}", data=response_msg.model_dump())
+                    logging.warning(f"Failed to send PTY output to client: {e!r}")
+                return False
 
     async def _send_pty_input(self, body: dict) -> ApiResponse:
         """Send input to PTY session."""

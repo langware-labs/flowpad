@@ -391,6 +391,8 @@ class AskChoiceSpec(DataSpec):
     #: person's browser, then answers ``<value>`` — nothing typed, nothing stored.
     provider: str = ""
     scopes: list[str] = []
+    #: The provider's scope group the sign-in is for (``gmail``); empty — the default.
+    group: str = ""
     #: Several values this choice is given as, together — each one typed (or picked) like a value choice.
     fields: list["AskChoiceSpec"] = []
 
@@ -439,6 +441,16 @@ class AskVerifySpec(DataSpec):
     source_step: str
 
 
+class AskOriginSpec(DataSpec):
+    """Where the asked-for thing is declared: a chip beside the question that opens it there. No ``project_id``
+    (Flowpad's own, or the user's): the chip opens the Credentials screen."""
+
+    label: str
+    project_id: str = ""
+    #: The credential's typeid, shown selected in that project's credentials.
+    credential: str = ""
+
+
 class AskOp(ExeData):
     """A person, asked for the op's declared output."""
 
@@ -473,6 +485,8 @@ class AskOp(ExeData):
     #: A check of the typed value before it is sent (a token probed against the provider), by the source setup
     #: step it names. ``None``: nothing to verify, only to send.
     verify: Optional["AskVerifySpec"] = None
+    #: Where the asked-for credential comes from (its project), shown as a chip. ``None``: no chip.
+    origin: Optional["AskOriginSpec"] = None
     #: The agent a person can hand this question to (the AI Assist button): it follows the op's
     #: ``setup`` and answers the SAME question, so the op returns the same ``AskResult`` whoever
     #: answered. Empty: no assist — the person answers or nobody does. Not a rung: a person starts it.

@@ -984,6 +984,20 @@ export async function getProjectGitDetail(
   );
 }
 
+/** A cleanup row as the screen shows it: the id, and the folder — which is the only way to
+ *  reach a folder the listing found with no project record behind it. */
+export interface CleanupTarget {
+  project_id: string;
+  cwd: string;
+}
+
+function cleanupBody(rows: CleanupTarget[]) {
+  return {
+    project_ids: rows.map((r) => r.project_id),
+    cwds: Object.fromEntries(rows.map((r) => [r.project_id, r.cwd])),
+  };
+}
+
 /**
  * Delete the named projects' harness state. Folders and rows are untouched.
  *
@@ -993,7 +1007,7 @@ export async function getProjectGitDetail(
  */
 export async function removeProjectsFromHarness(
   computeNodeId: string,
-  projectIds: string[],
+  rows: CleanupTarget[],
 ): Promise<CleanupApplyResponse> {
   const actionInfo = new ActionInfo(
     'project-remove-from-harness',
@@ -1001,7 +1015,7 @@ export async function removeProjectsFromHarness(
     computeNodeId,
     'POST',
   );
-  actionInfo.bodyParameters = { project_ids: projectIds };
+  actionInfo.bodyParameters = cleanupBody(rows);
   return (
     (await dataManager.callAction<unknown, CleanupApplyResponse>(actionInfo)) || {
       results: [],
@@ -1019,7 +1033,7 @@ export async function removeProjectsFromHarness(
  */
 export async function deleteProjectsPermanently(
   computeNodeId: string,
-  projectIds: string[],
+  rows: CleanupTarget[],
 ): Promise<CleanupApplyResponse> {
   const actionInfo = new ActionInfo(
     'project-delete-permanently',
@@ -1027,7 +1041,7 @@ export async function deleteProjectsPermanently(
     computeNodeId,
     'POST',
   );
-  actionInfo.bodyParameters = { project_ids: projectIds };
+  actionInfo.bodyParameters = cleanupBody(rows);
   return (
     (await dataManager.callAction<unknown, CleanupApplyResponse>(actionInfo)) || {
       results: [],

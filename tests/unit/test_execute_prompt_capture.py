@@ -30,6 +30,7 @@ import pytest
 
 from flow_sdk.app.actions.execute_prompt import (
     _api_retry_notice,
+    _what_the_turn_wrote,
     _last_turn_assistant_text,
     _last_turn_ended_in_error,
     _last_turn_error_text,
@@ -305,3 +306,25 @@ def test_a_turn_that_ends_on_an_action_has_no_final_message():
 
     assert _last_turn_assistant_text(entries, last_only=True) == ""
     assert "adding the diagnosis" in _last_turn_assistant_text(entries)
+
+
+def test_a_failed_turn_reports_what_the_transcript_says_not_the_hosts_generic_line():
+    """Nir's live session (2026-11-17): the turn was refused, the stream raised a
+    generic "exited without finishing", and the guest never saw the refusal."""
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    refusal = "API Error: Sonnet 5.5's safeguards flagged this message"
+    entries = _claude_turn(
+        {
+            "type": "assistant",
+            "uuid": "a1",
+            "isApiErrorMessage": True,
+            "message": {"role": "assistant", "stop_reason": "refusal", "content": [{"type": "text", "text": refusal}]},
+        }
+    )
+    ap = SimpleNamespace(_load_transcript=lambda: SimpleNamespace(entries=entries))
+
+    reported = _what_the_turn_wrote(ap, RuntimeError("the worker exited without finishing its turn"))
+    assert str(reported) == refusal
+    generic = RuntimeError("no project folder")
+    assert _what_the_turn_wrote(None, generic) is generic

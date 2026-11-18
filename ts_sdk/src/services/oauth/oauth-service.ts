@@ -173,14 +173,18 @@ export class OauthFlow extends EventEmitter {
   public readonly startTime: Date;
   public readonly targetEntity?: TypeId;
   public readonly sharedEntityVarName?: string;
+  /** The provider's scope group this flow signs in to (`gmail`); empty: the default. */
+  public readonly group?: string;
 
   constructor(
     oAuthRequestInfo: OAuthClientRequestInfo,
     authWindow: OAuthWindow,
     targetEntity?: TypeId,
     sharedEntityVarName?: string,
+    group?: string,
   ) {
     super();
+    this.group = group;
     this.oAuthRequestInfo = oAuthRequestInfo;
     this.startTime = new Date();
     this.authWindow = authWindow;
@@ -238,9 +242,10 @@ export class OAuthService {
     provider: string,
     targetEntity?: TypeId,
     sharedEntityVarName?: string,
+    group?: string,
   ): Promise<{ status: OAuthStatus; attachSuccess: boolean | null }> {
     try {
-      const verification = await this.test(provider);
+      const verification = await this.test(provider, undefined, group);
       if (verification.ok !== true) {
         return { status: OAuthStatus.ERROR, attachSuccess: null };
       }
@@ -290,6 +295,7 @@ export class OAuthService {
         provider,
         oauthFlow.targetEntity,
         oauthFlow.sharedEntityVarName,
+        oauthFlow.group,
       ));
     }
 
@@ -412,7 +418,7 @@ export class OAuthService {
       // The backend may have adopted an existing verified hub grant. It has
       // already stored the local token, so there is no browser flow to open.
       if (raw.status === OAuthStatus.SUCCESS) {
-        const result = await this.verifyAndAttach(provider, targetEntity, sharedEntityVarName);
+        const result = await this.verifyAndAttach(provider, targetEntity, sharedEntityVarName, options.group);
         this.emitFlowComplete({
           provider,
           ...result,
@@ -497,7 +503,7 @@ export class OAuthService {
         console.error(`[OAuthService] Failed to create popup window`);
         throw new Error(`Failed to create popup window`);
       }
-      const oauthFlow = new OauthFlow(oauthRequestInfo, popupWindow, targetEntity, sharedEntityVarName);
+      const oauthFlow = new OauthFlow(oauthRequestInfo, popupWindow, targetEntity, sharedEntityVarName, options.group);
       this.oAuthFlows.set(oauthRequestInfo.oauth_request_id, oauthFlow);
 
       // The hub omits kind for code grants; only loopback grants need wait-callback.
@@ -678,10 +684,11 @@ export class OAuthService {
    *  `ok` is three-valued: true/false are answers, null means the question was
    *  never asked (no probe for this provider, or the provider was unreachable) —
    *  which must not be shown as a pass. */
-  public async test(provider: string, targetEntity?: TypeId): Promise<OAuthTestResult> {
+  public async test(provider: string, targetEntity?: TypeId, group?: string): Promise<OAuthTestResult> {
     const actionInfo = new ActionInfo('oauth');
     if (targetEntity) actionInfo.targetEntity = targetEntity;
     actionInfo.subpath = [provider, 'test'];
+    if (group) actionInfo.queryParameters = { group };
     const raw = await dataManager.callAction<unknown, OAuthTestResult>(actionInfo);
     return raw ?? { ok: null, detail: 'No response from the connection test' };
   }

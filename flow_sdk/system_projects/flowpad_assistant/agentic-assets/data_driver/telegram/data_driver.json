@@ -1,5 +1,6 @@
 {
   "schema": 1,
+  "featured": true,
   "name": "telegram",
   "title": "Your own Telegram bot",
   "icon_name": "Telegram",

@@ -283,6 +283,7 @@
       "graph_workflow",
       "hub",
       "ingest",
+      "message",
       "node",
       "resource",
       "workload"

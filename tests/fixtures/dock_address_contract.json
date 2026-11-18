@@ -74,6 +74,7 @@
     "desktop",
     "live_session",
     "helpdesk",
+    "support_desk",
     "atlas",
     "records",
     "entity",
@@ -81,6 +82,7 @@
     "app",
     "llm-endpoints",
     "token-plan",
+    "notifications",
     "llm-sources",
     "llm-setup",
     "assistant",
@@ -622,6 +624,14 @@
       "folds_sub_pointer": false,
       "chrome": "workspace"
     },
+    "support_desk": {
+      "addressable": true,
+      "pointer": "required",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "workspace"
+    },
     "atlas": {
       "addressable": false,
       "pointer": "optional",
@@ -671,6 +681,14 @@
       "chrome": "workspace"
     },
     "token-plan": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": true,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "workspace"
+    },
+    "notifications": {
       "addressable": true,
       "pointer": "optional",
       "folds_pointer": true,
@@ -806,9 +824,9 @@
       "tab_hash": "automations|"
     },
     {
-      "name": "preferences folds every category into one tab",
+      "name": "preferences folds every tab into one tab",
       "view_type": "preferences",
-      "pointer": "appearance",
+      "pointer": "developer/trace-logging",
       "tab_hash": "preferences|"
     },
     {
@@ -861,6 +879,13 @@
       "page": "hub",
       "pointer": "team/550e8400-e29b-41d4-a716-446655440000",
       "tab_hash": "hub|token-plan|"
+    },
+    {
+      "name": "notifications folds the rule key into one chip",
+      "view_type": "notifications",
+      "page": "hub",
+      "pointer": "notification.email.issue.budget_exhausted.deployment.id.550e8400-e29b-41d4-a716-446655440000",
+      "tab_hash": "hub|notifications|"
     },
     {
       "name": "every llm-sources selection is one tab",
@@ -1154,6 +1179,12 @@
       "url": "/dock/helpdesk/550e8400-e29b-41d4-a716-446655440000/article/docs/Getting%20Started/Welcome.md"
     },
     {
+      "name": "a help desk, by its hub project id",
+      "view_type": "support_desk",
+      "pointer": "550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/support_desk/550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
       "name": "machine subview",
       "view_type": "machine",
       "pointer": "processes",
@@ -1166,10 +1197,10 @@
       "url": "/dock/ai-config/llm-apis"
     },
     {
-      "name": "preferences category",
+      "name": "preferences group and tab",
       "view_type": "preferences",
-      "pointer": "appearance",
-      "url": "/dock/preferences/appearance"
+      "pointer": "developer/trace-logging",
+      "url": "/dock/preferences/developer/trace-logging"
     },
     {
       "name": "explorer path",
@@ -1244,6 +1275,13 @@
         "runtime": "served"
       },
       "url": "/dock/app/artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8?runtime=served"
+    },
+    {
+      "name": "hub notifications, a mute link's narrowest key",
+      "view_type": "notifications",
+      "page": "hub",
+      "pointer": "notification.email.issue.budget_exhausted.deployment.id.550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/hub/notifications/notification.email.issue.budget_exhausted.deployment.id.550e8400-e29b-41d4-a716-446655440000"
     },
     {
       "name": "hub llm endpoints list",

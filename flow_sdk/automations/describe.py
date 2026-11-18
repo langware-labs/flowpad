@@ -61,6 +61,24 @@ def describe_event(pattern: str, target: Optional[str] = None,
     return EventWhen(pattern=pattern, title=title, description=description, target=target or None)
 
 
+def life_words(trigger: Any) -> str:
+    """" · ran 2 of 4 · until 08:00" while it runs; " · done, ran 3 times" / " · expired" once it ended."""
+    from flow_sdk.automations import lifecycle  # noqa: PLC0415
+
+    if str(getattr(trigger, "sched_trigger_type", "")) == "date" and not getattr(trigger, "ended_reason", None):
+        return ""
+    state, runs, limit = lifecycle.status(trigger), int(trigger.counter or 0), lifecycle.run_limit(trigger)
+    if state == "done":
+        return f" · done, ran {runs} time{'s' if runs != 1 else ''}"
+    if state in ("expired", "cancelled"):
+        return f" · {state} after {runs} run{'s' if runs != 1 else ''}"
+    parts = [f"ran {runs} of {limit}" if limit else (f"ran {runs}" if runs else "")]
+    until = getattr(trigger, "expires_at", None)
+    if until:
+        parts.append(f"until {until.astimezone().strftime('%b %-d, %H:%M')}")
+    return "".join(f" · {p}" for p in parts if p)
+
+
 def describe_when(trigger: Any, catalog: Optional[dict[str, tuple[str, str]]] = None) -> WhenPart:
     from flow_sdk.automations.decision_subjects import for_pattern  # noqa: PLC0415
     from flow_sdk.automations.schedule import read_schedule, schedule_text  # noqa: PLC0415
@@ -68,10 +86,19 @@ def describe_when(trigger: Any, catalog: Optional[dict[str, tuple[str, str]]] = 
     kind = kind_of(trigger)
     if kind == "schedule":
         schedule = read_schedule(trigger.expr or "", trigger.sched_trigger_type, trigger.timezone)
-        return WhenPart(kind=kind, text=schedule_text(schedule), schedule=schedule)
+        return WhenPart(kind=kind, text=schedule_text(schedule) + life_words(trigger), schedule=schedule)
+    if kind == "event" and getattr(trigger, "awaits_reply", None):
+        event = describe_event(str(trigger.tag_pattern or ""), trigger.tag_target, catalog)
+        until = getattr(trigger, "expires_at", None)
+        when = f" · until {until.astimezone().strftime('%b %-d, %H:%M')}" if until else ""
+        return WhenPart(kind=kind, text=f"When the message is answered{when}", event=event)
     if kind == "event":
         event = describe_event(str(trigger.tag_pattern or ""), trigger.tag_target, catalog)
         subject = for_pattern(event.pattern)
+        tags = list(getattr(trigger, "message_tags", None) or [])
+        if tags:
+            event = event.model_copy(update={"message_tags": tags})
+            return WhenPart(kind=kind, text=f"When a message is tagged {' or '.join(tags)}", event=event)
         if subject is not None and subject.when_text:
             return WhenPart(kind=kind, text=subject.when_text, event=event)
         label = event.title or event.pattern or "an event"
@@ -110,6 +137,10 @@ class _Names:
         return found
 
 
+#: The shipped block a rule's "Mark as read" step names.
+MARK_READ_OP = "mark-message-read"
+
+
 async def _describe_then_wizard(spec: Any, *, names: _Names, parent_type_id: str = "") -> list[ThenPart]:
     """A ``then`` wizard in words: the sugar's one agent or script, else the steps."""
     if spec.run_agent is not None:
@@ -121,7 +152,26 @@ async def _describe_then_wizard(spec: Any, *, names: _Names, parent_type_id: str
         return [ThenPart(kind="run_script", text=f"Run {spec.run_script}", target_name=spec.run_script)]
     if spec.ref:
         return [ThenPart(kind="workflow", text=f"Run the wizard {spec.ref}", target_name=spec.ref)]
-    return [ThenPart(kind="workflow", text=f"Run {len(spec.steps)} steps", detail=", ".join(s.id for s in spec.steps))]
+    # A sequence a person built on the rule page reads step by step; any other reads as its size.
+    from flow_sdk.automations.then import inline_ops  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.compute_op_spec import OpSubkind  # noqa: PLC0415
+
+    ops = inline_ops(spec)
+    parts: list[ThenPart] = []
+    for step in spec.steps:
+        op = ops.get(step.ref)
+        if step.ref == MARK_READ_OP:
+            parts.append(ThenPart(kind="mark_read", text="Mark as read"))
+        elif op is not None and op.subkind is OpSubkind.AGENT:
+            who = await names.name(op.exe_data.agent) or op.exe_data.agent
+            parts.append(ThenPart(kind="run_agent", text=f"Run {who}", target=op.exe_data.agent, target_name=who,
+                                  prompt=op.exe_data.prompt))
+        elif op is not None and op.subkind is OpSubkind.CLI:
+            command = next(iter(op.exe_data.commands.values()), "")
+            parts.append(ThenPart(kind="run_script", text=f"Run {command}", target_name=command))
+        else:
+            return [ThenPart(kind="workflow", text=f"Run {len(spec.steps)} steps", detail=", ".join(s.id for s in spec.steps))]
+    return parts
 
 
 async def describe_then(trigger: Any, *, names: Optional[_Names] = None,

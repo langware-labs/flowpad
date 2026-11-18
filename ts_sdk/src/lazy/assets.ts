@@ -78,11 +78,13 @@ function entities<T extends APIEntity<T>>(type: string, desktopOnly = false) {
       if (!ctx.isCurrent()) throw new Error('SDK scope changed');
       return dataManager.query<T>(req, true);
     },
-    subscribe: async (_: undefined, publish: (data: T[]) => void) => {
+    // `initial` is what `load` just fetched for the same request: seeding the watch with it
+    // spares a second identical list GET on every page load.
+    subscribe: async (_: undefined, publish: (data: T[]) => void, initial: T[]) => {
       if (desktopOnly && isHubOnly()) return () => {};
       const { dataManager } = await import('../APIEntity');
       const req = await request(rows => publish([...rows]));
-      return dataManager.watchQuery<T>(req);
+      return dataManager.watchQuery<T>(req, initial);
     },
   });
 }

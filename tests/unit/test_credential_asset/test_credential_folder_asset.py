@@ -160,10 +160,12 @@ def test_the_shipped_gmail_definition_is_valid():
     manifest = CredentialSpec.model_validate(json.loads((SHIPPED["gmail"] / "credential.json").read_text()))
 
     assert manifest.name == "gmail"
-    # An address with its app password — no Google sign-in until Google verifies the mail scope.
-    assert list(manifest.vars) == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
-    assert not any(var.is_oauth for var in manifest.vars.values()) and ways(manifest.vars) == {}
-    assert all(var.required == "MUST" for var in manifest.vars.values())
+    # Two ways: a Google sign-in through the hub's Gmail scope group, or an address with its app password.
+    assert list(manifest.vars) == ["GMAIL_SIGNIN", "GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
+    assert ways(manifest.vars) == {"signin": ["GMAIL_SIGNIN"], "app": ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]}
+    signin = manifest.vars["GMAIL_SIGNIN"]
+    assert signin.is_oauth and signin.provider == "google" and signin.group == "gmail"
+    assert signin.scopes == ["https://mail.google.com/"]
     assert manifest.vars["GMAIL_ADDRESS"].secret is False and manifest.vars["GMAIL_APP_PASSWORD"].secret is True
     # The app-password page belongs to the password alone, not the address beside it.
     assert manifest.vars["GMAIL_APP_PASSWORD"].help_url and not manifest.vars["GMAIL_ADDRESS"].help_url

@@ -123,6 +123,7 @@ export enum ViewType {
   DESKTOP = 'desktop', // Full-page favorites desktop (BrowseableGrid) - /dock/desktop
   LIVE_SESSION = 'live_session', // Live remote-worker session (terminal chat) - /dock/live_session/<id>
   HELPDESK = 'helpdesk', // Helpdesk portal — guides + ask + my tickets - /dock/helpdesk/<projectId>[/article/<path>]
+  SUPPORT_DESK = 'support_desk', // A help desk itself: its team's view, and what a person asking opens from its link - /dock/support_desk/<hub project id>
   ATLAS = 'atlas', // Retired decode-only alias; loader redirects to /dock/hub/worldview/…
   HUB_RECORDS = 'records', // Hub entity list by type (page=hub) - /dock/hub/records/<type>
   HUB_ENTITY = 'entity', // Hub single-entity viewer (page=hub) - /dock/hub/entity/<type>/<id>
@@ -135,6 +136,7 @@ export enum ViewType {
   APP = 'app',
   LLM_ENDPOINTS = 'llm-endpoints', // Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/overview|usage|models]]
   TOKEN_PLAN = 'token-plan', // Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/me|team[/<id>]|org]
+  NOTIFICATIONS = 'notifications', // Hub email rules - /dock/hub/notifications[/<rule key>] (the mute link's target)
   // DESK page: what funds this machine's harnesses (device logins, stored keys, hub endpoints)
   LLM_SOURCES = 'llm-sources', // /dock/llm-sources[/<worker>] -- the harness in focus
   // DESK page: the first-run chooser -- "what should issue your LLM calls". Its own address

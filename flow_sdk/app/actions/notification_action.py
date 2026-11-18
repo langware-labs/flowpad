@@ -281,17 +281,23 @@ def _parse_asset_references(raw: Any) -> list:
     return []
 
 
+def _json_field(raw: Any, default: Any) -> Any:
+    """A body field as its value: a multipart send carries a list or dict as JSON text, a JSON body
+    as the value itself. Unreadable text reads as ``default``."""
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    if not isinstance(raw, str):
+        return raw
+    try:
+        return _json.loads(raw)
+    except ValueError:
+        return default
+
+
 def _parse_share_config(body: dict) -> dict:
     """Decode the share_config carrier (JSON or multipart) into a dict. Both
     share opt-ins (transfer_mode, create_bookmark) read their own key off this."""
-    raw = body.get("share_config") or body.get("shareConfig") or {}
-    if isinstance(raw, (bytes, bytearray)):
-        raw = raw.decode("utf-8", errors="replace")
-    if isinstance(raw, str):
-        try:
-            raw = _json.loads(raw)
-        except Exception:
-            raw = {}
+    raw = _json_field(body.get("share_config") or body.get("shareConfig") or {}, {})
     return raw if isinstance(raw, dict) else {}
 
 
@@ -415,7 +421,7 @@ async def _merge_shared_context_into_conversation(
     if not typeids:
         return
     try:
-        changed = conv.add_shared_context_entities(*typeids)
+        changed = conv.add_shared_context_entities(*typeids, via="user")  # what the sender attached
         if changed:
             await conv.save(someone_typeid)
         await conv._link_context_to_conversation(typeids, someone_typeid=someone_typeid)
@@ -924,6 +930,7 @@ async def handle_add_message(
     someone_typeid: str,
     *,
     pending_send: bool = False,
+    origin_process: Optional[str] = None,
 ) -> ApiResponse:
     """Append a message to a Conversation — the single message-send handler.
 
@@ -971,8 +978,8 @@ async def handle_add_message(
     remote_worker_session_id = (body.get("remote_worker_session_id") or "").strip() or None
     sendable_kind = FlowMessageKind.sendable((body.get("kind") or "").strip() or None)
     message_kind = sendable_kind.value if sendable_kind else None
-    # Every prompt is a session turn, and a conversation holds ONE open session.
-    # A prompt WITHOUT a session id joins the conversation's open session; only
+    # Every prompt is a session turn, and a conversation holds ONE open session per
+    # guest. A prompt WITHOUT a session id joins the sender's open session; only
     # when there is none does it open a new one: the sender mints the id here
     # (uuid4; the host validates-on-adopt) and the opening proposal (reply
     # policy) rides the start marker on the carrier attachment. A prompt WITH a
@@ -991,7 +998,8 @@ async def handle_add_message(
     if reply_policy is None:
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
     if is_prompt_send and not remote_worker_session_id:
-        open_session = await RemoteWorkerSession.open_for_conversation(conversation_id)
+        me = (await User.current_sender_participant(None)).get("user_id") or None
+        open_session = await RemoteWorkerSession.open_for_conversation(conversation_id, me)
         if open_session is not None:
             remote_worker_session_id = open_session.id
     if is_prompt_send and not remote_worker_session_id:
@@ -1048,16 +1056,23 @@ async def handle_add_message(
     conv = await Conversation.get_one({"id": conversation_id})
     if not conv:
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
-    # A reply quotes one message of THIS conversation and joins the thread rooted at it.
+    # A reply QUOTES one message of THIS conversation; it never opens a thread. It stays in the
+    # thread its parent is already in; only writing into a thread (``thread_root_id``) threads.
     thread_root_id: Optional[str] = None
     if reply_to_id or join_thread_of:
         from flow_sdk.stream_inbox.native_threads import thread_root_for_reply  # noqa: PLC0415
 
         anchor = reply_to_id or join_thread_of
-        thread_root_id = await thread_root_for_reply(conv.id, anchor)
-        if thread_root_id is None:
+        thread_root_id = await thread_root_for_reply(conv.id, anchor, open_new=not reply_to_id)
+        if thread_root_id is False:
             field = "reply_to_id" if reply_to_id else "thread_root_id"
             return ApiFailResponse(message=f"{field} {anchor} is not a message of this conversation", status_code=400)
+        if join_thread_of and not thread_root_id:
+            thread_root_id = await thread_root_for_reply(conv.id, join_thread_of)
+            if thread_root_id is False:
+                return ApiFailResponse(
+                    message=f"thread_root_id {join_thread_of} is not a message of this conversation", status_code=400
+                )
 
     # Merge the items being shared into THIS conversation's context (both the
     # conversation row and the items themselves), so a re-share into an existing
@@ -1135,6 +1150,10 @@ async def handle_add_message(
         reply_to_id=reply_to_id,
         thread_root_id=thread_root_id,
     )
+    if origin_process:
+        # Link the writing session BEFORE the message is announced: a session's `--on-reply` wait
+        # tells its own sends from replies by this link, and the check runs on the save's event.
+        await link_origin_session(conv.id, reply_fm.id, origin_process, someone_typeid)
 
     if start_settings is not None:
         # Guest-side row for the session this prompt opens. The host adopts the
@@ -1174,7 +1193,7 @@ async def handle_add_message(
     # These must ride the HTTP slow path (conv.add_message forwards them; the
     # WS bridge body is text-only), so the hub sees the body and stamps
     # body_status=UPLOADING instead of NA.
-    raw_attachments = body.get("attachment") or []
+    raw_attachments = _json_field(body.get("attachment") or [], [])
     if not isinstance(raw_attachments, list):
         raw_attachments = [raw_attachments]
     # ``call_prompt``: a one-shot prompt for the receiver to approve and run (``process_call_spec``).
@@ -1385,17 +1404,16 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}", status_code=404)
-    open_session = await RemoteWorkerSession.open_for_conversation(conv.id)
+    sender = await User.current_sender_participant(None)
+    sender_id = sender.get("user_id") or None
+    sender_name = sender.get("name") or ""
+    open_session = await RemoteWorkerSession.open_for_conversation(conv.id, sender_id)
     if open_session is not None:
         return ApiSuccessResponse(data=open_session.model_dump(mode="json"))
 
     reply_policy = _reply_policy_of(body)
     if reply_policy is None:
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
-
-    sender = await User.current_sender_participant(None)
-    sender_id = sender.get("user_id") or None
-    sender_name = sender.get("name") or ""
     host_id, host_name, _ = _peer_of(conv, sender_id)
     if not host_id:
         return ApiFailResponse(

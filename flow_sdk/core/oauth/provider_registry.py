@@ -539,7 +539,7 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         token_shape=TokenShape.CREDENTIAL_DICT,
         probe=OAuthProbeSpec(
             method="GET",
-            url="{hub}/current-user",
+            url="{hub}/current-principal",
             # The hub answers in its `{status, message, data}` envelope, so the
             # verdict is the envelope's own status and every other field is
             # addressed under `data.`. Reading the envelope rather than inferring
@@ -1080,13 +1080,27 @@ async def granted_scopes(provider: str, user: Any, *, name: str | None = None) -
     return tuple(str(s) for s in scopes) if isinstance(scopes, list) else ()
 
 
-async def missing_granted(provider: str, scopes: "list[str] | tuple[str, ...]", *, name: str | None = None) -> list[str]:
+async def group_credentials(provider: str, group: str) -> str | None:
+    """The local token name of ``provider``'s scope group ``group`` (``gmail`` → ``google_gmail_credentials``);
+    ``None`` for no group or the default one, whose token is the provider's own."""
+    if not group:
+        return None
+    from flow_sdk.core.oauth.hub_oauth import resolve_group  # noqa: PLC0415
+
+    names = await resolve_group(provider, group)
+    return names.local_name if names.sent else None
+
+
+async def missing_granted(
+    provider: str, scopes: "list[str] | tuple[str, ...]", *, name: str | None = None, group: str = ""
+) -> list[str]:
     """The scopes of ``scopes`` the provider did NOT grant this machine's token (``name``: a group's own).
     An unrecorded grant (one made before grants were kept) is taken as covering: ``[]``."""
     if not scopes:
         return []
     from flow_sdk.core.connections.specs import _connection_user  # noqa: PLC0415
 
+    name = name or await group_credentials(provider, group)
     granted = await granted_scopes(provider, await _connection_user(), name=name)
     return [s for s in dict.fromkeys(scopes) if granted and s not in granted]
 
@@ -1096,13 +1110,16 @@ def grant_gap(missing: "list[str] | tuple[str, ...]") -> str:
     return f"Connected without {', '.join(missing)} — connect again to grant it"
 
 
-async def token_for(provider: str, *, user: Any = None, hub: bool = True, name: str | None = None) -> Optional[str]:
+async def token_for(
+    provider: str, *, user: Any = None, hub: bool = True, name: str | None = None, group: str = ""
+) -> Optional[str]:
     """The bearer token for ``provider`` — ``credential_for`` unwrapped by
     ``token_from_credential`` (a dict credential yields its ``access_token``).
 
     ``name`` selects a non-default credential for the same provider (Slack's bot
     token beside the user's) and is passed straight through, so a caller never
-    has to unwrap by hand."""
+    has to unwrap by hand. ``group`` selects a scope group's own token (Gmail beside Drive)."""
     from flow_sdk.core.oauth.provider_probe import token_from_credential  # noqa: PLC0415
 
+    name = name or await group_credentials(provider, group)
     return token_from_credential(await credential_for(provider, user=user, hub=hub, name=name, fresh=True))

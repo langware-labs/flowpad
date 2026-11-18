@@ -212,6 +212,37 @@ def persist(value: bool = True) -> None:
     _mutate(_mut)
 
 
+#: Tags a fresh boot turns on (still gated by the master switch).
+DEFAULT_ON_TAGS: tuple[str, ...] = ("flow_show",)
+
+#: Every tag the code logs under, with one line saying what it traces -- what the Preferences
+#: "Trace logging" tab lists. ``.claude/skills/toplog/tags.md`` holds the long form; the toplog
+#: skill's ``scan`` keeps the two in step.
+TAG_CATALOG: dict[str, str] = {
+    "agentic_process.load": "Starting a session, from the click to the terminal attached.",
+    "chat_delivery": "How each assistant message reaches the chat pane.",
+    "claude_debug_session_log": "Claude CLI debug file: one per session instead of one per turn.",
+    "conversation.send": "Sending a message into a conversation.",
+    "flow_show": "Every flow show: which session showed what, why, and on which page.",
+    "http": "Backend HTTP requests and their timing.",
+    "hub": "Calls to and from the hub.",
+    "loop_stall": "Backend event-loop stalls.",
+    "navigation": "Smart navigation decisions.",
+    "process_load": "Opening a session tab: loader steps and replay.",
+    "pty": "Terminal processes: spawn, resize, attach, exit.",
+    "shell_exec": "Commands run in the user's terminal.",
+    "tab_switch": "Switching tabs, from click to painted.",
+}
+
+
+def catalog() -> list[dict[str, Any]]:
+    """``[{tag, description, default_on}]`` for every catalogued tag, sorted by tag."""
+    return [
+        {"tag": tag, "description": what, "default_on": tag in DEFAULT_ON_TAGS}
+        for tag, what in sorted(TAG_CATALOG.items())
+    ]
+
+
 def seed_file(enabled: bool) -> None:
     """Boot hook: reset toplog.json to its quiet default (no tags, master switch
     at the instance default ``enabled``) unless the file asks to ``persist``,
@@ -221,7 +252,7 @@ def seed_file(enabled: bool) -> None:
     if not _read_file().get("persist"):
         def _reset(cfg: dict[str, Any]) -> None:
             cfg["enabled"] = enabled
-            cfg["filter"] = {}
+            cfg["filter"] = {t: True for t in DEFAULT_ON_TAGS}
             cfg.pop("persist", None)
 
         _merge_write(_reset)

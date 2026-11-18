@@ -91,6 +91,8 @@ class EventWhen(DataSpec):
     title: str = ""
     description: str = ""
     target: Optional[str] = None
+    #: A message rule's tags: it runs when a message is given any of them (or a tag under one).
+    message_tags: list[str] = []
 
 
 class FileWhen(DataSpec):
@@ -125,7 +127,7 @@ class WhenPart(DataSpec):
 
 #: What a step does, in plain words.
 ThenKind = Literal["run_agent", "run_process", "run_script", "open_wizard", "builtin_step", "notify", "workflow",
-                   "nothing"]
+                   "mark_read", "nothing"]
 
 
 class ThenPart(DataSpec):
@@ -256,6 +258,8 @@ class AutomationSummary(DataSpec):
     read_only: bool = False
     #: A person may turn it on or off here -- read-only rules too, when Flowpad ships them off.
     switchable: bool = True
+    #: The message classifier: the automation that gives each arriving message its tag.
+    classifier: bool = False
     #: The rule is a file asset; edits write its trigger.json.
     asset_ref: Optional[str] = None
     place: AutomationPlace = LOCAL_PLACE
@@ -266,6 +270,15 @@ class AutomationSummary(DataSpec):
     #: That parent's name — the header the list groups its rules under.
     parent_name: Optional[str] = None
     source: AutomationSource = "local"
+    #: Where it stands in its own life (automations/lifecycle.py): active · off · done · expired · cancelled.
+    status: str = "active"
+    #: Its run limit and what is left of it; None = no limit.
+    max_runs: Optional[int] = None
+    runs_left: Optional[int] = None
+    #: When it ends by itself, and when / why it ended.
+    until: Optional[str] = None
+    ended_at: Optional[str] = None
+    ended_reason: Optional[str] = None
 
 
 # ── Check (a dry run) ─────────────────────────────────────────────────────────

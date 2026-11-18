@@ -8,7 +8,8 @@ import type { ActionSpec } from './conversation-category';
 export function RowActions({ specs }: { specs: ActionSpec[] }) {
   return (
     <div
-      className="absolute right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+      // On touch there is no hover to reveal them over the time: they are always shown, in the row's flow.
+      className="absolute right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:static pointer-coarse:shrink-0 pointer-coarse:opacity-100"
       onClick={(e) => e.stopPropagation()}
     >
       {specs.map((s) =>
@@ -33,11 +34,12 @@ export function RowActions({ specs }: { specs: ActionSpec[] }) {
                 disabled={s.disabled}
                 aria-label={s.label}
                 className={`rounded p-1 ${s.tone === 'destructive' ? 'hover:bg-destructive/10' : 'hover:bg-muted'}`}
+                aria-pressed={s.active}
                 data-testid={s.testId}
               >
                 {s.icon && (
                   <s.icon
-                    className={`h-3.5 w-3.5 text-muted-foreground ${s.tone === 'destructive' ? 'hover:text-destructive' : ''}`}
+                    className={`h-3.5 w-3.5 ${s.active ? 'fill-amber-500 text-amber-500' : 'text-muted-foreground'} ${s.tone === 'destructive' ? 'hover:text-destructive' : ''}`}
                   />
                 )}
               </button>

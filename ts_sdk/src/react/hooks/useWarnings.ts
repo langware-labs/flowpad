@@ -4,8 +4,10 @@ import {
   createCloudConnectionLostWarning,
   createCloudDisconnectedWarning,
   createHarnessLoginWarning,
+  createHarnessUpdateWarning,
   createHubRequestFailedWarning,
   createEmptyProjectsWarning,
+  createOrphanedProjectsWarning,
   createNoComputeNodeWarning,
   createNoHarnessWarning,
   SNIFFER_ACTIVE_WARNING,
@@ -14,7 +16,7 @@ import {
 } from '../../models/UserWarning';
 import { dataContext } from '../../FlowSync/context';
 import { cloudManager, type HubClientErrorInfo } from '../../services/cloud_login';
-import { shouldWarnAboutEmptyProjects } from '../../stores/project-cleanup-store';
+import { shouldWarnAboutEmptyProjects, shouldWarnAboutOrphanedProjects } from '../../stores/project-cleanup-store';
 import { useCleanupSummary } from './use-cleanup-summary';
 import type { ProjectReadiness } from '../../entities/project';
 import {
@@ -94,6 +96,7 @@ export function useWarnings() {
 
   const cleanup = useCleanupSummary();
   const emptyProjects = shouldWarnAboutEmptyProjects(cleanup) ? cleanup!.empty_count : 0;
+  const orphanedProjects = shouldWarnAboutOrphanedProjects(cleanup) ? cleanup!.orphaned_count : 0;
 
   // Status and funding, both pushed by the backend on change: the warnings re-read them and
   // derive nothing of their own.
@@ -138,6 +141,8 @@ export function useWarnings() {
           path: lastHubError.path,
           statusCode: lastHubError.statusCode,
           message: lastHubError.message,
+          action: lastHubError.action,
+          ts: lastHubError.ts,
           onDismiss: () => cloudManager.clearLastHubError(),
         }),
       );
@@ -158,6 +163,10 @@ export function useWarnings() {
       warnings.push(createHarnessLoginWarning(unfundedReason));
     }
 
+    for (const h of statusRecord?.harnesses ?? []) {
+      if (h.update === 'available' || h.update === 'required') warnings.push(createHarnessUpdateWarning(h));
+    }
+
     // Sniffer hooks are live in the harness settings file — surface it for as
     // long as that holds, with a one-click way out. Keyed on what is installed
     // (not on the local entity) so a sniffer another instance wrote still shows.
@@ -175,10 +184,14 @@ export function useWarnings() {
     if (emptyProjects > 0) {
       warnings.push(createEmptyProjectsWarning(emptyProjects));
     }
+    if (orphanedProjects > 0) {
+      warnings.push(createOrphanedProjectsWarning(orphanedProjects));
+    }
 
     return warnings;
   }, [
     emptyProjects,
+    orphanedProjects,
     isDesktop,
     cloudLoginAvailable,
     cloudConnectionStatus,
@@ -188,6 +201,7 @@ export function useWarnings() {
     lastHubError,
     noHarnessFound,
     unfundedReason,
+    statusRecord,
   ]);
 
   // Update context warnings when computed warnings change

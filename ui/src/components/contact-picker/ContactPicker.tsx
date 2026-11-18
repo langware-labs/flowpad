@@ -1,8 +1,10 @@
-import { Plural, Trans } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
+import { ContactDialog } from '@src/components/conversation/ContactDialog';
+import { useOrgRoute } from '@src/components/organization/tabs/org-route';
 import { ContactsGroup, ConversationParticipant, normalizeEmail, Team, User } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Input } from '@src/components/ui/input';
-import { UsersRound, X } from 'lucide-react';
+import { UsersRound, X, type LucideIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { EMAIL_RE, filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
 import { filterGroups, mergeGroupMembers, useContactsGroups } from './use-contacts-groups';
@@ -55,6 +57,11 @@ export function ContactPicker({
   const [filterText, setFilterText] = useState('');
   const typedEmail = filterText.trim();
   const [listOpen, setListOpen] = useState(false);
+  const { t } = useLingui();
+  const { openTeam } = useOrgRoute();
+  // The contact whose detail dialog is open from a row's open icon (null = closed).
+  const [detailFor, setDetailFor] = useState<User | null>(null);
+  const PersonIcon = iconForType(User.type);
 
   const { contacts } = useContacts(excludeUserId, enabled);
   const { groups } = useContactsGroups(enabled && includeGroups);
@@ -211,34 +218,50 @@ export function ContactPicker({
           ))}
           {/* Teams — one click adds every member of the team. */}
           {visibleTeams.map((team) => (
-            <button
-              key={team.id}
-              type="button"
-              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
-              onClick={() => addTeam(team)}
-              disabled={disabled}
-              data-testid={`contact-team-option-${team.id}`}
-            >
-              <span className="flex min-w-0 items-center gap-1.5">
-                <TeamIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-                <span className="truncate">{team.name}</span>
-              </span>
-              <span className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground">
-                <Trans>Team</Trans>
-              </span>
-            </button>
+            <div key={team.id} className="flex items-center hover:bg-muted">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2 py-1.5 text-start text-sm disabled:opacity-50"
+                onClick={() => addTeam(team)}
+                disabled={disabled}
+                data-testid={`contact-team-option-${team.id}`}
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <TeamIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                  <span className="truncate">{team.name}</span>
+                </span>
+                <span className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground">
+                  <Trans>Team</Trans>
+                </span>
+              </button>
+              <OpenButton
+                Icon={TeamIcon}
+                title={t`Open team`}
+                onClick={() => openTeam(team.id)}
+                testId={`contact-team-open-${team.id}`}
+              />
+            </div>
           ))}
           {visibleContacts.map((u) => (
-            <button
-              key={u.id}
-              type="button"
-              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
-              onClick={() => addContact(u)}
-              disabled={alreadyAdded(participantFromContact(u)) || disabled}
-            >
-              <span className="truncate">{personName(u)}</span>
-              {participantSubtitle(u) && <span className="truncate text-xs text-muted-foreground">{participantSubtitle(u)}</span>}
-            </button>
+            <div key={u.id} className="flex items-center hover:bg-muted">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2 py-1.5 text-start text-sm disabled:opacity-50"
+                onClick={() => addContact(u)}
+                disabled={alreadyAdded(participantFromContact(u)) || disabled}
+              >
+                <span className="truncate">{personName(u)}</span>
+                {participantSubtitle(u) && (
+                  <span className="truncate text-xs text-muted-foreground">{participantSubtitle(u)}</span>
+                )}
+              </button>
+              <OpenButton
+                Icon={PersonIcon}
+                title={t`View contact details`}
+                onClick={() => setDetailFor(u)}
+                testId={`contact-open-${u.id}`}
+              />
+            </div>
           ))}
         </div>
       )}
@@ -259,6 +282,33 @@ export function ContactPicker({
             </Trans>
           </button>
         )}
+      {detailFor && <ContactDialog open onClose={() => setDetailFor(null)} user={detailFor} />}
     </div>
+  );
+}
+
+/** A row's trailing open icon — the row's type glyph; opens the entity instead of adding it. */
+function OpenButton({
+  Icon,
+  title,
+  onClick,
+  testId,
+}: {
+  Icon: LucideIcon;
+  title: string;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      data-testid={testId}
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </button>
   );
 }

@@ -1,5 +1,6 @@
 {
   "schema": 1,
+  "featured": true,
   "name": "whatsapp",
   "title": "Your own WhatsApp bot",
   "icon_name": "WhatsApp",

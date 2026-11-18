@@ -11,8 +11,8 @@ The intended interactive surface works in ``python -m asyncio`` and IPython::
         await google.validate_scopes(source.connections.scopes("google"))
     except NotConnected as e:
         google = await e.connection.connect()
-    except MissingScopes:
-        google = await google.connect(reauthorize=True)
+    except MissingScopes as e:
+        google = await google.connect(scopes=e.missing)
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ class MissingScopes(LookupError):
         self.missing = list(missing)
         super().__init__(
             f"{provider} is connected without {', '.join(self.missing)}; "
-            "run `await connection.connect(reauthorize=True)` to consent again"
+            "run `await connection.connect(scopes=error.missing)` to consent to them"
         )
 
 
@@ -195,14 +195,15 @@ class Connection:
         if missing:
             raise MissingScopes(self.provider, missing)
 
-    async def connect(self, *, reauthorize: bool = False) -> "Connection":
+    async def connect(self, *, reauthorize: bool = False, scopes: Iterable[str] = ()) -> "Connection":
         """Complete the standard auth flow and return a freshly verified row.
 
-        ``reauthorize`` runs the provider's consent even when a grant is held — how a grant
-        missing a scope is replaced.
+        ``reauthorize`` runs the provider's consent even when a grant is held. ``scopes`` asks for
+        more than the provider's default set (full Drive on top of read-only): the consent runs
+        when the held grant lacks one of them, and is skipped when it already covers them.
         """
 
-        result = await _connect(self.provider, _SdkPresenter(), reauthorize=reauthorize)
+        result = await _connect(self.provider, _SdkPresenter(), reauthorize=reauthorize, scopes=tuple(scopes))
         # The refreshed row's own state, not a forced ``connected=True`` over a
         # stale one: that produced rows reading connected=True, state="disconnected".
         return _from_spec(result.spec, identity=result.test.identity or result.spec.identity)

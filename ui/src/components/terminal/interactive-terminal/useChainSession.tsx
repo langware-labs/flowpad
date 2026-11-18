@@ -15,7 +15,7 @@ import { notify } from '@src/notifications';
 
 /** The first turn of a chained session: review the session it was chained from. */
 export function chainPrompt(process: Pick<AgenticProcess, 'worker_type' | 'session_id'>): string {
-  return `Review the ${workerLabel(process.worker_type ?? undefined)} session ${process.session_id}`;
+  return `Review the ${workerLabel(process.worker_type ?? undefined)} session ${process.session_id}, analyze its content but don't generate files or actions. Just report.`;
 }
 
 /**

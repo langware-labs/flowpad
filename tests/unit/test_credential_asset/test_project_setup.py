@@ -24,8 +24,13 @@ from flow_sdk.builtin.credential import Credential
 from flow_sdk.builtin.credential_service import CredentialError, save_credential
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.cli.commands import credentials_cmd, project_cmd
-from flow_sdk.schema.data_spec.compute_op_spec import SETUP_TIMEOUT
-from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_PACK
+from flow_sdk.schema.data_spec.compute_op_spec import SETUP_TIMEOUT, AskOriginSpec
+from flow_sdk.schema.data_spec.project_setup_spec import (
+    REQUIREMENT_GAP,
+    REQUIREMENT_PACK,
+    SetupRequirementSpec,
+    SetupVarSpec,
+)
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from tests.unit.test_credential_asset._shipped import shipped_credential_folders
 
@@ -467,3 +472,13 @@ async def test_set_stdin_stores_checks_the_pattern_and_prints_no_value(project, 
         cli["invoke"], ["credentials", "check", "demo-service", "--project", project.id], {}
     )
     assert check.ok and json.loads(check.stdout)["ready"], check.stdout
+
+
+def test_one_of_question_names_where_the_credential_comes_from():
+    """The ways a credential offers are its declaring project's choice: the question carries that project as a
+    chip (``origin``) that opens the credential there."""
+    origin = AskOriginSpec(label="gtm-studio", project_id="p1", credential="credential-x")
+    req = SetupRequirementSpec(kind=REQUIREMENT_PACK, name="mail", origin=origin, vars=[
+        SetupVarSpec(env_var="A", required="ONE_OF", way="a"), SetupVarSpec(env_var="B", required="ONE_OF", way="b")])
+    _, ops = project_setup.compile_setup("p1", [req])
+    assert ops["ask-mail-one-of"].exe_data.origin == origin

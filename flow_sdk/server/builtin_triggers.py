@@ -117,6 +117,21 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             ],
         ),
     ]
+    from flow_sdk.cli.app_config import get_config  # noqa: PLC0415
+    from flow_sdk.stream_inbox.message_subject import MESSAGE_PROJECTED  # noqa: PLC0415
+    from flow_sdk.stream_inbox.message_tags import CLASSIFIER  # noqa: PLC0415
+
+    specs.append(dict(
+        uname=CLASSIFIER,
+        name="Classify incoming messages",
+        # Dev: never armed on the bus -- it is the first entry of each message's own queue
+        # (stream_inbox/message_tags.py). Its switch is the person's; a new row starts where the
+        # older setting stood.
+        description="Gives each new incoming message one tag from your tag tree. A tag can start automations.",
+        trigger_type=TriggerType.TAG,
+        tag_pattern=MESSAGE_PROJECTED,
+        enabled=bool(get_config("message_classification", {}).get("enabled", True)),
+    ))
     specs.extend(transcript_watcher_trigger_specs(settings))
     return specs
 
@@ -168,7 +183,8 @@ async def _upsert_one(spec: dict[str, Any], *, existing: "Optional[Trigger]" = N
         if key in _UPSERT_SKIP_KEYS:
             continue
         if key in Trigger.projected_fields:  # the machine's switch — only the sanctioned setter moves it
-            existing._set_projection(key, value, PROJECTION_SENTINEL)
+            if not (existing.switchable and existing.decided):  # a person's own switch stays where they left it
+                existing._set_projection(key, value, PROJECTION_SENTINEL)
             continue
         setattr(existing, key, value)
     try:
@@ -441,11 +457,14 @@ def stale_trigger_reason(row: Trigger) -> Optional[str]:
     * Any other asset-backed row whose file is gone while its parent folder is
       still there (``source_unreachable`` False). A missing parent means "can't
       tell" — an unmounted volume — and the row stays.
+    * A row whose folder is still there but holds no ``trigger.json`` — the
+      definition was deleted (a git pull leaves the app's untracked ``.flow/``).
 
     Seeds (``builtin_*``) and hook rules (``discover`` owns those) are never stale here.
     A foreign copy whose file still exists stays too: it is never armed, and
     deleting it would only churn — the next walk of that folder re-adds it.
     """
+    from flow_sdk.automations.spec_file import document_path  # noqa: PLC0415
     from flow_sdk.builtin.trigger_arming import is_foreign_copy  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
 
@@ -454,7 +473,13 @@ def stale_trigger_reason(row: Trigger) -> Optional[str]:
     if str(row.trigger_type) == TriggerType.HOOK.value:
         return None
     ref = str(row.asset_ref or "")
-    if not ref or os.path.exists(ref):
+    if not ref:
+        return None
+    # The folder outliving its trigger.json is not a live trigger: a git pull
+    # removes the definition and leaves the app's own untracked .flow/ files.
+    if os.path.isdir(ref) and document_path(row) is None:
+        return "definition file deleted"
+    if os.path.exists(ref):
         return None
     if is_foreign_copy(ref):
         return "foreign install copy, file gone"

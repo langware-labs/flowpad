@@ -173,7 +173,7 @@ function FundingFields({
               your own.
             </Trans>
           )}{' '}
-          <Trans>You can also add an LLM key in LLM Sources.</Trans>
+          <Trans>You can also add a provider credential in Token sources.</Trans>
         </p>
       )}
     </div>

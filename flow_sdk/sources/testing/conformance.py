@@ -21,7 +21,17 @@ from flow_sdk.sources.base import Source
 from flow_sdk.sources.errors import InvalidCursor, NotFound, Unsupported
 from flow_sdk.sources.families import MessageSource, ObjectSource, RecordSource
 from flow_sdk.sources.files import FileSupport
-from flow_sdk.sources.protocols import ByteStore, Drafting, Listable, Messaging, Mutable, Openable, Reacting, Readable
+from flow_sdk.sources.protocols import (
+    ByteStore,
+    Drafting,
+    Listable,
+    Messaging,
+    Mutable,
+    Openable,
+    Reacting,
+    Readable,
+    ReadMarking,
+)
 from flow_sdk.sources.values import (
     CloudOrigin,
     DataSourceEvent,
@@ -560,6 +570,19 @@ async def unreact_all_is_idempotent(subject: Subject) -> None:
         sent = await s.send(MessageData(text="react to me", conversation=subject.conversation))
         await s.unreact(sent.origin)  # type: ignore[attr-defined]
         await s.unreact(sent.origin)  # type: ignore[attr-defined]
+
+
+@check(ReadMarking)
+async def mark_read_is_idempotent(subject: Subject) -> None:
+    assert subject.conversation is not None
+    async with await _closing(subject) as s:
+        writes = s.writes_read_state()  # type: ignore[attr-defined]
+        assert isinstance(writes, bool)
+        if not writes or not isinstance(s, Messaging):
+            return  # a source set not to write is never asked to
+        sent = await s.send(MessageData(text="mark me", conversation=subject.conversation))
+        for read in (True, True, False, False):
+            await s.mark_read(sent.origin, read)  # type: ignore[attr-defined]
 
 
 @check(Openable)

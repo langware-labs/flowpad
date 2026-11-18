@@ -19,5 +19,6 @@
         "head_commit": "5904670bd1bd9b46d88e4bd55ad713d98f2e0abd"
       }
     }
-  ]
+  ],
+  "browser": "extension"
 }

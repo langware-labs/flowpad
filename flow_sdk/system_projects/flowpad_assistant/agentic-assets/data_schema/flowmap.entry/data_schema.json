@@ -1,0 +1,33 @@
+{
+  "type": "data_schema",
+  "id": "e61cdfc3-d69e-4b01-b3b5-221264b4400b",
+  "name": "flowmap.entry",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique in the map; links and run frames name it."
+    },
+    "name": {
+      "shape": "string",
+      "description": "The command as a person says it: Map, Review, Mock a flow."
+    },
+    "say": {
+      "shape": [
+        "string"
+      ],
+      "description": "What the person types or presses to start it, in their words."
+    },
+    "gives": {
+      "shape": "string",
+      "description": "What they get at the end, in plain words."
+    },
+    "lane": {
+      "shape": "?float",
+      "description": "Layout hint: the column (0 = left). Absent = laid out automatically."
+    },
+    "row": {
+      "shape": "?int",
+      "description": "Layout hint: the row (0 = top). Absent = laid out automatically."
+    }
+  }
+}

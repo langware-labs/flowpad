@@ -7,7 +7,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { EMPTY_LLM_TIERS, getSurfacedPrefInfos, LLMEndpoint, PREF_CATEGORIES, PrefKey } from '@sdk';
+import { EMPTY_LLM_TIERS, getSurfacedPrefInfos, LLMEndpoint, PrefKey } from '@sdk';
 
 import { TiersEditor } from '@src/components/llm-endpoints/TiersEditor';
 import {
@@ -92,7 +92,6 @@ describe('LLM preferences', () => {
   it('default size and source order are surfaced under their own category', () => {
     const llm = getSurfacedPrefInfos().filter((info) => info.category === 'llm');
     expect(llm.map((info) => info.key)).toEqual([PrefKey.LLM_DEFAULT_SIZE, PrefKey.LLM_SOURCE_ORDER]);
-    expect(PREF_CATEGORIES).toContain('llm');
     expect(llm[0].defaultValue).toBe('md');
     expect(llm[1].defaultValue).toBe('device,api_key,endpoint');
   });

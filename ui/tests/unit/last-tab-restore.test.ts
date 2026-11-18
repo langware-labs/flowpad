@@ -20,6 +20,8 @@ const LAUNCH_DOCUMENT = 'http://flowpad.local/';
 const HOME = new Request('http://flowpad.local/?viewMode=standard');
 const SHELL = DockPointer.forShell('agentic_process-22222222-2222-4222-8222-222222222222');
 const SHELL_URL = '/dock/shell/agentic_process-22222222-2222-4222-8222-222222222222?viewMode=vibe&scope-mode=project';
+/** Where a launch goes with no last place: the Stream Inbox, the first and default screen. */
+const STREAM_INBOX_URL = '/dock/stream_inbox';
 
 /** One home-loader resolver pass: the resolver, then the launch ends. */
 async function homeLoad(): Promise<string | null> {
@@ -40,15 +42,15 @@ describe('last place restore', () => {
     expect(await homeLoad()).toBe(SHELL_URL);
   });
 
-  it('a launch stays on Home when the user had left the tab for Home', async () => {
+  it('a launch with no last place opens the Stream Inbox, the default screen (the user had left for Home)', async () => {
     rememberLastPlace(SHELL, SHELL_URL);
     forgetLastPlace();
 
-    expect(await homeLoad()).toBeNull();
+    expect(await homeLoad()).toBe(STREAM_INBOX_URL);
   });
 
-  it('a launch stays on Home when no tab was ever opened', async () => {
-    expect(await homeLoad()).toBeNull();
+  it('a first launch opens the Stream Inbox', async () => {
+    expect(await homeLoad()).toBe(STREAM_INBOX_URL);
   });
 
   it('Back onto a bare `/` is not a launch: Home stays Home', async () => {
@@ -82,6 +84,6 @@ describe('last place restore', () => {
     const popout = new DockPointer(SHELL.viewType, SHELL.pointer, SHELL.options, Layout.WIN);
     rememberLastPlace(popout, `/win/shell/${SHELL.pointer}`);
 
-    expect(await homeLoad()).toBeNull();
+    expect(await homeLoad()).toBe(STREAM_INBOX_URL);
   });
 });

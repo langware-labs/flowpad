@@ -58,6 +58,7 @@ from flow_sdk.stream_inbox.agent_scope import (
     resolve_local_stream_inbox_scope,
 )
 from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_adds_attachments, hub_created_drift
+from flow_sdk.stream_inbox.reads import write_back
 from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
@@ -165,24 +166,29 @@ async def _learn_normalized_members(members: list[dict]) -> int:
 
 async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
     """Accept a .flowmsg zip upload and materialize entities."""
-    local_user = await User.get_one({"uname": "local"})
-    local_user_id = local_user.id if local_user else ""
-
     with tempfile.NamedTemporaryFile(suffix=".flowmsg", delete=False) as tmp:
         tmp_path = Path(tmp.name)
         content = await file.read()
         tmp.write(content)
+    try:
+        return await materialize_flowmsg_file(tmp_path, overwrite)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+async def materialize_flowmsg_file(path: Path, overwrite: bool) -> ApiResponse:
+    """Materialize a .flowmsg already on disk and report what it staged for review."""
+    local_user = await User.get_one({"uname": "local"})
+    local_user_id = local_user.id if local_user else ""
 
     try:
-        fm = await FlowMessage.from_file(tmp_path, local_user_id, overwrite=overwrite)
+        fm = await FlowMessage.from_file(path, local_user_id, overwrite=overwrite)
     except FlowMessageExistsError as exc:
         return ApiFailResponse(
             message="FlowMessage already exists",
             status_code=409,
             data={"conflicts": exc.conflicts},
         )
-    finally:
-        tmp_path.unlink(missing_ok=True)
 
     task_id = next((c.id for c in fm.shared_context_entities if c.type == BuiltinEntityType.TASK.value), None)
     conv_id = next(
@@ -1668,6 +1674,27 @@ async def conversation_return() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to return the ticket: {str(e)}")
 
 
+async def _team_conversation_via_hub(method: str, action_name: str, refused: str, payload: dict | None = None):
+    """Ask the hub for a ticket's team conversation and land it here with its messages. Answers the refusal as
+    an ``ApiResponse``, else ``{id, title}``, else ``None`` when the hub named no conversation."""
+    someone_typeid, ticket_id = _hub_conversation_target()
+    if someone_typeid is None:
+        return ApiFailResponse(message="No authenticated user in request context")
+    if not ticket_id:
+        return ApiFailResponse(message=f"{action_name}: target ticket required", status_code=400)
+    try:
+        team = await HubProxy.call(
+            method, BuiltinEntityType.CONVERSATION, ticket_id, action_name, payload=payload, strict=True
+        )
+    except HubError as e:
+        return e.fail_response(refused)
+    team_id = str(team.get("id") or "") if isinstance(team, dict) else ""
+    if not team_id:
+        return None
+    await _materialize_hub_conversation(team_id, someone_typeid)
+    return {"id": team_id, "title": team.get("title")}
+
+
 @action.post(action_name="open_team_conversation", types=["conversation"])
 async def conversation_open_team_conversation() -> ApiResponse:
     """``POST conversation/<ticket id>/open_team_conversation {title, text}`` — the hub's action, answered
@@ -1676,35 +1703,53 @@ async def conversation_open_team_conversation() -> ApiResponse:
     who is in it and answers one conversation per ticket; it lands here, with its messages, so the team's
     replies reach this machine."""
     try:
-        someone_typeid, ticket_id = _hub_conversation_target()
-        if someone_typeid is None:
-            return ApiFailResponse(message="No authenticated user in request context")
-        if not ticket_id:
-            return ApiFailResponse(message="open_team_conversation: target ticket required", status_code=400)
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() or {}) if request_info else {}
         payload = {"title": str(body.get("title") or ""), "text": str(body.get("text") or "")}
-
-        try:
-            team = await HubProxy.call(
-                "POST",
-                BuiltinEntityType.CONVERSATION,
-                ticket_id,
-                "open_team_conversation",
-                payload=payload,
-                strict=True,
-            )
-        except HubError as e:
-            return e.fail_response("Could not open the team conversation")
-        team_id = str((team or {}).get("id") or "") if isinstance(team, dict) else ""
-        if not team_id:
+        team = await _team_conversation_via_hub(
+            "POST", "open_team_conversation", "Could not open the team conversation", payload
+        )
+        if team is None:
             return ApiFailResponse(message="the hub opened no team conversation")
-
-        await _materialize_hub_conversation(team_id, someone_typeid)
-        return ApiSuccessResponse(data={"conversation_id": team_id, "title": team.get("title")})
+        return team if isinstance(team, ApiResponse) else ApiSuccessResponse(data=team)
     except Exception as e:
         logger.error("[flow_message_action] open_team_conversation error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed to open the team conversation: {str(e)}")
+
+
+@action.get(action_name="team_conversation", types=["conversation"])
+async def conversation_team_conversation() -> ApiResponse:
+    """``GET conversation/<ticket id>/team_conversation`` — the hub's action, answered here: the ticket's private
+    team conversation for the desk's staff, ``null`` while nobody opened one. The hub decides who may ask; what
+    it answers lands here with its messages, so the ticket page reads both sides from this machine."""
+    try:
+        team = await _team_conversation_via_hub("GET", "team_conversation", "Could not read the team conversation")
+        return team if isinstance(team, ApiResponse) else ApiSuccessResponse(data=team)
+    except Exception as e:
+        logger.error("[flow_message_action] team_conversation error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to read the team conversation: {str(e)}")
+
+
+@action.post(action_name="ensure-sources", types=None)
+async def ensure_sources_now() -> ApiResponse:
+    """Make the sources this login should have, now: a desk just created or joined shows its tickets without a
+    restart (``ensure_driver_sources`` otherwise runs on sign-in and start).
+
+    ``{"sync": "<id>"}`` also runs one sync cycle of every source whose config names that id (a desk's ticket
+    source names the desk): what a page asks before opening something the next poll would only bring later."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.stream_inbox.catchup import ensure_driver_sources  # noqa: PLC0415
+
+    made = await ensure_driver_sources("asked")
+    request_info = get_current_request_info()
+    named = str(((await request_info.get_post_data() or {}) if request_info else {}).get("sync") or "").strip()
+    synced = 0
+    if named:
+        for source in await DataSource.get_all():
+            if named in (source.config or {}).values():
+                await source.sync()
+                synced += 1
+    return ApiSuccessResponse(data={"made": made, "synced": synced})
 
 
 def _truthy(value) -> bool:
@@ -2303,18 +2348,21 @@ async def handle_stream_inbox_update(fm_id: str, patch: dict, someone_typeid: st
     fm = await FlowMessage.get_one({"id": fm_id})
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    marked = "is_read" in patch and bool(patch["is_read"]) != bool(fm.is_read)
     if "is_read" in patch:
         fm.is_read = bool(patch["is_read"])
     if "is_archived" in patch:
         fm.is_archived = bool(patch["is_archived"])
     await fm.save(someone_typeid)
     stream_inbox.touch("stream-inbox-update")
+    if marked:
+        write_back([fm])
     return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
 
 
 @action.post(action_name="stream-inbox-search", types=None)
 async def stream_inbox_search() -> ApiResponse:
-    """Full-stream-inbox body search → conversation ids. Body: ``{"q": "<substring>"}``.
+    """Full-stream-inbox search → conversation ids; optional q and all-of tags.
 
     Two lanes because bodies live in two places under the reference model:
     a channel message's text is on its SourceItem (the FlowMessage row is a
@@ -2329,7 +2377,10 @@ async def stream_inbox_search() -> ApiResponse:
         body = await request_info.get_post_data() or {}
         scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
         needle = str(body.get("q") or "").strip()
-        if not needle:
+        from flow_sdk.server.search_filters import apply_tag_filter, wanted_tags
+
+        selected_tags = wanted_tags(body.get("tags"))
+        if not needle and not selected_tags:
             return ApiSuccessResponse(data={"conversation_ids": []})
         like = f"%{needle}%"
 
@@ -2337,6 +2388,26 @@ async def stream_inbox_search() -> ApiResponse:
 
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # Narrow in the query before the shared hierarchy predicate. LIKE is
+        # only a candidate filter (a legal underscore is a LIKE wildcard), so
+        # apply_tag_filter remains the exact canonical matcher.
+        tag_match = ExpressionNode(op=QueryOp.AND, operands=[
+            ExpressionNode(op=QueryOp.OR, operands=[
+                ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}"%']),
+                ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}.%']),
+            ]) for tag in selected_tags
+        ]) if selected_tags else None
+
+        def filtered(match):
+            return QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[match, tag_match]) if tag_match else match)
+
+        if not needle:
+            messages = apply_tag_filter(await FlowMessage.get_all(QueryFilter(match=tag_match), hydrate=False), selected_tags)
+            ids = {str(m.conversation_id) for m in messages if m.conversation_id}
+            if scope is not None:
+                ids &= scope.conversation_ids
+            return ApiSuccessResponse(data={"conversation_ids": sorted(ids)})
 
         # The two lanes are independent — run them together.
         items, native = await asyncio.gather(
@@ -2352,22 +2423,22 @@ async def stream_inbox_search() -> ApiResponse:
                 )
             ),
             FlowMessage.get_all(
-                QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["text", like])),
+                filtered(ExpressionNode(op=QueryOp.LIKE, operands=["text", like])),
                 hydrate=False,
             ),
         )
-        conversation_ids: set[str] = {str(m.conversation_id) for m in native if m.conversation_id}
+        conversation_ids: set[str] = {str(m.conversation_id) for m in apply_tag_filter(native, selected_tags) if m.conversation_id}
         if items:
             refs = await FlowMessage.get_all(
-                QueryFilter(
-                    match=ExpressionNode(
+                filtered(
+                    ExpressionNode(
                         op=QueryOp.IN,
                         operands=["source_item_id", [str(i.id) for i in items]],
                     )
                 ),
                 hydrate=False,
             )
-            conversation_ids |= {str(m.conversation_id) for m in refs if m.conversation_id}
+            conversation_ids |= {str(m.conversation_id) for m in apply_tag_filter(refs, selected_tags) if m.conversation_id}
         if scope is not None:
             conversation_ids &= scope.conversation_ids
         return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})
@@ -2648,9 +2719,12 @@ async def handle_stream_inbox_bulk_update(
     if allowed_flow_message_ids is not None:
         messages = [message for message in messages if message.id in allowed_flow_message_ids]
     count = 0
+    marked = []
     for fm in messages:
         changed = False
         if "is_read" in patch:
+            if bool(fm.is_read) != bool(patch["is_read"]):
+                marked.append(fm)
             fm.is_read = bool(patch["is_read"])
             changed = True
         if "is_archived" in patch:
@@ -2660,6 +2734,7 @@ async def handle_stream_inbox_bulk_update(
             await fm.save(someone_typeid)
             count += 1
     stream_inbox.touch("stream-inbox-bulk-update")
+    write_back(marked)
     return ApiSuccessResponse(data={"updated": count})
 
 
@@ -4980,3 +5055,87 @@ async def invitation_accept() -> ApiResponse:
     except Exception as e:
         logger.error("[flow_message_action] invitation-accept error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.all(action_name="classification-settings", types=["flow_message"], methods=["get", "post"])
+async def message_classification_settings() -> ApiResponse:
+    """Instance-owned incoming-message policy; omitted settings retain their value. ``enabled`` is the
+    classifier automation's own switch, read and moved here for the tag screens."""
+    from flow_sdk.builtin.trigger import set_trigger_on
+    from flow_sdk.stream_inbox.message_tags import classifier, save_settings, settings
+
+    info = get_current_request_info()
+    if info is None:
+        return ApiFailResponse(message="No request context available", status_code=400)
+    current, rule = settings(), await classifier()
+    if info.request.method.upper() == "POST":
+        body = await info.get_post_data()
+        if not isinstance(body, dict) or set(body) - {"enabled", "include_flow_tags", "root"}:
+            return ApiFailResponse(message="Expected enabled, include_flow_tags and/or root settings", status_code=400)
+        if not isinstance(body.get("enabled", False), bool):
+            return ApiFailResponse(message="enabled must be true or false", status_code=400)
+        if "enabled" in body and rule is not None:
+            await set_trigger_on(rule, body["enabled"])
+        try:
+            current = save_settings({**current.model_dump(mode="json"),
+                                     **{k: v for k, v in body.items() if k != "enabled"}})
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+    return ApiSuccessResponse(data={**current.model_dump(mode="json"), "enabled": rule is None or bool(rule.enabled),
+                                    "trigger_id": str(rule.id) if rule is not None else None})
+
+
+@action.post(action_name="classify", types=["flow_message"])
+async def message_classify(self: FlowMessage) -> ApiResponse:
+    """Dry run: where this message lands in the classification tree. Writes nothing."""
+    from flow_sdk.stream_inbox.message_tags import classify, ontology
+
+    answer = await classify(self, await ontology())
+    return ApiSuccessResponse(data=answer.model_dump(mode="json"))
+
+
+def _tag_state(message) -> dict:
+    processing = message.message_processing
+    return {"tags": list(message.tags or []),
+            "message_processing": processing.model_dump(mode="json") if processing is not None else None}
+
+
+@action.post(action_name="classify-now", types=["flow_message"])
+async def message_classify_now(self: FlowMessage) -> ApiResponse:
+    """A person asks for this message to be classified now, whatever the classifier's switch says."""
+    from flow_sdk.stream_inbox.message_tags import classify_now
+
+    return ApiSuccessResponse(data=_tag_state(await classify_now(str(self.id))))
+
+
+@action.post(action_name="rerun-automation", types=["flow_message"])
+async def message_rerun_automation(self: FlowMessage) -> ApiResponse:
+    """A person asks for one failed or interrupted automation of this message's queue to run again."""
+    from flow_sdk.stream_inbox.message_tags import run_again
+
+    info = get_current_request_info()
+    body = await info.get_post_data() if info is not None else None
+    if not isinstance(body, dict) or not isinstance(body.get("entry"), str):
+        return ApiFailResponse(message="Expected the queue entry's id", status_code=400)
+    message = await run_again(str(self.id), body["entry"])
+    if message is None:
+        return ApiFailResponse(message="Only a failed or interrupted automation can run again.", status_code=409)
+    return ApiSuccessResponse(data=_tag_state(message))
+
+
+@action.post(action_name="set-tags", types=["flow_message"])
+async def message_set_tags(self: FlowMessage) -> ApiResponse:
+    """Atomic tag replacement through the same entity seam as add/remove."""
+    info = get_current_request_info()
+    if info is None:
+        return ApiFailResponse(message="No request context available", status_code=400)
+    body = await info.get_post_data()
+    if not isinstance(body, dict) or set(body) != {"tags"} or not isinstance(body["tags"], list):
+        return ApiFailResponse(message="Expected a tags list", status_code=400)
+    if any(not isinstance(tag, str) for tag in body["tags"]):
+        return ApiFailResponse(message="Every tag must be a string", status_code=400)
+    try:
+        await self.set_tags(body["tags"])
+    except ValueError as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+    return ApiSuccessResponse(data=_tag_state(self))

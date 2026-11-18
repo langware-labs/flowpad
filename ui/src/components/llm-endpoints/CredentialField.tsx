@@ -160,7 +160,7 @@ export function CredentialField({
   return (
     <div className="space-y-1.5" data-testid="credential-field">
       <Label htmlFor="llm-credential">
-        <Trans>Provider API key</Trans>
+        {takesFile ? <Trans>Provider credential</Trans> : <Trans>Provider API key</Trans>}
       </Label>
       <div className="flex gap-2">
         <Input

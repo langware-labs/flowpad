@@ -73,10 +73,23 @@ describe('OpenPcLanding', () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalledWith(URL));
     const [, body, config] = post.mock.calls[1];
-    expect(body).toEqual({ code: 'WDJB-MJHT' });
+    expect(body).toMatchObject({ code: 'WDJB-MJHT' });
+    // What the phone says about itself rides along, for the hub's log (client-facts.ts).
+    expect(body.client).toMatchObject({ cookies: expect.any(String), os: expect.any(String) });
     expect(config).toMatchObject({ adapter: 'fetch', withCredentials: false });
     // The probe sends no cookies either: a signed-in browser must still get the code box.
     expect(post.mock.calls[0][2]).toMatchObject({ adapter: 'fetch', withCredentials: false });
+  });
+
+  it('an invite link shows the code box with its code filled in and sends nothing before Open', async () => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, hash: '#code=ZN4T-JZR8', assign },
+    });
+    const post = vi.spyOn(apiClient, 'post').mockRejectedValue(hubError(403, 'caller has no role on this entity'));
+    renderPage();
+    expect(await screen.findByTestId('open-pc-code')).toHaveValue('ZN4T-JZR8');
+    expect(post).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -391,6 +391,15 @@ describe('TeamDetail (opened through OrgView)', () => {
     expect(screen.getByTestId<HTMLInputElement>(`member-cap-${EP(2)}`).value).toBe('50');
   });
 
+  it('counts the header off the same rows the members table lists (the owner included)', () => {
+    orgReturns(orgScope(), [teamScope({ member_count: 0 })]);
+    h.team.mockReturnValue({ data: { team: teamScope(), members: [person()] }, isLoading: false, error: null });
+    draw({ teamId: UUID(4) });
+    expect(screen.getByTestId(`member-budget-${EP(2)}`)).toBeTruthy();
+    expect(screen.getByText('1 member')).toBeTruthy();
+    expect(screen.queryByText('0 members')).toBeNull();
+  });
+
   it('falls back to the Teams list when the team id is not in the org', () => {
     orgReturns(orgScope(), [teamScope()]);
     draw({ teamId: UUID(9) });

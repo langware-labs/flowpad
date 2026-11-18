@@ -1,8 +1,8 @@
 // A guest app asks the host to open a dock; only a `/dock/` address that parses is honoured.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { OPEN_EXTERNAL_MESSAGE, externalUrl, openExternal } from '@sdk/apps/host';
-import { guestExternalUrl, guestNavigation } from '@src/pages/flow-page/app-display-viewer';
+import { OPEN_EXTERNAL_MESSAGE, externalUrl, openAgentChat, openExternal } from '@sdk/apps/host';
+import { guestAgent, guestExternalUrl, guestNavigation } from '@src/pages/flow-page/app-display-viewer';
 
 describe('flowpad:navigate', () => {
   it('opens a dock address — another app, on its subject', () => {
@@ -89,5 +89,23 @@ describe('flowpad:open-external', () => {
     expect(() => openExternal('/relative')).toThrow();
     expect(open).not.toHaveBeenCalled();
     expect(externalUrl(7)).toBeNull();
+  });
+});
+
+describe('flowpad:open-agent', () => {
+  afterEach(() => vi.restoreAllMocks());
+  const AGENT = 'agent-beff05cd-f096-4da4-a845-f17e5254845b';
+
+  it('what the app sends is the agent the host opens', () => {
+    const post = vi.fn();
+    vi.spyOn(window, 'parent', 'get').mockReturnValue({ postMessage: post } as never);
+    openAgentChat(AGENT);
+    expect(guestAgent(post.mock.calls[0][0])?.toString()).toBe(AGENT);
+  });
+
+  it('only an agent: another type, a bad id or another message opens nothing', () => {
+    expect(guestAgent({ type: 'flowpad:open-agent', agent: 'project-beff05cd-f096-4da4-a845-f17e5254845b' })).toBeNull();
+    expect(guestAgent({ type: 'flowpad:open-agent', agent: 'agent-nope' })).toBeNull();
+    expect(guestAgent({ type: 'flowpad:navigate', agent: AGENT })).toBeNull();
   });
 });

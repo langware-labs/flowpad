@@ -39,6 +39,13 @@ async def prepare(input: PreparedAutomation, *, context) -> ReturnedValue:
     try:
         if context.preview_state is not None:
             state = context.preview_state
+        elif context.event is not None and getattr(trigger, "message_tags", None):
+            from flow_sdk.stream_inbox.message_subject import _self_ids, state_of
+
+            message = await _message_of(context.event)
+            if message is None:
+                raise LookupError("no such message")
+            state = state_of(message, await _self_ids(), allow_foreign_agents=True)
         elif context.event is not None:
             state = await subject.of(context.event.target)
         elif context.preview_message_id:
@@ -166,6 +173,10 @@ async def accept(input: PreparedAutomation, *, context) -> ReturnedValue:
                 project_id=trigger.project_id,
                 cause=context.event,
             )
+    if context.mode is AutomationMode.REAL:
+        from flow_sdk.automations.lifecycle import after_run
+
+        await after_run(trigger)
     accepted = input.model_copy(update={"event_id": event_id})
     if kind is TriggerType.TAG:
         from flow_sdk.builtin.tag_triggers import record_tag_start
@@ -229,6 +240,7 @@ async def then(input: PreparedAutomation, *, context) -> ReturnedValue:
 async def action(input: int, *, context) -> ReturnedValue:
     from flow_sdk.builtin.hook_models import get_action_handler
     from flow_sdk.builtin.trigger import _failure_of
+    from flow_sdk.schema.data_spec.trigger_action import ActionType
 
     trigger = context.trigger
     selected = trigger.action if context.hook else trigger.actions[input]
@@ -237,7 +249,9 @@ async def action(input: int, *, context) -> ReturnedValue:
         if handler is None:
             answer = ReturnedValue.not_yet(f"No handler for action {selected.action_type}", ran=False)
         else:
-            result = await handler.execute(trigger, action=selected, changes=None if context.hook else context.changes)
+            extra = {"event": context.event} if selected.action_type == ActionType.PROMPT_PROCESS else {}
+            result = await handler.execute(trigger, action=selected, changes=None if context.hook else context.changes,
+                                           **extra)
             if context.hook:
                 await trigger.update()
             answer = result if isinstance(result, ReturnedValue) else ReturnedValue.satisfied()
@@ -284,6 +298,28 @@ async def instruction(input: PreparedAutomation, *, context) -> ReturnedValue:
     if answer.executor:
         context.attach_executor(answer.executor)
     return answer
+
+
+async def _message_of(event):
+    """The message a fire is about: the event's target is the message, or the source item it mirrors."""
+    from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.tags.envelope import parse_target
+
+    kind, identity = parse_target(event.target)
+    if kind == "source_item":
+        return await FlowMessage.get_one({"source_item_id": identity})
+    return await FlowMessage.get_by_id(identity)
+
+
+async def mark_message_read(input=None, *, context) -> ReturnedValue:
+    """A rule's "Mark as read" step: the message the rule ran for is read, the way a person marks it."""
+    from flow_sdk.app.actions.flow_message_action import handle_stream_inbox_update
+
+    message = await _message_of(context.event) if getattr(context, "event", None) is not None else None
+    if message is None:
+        return ReturnedValue.not_applicable("This run is not about a message.", ran=False)
+    await handle_stream_inbox_update(str(message.id), {"is_read": True}, None)
+    return ReturnedValue.satisfied("Marked as read.")
 
 
 async def noop(input: PreparedAutomation, *, context) -> ReturnedValue:

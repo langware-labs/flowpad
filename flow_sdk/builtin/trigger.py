@@ -27,7 +27,7 @@ from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
-from flow_sdk.schema.data_spec.trigger_types import TriggerType
+from flow_sdk.schema.data_spec.trigger_types import MESSAGE_CLASSIFIER, TriggerType
 
 if TYPE_CHECKING:
     from flow_sdk.schema.data_spec.automation_spec import AutomationRun
@@ -300,6 +300,10 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         if not await runs_here(entity):
             await disarm_trigger(trigger_id)
             return
+        from flow_sdk.automations.lifecycle import may_run  # noqa: PLC0415
+
+        if not await may_run(entity):
+            return
         await run_schedule_fire(entity, None, is_test=False)
     except Exception:
         logger.exception("Schedule trigger fire error for %s", trigger_id)
@@ -316,7 +320,9 @@ async def pending_callbacks(process: Any) -> list["Trigger"]:
     from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
 
     rows = await Trigger.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])))
-    return [t for t in rows if t.calls_back(process) and not t.last_run]
+    from flow_sdk.automations.lifecycle import status  # noqa: PLC0415
+
+    return [t for t in rows if t.calls_back(process) and status(t) in ("active", "off")]
 
 
 async def drop_callbacks(process: Any) -> None:
@@ -416,8 +422,14 @@ class Trigger(ProjectedFields, Entity):
     @property
     def switchable(self) -> bool:
         """A person may turn it on or off here: every rule but Flowpad's own -- except the ones Flowpad ships
-        off (a ``trigger.json`` that is not ``recommended``, the Daily usage summary): those are an offer."""
-        return not self.is_builtin or (self.is_file_backed and not self.recommended)
+        off (a ``trigger.json`` that is not ``recommended``, the Daily usage summary): those are an offer --
+        and the message classifier, whose switch is the person's."""
+        return not self.is_builtin or (self.is_file_backed and not self.recommended) or self.is_message_classifier
+
+    @property
+    def is_message_classifier(self) -> bool:
+        """The seeded rule that stands for the message classifier (``stream_inbox/message_tags.py``)."""
+        return str(getattr(self, "uname", "") or "") == MESSAGE_CLASSIFIER
 
     #: RUNTIME STATE. `Persist.TRUE` puts these in the SHADOW record (under flow
     #: home, never the asset folder, never git) rather than leaving them to the
@@ -456,6 +468,7 @@ class Trigger(ProjectedFields, Entity):
     tag_pattern: Optional[str] = APIField(None, description="Bus tag pattern, segment-glob (TAG triggers only), e.g. 'entity.created' or 'graph_workflow.*'. Bare '*' is rejected.")
     tag_target: Optional[str] = APIField(None, description="Optional target filter in colon form: 'usage_report:*' or an exact 'type:id' (TAG only)")
     tag_scope: list[str] = APIField(default_factory=list, description="Optional scope filter — colon-form targets the event's ctx.scope must intersect (TAG only)")
+    message_tags: list[str] = APIField(default_factory=list, description="Any-of message tags (including descendants); FIFO once per message, not ordinary event delivery")
     max_fires_per_minute: int = APIField(default=STORM_CAP_PER_MINUTE, description="Storm guard for TAG triggers: fires beyond this per-minute cap are dropped (one storm_suppressed log entry per window)")
     confirm: Optional[dict[str, Any]] = APIField(None, description="Optional confirm-against-store gate (TAG only): {type, filter} — the entity query must match or the fire is skipped (event != proof)")
     # ONCE-per-machine, expressed where the durable counter already lives.
@@ -474,6 +487,15 @@ class Trigger(ProjectedFields, Entity):
     #: What it does, as a WIZARD (`trigger.then`): a ref, inline steps, or the run_agent / run_script sugar.
     #: Runs instead of `actions` when set.
     then: Optional[dict[str, Any]] = APIField(None, description="What runs on a fire, as a wizard: {ref} | {steps, ops} | {run_agent} | {run_script}.")
+    #: A session waiting for the reply to one message (``flow conversation send --on-reply``): the
+    #: message, ``flow_message-<id>``. Row-only, like every callback (builtin/reply_callbacks.py).
+    awaits_reply: Optional[str] = APIField(None, description="The message (flow_message-<id>) whose reply fires this rule (TAG only).")
+    #: After this the rule never fires; an unanswered reply wait posts that it was cancelled.
+    expires_at: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="When the rule stops by itself.")
+    #: Its life (automations/lifecycle.py): at most this many real runs; when and why it ended.
+    max_runs: Optional[int] = APIField(None, description="It ends after this many real runs. Empty = no limit.")
+    ended_at: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="When it ended by itself or was cancelled.")
+    ended_reason: Optional[str] = APIField(None, persist=Persist.TRUE, description="max_runs | expired | cancelled")
 
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []
@@ -697,8 +719,13 @@ class Trigger(ProjectedFields, Entity):
         be saved, in words — or None (also for a rule that is not a callback)."""
         if not self.calls_back():
             return None
-        if self.trigger_type != TriggerType.SCHEDULE or (self.sched_trigger_type or "cron") != "date":
-            return "A callback into a session runs once, at a set time."
+        waits_for_reply = self.trigger_type == TriggerType.TAG and bool(self.awaits_reply)
+        one_shot = self.trigger_type == TriggerType.SCHEDULE and (self.sched_trigger_type or "cron") == "date"
+        repeats = self.trigger_type == TriggerType.SCHEDULE and not one_shot
+        if repeats and not (self.max_runs or self.expires_at):
+            return "A repeating callback needs an end: a number of runs or an end time."
+        if not (waits_for_reply or one_shot or repeats):
+            return "A callback into a session runs at a set time, on a repeat with an end, or when a message is answered."
         process = await self.target_process()
         if process is None:
             return "The session to call back does not exist."
@@ -855,6 +882,14 @@ class Trigger(ProjectedFields, Entity):
         await arm_trigger(entity, replace=True)
 
         return ApiSuccessResponse(data=entity)
+
+    @core_action.post(action_name="cancel")
+    async def cancel_action(self, request: Request) -> ApiResponse:
+        """POST /graph/trigger/<id>/cancel — end it now (status ``cancelled``); the row and its runs stay."""
+        from flow_sdk.automations.lifecycle import end, status  # noqa: PLC0415
+
+        await end(self, "cancelled")
+        return ApiSuccessResponse(data={"id": self.id, "status": status(self)})
 
     @core_action.all(action_name="update")
     async def update_action(self, request: Request) -> ApiResponse:
@@ -1034,7 +1069,8 @@ class Trigger(ProjectedFields, Entity):
 
     @classmethod
     async def on_message(cls, *, catch: str, sources: Optional[list[Any]] = None, agent: Any, prompt: str,
-                         name: str = "", project_id: Optional[str] = None, enabled: bool = True) -> "Trigger":
+                         name: str = "", project_id: Optional[str] = None, enabled: bool = True,
+                         message_tags: Optional[list[str]] = None) -> "Trigger":
         """A rule on messages arriving: when one lands on ``sources`` (every channel when none),
         if ``catch`` is true of it (one yes/no question, 85% sure), have ``agent`` do ``prompt``
         with the message as its input. The screen's Save, the CLI and a ``trigger.json`` all
@@ -1051,7 +1087,8 @@ class Trigger(ProjectedFields, Entity):
             trigger_type=TriggerType.TAG,
             tag_pattern=MESSAGE_PROJECTED,
             tag_scope=scope,
-            gate={"sentence": catch},  # worded by the row (`_word_gate`), like every other writer
+            gate={"sentence": catch} if catch.strip() else None,
+            message_tags=message_tags or [],
             then={"run_agent": {"agent": agent_id, "prompt": prompt}},
             enabled=enabled,
             project_id=project_id,
@@ -1078,14 +1115,16 @@ class Trigger(ProjectedFields, Entity):
 
         subject = for_trigger(self)
         op = self.gate_op
-        if subject is None or op is None:
+        if subject is None or (op is None and not self.message_tags):
             return []
         states = await subject.recent(self, limit)
         known: dict[str, dict[str, Any]] = {}
-        for row in rows_for(str(self.id), self.name, discover(self.name, limit=limit * 4)):
-            sid = row.get("subject_id")
-            if sid and row.get("decision") and sid not in known:
-                known[sid] = row
+        # Current tags, not a historical gate answer, determine tag-rule previews.
+        if not self.message_tags:
+            for row in rows_for(str(self.id), self.name, discover(self.name, limit=limit * 4)):
+                sid = row.get("subject_id")
+                if sid and row.get("decision") and sid not in known:
+                    known[sid] = row
         # The states the log has not decided are asked together: each is one independent call.
         fresh = [s for s in states if subject.subject_id(s) not in known]
         verdicts = dict(zip((subject.subject_id(s) for s in fresh), await asyncio.gather(*(run_decision(self, state=s) for s in fresh))))
@@ -1102,6 +1141,17 @@ class Trigger(ProjectedFields, Entity):
             else:
                 out.append({"state": state.model_dump(mode="json"), "verdict": verdicts[sid].model_dump(mode="json"),
                             "decided_at": None, "agentic_process_id": None})
+        if self.message_tags:
+            # A tag rule is decided by the message's tags: the try list shows them, not a confidence.
+            from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
+
+            ids = [row["state"].get("message_id") for row in out if row["state"].get("message_id")]
+            found = await FlowMessage.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])), hydrate=False) if ids else []
+            tags = {str(m.id): list(m.tags or []) for m in found}
+            for row in out:
+                row["tags"] = tags.get(row["state"].get("message_id") or "", [])
         return out
 
     @classmethod
@@ -1555,3 +1605,7 @@ def _project_setup_changed(trigger: Trigger) -> None:
     from flow_sdk.core.project_status import SETUP, mark_stale  # noqa: PLC0415
 
     mark_stale(str(trigger.project_id), [SETUP])
+
+
+# A reply wait says when it ended unanswered: its on-end hook registers on import (automations/lifecycle.on_end).
+import flow_sdk.builtin.reply_callbacks  # noqa: E402, F401

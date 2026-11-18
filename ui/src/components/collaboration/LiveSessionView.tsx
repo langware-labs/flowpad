@@ -184,8 +184,21 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   const running =
     status === RemoteWorkerSessionStatus.RUNNING || (status === RemoteWorkerSessionStatus.IDLE && !!pendingPrompt);
   // Either side ends the session from here; the guest's header is the smaller row.
+  // A guest still waiting for approval is not connected yet: offer to cancel the request.
+  const awaitingApproval = !isHost && status === RemoteWorkerSessionStatus.PENDING;
   const disconnectButton = (small: boolean) =>
-    !terminal && (
+    !terminal &&
+    (awaitingApproval ? (
+      <Button
+        size="sm"
+        className={`bg-blue-600 text-white hover:bg-blue-500 ${small ? 'h-6 px-2 text-[11px]' : ''}`}
+        onClick={() => void runAction('disconnect', () => session.disconnect())}
+        disabled={!!busy}
+        data-testid="live-session-cancel-request"
+      >
+        <Trans>Cancel request</Trans>
+      </Button>
+    ) : (
       <Button
         size="sm"
         variant="destructive"
@@ -197,7 +210,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
         <PlugZap className={small ? 'me-1 h-3.5 w-3.5' : 'me-1.5 h-4 w-4'} />
         <Trans>Disconnect</Trans>
       </Button>
-    );
+    ));
   const latestMessageId = messages[messages.length - 1]?.id;
   const sessionOnLatestMessage = conversationId && latestMessageId && (
     <SessionOnLatestMessage conversationId={conversationId} messageId={latestMessageId} />

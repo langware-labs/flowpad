@@ -618,12 +618,13 @@ class HubWsBridge:
             # The auto-notify version is useless to us — we already know
             # about our own sends — and lacks the conversation parent, so it
             # would hit the policy-denied parents_path fallback. Skip it by
-            # matching ``sender_id`` against the *cloud* user id (the local
-            # ``User`` row uses a different per-machine id).
+            # matching ``sender_id`` against the signed-in *cloud* principal's id
+            # (a person, or the agent's Identity on its box; the local ``User``
+            # row uses a different per-machine id).
             try:
-                from flow_sdk.cli.app_config import get_user as _get_cloud_user
+                from flow_sdk.cli.app_config import get_principal as _get_cloud_principal
 
-                cloud_user = _get_cloud_user() or {}
+                cloud_user = _get_cloud_principal() or {}
                 cloud_user_id = cloud_user.get("id")
                 if cloud_user_id and payload.get("sender_id") == cloud_user_id:
                     return
@@ -723,6 +724,7 @@ class HubWsBridge:
                         # sync already materialized the row, so the open conversation
                         # ``on('message')`` listener still fires.
                         emit_live_create=True,
+                        classify_message=not _is_session_traffic(payload),
                         # Inbound from the hub: this row mirrors a hub counterpart.
                         remote=True,
                     )
@@ -772,12 +774,14 @@ class HubWsBridge:
                     # still fires the banner/badge/dock-bounce. Skipped for our
                     # own messages (self-sends the hub echoes back — same guard as
                     # the auto-ack below). Own try/except so a notify hiccup is
-                    # never mistaken for a persist failure.
+                    # never mistaken for a persist failure. A machine's IT reply is
+                    # skipped too: one send answers once per machine, in a table.
                     if (
                         local_user
                         and payload.get("sender_id")
                         and payload["sender_id"] != local_user.id
                         and not _is_session_traffic(payload)
+                        and not materialized.it_reply
                     ):
                         try:
                             from flow_sdk.notifications import notify_message_arrival
@@ -918,14 +922,24 @@ class HubWsBridge:
             # sync the delivery/body fields the hub actually owns.
             persisted = None
             last_field = ""
-            for field in (
+            fields: tuple[str, ...] = (
                 "delivery_status",
                 "delivered_at",
                 "received_at",
                 "handling_at",
                 "body_status",
                 "attachment_filename",
-            ):
+            )
+            # A Monitoring message is ONE message per Issue that the hub keeps current: a repeat or a status
+            # change rewrites its ``metadata.issue`` (and its text). Only those messages take ``text`` from an
+            # UPDATE -- every other message's text is the sender's and stays as it arrived.
+            from flow_sdk.builtin.flow_message import issue_of  # noqa: PLC0415
+
+            issue = issue_of(data)
+            if issue is not None:
+                data = {**data, "issue_reply": issue}
+                fields = (*fields, "issue_reply", *(("text",) if isinstance(data.get("text"), str) else ()))
+            for field in fields:
                 # The hub leaves a cleared field out of a full message: no ``handling_at`` on a message that is
                 # otherwise whole means "not working any more".
                 if field == "handling_at" and field not in data and ("sender_id" in data or "delivery_status" in data):
@@ -977,6 +991,10 @@ class HubWsBridge:
 
                 # Publish the freshly persisted row, the way every other
                 # server-managed field write does (``mark-edit`` is the precedent).
+                # In its READ shape: a source message stores no text of its own, and
+                # announcing the stored row blanked it in every open view until the
+                # next poll (a staff member's own reply, the moment the hub said "sent").
+                await FlowMessage._hydrate([persisted])
                 await _publish_server_managed_field_update(existing, persisted, last_field)
             # Body just landed on the hub — pull it now so asset chips become
             # clickable without a refresh. ``_maybe_eager_pull_bundle`` is a
@@ -990,9 +1008,9 @@ class HubWsBridge:
             new_body_status = getattr(existing, "body_status", None)
             is_self_send = False
             try:
-                from flow_sdk.cli.app_config import get_user as _get_cloud_user
+                from flow_sdk.cli.app_config import get_principal as _get_cloud_principal
 
-                cloud_user_id = (_get_cloud_user() or {}).get("id")
+                cloud_user_id = (_get_cloud_principal() or {}).get("id")
                 sender_id = getattr(existing, "sender_id", None)
                 if cloud_user_id and sender_id and sender_id == cloud_user_id:
                     is_self_send = True
@@ -1211,6 +1229,10 @@ class HubWsBridge:
             entity_type,
             getattr(entity, "id", None),
         )
+        # A role that just landed may be one a driver makes a source for (a help desk's staff get its tickets).
+        from flow_sdk.stream_inbox.catchup import ensure_driver_sources  # noqa: PLC0415
+
+        await ensure_driver_sources("membership")
 
     async def _handle_task_op(self, op: str, task_id: str, data: dict) -> None:
         """A task was handed to this user — materialize it locally.

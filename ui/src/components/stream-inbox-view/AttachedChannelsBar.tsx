@@ -7,10 +7,9 @@
  * ONE mark per channel kind (provider + channel, the identity a
  * glyph draws): several sources of one kind share a mark that carries their
  * count, and hovering it lists just those sources with their switches.
- * Clicking a mark FILTERS the list to that kind; while a filter is on, the
- * "+" turns into a high-contrast × in the same place that shows everything
- * again. Nothing else on the line moves or disappears: the line keeps its
- * width, so the marks a person is pointing at stay where they are.
+ * Clicking a mark shows only that kind (again: everything); ⌘/Ctrl-click adds or
+ * removes it. While a filter is on, a "Showing: … ×" chip names what is shown and
+ * its × shows everything again.
  *
  * At rest the line carries two controls — plus a call control for each channel that takes calls
  * (`CallControls`, from the driver's `calls`): + adds a source owned by this owner,
@@ -28,8 +27,9 @@
  * featured ones (`channelOffers`): the greyed glyph with a "+", which opens the add dialog on
  * that channel. It is the absence of a source, not a state of one, so it never filters.
  */
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Agent, DataSource, type DataDriver, TypeId, User } from '@sdk';
+import { NavBadge } from '@src/components/ui/nav-badge';
 import { Check, Plus, RefreshCw, SlidersHorizontal, Trash2, TriangleAlert, X } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -51,6 +51,8 @@ import {
   channelOffers,
   isListedChannel,
   isMessageDriverSpec,
+  messageChannelChoices,
+  choiceKey,
   sourcesQuery,
   useSourceSpecs,
 } from '@src/components/data-sources/use-source-specs';
@@ -68,7 +70,14 @@ import {
 } from '@src/components/data-sources/source-attention';
 import { openSourceSetup } from '@src/components/setup-wizard/source-setup-store';
 import { useSourcePull } from '@src/components/data-sources/source-parts';
-import { AUTOMATIONS_CHANNEL, channelKeyOf, DIAGNOSIS_CHANNEL, FLOWPAD_CHANNEL, ownerOf } from './channel-owner';
+import {
+  AUTOMATIONS_CHANNEL,
+  channelKeyOf,
+  sourceHasConversationRequest,
+  DIAGNOSIS_CHANNEL,
+  FLOWPAD_CHANNEL,
+  ownerOf,
+} from './channel-owner';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 
 const EMPTY: DataSource[] = [];
@@ -98,12 +107,17 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
   );
   const forAgent = owner?.type === Agent.type;
   const offers = useMemo(
-    () => (ownerKey ? channelOffers(specs, rows, forAgent) : NO_OFFERS),
+    // Offered by default to an agent only (its own mailbox); a person's Stream Inbox offers channels in its empty list.
+    () => (ownerKey && forAgent ? channelOffers(specs, rows, forAgent) : NO_OFFERS),
     [specs, rows, ownerKey, forAgent],
+  );
+  const choices = useMemo(
+    () => (ownerKey ? messageChannelChoices(specs, forAgent) : NO_OFFERS),
+    [specs, ownerKey, forAgent],
   );
   const builtInOffered = useBuiltInEmailOffered(forAgent && offers.some((o) => o.spec.provisioned) ? owner : null);
   // Until both lists land, `rows` is empty for want of data, not for want of channels.
-  return { rows, specFor, offers, builtInOffered, loading: specsLoading || sourcesLoading };
+  return { rows, specFor, offers, choices, builtInOffered, loading: specsLoading || sourcesLoading };
 }
 
 /** Whether the hub can give this agent a provisioned channel (its built-in email): asked once, when one is on offer.
@@ -153,12 +167,17 @@ export function groupChannels(rows: DataSource[]): ChannelGroup[] {
 
 interface Props {
   owner: TypeId;
+  /** Drawn right after the warnings chip, so the chip stays leftmost. */
+  leading?: ReactNode;
   /** The owner's message sources and their spec lookup — from ONE
    *  `useAttachedChannels` in the mount, which also filters its list by them. */
   rows: DataSource[];
   specFor: SpecFor;
   /** Channels still to connect, drawn after the attached ones (`useAttachedChannels().offers`). */
   offers?: ChannelOffer[];
+  /** Channels already added, by choice key → why the add dialog draws them disabled. Absent: every
+   *  channel in `rows` is "already added". */
+  added?: ReadonlyMap<string, string>;
   /** Whether the hub can give an agent its built-in email (`useAttachedChannels().builtInOffered`). */
   builtInOffered?: boolean;
   /** Channel keys (`channelKeyOf`) the list is narrowed to; empty = everything. Absent with
@@ -179,10 +198,12 @@ export function AttachedChannelsBar({
   specFor,
   offers = NO_OFFERS,
   builtInOffered = true,
+  added,
   selected = NO_SELECTION,
   onSelectedChange,
   onMarkPress,
   className,
+  leading,
 }: Props) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -195,24 +216,45 @@ export function AttachedChannelsBar({
     const flagged = rows.filter(needsPerson);
     return { flagged, groups: groupChannels(rows.filter((s) => !flagged.includes(s))) };
   }, [rows]);
-  const attachedProviders = useMemo(() => new Set(rows.map((r) => r.provider)), [rows]);
+  const { t: tr } = useLingui();
+  const addedTips = useMemo(
+    () => added ?? addedChannels(rows, specFor, () => tr`This channel is already added`),
+    [added, rows, specFor, tr],
+  );
 
-  // Every mark is lit (shown) by default; a press dims it (filtered out) or lights it again.
-  // `selected` holds the lit ones while filtering — empty means all lit. The last lit mark stays lit.
+  // Every mark is lit (shown) by default. A click shows only that channel, or all again when it is
+  // already the only one; ⌘/Ctrl-click adds or removes it. `selected` holds the lit ones while
+  // filtering — empty means all lit, so removing the last one shows all again.
   const allKeys = [
     ...(owner.type !== Agent.type ? [FLOWPAD_CHANNEL] : []),
     ...groups.map((g) => g.key),
     ...(owner.type !== Agent.type ? [DIAGNOSIS_CHANNEL, AUTOMATIONS_CHANNEL] : []),
   ];
   const lit = (key: string) => !filtering || selected.has(key);
-  const pick = (key: string) => {
+  const pick = (key: string, e: MouseEvent) => {
     if (onMarkPress) return onMarkPress(key);
-    const next = new Set(filtering ? selected : allKeys);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    if (next.size === 0) return;
+    let next: Set<string>;
+    if (filtering && (e.metaKey || e.ctrlKey)) {
+      next = new Set(selected);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+    } else {
+      next = selected.size === 1 && selected.has(key) ? new Set() : new Set([key]);
+    }
     onSelectedChange?.(allKeys.every((k) => next.has(k)) ? new Set() : next);
   };
+  const builtInNames: Record<string, string> = {
+    [FLOWPAD_CHANNEL]: 'Flowpad',
+    [DIAGNOSIS_CHANNEL]: t`Diagnosis`,
+    [AUTOMATIONS_CHANNEL]: t`Automations`,
+  };
+  const nameOf = (key: string) => {
+    if (builtInNames[key]) return builtInNames[key];
+    const group = groups.find((g) => g.key === key);
+    return group ? channelTitle(specFor(group.provider), group.provider) : key;
+  };
+  // With `onMarkPress` a click opens the channel, so the filter hint would mislead.
+  const markHint = onMarkPress ? undefined : t`Click: show only this · ⌘/Ctrl-click: add or remove`;
 
   const seeAll = (
     <button
@@ -237,13 +279,16 @@ export function AttachedChannelsBar({
       {flagged.length > 0 && (
         <ChannelWarningsChip sources={flagged} specFor={specFor} onDelete={setDeleting} footer={seeAll} />
       )}
+      {leading}
       {owner.type !== Agent.type && (
         <BuiltInMark
           channel={FLOWPAD_CHANNEL}
           label={t`Flowpad — standard messages`}
           glyph={<img src={flowpadIcon} alt="" className="size-[17px] rounded-sm" />}
           pressed={lit(FLOWPAD_CHANNEL)}
-          onClick={() => pick(FLOWPAD_CHANNEL)}
+          selected={filtering && selected.has(FLOWPAD_CHANNEL)}
+          onClick={(e) => pick(FLOWPAD_CHANNEL, e)}
+          hint={markHint}
         />
       )}
       {groups.map((group) => (
@@ -251,9 +296,10 @@ export function AttachedChannelsBar({
           key={group.key}
           group={group}
           spec={specFor(group.provider)}
-          filtering={filtering}
           pressed={lit(group.key)}
-          onClick={() => pick(group.key)}
+          selected={filtering && selected.has(group.key)}
+          onClick={(e) => pick(group.key, e)}
+          hint={markHint}
           onDelete={setDeleting}
         />
       ))}
@@ -264,7 +310,9 @@ export function AttachedChannelsBar({
           label={t`Diagnosis — diagnoses and the help desk`}
           glyph={<DiagnosisGlyph />}
           pressed={lit(DIAGNOSIS_CHANNEL)}
-          onClick={() => pick(DIAGNOSIS_CHANNEL)}
+          selected={filtering && selected.has(DIAGNOSIS_CHANNEL)}
+          onClick={(e) => pick(DIAGNOSIS_CHANNEL, e)}
+          hint={markHint}
         />
       )}
       {owner.type !== Agent.type && (
@@ -273,7 +321,9 @@ export function AttachedChannelsBar({
           label={t`Automations — what your automations report`}
           glyph={<AutomationsGlyph />}
           pressed={lit(AUTOMATIONS_CHANNEL)}
-          onClick={() => pick(AUTOMATIONS_CHANNEL)}
+          selected={filtering && selected.has(AUTOMATIONS_CHANNEL)}
+          onClick={(e) => pick(AUTOMATIONS_CHANNEL, e)}
+          hint={markHint}
         />
       )}
       {offers.map((offer) => (
@@ -285,29 +335,37 @@ export function AttachedChannelsBar({
         />
       ))}
       <CallControls rows={rows} specFor={specFor} />
-      {filtering ? (
-        // Same size and place as the "+", so the line does not shift: only the glyph and its contrast change.
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(CONTROL, 'bg-foreground text-background hover:bg-foreground/85 hover:text-background')}
+      <Button
+        variant="ghost"
+        size="icon"
+        className={CONTROL}
+        onClick={() => setAdding({})}
+        aria-label={t`Add a source`}
+        data-testid="attached-channels-add"
+      >
+        <Plus />
+      </Button>
+      {filtering && (
+        // The whole chip clears the filter — one target, not a 20px × inside it.
+        <button
+          type="button"
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-border bg-muted pe-1 ps-2.5 text-xs text-foreground hover:bg-background"
           onClick={() => onSelectedChange?.(new Set())}
           aria-label={t`Show all channels`}
-          data-testid="attached-channels-clear"
+          title={t`Show all channels`}
+          data-testid="attached-channels-showing"
         >
-          <X />
-        </Button>
-      ) : (
-        <Button
-          variant="ghost"
-          size="icon"
-          className={CONTROL}
-          onClick={() => setAdding({})}
-          aria-label={t`Add a source`}
-          data-testid="attached-channels-add"
-        >
-          <Plus />
-        </Button>
+          {t`Showing: ${allKeys
+            .filter((k) => selected.has(k))
+            .map(nameOf)
+            .join(', ')}`}
+          <span
+            className="grid size-5 place-items-center rounded-full text-muted-foreground"
+            data-testid="attached-channels-clear"
+          >
+            <X className="size-3" />
+          </span>
+        </button>
       )}
       <Popover>
         <PopoverTrigger asChild>
@@ -325,22 +383,11 @@ export function AttachedChannelsBar({
               saves, focus falls to the body, and Radix would read that as
               "clicked elsewhere" and close the list mid-action. */}
         <PopoverContent align="end" className="w-72 p-0" onFocusOutside={(e) => e.preventDefault()}>
-          <ChannelList
-            title={t`Channels`}
-            sources={rows}
-            specFor={specFor}
-            onDelete={setDeleting}
-            footer={seeAll}
-          />
+          <ChannelList title={t`Channels`} sources={rows} specFor={specFor} onDelete={setDeleting} footer={seeAll} />
         </PopoverContent>
       </Popover>
       {adding && (
-        <AddChannelDialog
-          owner={owner}
-          initial={adding.initial}
-          attached={attachedProviders}
-          onClose={() => setAdding(null)}
-        />
+        <AddChannelDialog owner={owner} initial={adding.initial} added={addedTips} onClose={() => setAdding(null)} />
       )}
       <ConfirmDialog
         open={!!deleting}
@@ -358,6 +405,8 @@ const CONTROL = 'size-7 shrink-0 rounded-full text-muted-foreground';
 // first child — an svg, or the <img>/<span> a brand mark renders as.
 const MARK =
   'relative grid size-8 shrink-0 place-items-center rounded-full border-[1.5px] transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+// The channel a filter picked: a 2px primary ring with a soft halo, so it reads at a glance.
+const MARK_SELECTED = 'border-2 border-primary ring-[3px] ring-primary/25';
 const MARK_GREYED = '[&>:first-child]:opacity-45 [&>:first-child]:grayscale';
 const MARK_BADGE = 'absolute -bottom-0.5 -end-0.5 rounded-full border-2 border-background';
 const MARK_HOVER = { openDelay: 150, closeDelay: 120 };
@@ -382,13 +431,13 @@ function ChannelWarningsChip({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border-[1.5px] border-yellow-500/60 bg-background px-2.5 text-xs font-semibold tabular-nums text-yellow-600 transition-colors hover:border-yellow-500 dark:text-yellow-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative me-2 grid size-7 shrink-0 place-items-center rounded-full border-[1.5px] border-yellow-500/60 bg-background text-yellow-600 transition-colors hover:border-yellow-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-yellow-400"
           aria-label={t`${count} channels need attention`}
           title={t`${count} channels need attention`}
           data-testid="channel-warnings-chip"
         >
-          <TriangleAlert className="size-4" />
-          {count}
+          <TriangleAlert className="size-3.5" />
+          <NavBadge count={count} className="-end-1 -top-1 border-2 border-background bg-yellow-500 text-white" />
         </button>
       </PopoverTrigger>
       {/* `onFocusOutside` is refused for the same reason as the details popover below. */}
@@ -405,28 +454,47 @@ function ChannelWarningsChip({
   );
 }
 
-/** The add dialog as the channel line opens it: message drivers not already attached, on `initial` when a channel was picked. */
+/** Channels already added, by choice key (group, else driver name) → the tooltip their disabled tile shows. */
+export function addedChannels(
+  rows: DataSource[],
+  specFor: SpecFor,
+  tipFor: (sources: DataSource[]) => string,
+): Map<string, string> {
+  const byKey = new Map<string, DataSource[]>();
+  for (const s of rows) {
+    const spec = specFor(s.provider);
+    const key = spec ? choiceKey(spec) : s.provider;
+    byKey.set(key, [...(byKey.get(key) ?? []), s]);
+  }
+  return new Map([...byKey].map(([key, sources]) => [key, tipFor(sources)]));
+}
+
+/** The add dialog of a channel line and of the empty list — the same message channels (`messageChannelChoices`),
+ *  an added one drawn disabled with its reason. */
 function AddChannelDialog({
   owner,
   initial,
-  attached,
+  added,
   onClose,
 }: {
   owner: TypeId;
   initial?: DataDriver;
-  attached?: ReadonlySet<string>;
+  added?: ReadonlyMap<string, string>;
   onClose: () => void;
 }) {
-  const only = useCallback(
-    (spec: DataDriver) => isMessageDriverSpec(spec) && !(spec.name && attached?.has(spec.name)),
-    [attached],
+  const { specs } = useSourceSpecs();
+  const offered = useMemo(
+    () => new Set(messageChannelChoices(specs, owner.type === Agent.type).map((c) => c.key)),
+    [specs, owner],
   );
+  const only = useCallback((spec: DataDriver) => offered.has(choiceKey(spec)), [offered]);
   return (
     <DataSourceDialog
       open
       onOpenChange={(next) => !next && onClose()}
       owner={owner}
       only={only}
+      added={added}
       initial={initial}
       variant="channel"
     />
@@ -445,19 +513,23 @@ function AutomationsGlyph() {
 
 /** A mark for a channel no data source delivers (Flowpad, Diagnosis): no listening state — it only
  *  narrows the list to the conversations that carry that channel. */
-export function BuiltInMark({
+function BuiltInMark({
   channel,
   label,
   glyph,
   pressed,
+  selected,
   onClick,
+  hint,
   badge,
 }: {
   channel: string;
   label: string;
   glyph: ReactNode;
   pressed: boolean;
-  onClick: () => void;
+  selected?: boolean;
+  onClick: (e: MouseEvent) => void;
+  hint?: string;
   badge?: ReactNode;
 }) {
   return (
@@ -466,8 +538,9 @@ export function BuiltInMark({
       onClick={onClick}
       aria-pressed={pressed}
       aria-label={label}
-      title={label}
-      className={cn(MARK, 'border-border bg-background', !pressed && MARK_GREYED)}
+      aria-description={hint}
+      title={hint ? `${label}\n${hint}` : label}
+      className={cn(MARK, 'border-border bg-background', !pressed && MARK_GREYED, selected && MARK_SELECTED)}
       data-testid="attached-channel"
       data-provider={channel}
     >
@@ -477,6 +550,9 @@ export function BuiltInMark({
   );
 }
 
+/** A channel kind's name: its driver's title, else the provider. */
+const channelTitle = (spec: DataDriver | undefined, provider: string) => spec?.title || provider;
+
 /** One round mark per channel kind: the brand glyph, a status dot, a count when
  *  several sources share it, and — while filtering — a ring on the ones the
  *  list is narrowed to. Hovering lists just this kind's sources with their
@@ -484,16 +560,18 @@ export function BuiltInMark({
 function ChannelMark({
   group,
   spec,
-  filtering,
   pressed,
+  selected,
   onClick,
+  hint,
   onDelete,
 }: {
   group: ChannelGroup;
   spec: DataDriver | undefined;
-  filtering: boolean;
   pressed: boolean;
-  onClick: () => void;
+  selected?: boolean;
+  onClick: (e: MouseEvent) => void;
+  hint?: string;
   onDelete: (source: DataSource) => void;
 }) {
   const { t } = useLingui();
@@ -501,7 +579,7 @@ function ChannelMark({
   const { Base, Badge } = sourceGlyphs(spec, group.channel);
   const { state } = group;
   const count = group.sources.length;
-  const title = spec?.title || group.provider;
+  const title = channelTitle(spec, group.provider);
   // Inline, not a helper taking `t`: the lingui macro only compiles a `t` it can
   // see come from `useLingui()`.
   const stateLabel = state === 'on' ? t`listening` : t`paused`;
@@ -512,12 +590,14 @@ function ChannelMark({
           type="button"
           onClick={onClick}
           aria-pressed={pressed}
+          aria-description={hint}
           aria-label={`${count === 1 ? group.sources[0].name || title : `${title} × ${count}`} · ${stateLabel}`}
           className={cn(
             MARK,
             'bg-background',
             state === 'off' ? 'border-dashed border-border' : 'border-border',
             (!pressed || state === 'off') && MARK_GREYED,
+            selected && MARK_SELECTED,
           )}
           data-testid="attached-channel"
           data-provider={group.provider}
@@ -620,35 +700,67 @@ function ChannelOfferMark({
 
 /** The channels still to connect, as the empty list offers them: one button each, and the add
  *  dialog it opens. Draws nothing when there is none to offer. */
-export function ConnectChannelPrompt({ owner, offers }: { owner: TypeId; offers: ChannelOffer[] }) {
+export function ConnectChannelPrompt({
+  owner,
+  offers,
+  title,
+  added,
+}: {
+  owner: TypeId;
+  offers: ChannelOffer[];
+  title?: string;
+  /** Channels already added, by choice key → the tooltip their disabled button shows. */
+  added?: ReadonlyMap<string, string>;
+}) {
   const { t } = useLingui();
   const [initial, setInitial] = useState<DataDriver | null>(null);
   if (offers.length === 0) return null;
   return (
     <div className="flex flex-col items-center gap-2" data-testid="connect-channel-prompt">
-      <span className="text-sm text-foreground">{t`Get your messages here`}</span>
+      <span className="text-sm text-foreground">{title ?? t`Get your messages here`}</span>
       <div className="flex flex-wrap justify-center gap-2">
         {offers.map((offer) => {
           const Glyph = lucideByName(offer.iconName);
           const { label } = offer;
+          const addedTip = added?.get(offer.key);
           return (
-            <Button
-              key={offer.key}
-              variant="outline"
-              size="sm"
-              onClick={() => setInitial(offer.spec)}
-              data-testid="connect-channel"
-              data-channel={offer.key}
-            >
-              <Glyph className="me-1.5 size-3.5" />
-              {t`Connect ${label}`}
-            </Button>
+            // A disabled button gets no hover, so the reason sits on its wrapper.
+            <span key={offer.key} title={addedTip}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={addedTip !== undefined}
+                onClick={() => setInitial(offer.spec)}
+                data-testid="connect-channel"
+                data-channel={offer.key}
+              >
+                <Glyph className="me-1.5 size-3.5" />
+                {t`Connect ${label}`}
+              </Button>
+            </span>
           );
         })}
       </div>
-      {initial && <AddChannelDialog owner={owner} initial={initial} onClose={() => setInitial(null)} />}
+      {initial && <AddChannelDialog owner={owner} initial={initial} added={added} onClose={() => setInitial(null)} />}
     </div>
   );
+}
+
+/** Reports whether one source has any conversation; draws nothing. One per source, as a hook cannot loop. */
+export function ConversationProbe({
+  sourceId,
+  onResult,
+}: {
+  sourceId: string;
+  onResult: (sourceId: string, has: boolean) => void;
+}) {
+  const request = useMemo(() => sourceHasConversationRequest(sourceId), [sourceId]);
+  const { data = [], isSuccess } = useEntitiesQuery(request);
+  const has = data.length > 0;
+  useEffect(() => {
+    if (isSuccess) onResult(sourceId, has);
+  }, [isSuccess, has, sourceId, onResult]);
+  return null;
 }
 
 /** The one list every channel panel shows: a header, a `ChannelRow` per source, an
@@ -755,20 +867,33 @@ function ChannelRow({
         aria-label={t`Listen on ${source.name || source.provider}`}
         data-testid="attached-channel-switch"
       />
-      {/* Pull is offered only where it can work: a listening source past setup (as the sources menu gates it). */}
-      {state !== 'off' && !source.needsSetup && (
-        <button
-          type="button"
-          onClick={() => void pull()}
-          disabled={pulling}
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
-          aria-label={t`Pull changes now from ${source.name || source.provider}`}
-          title={t`Pull changes now`}
-          data-testid="attached-channel-pull"
-        >
-          <RefreshCw className={cn('size-3.5', pulling && 'animate-spin')} />
-        </button>
-      )}
+      {/* Refresh: a source past setup pulls now; one in setup re-checks its status (Verify), since nothing polls it. */}
+      {state !== 'off' &&
+        (source.needsSetup ? (
+          <button
+            type="button"
+            onClick={() => void verify()}
+            disabled={verifying}
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+            aria-label={t`Check ${source.name || source.provider} again`}
+            title={t`Check again`}
+            data-testid="attached-channel-recheck"
+          >
+            <RefreshCw className={cn('size-3.5', verifying && 'animate-spin')} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void pull()}
+            disabled={pulling}
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+            aria-label={t`Pull changes now from ${source.name || source.provider}`}
+            title={t`Pull changes now`}
+            data-testid="attached-channel-pull"
+          >
+            <RefreshCw className={cn('size-3.5', pulling && 'animate-spin')} />
+          </button>
+        ))}
       <button
         type="button"
         onClick={onDelete}

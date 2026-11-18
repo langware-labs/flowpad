@@ -2,6 +2,7 @@ import { PageId, TypeId, type ShowTarget } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { editorForType } from './asset-doc-types';
 import { DockPointer } from './DockPointer';
+import { folderDockPointer } from './folder-pointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { shellIdFromShowTarget } from './shell-show-target';
 import { ViewType } from '@src/types/ViewType';
@@ -87,5 +88,6 @@ export function dockForDisplayTarget(target: ShowTarget | null | undefined): Doc
     const options = target.line ? { initialLine: String(target.line) } : undefined;
     return AssetDocPointer.forTypeId(editor, new TypeId(target.typeid), options).toDockPointer();
   }
+  if (target.path && target.is_dir) return folderDockPointer(target.path);
   return target.path ? dockPointerForFile(target.path, { line: target.line, column: target.column }) : null;
 }

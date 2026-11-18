@@ -45,20 +45,15 @@ import { ChoiceField } from './ChoiceField';
 import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { groupMembers, offeredSpecs, sourceChoices, useSourceSpecs, isObjectDriverSpec } from './use-source-specs';
+import {
+  choiceKey,
+  groupMembers,
+  offeredSpecs,
+  sourceChoices,
+  useSourceSpecs,
+  isObjectDriverSpec,
+} from './use-source-specs';
 import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
-
-/**
- * The switch's boolean → a lifecycle status.
- *
- * Un-pausing does NOT mean "active": a Slack source that was paused mid-setup
- * must go back to needing its invite, not skip it. So it returns to `new` and
- * lets the backend re-resolve — the one place that knows which drivers verify.
- */
-function statusFor(enabled: boolean, current: SourceStatus): SourceStatus {
-  if (!enabled) return 'disabled';
-  return current === 'disabled' ? 'new' : current;
-}
 
 /** The one config-shaped field that is NOT stored in `config` — it is the
  *  entity's own `allowed_senders`. Named once here so the seed, the
@@ -81,8 +76,8 @@ function draftFrom(source: DataSource, spec?: DataDriver): SourceDraft {
     account_key: source.account_key,
     // The switch is "not paused", which is NOT "active": a source still in
     // `setup` is unpaused and deliberately not running. Mapping it back through
-    // a boolean is why the toggle cannot resolve the lifecycle itself — see
-    // `statusFor`.
+    // a boolean is why the toggle cannot resolve the lifecycle itself — the
+    // backend does (`setEnabled`).
     enabled: source.status !== 'disabled',
     open_to_all: source.open_to_all ?? false,
     poll_interval_seconds: source.poll_interval_seconds,
@@ -101,6 +96,7 @@ export function DataSourceDialog({
   editing,
   owner,
   only,
+  added,
   initial,
   variant = 'source',
 }: {
@@ -114,6 +110,8 @@ export function DataSourceDialog({
   /** Narrow the provider tiles — the channels line offers only specs that
    *  `sends`. An empty result renders as a sentence, not a blank picker. */
   only?: (spec: DataDriver) => boolean;
+  /** Tiles already added, by choice key (group, else driver name): drawn disabled, the value is the tooltip. */
+  added?: ReadonlyMap<string, string>;
   /** Open on this provider as if its tile had been pressed: a group's ways to connect, else its form. */
   initial?: DataDriver;
   /** Copy follows the resource being added, not whether providers are filtered. */
@@ -242,11 +240,13 @@ export function DataSourceDialog({
       const account = accountKeyFor(draft, spec);
       if (editing) {
         const nextName = draft.name.trim();
-        const nextStatus = statusFor(draft.enabled, editing.status);
+        // Pause / resume is its own verb (`setEnabled`), never a status this save carries: the backend
+        // decides where a resumed source lands.
+        const toggled = draft.enabled !== (editing.status !== 'disabled');
         const changed =
           (editing.open_to_all ?? false) !== draft.open_to_all ||
           editing.name !== nextName ||
-          editing.status !== nextStatus ||
+          toggled ||
           editing.account_key !== account ||
           JSON.stringify(editing.config ?? {}) !== JSON.stringify(config) ||
           editing.poll_interval_seconds !== draft.poll_interval_seconds ||
@@ -256,7 +256,6 @@ export function DataSourceDialog({
           (editing.gitignored ?? true) !== draft.gitignored ||
           JSON.stringify(editing.allowed_senders ?? []) !== JSON.stringify(allowedSenders);
         editing.name = nextName;
-        editing.status = nextStatus;
         editing.account_key = account;
         editing.config = config;
         editing.poll_interval_seconds = draft.poll_interval_seconds;
@@ -267,6 +266,7 @@ export function DataSourceDialog({
         editing.allowed_senders = allowedSenders;
         editing.open_to_all = draft.open_to_all;
         await editing.save();
+        if (toggled) await editing.setEnabled(draft.enabled);
         if (changed) editing.markEdit();
         notify.success({ title: t`Updated ${editing.name}` });
       } else {
@@ -498,6 +498,19 @@ export function DataSourceDialog({
               // A group's tile is the choice ("WhatsApp"), so it shows the group's own glyph, not its first member's.
               const Glyph = lucideByName(iconName);
               const chosen = p.group ? group === p.group : draft.provider === p.name;
+              const addedTip = added?.get(choiceKey(p));
+              if (addedTip)
+                return (
+                  <Tooltip key={p.name} delayDuration={TILE_TIP_DELAY}>
+                    {/* A disabled button gets no hover: the wrapper carries the tip. */}
+                    <TooltipTrigger asChild>
+                      <span data-testid={`provider-added-${choiceKey(p)}`}>
+                        <DesktopTile Icon={Glyph} label={label} disabled />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{addedTip}</TooltipContent>
+                  </Tooltip>
+                );
               return (
                 <Tooltip key={p.name} delayDuration={TILE_TIP_DELAY}>
                   <TooltipTrigger asChild>

@@ -146,3 +146,27 @@ def test_connections_connect_maps_ctrl_c(monkeypatch):
     result = CliRunner().invoke(app, ["connections", "connect", "slack"])
 
     assert result.exit_code == connections_cmd.EXIT_INTERRUPTED
+
+
+def test_connections_test_checks_scopes_against_what_the_provider_granted(monkeypatch):
+    """A grant that added an optional scope (full Drive on top of drive.readonly) covers it:
+    the check reads what Google granted, not only what the connection asks for by default."""
+    from flow_sdk.core import connections as core
+
+    readonly, full = "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive"
+    row = _spec("google", True).model_copy(update={"scopes": (readonly,), "granted_scopes": (readonly, full)})
+
+    async def rows(project_id: str = ""):
+        return [row]
+
+    async def passes(provider):
+        return ConnectionTestResult(ok=True, identity="me@example.com")
+
+    monkeypatch.setattr(connections_cmd, "list_connections", rows)
+    monkeypatch.setattr(core, "test", passes)
+    granted = CliRunner().invoke(app, ["connections", "test", "google", "--json", "--scope", full])
+    assert json.loads(granted.stdout)["missing_scopes"] == [] and granted.exit_code == 0
+
+    row = row.model_copy(update={"granted_scopes": (readonly,)})
+    missing = CliRunner().invoke(app, ["connections", "test", "google", "--json", "--scope", full])
+    assert json.loads(missing.stdout)["missing_scopes"] == [full]

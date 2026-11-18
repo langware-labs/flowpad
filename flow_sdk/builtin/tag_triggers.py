@@ -76,6 +76,10 @@ def register_tag_trigger(trigger: "Trigger") -> None:
     from flow_sdk.tags import event_bus
 
     unregister_tag_trigger(trigger.id)
+    if trigger.message_tags or trigger.is_message_classifier:
+        # Message tag admission is durable and message-ordered, not bus fan-out. The classifier is
+        # the first entry of that same queue.
+        return
     if not trigger.enabled or not trigger_runs_here(trigger):
         return
     problem = validate_tag_trigger(trigger.tag_pattern)
@@ -244,6 +248,17 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     # recorded rather than silently dropped: "the rule is armed, the event
     # matched, and nothing happened" is the single most confusing non-fire in
     # the design, which is exactly what Automations › Runs exists to explain.
+    from flow_sdk.automations.lifecycle import may_run  # noqa: PLC0415
+
+    if not await may_run(trigger):
+        return  # ended (or just ended): its life is over, not a declined fire
+    if trigger.awaits_reply:
+        # A session waiting for a reply: every other message in the conversation passes silently.
+        from flow_sdk.builtin import reply_callbacks  # noqa: PLC0415
+
+        if not await reply_callbacks.is_reply(trigger, reply_callbacks.reply_of(event)):
+            return
+
     if trigger.fire_once and trigger.counter >= 1:
         _suppressed(trigger, "already_fired",
                     f"rule is fire-once and already fired at {trigger.last_run}", event)
@@ -362,9 +377,14 @@ def record_tag_start(trigger: "Trigger", event: "FlowEvent", prepared, *, is_tes
     if prepared.state is not None:
         subject = for_target(prepared.subject_target)
         gate = GateOutcome(prepared.verdict, prepared.state, subject)
+    from flow_sdk.stream_inbox.message_tags import automation_assignment
+
+    claim = automation_assignment.get()  # set while a message's queue runs this rule: what tag queued it
+    message_tag = claim[3] if claim else ""
     _append_log(trigger.name or trigger.id or "", {
         "id": prepared.run_id, "hook_event": "tag_fire", "trigger": True,
-        "reason": f"Tag {event.tag} on {event.target}",
+        "reason": f"Message tagged {message_tag}" if message_tag else f"Tag {event.tag} on {event.target}",
+        "message_tag": message_tag or None,
         "cause_data": cap_cause_data(event.data or None),
         "actions": [{"action_type": "then"}] if getattr(trigger, "then", None)
         else [{"action_type": str(a.action_type)} for a in trigger.actions],
@@ -423,7 +443,8 @@ async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Option
             **_cause_keys(event), **(gate.row() if gate else {}),
         })
     return {"event_id": execution.event_id, "agentic_process_id": execution.process_id,
-            "error": error, "duration_ms": execution.duration_ms}
+            "error": error, "duration_ms": execution.duration_ms,
+            "accepted": execution.accepted, "reason_code": reason_code}
 
 
 async def run_tag_test(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str], *,

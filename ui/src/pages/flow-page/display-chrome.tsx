@@ -5,6 +5,7 @@ import { AgenticProcess } from '@sdk';
 import { DisplayToolbar } from '@src/components/display-toolbar';
 import { notify } from '@src/notifications/notify';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewType } from '@src/types/ViewType';
 import { DisplayHistoryButton } from './display-history-button';
 import { displayHistory, historyEntryDock, projectIdFromDock } from './display-stack';
 import {displayAnnotationContextForDock} from './display-annotation';
@@ -84,6 +85,8 @@ export function DisplayChrome({ process, latestShown, active = true, children }:
       // One switch: a hidden strip is neither clickable nor focusable, so the
       // slots below do not need a second `active` gate of their own.
       hideStrip={!active}
+      // A web page and an app draw their own address bar; the actions join it.
+      viewerOwnsBar={currentDock?.viewType === ViewType.WEB_APP || currentDock?.viewType === ViewType.APP}
       onAnnotate={(target) => void annotate(target)}
       historySlot={historySlot}
     >

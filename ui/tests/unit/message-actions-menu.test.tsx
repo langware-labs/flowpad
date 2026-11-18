@@ -56,7 +56,9 @@ describe('message header row', () => {
       </MemoryRouter>,
     );
     const row = screen.getByText('Ron Vardinon').parentElement!;
-    expect(within(row).getAllByRole('button').map((b) => b.getAttribute('data-testid'))).toEqual(['message-reply', 'message-forward', 'message-actions-menu']);
+    expect(within(row).getAllByRole('button').map((b) => b.getAttribute('data-testid'))).toEqual(['message-actions-menu']);
+    const below = screen.getByTestId('message-reply-forward');
+    expect(within(below).getAllByRole('button').map((b) => b.textContent)).toEqual(['Reply', 'Forward']);
     for (const id of ['message-react', 'message-task-it', 'message-download']) {
       expect(screen.queryByTestId(id)).toBeNull();
     }

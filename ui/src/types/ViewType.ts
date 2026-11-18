@@ -56,12 +56,15 @@ export interface ViewerMeta {
    * resolves these against exactly this namespace, so this is the real
    * constraint, it still catches a typo, and it cannot go stale.
    *
+   * A glyph of our own pack is named by its tag (`flowpad.context`), which the
+   * same resolver draws.
+   *
    * The NAMESPACE, not lucide's `icons` map: the map has dropped the
    * deprecated aliases (`Home`, `FileQuestion`, `CheckSquare`, `SearchIcon`),
    * which the namespace still exports and `lucideByName` still resolves. The
    * map would have flagged four working icons as typos.
    */
-  iconName: LucideExportName;
+  iconName: LucideExportName | `flowpad.${string}`;
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -78,6 +81,12 @@ export interface ViewerMeta {
    * view and nothing else; `'browser'` keeps the top nav bar and the footer.
    */
   focusChrome?: 'bare' | 'browser';
+  /**
+   * Who draws the phone header (below `md`): `'shell'` (default) is the shell's
+   * `PhoneTopBar` — back · title · menu; `'own'` is the view itself, which then
+   * carries a `PhoneMenuButton` in its own header.
+   */
+  phoneHeader?: 'shell' | 'own';
   /**
    * When true, every sub-pointer of this viewType folds into ONE tab — the
    * pointer is dropped from tab identity (`DockPointer.tabHash`/`toJSON`). Use for
@@ -297,7 +306,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   [ViewType.TAG]: {
     title: msg`Tag Graph`,
-    iconName: 'Hash',
+    iconName: 'Tag',
     tabLocation: 'dedicated',
     canAddAsTab: false,
     // <tag> in the pointer is in-view focus navigation — every focused
@@ -332,11 +341,21 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: false,
     foldsPointer: true,
   },
+  // Email notification rules (page=hub; the desktop serves the hub page too, so one view).
+  // Pointer = a rule key (`notification.email.issue.budget_exhausted[.<type>.id.<uuid>]`):
+  // an in-view selection, so it folds into one chip (TOKEN_PLAN precedent).
+  [ViewType.NOTIFICATIONS]: {
+    title: msg`Notifications`,
+    iconName: 'BellOff',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
   // What funds this machine's harnesses (page=desk, NOT hub: a device token, a stored key
   // and the endpoint binding are all box facts, and the producing box action 404s on the
   // hub). Pointer = `<section>[/<key>]`, an in-view selection, so it folds into one chip.
   [ViewType.LLM_SOURCES]: {
-    title: msg`LLM sources`,
+    title: msg`Token sources`,
     // An LLM is not a key — a source may be a device login or a hub endpoint. Sparkles is
     // the LLM glyph (LLM_SETUP wears it too).
     iconName: 'Sparkles',
@@ -438,6 +457,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Activity',
     tabLocation: 'dedicated',
     canAddAsTab: false,
+  },
+  [ViewType.SUPPORT_DESK]: {
+    title: msg`Help desk`,
+    iconName: 'LifeBuoy',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
   },
   [ViewType.HELPDESK]: {
     title: msg`Help desk`,
@@ -556,6 +581,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     // selected bubble inside the conversation, the same kind of sub-state
     // `thread`/`agentId` already ride as options.
     foldsSubPointer: true,
+    phoneHeader: 'own',
   },
   [ViewType.SPEC]: {
     title: msg`Spec`,
@@ -565,7 +591,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   [ViewType.GRAPH_CONTEXT]: {
     title: msg`Context`,
-    iconName: 'BrainCircuit',
+    iconName: 'flowpad.context',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },

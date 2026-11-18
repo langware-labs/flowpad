@@ -720,6 +720,8 @@ async def _place_message(
         "mark": m.model_dump(mode="json") if (m := _mark_of(item, source)) else None,
         "attachment": [a.model_dump(mode="json") for a in _message_files(item, fm_id)],
         "reactions": [r.model_dump(mode="json") for r in (getattr(item, "reactions", None) or [])],
+        # Born as the provider has it (``stream_inbox.reads``); an existing message keeps its own.
+        "is_read": bool(getattr(item, "read", False)),
     }
     if refs := _refs_of(item, source):
         payload["shared_context_entities"] = [str(r) for r in refs]
@@ -745,6 +747,7 @@ async def _place_message(
         someone_typeid=None,
         bundle_ts=(item.occurred_at or None),
         notify=notify,
+        classify_message=announce and first_placement,
     )
     if notify and not first_placement and (dirty or item_changed):
         # `materialize_flow_message` leaves an existing local row untouched and

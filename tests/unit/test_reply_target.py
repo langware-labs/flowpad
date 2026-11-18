@@ -75,7 +75,7 @@ def wire(monkeypatch):
     # developer's own hub login never leaks in. A test sets `state["cloud"]`.
     state["cloud"] = None
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.is_logged_in", lambda: state["cloud"] is not None)
-    monkeypatch.setattr("flow_sdk.cli.app_config.get_user", lambda: {"id": state["cloud"]})
+    monkeypatch.setattr("flow_sdk.cli.app_config.get_principal", lambda: {"id": state["cloud"]})
     state["address"] = []
 
     async def _conversation_one(_q):

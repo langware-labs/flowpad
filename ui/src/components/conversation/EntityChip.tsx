@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { FileText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -34,6 +34,7 @@ export interface EntityChipEntity {
 }
 
 interface EntityChipProps {
+  style?: CSSProperties;
   /** The entity to render (the "A" in /dock/A/<id>/B/<id>). */
   entity: EntityChipEntity;
   /**
@@ -171,6 +172,7 @@ export function EntityChip({
   staged = false,
   row,
   collapsed = false,
+  style,
 }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
@@ -217,6 +219,7 @@ export function EntityChip({
   return (
     <button
       type="button"
+      style={style}
       onClick={handleClick}
       title={tooltip}
       disabled={muted}

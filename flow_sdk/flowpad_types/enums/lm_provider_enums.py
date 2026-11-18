@@ -21,6 +21,7 @@ class LMApiProvider(StrEnum):
     OPENROUTER = "openrouter"
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+    VERTEX = "vertex"
     # The FlowPad hub's ``LLMEndpoint``: the box calls the hub with the login key
     # it already holds and the hub swaps in the provider's key. There is no
     # ``lm_api.flowpad`` secret -- the "key" IS the hub login (see

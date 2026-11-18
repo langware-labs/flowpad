@@ -79,7 +79,7 @@ def _catalogue(monkeypatch, *, connected: bool, scopes: tuple[str, ...]) -> list
     rows = {"google": ConnectionSpec(provider="google", display_name="Google", connected=connected, scopes=scopes)}
     reauthorized: list[bool] = []
 
-    async def connect(provider, presenter, *, reauthorize=False):
+    async def connect(provider, presenter, *, reauthorize=False, scopes=()):
         reauthorized.append(reauthorize)
         rows[provider] = ConnectionSpec(provider=provider, display_name="Google", connected=True, scopes=(DRIVE_SCOPE,))
         return ConnectionResult(spec=rows[provider], test=ConnectionTestResult(ok=True, identity="me@example.com"))

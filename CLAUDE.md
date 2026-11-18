@@ -50,6 +50,8 @@ The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `htt
 
 > **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is a separate service — run it from your hub checkout (it serves** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
 
+> **Smart navigation on a local hub needs `JEV_API_KEY` in the hub's env.** A local hub keys its built-in decision endpoint from it at startup; without it the hub logs a warning and every request goes to the assistant, even "open preferences".
+
 ### Validating the HUB UI (non-negotiable)
 
 **"Open the hub UI" means a frontend configured against the HUB server — never the local backend.** The hub page rendered against `localhost:$LOCAL_SERVER_PORT` is a *different runtime*: the local server declares `supported_pages: ["desk","hub"]`, so `isHubOnly()` is false, the full desktop API is present, and the type registry is populated. Every hub-only behavior — the API subset, `isHubOnly()` gates, missing `types` — is invisible there. Validating a hub change against the local backend proves nothing about the hub.
@@ -234,6 +236,15 @@ Why the exception and nothing else: a read-only asset has no row of its own to l
 
 If a backend route can't be called through `apiClient` because it doesn't return the standard `ApiResponse` envelope, fix the route to return the envelope — don't fall back to `fetch`. Workers/skills resolve their own backend via the pinned `FLOW_INSTANCE` (`~/.flow/instances/<name>/server.json`), never via a URL baked into a prompt or file.
 
+## One view on the hub and the desktop (non-negotiable)
+
+**Every view is shared between the hub and the desktop unless the user approved otherwise for that view.**
+A view (a help desk, an agent, a project page) is one component that both runtimes render; a feature that
+needs a page gets it once, not a hub page and a desktop page. What differs between the two is gated inside
+the shared view (`isHubOnly()`, the API subset), never forked into a second view. A view that exists on one
+side only is a gap to fill, not a design. An approved exception is noted in the view's own source with its
+date and reason.
+
 ## Type icons (non-negotiable)
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
@@ -330,3 +341,8 @@ not a conversation result: there is no conversation to put it in, and the update
 It is raised only by `electron/main.js` when a downloaded or prepared update is ready (and on its 90-minute
 reminder), with id `update-ready` (one at a time), Restart / Later actions, and a top-bar indicator that keeps
 the update reachable after the toast closes. Don't use it as a precedent for other custom notifications.
+
+**Email rules are the hub's, never per-machine preferences.** Every system email has a kind (a dot path, hub
+`app/services/email_kinds.py`); muting is the hub `notification_rule` entity `{rule_key, muted}`, shown by ONE view,
+`NotificationsView` at `/dock/hub/notifications[/<rule key>]` (the mute link's target, on the hub and the
+desktop alike). Don't store email choices in `preferences.json`, and don't add a desk-only copy of the view.

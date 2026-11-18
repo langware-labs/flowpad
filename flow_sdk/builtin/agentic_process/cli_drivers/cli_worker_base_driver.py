@@ -663,6 +663,14 @@ async def credentials_prompt_block(process: "AgenticProcess") -> str | None:
     return prompt_block(listing(status.model_dump(mode="json"), scope="project"))
 
 
+def shell_secret_env(command_env: dict[str, str], resolved_env: dict[str, str]) -> dict[str, str]:
+    """Keep final auth overrides in the transient shell, not in its later command exports."""
+    injected = {key: value for key, value in resolved_env.items() if command_env.get(key) != value}
+    for key in injected:
+        command_env.pop(key, None)
+    return injected
+
+
 async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
     """Resolve declared credentials (user scope + the process's project) into
     this transient worker env.
@@ -672,6 +680,9 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     """
     from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
 
+    process.__dict__["_spawn_api_auth"] = None  # Failed/not-yet-bound, never reuse an older launch.
+    process.resolved_llm_endpoint_typeid = None
+    process.resolved_model_slug = None
     project = await _process_project(process)
 
     # Node attachment gates the worker too, not only the connector's commands.
@@ -686,15 +697,27 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     # Lazy import avoids a cycle with the driver registry. This wins over device
     # creds by design; the key lands only in this transient spawn env.
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.credential_artifacts import materialize
 
-    api_auth = await resolve_worker_api_auth(process)
+    try:
+        if "_prepared_api_auth" in process.__dict__:
+            api_auth = process.__dict__.pop("_prepared_api_auth")
+        else:
+            api_auth = await resolve_worker_api_auth(process, include_device=True)
+    except WorkerSpawnError:
+        await process.save()
+        raise
     if api_auth is not None:
+        process.__dict__["_spawn_api_auth"] = api_auth
         for key, value in api_auth.env.items():
             env[key] = value
+        if api_auth.credential_artifact is not None:
+            env.update(materialize(process, api_auth.credential_artifact))
         # Stamp what actually resolved — the tier ('sm'/'md'/'lg') or a models_allow fallback
         # both collapse into one concrete slug here, and this is the one place that slug is
         # known. Skipped when unchanged so a restart on an unmodified spawn writes nothing.
-        if api_auth.model_slug and getattr(process, "resolved_model_slug", None) != api_auth.model_slug:
+        if api_auth.endpoint_typeid:
+            process.resolved_llm_endpoint_typeid = api_auth.endpoint_typeid
             process.resolved_model_slug = api_auth.model_slug
             try:
                 await process.save()
@@ -763,6 +786,9 @@ class ProcessMcpRuntime(BaseModel):
     config_overrides: tuple[tuple[str, Any], ...] = ()
     #: opencode's ``mcp`` config key.
     config_fragment: dict[str, Any] = Field(default_factory=dict)
+    #: claude ``--strict-mcp-config``. Off only when Flowpad's own ``browser`` server is
+    #: the whole set: the session adds it to the user's servers rather than replacing them.
+    strict: bool = True
 
 
 class AgenticContext(BaseModel):
@@ -782,8 +808,13 @@ class AgenticContext(BaseModel):
     env_vars: dict[str, str] = Field(default_factory=dict)
 
     model: str | None = None
+    #: Concrete model selected by the token-source binding, not an unbound CLI preference.
+    bound_model: str | None = None
     max_thinking_tokens: int = 1024
     permission_mode: str = "bypassPermissions"
+    #: The agent's ``disallowed_tools`` (Claude-shaped: ``Write``, ``Bash(rm -rf:*)``), for a harness that
+    #: enforces them itself rather than through a CLI flag built elsewhere.
+    disallowed_tools: list[str] = Field(default_factory=list)
     #: ``opencode.json`` ``provider`` fragment for a turn spending a hub LLMEndpoint. It rides the
     #: CONTEXT because opencode is configured by file and two different prompt paths generate that
     #: file; putting it anywhere else lets them disagree about what is in it.
@@ -833,6 +864,10 @@ class AgenticContext(BaseModel):
     # spawn, so — like plugin_dirs — never persisted or hashed.
     mcp_config_json: str = ""
     mcp_config_fragment: dict[str, Any] = Field(default_factory=dict)
+    # ``--strict-mcp-config`` and ``--chrome`` for this launch — the session's browser
+    # (``browser_choice``). Re-derived every spawn, never persisted.
+    mcp_strict: bool = True
+    browser_extension: bool = False
     # One-launch acknowledgement for CLIs that gate dynamically supplied hooks
     # behind an explicit trust flag (currently Codex). Never persisted.
     bypass_hook_trust: bool = False
@@ -855,9 +890,12 @@ class AgenticContext(BaseModel):
                 "bypass_hook_trust",
                 "mcp_config_json",
                 "mcp_config_fragment",
+                "mcp_strict",
+                "browser_extension",
                 # Resolved per turn from the process's endpoint; persisting it would let a
                 # stale baseURL outlive the binding it came from.
                 "provider_options",
+                "bound_model",
             }
         )
         if self.compute_node is not None:
@@ -964,6 +1002,24 @@ class AgentOptions:
     # projected by ``prepare_instruction_assets``), or None when it reaches the
     # text another way (developer_instructions / custom dirs / generated config).
     SYSTEM_PROMPT_FILE_FLAG: str | None = None
+    # How this worker renders the session's browser (``browser_choice``) — CLI switches only,
+    # declared per worker. None: the worker has no such switch (the browser falls back to the
+    # agent browser; the MCP set is additive).
+    EXTENSION_FLAG: str | None = None
+    #: The browser extension's store id — to find the browser profiles it is installed in.
+    EXTENSION_ID: str | None = None
+    STRICT_MCP_FLAG: str | None = None
+    # Stamped per launch: drive the user's browser through the extension; keep the MCP set strict.
+    browser_extension: bool = False
+    mcp_strict: bool = True
+
+    def extension_flags(self, extension: bool = False) -> list[str]:
+        """The extension switch, when this worker declares one and the launch wants it."""
+        return [self.EXTENSION_FLAG] if (self.browser_extension or extension) and self.EXTENSION_FLAG else []
+
+    def strict_mcp_flags(self) -> list[str]:
+        """The strict-MCP switch, when this worker declares one and the launch's set is strict."""
+        return [self.STRICT_MCP_FLAG] if self.mcp_config_json and self.mcp_strict and self.STRICT_MCP_FLAG else []
 
     def __init__(
         self,
@@ -1006,7 +1062,7 @@ class AgentOptions:
     def add_env(self, key: str, value: str) -> None:
         self.env_vars[key] = value
 
-    def prepare_launch(self, workdir: "str | None") -> None:
+    def prepare_launch(self, workdir: "str | None", dependency_dirs: "Sequence[str]" = ()) -> None:
         """Adjust this argv for a real launch in ``workdir`` (a check the pure argv must not make). No-op here."""
 
     def apply_instruction_assets(self, assets: "Any") -> None:
@@ -1044,6 +1100,7 @@ class AgentOptions:
         overrides it because its channel is a generated file, not argv.
         """
         self.mcp_config_json = runtime.mcp_config_json
+        self.mcp_strict = runtime.strict
         self.mcp_config_fragment = dict(runtime.config_fragment)
         if runtime.config_overrides:
             self.extra_config_overrides = [

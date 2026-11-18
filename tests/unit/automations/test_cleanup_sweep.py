@@ -44,12 +44,24 @@ def test_missing_parent_outside_an_install_is_kept(tmp_path):
 def test_present_asset_is_kept(tmp_path):
     folder = tmp_path / "here"
     folder.mkdir()
+    (folder / "trigger.json").write_text("{}")
     assert stale_trigger_reason(rule(TriggerType.TAG, asset_ref=str(folder))) is None
+
+
+def test_folder_left_without_its_trigger_json_is_stale(tmp_path):
+    # A git pull removes trigger.json and the script but leaves the app's own
+    # untracked .flow/ files, so the folder outlives the automation.
+    folder = tmp_path / "crm-sync"
+    (folder / ".flow" / "capsules").mkdir(parents=True)
+    (folder / ".flow" / "capsules" / "identity.json").write_text("{}")
+    row = rule(TriggerType.SCHEDULE, asset_ref=str(folder))
+    assert stale_trigger_reason(row) == "definition file deleted"
 
 
 def test_foreign_copy_still_on_disk_is_kept(tmp_path):
     folder = _foreign(tmp_path)
     folder.mkdir(parents=True)
+    (folder / "trigger.json").write_text("{}")
     assert stale_trigger_reason(rule(TriggerType.TAG, asset_ref=str(folder))) is None
 
 
@@ -73,14 +85,21 @@ async def test_sweep_deletes_only_stale_rows_and_no_files(tmp_path):
     stale = rule(TriggerType.TAG, asset_ref=str(parent / "gone"))
     foreign = rule(TriggerType.TAG, asset_ref=str(_foreign(tmp_path)))
     kept = rule(TriggerType.TAG, asset_ref=str(kept_folder))
-    for row in (stale, foreign, kept):
+    # trigger.json pulled away; only the app's .flow/ leftovers keep the folder.
+    leftover = rule(TriggerType.SCHEDULE, asset_ref=str(parent / "pulled"))
+    for row in (stale, foreign, kept, leftover):
         await row.save()
     # Saving writes each rule's folder; remove the two the way a deleted asset
     # and an uninstalled tool env would leave them.
     shutil.rmtree(parent / "gone")
     shutil.rmtree(tmp_path / "gone-env")
+    (kept_folder / "trigger.json").write_text("{}")
+    (parent / "pulled" / "trigger.json").unlink(missing_ok=True)
+    (parent / "pulled" / ".flow").mkdir(parents=True, exist_ok=True)
 
-    assert await reap_stale_trigger_rows() >= 2
+    assert await reap_stale_trigger_rows() >= 3
+    assert await Trigger.get_by_id(leftover.id) is None
+    assert (parent / "pulled" / ".flow").is_dir()  # rows only; never files
     assert await Trigger.get_by_id(stale.id) is None
     assert await Trigger.get_by_id(foreign.id) is None
     assert await Trigger.get_by_id(kept.id) is not None

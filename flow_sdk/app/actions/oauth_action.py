@@ -30,7 +30,7 @@ from flow_sdk.core.oauth.hub_oauth import (
     hub_start_auth,
     redirect_unreachable_reason,
 )
-from flow_sdk.core.oauth.provider_registry import OAuthFlowKind, get_local_provider, prefers_hub_flow
+from flow_sdk.core.oauth.provider_registry import OAuthFlowKind, get_local_provider, group_credentials, prefers_hub_flow
 from flow_sdk.core.project_status import changes_status
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -202,7 +202,8 @@ async def oauth_main() -> ApiResponse:
 
         # Test — prove the stored token still works, by calling the provider.
         if oauth_action_str == OAuthAction.Test:
-            return await _handle_test(provider)
+            group = str((request_info.request_parameters or {}).get("group") or "")
+            return await _handle_test(provider, group)
 
         # Cancel — explicit teardown for device-flow sessions (used by UI Cancel button).
         if oauth_action_str == OAuthAction.Cancel:
@@ -683,7 +684,7 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str, g
             logger.info("OAuth: no %s bot token on the hub (app tokens are optional)", provider)
 
 
-async def _handle_test(provider: str) -> ApiResponse:
+async def _handle_test(provider: str, group: str = "") -> ApiResponse:
     """Call the provider with the stored token and report what came back.
 
     Answers the question the Connected badge cannot: the row says a token exists
@@ -708,6 +709,8 @@ async def _handle_test(provider: str) -> ApiResponse:
     cred_name = await resolve_user_credentials_name(provider)
     if not cred_name:
         return ApiFailResponse(message=unresolved_provider_reason(provider))
+    # A scope group's grant (Gmail beside Drive) is its own token.
+    cred_name = await group_credentials(provider, group) or cred_name
 
     user = await get_current_request_user_fresh()
     if user is None:

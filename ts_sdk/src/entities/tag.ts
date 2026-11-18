@@ -1,5 +1,7 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models/ActionInfo';
 import { IEntity, EntityMerge } from '../IEntity';
+import apiClient from '../client';
 
 /**
  * System-owned first segments — keep in lockstep with
@@ -15,6 +17,7 @@ export const RESERVED_TAG_ROOTS: ReadonlySet<string> = new Set([
   'graph_workflow',
   'app',
   'ingest',
+  'message',
   'application',
   'workload',
   'resource',
@@ -24,6 +27,8 @@ export const RESERVED_TAG_ROOTS: ReadonlySet<string> = new Set([
 ]);
 
 export interface ITag extends IEntity {
+  color?: string | null;
+  stream_inbox?: boolean;
   /** Canonical dot-separated tag name (the natural key — id is uuid5 of it). */
   name?: string | null;
   /** UX display label. */
@@ -55,6 +60,8 @@ export interface Tag extends EntityMerge<ITag> {}
  */
 @registerEntity
 export class Tag extends APIEntity<Tag> implements ITag {
+  color: string | null = null;
+  stream_inbox = false;
   title: string | null = null;
   description: string | null = null;
   alias_of: string | null = null;
@@ -62,8 +69,29 @@ export class Tag extends APIEntity<Tag> implements ITag {
   system: boolean = false;
   static type: string = 'tag';
 
+  /** Include shipped vocabulary when rendering the optional Flowpad message tags. */
+  static async definitions(): Promise<ITag[]> {
+    return (await apiClient.get<ITag[]>('/graph/tag', { params: { include_system: true } })) ?? [];
+  }
+
+  async renameMessageTag(fields: { name: string; title?: string; description?: string; color?: string }): Promise<void> {
+    const action = new ActionInfo('rename-message-tag', Tag.type, this.id, 'POST');
+    action.bodyParameters = fields;
+    await dataManager.callAction(action);
+  }
+
+  async deleteMessageTag(): Promise<void> {
+    await dataManager.callAction(new ActionInfo('delete-message-tag', Tag.type, this.id, 'POST'));
+  }
+
+  async messageTagImpact(): Promise<{ messages: number; automations: number }> {
+    return (await dataManager.callAction<unknown, { messages: number; automations: number }>(new ActionInfo('message-tag-impact', Tag.type, this.id, 'GET')))!;
+  }
+
   constructor(entity: Partial<ITag> = {}) {
     super(entity);
+    this.color = entity.color ?? null;
+    this.stream_inbox = entity.stream_inbox ?? false;
     this.title = entity.title ?? null;
     this.description = entity.description ?? null;
     this.alias_of = entity.alias_of ?? null;

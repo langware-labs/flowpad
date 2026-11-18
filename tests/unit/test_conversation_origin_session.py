@@ -47,7 +47,7 @@ async def test_links_the_session_both_ways_and_marks_it(rows):
     assert TypeId(type="flow_message", id=MSG_ID) in proc.shared_context_entities
     tid = TypeId(type="agentic_process", id=PROC_ID)
     assert tid in conv.shared_context_entities
-    assert conv.shared_context_entity_data[str(tid)] == na.SESSION_ROLE
+    assert conv.shared_context_entity_data[str(tid)] == {**na.SESSION_ROLE, "context_via": "dynamic"}
 
 
 async def test_a_channel_reply_links_only_the_conversation(rows):

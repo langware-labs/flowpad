@@ -1,0 +1,12 @@
+{
+  "name": "flowmap-viewer",
+  "title": "Flowmap viewer",
+  "description": "Shows a skill's flowmap: how you start it, its blocks (instructions, code, screen) and where they lead, with a block's properties on the right. A run of the skill is drawn on the same map as a traveled path, with a counter on every edge, the time and cost of every block, and a timeline that replays it.",
+  "kind": "application.web.viewer",
+  "build": ".",
+  "views": [
+    {"kind": "flowmap.map", "shows": ["single"]},
+    {"kind": "flowmap.run", "shows": ["single"]}
+  ],
+  "module": "viewer.js"
+}

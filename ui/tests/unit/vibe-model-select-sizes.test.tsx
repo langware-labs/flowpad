@@ -32,6 +32,17 @@ describe('VibeModelSelect sizes', () => {
     expect((await screen.findByTestId('vibe-model-option-lg')).getAttribute('aria-disabled')).not.toBe('true');
   });
 
+  it("offers the funding endpoint's custom named models after the sizes", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    render(<VibeModelSelect value={WorkerModelTier.MD} onChange={onChange} customNames={['coding']} />);
+    await user.click(screen.getByTestId('vibe-model-select'));
+    await user.click(await screen.findByText('coding'));
+
+    expect(onChange).toHaveBeenCalledWith('coding');
+  });
+
   it('shows the size an agent requires and does not let the person leave it', () => {
     render(<VibeModelSelect value={WorkerModelTier.SM} onChange={vi.fn()} pinnedSize={WorkerModelTier.LG} />);
 
