@@ -181,8 +181,25 @@ export interface BootstrapInfo {
    *  `instance_settings/privacy_mode.py`. Seeds `privacyManager`; live changes
    *  arrive afterwards on `privacy_mode_msg`. */
   privacy_mode?: 'local' | 'connected';
+  /** Browser error reporting (`flow_sdk/schema/data_spec/sentry_info_spec.py`): the hub's own value
+   *  on the hub, the hub-pushed value on a sandbox, `null` on a desktop. Live changes arrive on
+   *  `sentry_info.changed`. Absent on an older backend, which means off. */
+  sentry_info?: SentryInfo | null;
   /** One-time startup notice (e.g. secrets were reset). Absent normally. */
   notice?: BootstrapNotice;
+}
+
+/** A Sentry browser DSN (a public client key, never a credential) and the environment it reports as. */
+export interface SentryInfo {
+  dsn: string;
+  environment: SentryEnvironment;
+}
+
+/** Mirrors `SentryEnvironment` in `flow_sdk/schema/data_spec/sentry_info_spec.py`. A closed set. */
+export enum SentryEnvironment {
+  DEVELOPMENT = 'development',
+  STAGING = 'staging',
+  PRODUCTION = 'production',
 }
 
 /** Optional runtime discovery; absent/null fields remain unknown. */

@@ -148,6 +148,33 @@ It preserves locale and avoids constructing the full project population.
 The middleware reports header timing in `Server-Timing` and logs elapsed
 time when the complete bootstrap response body has been sent.
 
+`sentry_info` (browser error reporting) is stamped the same way, per request and outside the
+cache, and only for a sandbox runtime; a desktop, a browser tab and an agent always get an
+explicit `null`. A sandbox PULLS the value: the hub POSTs
+`POST compute_node/@local/sentry-info` (no body, and no write endpoint exists) on workspace-ready,
+and `flow_sdk/instance_settings/sentry_info.py` reads `GET compute_node/sentry-info` from the hub
+with the box's own login and keeps it in `config.json`. Only a 404/422 ("this hub has no such
+action") clears it; any other refusal, or an unreachable hub, keeps it; and a value the hub has not
+re-confirmed for 7 days reads as `null` from the next bootstrap on (nothing is broadcast on expiry).
+A change emits the `sentry_info.changed` tag, which `tags/ws_forward.py` forwards to every open page. In the UI,
+`ui/src/telemetry/sentry.ts` follows `dataContext.bootstrapInfo` and starts, restarts or stops
+Sentry without a reload. **The Sentry SDK is not in this repository's bundle**: the UI loads it at
+runtime, only once a valid `sentry_info` is present, from the hub's own origin at the fixed path
+`/api/v1/sentry-sdk/browser` (the hub UI: `location.origin`; a sandbox: the hub's origin from
+`desktop_info.cloud_app_url`, which must be https or a local dev host). The path is a constant
+(`ui/src/telemetry/sentry-contract.ts`); no config names a script URL. A hub that cannot serve it
+leaves Sentry off, and a desktop never requests it. The script defines `window.__FlowpadSentry` and
+states a `contract` number the UI checks before using it; the hub repo builds and serves it.
+**Trust:** loading this script widens what the UI trusts the hub for, from its *data* to its *code*: the
+script runs in the UI's own origin with full page privileges. The `contract` check is a compatibility
+check (the shape of 8 functions), **not** a security check, and `no-referrer` and the fixed path do not
+change that. The origin comes from the box's own config (`cloud_app_url`), so whoever controls that
+config controls which hub's code runs; that is the same control that already decides which hub the box
+signs in to. A failed load is remembered per script URL for the page, and forgotten when the backend
+connection comes back (no timer, no retry budget). `POST .../sentry-info` is not rate-limited on
+the box: concurrent calls share one hub read, sequential ones each ask the hub, and the hub-side
+throttle on its own triggers is the only limit.
+
 **Rule: nothing on this path may walk a filesystem tree, parse files, or do
 unbounded per-file DB writes.** The frontend's `initSdk` awaits this endpoint
 before the first render — every Home load that lands on a cache miss pays
@@ -183,7 +210,7 @@ whole project collection. Explicit global scopes skip that restoration.
 Project-context notifications continue to drive the project locale.
 
 `asyncSdkInit()` owns optional info/sniffer work, desktop cloud refresh, shared
-resource prefetch, live cloud/privacy listeners and proactive socket connection. It registers the
+resource prefetch, live cloud/privacy/sentry-info listeners and proactive socket connection. It registers the
 listeners before connecting and isolates each job's failure. Requested
 workspace discovery also runs here, discarding a result if workspace selection
 changed while discovery was pending. It never selects an active project.
