@@ -156,7 +156,7 @@ function DiagnosisStatusLine({ conversationId }: { conversationId: string }) {
   const d = state?.diagnosis;
   let status: 'diagnosing' | 'replied' | 'reported' | 'fixed' | 'report' | 'diagnosed' | 'failed';
   let text: string;
-  if (!state || state.diagnosing) {
+  if (!state || state.state === 'diagnosing' || state.state === 'fixing') {
     status = 'diagnosing';
     text = t`Diagnosing… you'll get a message when it's done`;
   } else if (state.reported && state.replied) {
@@ -468,10 +468,14 @@ export function WarningsPopover() {
   const setupWarning = useSetupIncompleteWarning();
   const dismissedKeys = useDismissedWarnings((s) => s.keys);
   const dismissWarnings = useDismissedWarnings((s) => s.dismiss);
+  const links = useDiagnosisLinks((s) => s.links);
+  const doneConversations = useDiagnosisLinks((s) => s.done);
+  /** Its diagnosis was marked Done in the conversation: the entry it started from is settled. */
+  const settled = useCallback((entryKey: string) => doneConversations.includes(links[entryKey] ?? ''), [links, doneConversations]);
   const warnings = useMemo(
     () =>
       [...derivedWarnings, ...(setupWarning ? [setupWarning] : [])]
-        .filter((w) => dismissedKeys.get(w.id) !== dismissKey(w))
+        .filter((w) => dismissedKeys.get(w.id) !== dismissKey(w) && !settled(w.id))
         .map((w) =>
           isHarnessUpdate(w)
             ? {
@@ -484,9 +488,10 @@ export function WarningsPopover() {
               }
             : w,
         ),
-    [derivedWarnings, setupWarning, dismissedKeys, t],
+    [derivedWarnings, setupWarning, dismissedKeys, settled, t],
   );
-  const alerts = useAlertStore((s) => s.alerts);
+  const allAlerts = useAlertStore((s) => s.alerts);
+  const alerts = useMemo(() => allAlerts.filter((a) => !settled(a.id)), [allAlerts, settled]);
   const dismissAlert = useAlertStore((s) => s.dismiss);
   const dismissAllAlerts = useAlertStore((s) => s.dismissAll);
   const dismissAll = useCallback(() => {

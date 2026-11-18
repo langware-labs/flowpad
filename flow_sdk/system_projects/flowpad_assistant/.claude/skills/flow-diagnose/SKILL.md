@@ -706,16 +706,28 @@ diagnosis to this process for you — do **not** attempt the cross-link yourself
 
 ```bash
 "$FLOWPAD_PYTHON" "<this skill dir>/report.py" \
-  --title "<what you FOUND, in a few words -- never the person's report or the warning's text repeated>" \
+  --title "<the ROOT CAUSE in one line -- never the person's report or the warning's text repeated>" \
   --symptoms "<what was observed>" \
   --rca "<root cause, or 'none — healthy' if no issue>" \
   --fix "<fixed: what you changed. needs_action: the step the person takes, FIRST and exact (which screen, which entry) -- it is shown under the title. Else 'none needed'>" \
   --summary "<one-paragraph plain summary>" \
   --status fixed|needs_action|unrecognized|informational|ok \
   --cause project|machine|flowpad|dependency|unknown \
+  --local-fix yes|no \
+  --bug-package "<component>" --bug-version "<its version>" --bug-suspected "<the suspected bug>" \
   --platform "macOS|Windows|Linux" \
   --details "<the full == Flowpad Diagnostic Report == block from Step 6>"
 ```
+
+`--title` is shown to the person as the one-line **Root cause**, right under their own one-line issue.
+
+`--local-fix yes` puts a **Fix** button on the diagnosis: pressing it sends you, in this same session,
+the request to apply `--fix`. Say `yes` ONLY when `--fix` is something you can do on this machine
+yourself, safely and reversibly, and have not done yet (`--status needs_action`). A step only the
+person can take (sign in, pay, decide), or anything in a dependency's files, is `no`.
+
+`--bug-*` — pass all three ONLY when you found a bug in a component (Flowpad, a package, a
+dependency): which one, its version, and the suspected bug in one or two sentences. Omit them otherwise.
 
 `<this skill dir>` is the folder this SKILL.md is in — the same path you were given to read it from.
 Use `--status ok` when everything is healthy and no issue was found. It prints a JSON line including

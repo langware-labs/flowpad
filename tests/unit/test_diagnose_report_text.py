@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.app.actions.ask_for_help_action import bottom_line, diagnosis_text
+from flow_sdk.app.actions.ask_for_help_action import bottom_line
 from flow_sdk.diagnose.report_text import describes_a_problem, no_description_instruction
 from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisCause, DiagnosisSpec, DiagnosisStatus
 
@@ -49,15 +49,26 @@ def test_an_unknown_cause_with_nothing_written_down_keeps_the_fixed_sentence() -
     assert bottom_line(diagnosis) == "The cause is unclear — Flowpad support can look into it."
 
 
-def test_a_diagnosis_the_person_must_act_on_says_the_step_under_its_bottom_line() -> None:
-    diagnosis = DiagnosisSpec(
-        status=DiagnosisStatus.NEEDS_ACTION,
-        cause=DiagnosisCause.PROJECT,
-        title="The folder of publish-flow-browser is gone",
-        fix="Remove it in Projects > Cleanup, Missing folder tab.",
-    )
-    assert diagnosis_text(diagnosis) == (
-        "In your project: The folder of publish-flow-browser is gone\n\nRemove it in Projects > Cleanup, Missing folder tab."
-    )
-    fixed = diagnosis.model_copy(update={"status": DiagnosisStatus.FIXED})
-    assert diagnosis_text(fixed) == bottom_line(fixed), "a fix already made is the bottom line itself"
+def test_what_the_reporter_printed_reaches_the_diagnosis() -> None:
+    from flow_sdk.cli.commands.diagnose_cmd import _merge_agent_into
+
+    said = {"local_fix": True, "bug_package": "flowpad", "bug_version": "0.2.272", "bug_suspected": "Home does nothing"}
+    merged = _merge_agent_into(DiagnosisSpec(), None, "needs_action", "flowpad", "", said)
+    assert merged.local_fix and merged.bug.package == "flowpad" and merged.bug.suspected == "Home does nothing"
+    plain = _merge_agent_into(DiagnosisSpec(), None, "needs_action", "project", "", {"local_fix": "yes"})
+    assert not plain.local_fix and plain.bug is None, "only the reporter's own true is a yes; no bug said, none kept"
+
+
+def test_the_status_chip_has_one_author() -> None:
+    from types import SimpleNamespace
+
+    from flow_sdk.app.actions.ask_for_help_action import _state
+
+    conv = lambda archived=False: SimpleNamespace(id="c1", is_archived=lambda: archived)  # noqa: E731
+    needs = DiagnosisSpec(status=DiagnosisStatus.NEEDS_ACTION)
+    fixed = DiagnosisSpec(status=DiagnosisStatus.FIXED)
+    assert _state(conv(), None, diagnosing=True, reported=False) == "diagnosing"
+    assert _state(conv(), needs, diagnosing=False, reported=False) == "open"
+    assert _state(conv(), fixed, diagnosing=False, reported=False) == "fixed"
+    assert _state(conv(), needs, diagnosing=False, reported=True) == "help_requested"
+    assert _state(conv(archived=True), fixed, diagnosing=False, reported=True) == "done"

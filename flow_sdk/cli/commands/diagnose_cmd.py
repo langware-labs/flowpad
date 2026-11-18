@@ -289,11 +289,14 @@ def _sweep_for_prompt(sweep) -> str:
     return json.dumps(value, indent=1)
 
 
-def _merge_agent_into(sweep, diag, status: str | None = None, cause: str | None = None, cause_asset: str = ""):
+def _merge_agent_into(
+    sweep, diag, status: str | None = None, cause: str | None = None, cause_asset: str = "", said: dict | None = None
+):
     """The recorded diagnosis: the sweep's findings, machine and logs, under the agent's verdict
-    (its record's headline, and the ``--status`` / ``--cause`` its report.py printed)."""
+    (its record's headline, and what its report.py printed: ``--status`` / ``--cause``, and in ``said``
+    whether it can apply the fix here and the component bug it suspects)."""
     from flow_sdk.diagnose import DiagnosisStatus  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisCause  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisBug, DiagnosisCause  # noqa: PLC0415
 
     update: dict = {}
     if diag is not None:
@@ -303,6 +306,10 @@ def _merge_agent_into(sweep, diag, status: str | None = None, cause: str | None 
     if cause in {c.value for c in DiagnosisCause}:
         update["cause"] = DiagnosisCause(cause)
         update["cause_asset"] = (cause_asset or "")[:200]
+    said = said or {}
+    update["local_fix"] = said.get("local_fix") is True
+    bug = {k: str(said.get(f"bug_{k}") or "")[:500] for k in ("package", "version", "suspected")}
+    update["bug"] = DiagnosisBug(**bug) if any(bug.values()) else None
     return sweep.model_copy(update=update)
 
 
@@ -500,8 +507,13 @@ async def _run_diagnose(
     report_only: bool = False,
     connection_id: str | None = None,
     feed: bool = True,
+    fix_of: tuple[str, frozenset[str]] | None = None,
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
+
+    ``fix_of`` is ``(process id, the diagnosis ids that session already recorded)``: the person pressed
+    Fix. The turn goes into the SAME process -- the session that diagnosed it applies its own fix -- and
+    only a diagnosis it had not recorded before ends the run.
 
     ``steps`` are turns to run BEFORE the diagnosis, one at a time -- a supporter's
     instructions (``flow diagnose <request id>``) -- each sent only when ``approve(step)``
@@ -569,6 +581,14 @@ async def _run_diagnose(
         "repeat those checks — and use its findings in what you record:\n"
         f"```json\n{_sweep_for_prompt(sweep)}\n```"
     ) + (f"\n\n{prompt_extra}" if prompt_extra else "")
+    if fix_of:
+        prompt_text = (
+            "The person pressed Fix on the diagnosis you recorded in this session: they ASKED you to apply the "
+            "fix you described in --fix. Apply exactly that, nothing wider. Then run the skill's recording step "
+            f"(report.py in {skill_dir}) AGAIN with the outcome: --status fixed and --local-fix no when it "
+            "worked (--fix says what you changed), else --status needs_action saying why it could not be "
+            "applied. Do NOT end your turn before it has printed its JSON."
+        )
 
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
         worker_executable,
@@ -584,7 +604,9 @@ async def _run_diagnose(
         return process
 
     # No claude CLI on this machine (the usual case for someone being supported): start on the built-in one.
-    ap = await _make_process(None if worker_executable("claude") else FALLBACK_WORKER)
+    ap = await AgenticProcess.get_by_id(fix_of[0]) if fix_of else None
+    if ap is None:
+        ap = await _make_process(None if worker_executable("claude") else FALLBACK_WORKER)
 
     # stream_transcript re-reads the transcript from the start on each call, so
     # track how many entries we've already printed and skip them on the re-stream
@@ -616,7 +638,8 @@ async def _run_diagnose(
             if not isinstance(raw, str):
                 continue
             res = _extract_report_result(raw)
-            if res is not None:
+            # A Fix turn re-reads the session from its start: what it recorded earlier is not its answer.
+            if res is not None and not (fix_of and res.get("diagnosis_id") in fix_of[1]):
                 recorded = res
                 return
 
@@ -803,7 +826,7 @@ async def _run_diagnose(
             # FLOWPAD_EXECUTION_SCOPE).
             diag = await _load_recorded_diagnosis(_diag_cls, did)
             merged = _merge_agent_into(
-                sweep, diag, recorded.get("status"), recorded.get("cause"), recorded.get("cause_asset") or ""
+                sweep, diag, recorded.get("status"), recorded.get("cause"), recorded.get("cause_asset") or "", recorded
             )
             # What only this runner knows, set on the ONE copy that is saved: the person's own words
             # (report.py sees only the agent's ``symptoms``),

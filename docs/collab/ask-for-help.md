@@ -205,13 +205,38 @@ drops the `kind` field (`derive_help_request_kind` re-derives it on arrival). Th
   (review before installing) and the sender's `ContentReviewDialog` (review before sending: Share / Leave out) are both it.
 - **The asker's side is a conversation:** no ticket state chip ("Waiting for pickup") and no Close ticket; those are the desk's.
 
+### One card: status, issue, root cause, three actions (2026-11-18)
+
+A help request and its diagnosis read as ONE card on the request's message (`DiagnosisCard`); the diagnosis
+message itself is not drawn beside a request (it still arrives, so its notification is raised).
+
+```
+Status       [Open]            Diagnosing · Open · Fixing · Fixed · Help requested · No problem found · Done
+Issue        the request, one line (the conversation's title)
+Root cause   the diagnosis, one line (`DiagnosisSpec.title`)
+› Details    [▷ Open <the diagnosis worker's session>]
+[Fix] [Ask for help] [Done]
+```
+
+- **The chip has one author:** `state` in `help-request-diagnosis` (`_state`).
+- **Fix** is offered only when the diagnosis says it can apply its own fix here (`DiagnosisSpec.local_fix`,
+  `report.py --local-fix yes`). `help-request-fix` sends the turn into the SAME worker session
+  (`_run_diagnose(fix_of=…)`); what that session records lands as the request's diagnosis.
+- **A component bug** the diagnose suspects travels as `DiagnosisSpec.bug` (`--bug-package`, `--bug-version`,
+  `--bug-suspected`) and shows under Details.
+- **Ask for help** is `help-request-report`: the request becomes a support conversation with the configured
+  help desk (Flowpad support by default), whatever the cause.
+- **Done** archives the conversation and settles the warning or error it was started from.
+- **Details** holds the rest: the request in full, what happened, the root cause, the fix, whose it is, the
+  suspected bug, what else was noticed, the environment, and the context kept here (Share | Open).
+
 ### One backbone: minimal input → background → the conversation (2026-11-07)
 
 **Diagnose & fix** and **Ask for help** are the same request; the diagnosis never holds it up.
 
 - `ask-for-help` writes the conversation and the person's `help_request` message at once and answers; the diagnosis
   runs in the background (`_diagnose_then_deliver`) and lands as a `diagnosis` message of its own — its text the one
-  bottom line (`bottom_line`) and, when the person must act, the step to take under it (`diagnosis_text`), `diagnosis.value.json` the details (held here unless the context is shared). Only then is
+  bottom line (`bottom_line`), `diagnosis.value.json` the details (held here unless the context is shared). Only then is
   the request delivered.
 - **Diagnose & fix** (warnings popover, error toasts, the error screen, Error details — `diagnoseAndFix`) is one click,
   no window: `recipients: []`, `purpose: repair` (the repairing agent, told it was asked to fix and which folders are

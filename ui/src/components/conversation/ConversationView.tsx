@@ -54,9 +54,9 @@ import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { syncConversationMessages } from '@src/components/stream-inbox-view/stream-inbox-api';
-import { FlowMessageKind, markFlowMessagesReceived, DIAGNOSIS_FILE, attachmentDataString } from '@sdk/entities/flow-message';
+import { FlowMessageKind, markFlowMessagesReceived, DIAGNOSIS_FILE, HELP_REQUEST_FILE } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
-import { messageSummary } from './ChannelMessageExtras';
+import { attachmentFileName, messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
 import { SessionCard } from './SessionCard';
 import { PromptRequestAnswerContext } from './attachment-actions';
@@ -178,6 +178,14 @@ export interface ConversationEmbed {
   composerSlot: HTMLElement | null;
   placeholder?: string;
 }
+
+/** The file a message carries, by name (a row a channel delivered may have lost its kind; the file still says it). */
+const carriesFile = (fm: FlowMessage, name: string) =>
+  (fm.attachment ?? []).some((f) => attachmentFileName(f) === name);
+const isHelpRequestMessage = (fm?: FlowMessage | null): boolean =>
+  !!fm && (fm.kind === FlowMessageKind.HELP_REQUEST || carriesFile(fm, HELP_REQUEST_FILE));
+const isDiagnosisMessage = (fm?: FlowMessage | null): boolean =>
+  !!fm && !isHelpRequestMessage(fm) && (fm.kind === FlowMessageKind.DIAGNOSIS || carriesFile(fm, DIAGNOSIS_FILE));
 
 export function ConversationView({
   conversationId,
@@ -706,6 +714,11 @@ export function ConversationView({
     if (!call) return null;
     return { call, answer: calls.answerByCall.get(call.call_id) ?? null, running: runningCalls.has(call.call_id) };
   };
+  /** The message that carries the diagnosis card: the first help request, else the first diagnosis. */
+  const diagnosisCardId = useMemo(() => {
+    const feed = orderedItems.flatMap((it) => (it.kind === ConversationItemKind.POINTER ? [messagesById.get(it.messageId)] : []));
+    return (feed.find(isHelpRequestMessage) ?? feed.find(isDiagnosisMessage))?.id ?? null;
+  }, [orderedItems, messagesById]);
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
     const feed = orderedItems.filter(
@@ -714,6 +727,8 @@ export function ConversationView({
           it.kind === ConversationItemKind.POINTER &&
           (calls.answerMessageIds.has(it.messageId) ||
             itSends.replyMessageIds.has(it.messageId) ||
+            // A diagnosis shows on the conversation's one card (DiagnosisCard), not as a message of its own.
+            (it.messageId !== diagnosisCardId && isDiagnosisMessage(getFm(it.messageId))) ||
             // The hub's "Resolved: …" line repeats what the issue's card already shows (it is updated in place).
             !!getFm(it.messageId)?.issue_reply?.follow_up)
         ),
@@ -727,7 +742,7 @@ export function ConversationView({
       ...groupThreadItems(threaded, getFm, threadCounts),
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
-  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls, itSends]);
+  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls, itSends, diagnosisCardId]);
 
   // A message right under one from the same sender, moments later, drops its avatar and name.
   const continuations = useMemo(() => {
@@ -804,17 +819,6 @@ export function ConversationView({
   // anchor) renders as a slim centered system line.
   /** ``threadTask``: the task a collapsed thread is about — shown on the message the stack shows (its newest),
    *  so a task's thread offers its chips without expanding it. */
-  const diagnosisArrived = useMemo(() => {
-    for (const fm of messagesById.values()) {
-      // The kind, or the file every diagnosis carries (a row a channel delivered may have lost its kind).
-      if (
-        fm.kind === FlowMessageKind.DIAGNOSIS ||
-        (fm.attachment ?? []).some((file) => attachmentDataString(file).split('/').pop() === DIAGNOSIS_FILE)
-      )
-        return true;
-    }
-    return false;
-  }, [messagesById]);
   const lastTicketEventId = useMemo(() => {
     for (let i = orderedItems.length - 1; i >= 0; i--) {
       const it = orderedItems[i];
@@ -896,7 +900,7 @@ export function ConversationView({
           deleteForEveryone={conversation?.remote === true}
           selfIds={selfIds}
           isHelpdesk={isHelpdeskConversation}
-          diagnosisArrived={diagnosisArrived}
+          diagnosisCard={id === diagnosisCardId}
           viewerCloudUserId={cloudUserId}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}

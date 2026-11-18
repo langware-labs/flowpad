@@ -35,11 +35,16 @@ interface AlertState {
 interface DiagnosisLinks {
   links: Readonly<Record<string, string>>;
   link: (entryKey: string, conversationId: string) => void;
+  /** Conversations whose diagnosis the person marked Done: their entries leave the list. */
+  done: readonly string[];
+  markDone: (conversationId: string) => void;
 }
 
 export const useDiagnosisLinks = create<DiagnosisLinks>((set) => ({
   links: {},
   link: (entryKey, conversationId) => set((s) => ({ links: { ...s.links, [entryKey]: conversationId } })),
+  done: [],
+  markDone: (conversationId) => set((s) => ({ done: [...s.done, conversationId] })),
 }));
 
 export const useAlertStore = create<AlertState>((set) => ({
