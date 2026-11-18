@@ -9059,8 +9059,6 @@ class AgenticProcess(Entity):
             durable = await AgenticProcess.get_by_id(str(self.id))
             if durable is None or durable.status != self.status:
                 return
-            # The persisted report is the one before this flush: busy → idle across it ends a turn.
-            was_busy = bool((durable.status_report or {}).get("busy"))
             persisted, updated = await self._db.update_existing_data_field(
                 str(self.id),
                 self.type,
@@ -9078,12 +9076,9 @@ class AgenticProcess(Entity):
                 return
             # Unified-bus dual-publish AFTER the persist (a law-5 subscriber
             # fetching on receipt reads the post-write row).
-            from flow_sdk.builtin.agentic_process.agent_on_tag import emit_agent_status, emit_agent_turn_ended
+            from flow_sdk.builtin.agentic_process.agent_on_tag import emit_agent_status
 
-            worker_status = current.value if current is not None else ""
-            emit_agent_status(self.id, worker_status, self.status, current_busy)
-            if was_busy and not current_busy:
-                emit_agent_turn_ended(self.id, worker_status)
+            emit_agent_status(self.id, current.value if current is not None else "", self.status, current_busy)
             await self.emit_flow_data(
                 {
                     "attributes": {

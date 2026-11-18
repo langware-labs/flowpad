@@ -167,7 +167,6 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("node.disconnected", "Node disconnected", "The cloud connection dropped"),
     ("agent", "Agent events", "Agentic-process lifecycle events"),
     ("agent.status", "Agent status", "An agentic process changed status"),
-    ("agent.turn_ended", "Agent turn ended", "An agentic process finished a turn (busy → idle)"),
     ("agent.run", "Agent run", "Lifecycle of one agent run, targeted at its compute node"),
     ("agent.run.requested", "Agent run requested", "A run was asked for on a compute node"),
     ("agent.run.started", "Agent run started", "The run's process was spawned"),

@@ -102,32 +102,6 @@ async def test_emit_status_report_is_change_gated(initialize_test_db, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_turn_ended_fires_once_on_the_busy_to_idle_edge(initialize_test_db, monkeypatch) -> None:
-    """``agent.status`` fires on every report change; ``agent.turn_ended`` once, when a turn ends."""
-    ap = _make_ap()
-    await ap.save()
-    t = AgentTranscriptFile("claude", _RESOURCES / "claude_multi_block_message.jsonl")
-    monkeypatch.setattr(type(ap), "_load_transcript", lambda self, d=None: t, raising=False)
-
-    async def _no_flow(self, flow_data):
-        return None
-
-    monkeypatch.setattr(type(ap), "emit_flow_data", _no_flow, raising=False)
-    tags: list[tuple[str, str]] = []
-    monkeypatch.setattr("flow_sdk.tags.emit_tag", lambda tag, target, data=None, **kw: tags.append((tag, target)))
-
-    await ap._emit_status_report(WorkerStatus.THINKING, True)
-    await ap._emit_status_report(WorkerStatus.TOOL_CALL, True)
-    await ap._emit_status_report(WorkerStatus.IDLE, False)
-    await ap._emit_status_report(WorkerStatus.COMPLETE, False)
-
-    assert [tag for tag, _ in tags].count("agent.status") == 4
-    assert [(tag, target) for tag, target in tags if tag == "agent.turn_ended"] == [
-        ("agent.turn_ended", f"agentic_process:{ap.id}")
-    ]
-
-
-@pytest.mark.asyncio
 async def test_delayed_status_report_does_not_resurrect_deleted_process(initialize_test_db, monkeypatch) -> None:
     ap = _make_ap()
     await ap.save()

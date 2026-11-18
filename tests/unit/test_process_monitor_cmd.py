@@ -2,7 +2,7 @@
 
 The server is faked at the HTTP boundary (``_common.local_request``), so these tests pin what each
 command refuses, what it writes into the project and which calls it makes. They do NOT test the
-automation engine: that the tag or cron rule fires and runs the nudge is the trigger system's job.
+automation engine: that the cron rule fires and runs the nudge is the trigger system's job.
 Asking an agent is faked at ``process_cmd._ask`` (the streamed ``prompt`` action).
 """
 
@@ -26,6 +26,7 @@ NAME = "tests-green"
 KEY = f"{AP_ID}_monitor_{NAME}"
 GOAL = "all unit tests under tests/unit pass"
 STOP = "the same test failed 3 times in a row"
+CRON = "*/10 * * * *"
 VERDICTS = ("goal_met", "stop_condition_reached", "continue_to_work")
 
 
@@ -104,8 +105,8 @@ def flowpad(tmp_path, monkeypatch) -> FakeFlowpad:
 
 @pytest.fixture
 def monitored(flowpad) -> FakeFlowpad:
-    """A turn-end monitor already set on the process; the calls that set it are forgotten."""
-    result = _monitor("--triggered-by", "turn_end")
+    """A monitor already set on the process; the calls that set it are forgotten."""
+    result = _monitor()
     assert result.exit_code == 0, result.output
     flowpad.calls.clear()
     return flowpad
@@ -130,9 +131,9 @@ def unmonitor(key: str = KEY):
     return _run("unmonitor", key)
 
 
-def _monitor(*extra: str):
+def _monitor(*extra: str, cron: str = CRON):
     """``monitor`` with every required input valid, plus ``extra``."""
-    return monitor("-p", AP_ID, "--name", NAME, "--goal", GOAL, "--stop-condition", STOP, *extra)
+    return monitor("-p", AP_ID, "--name", NAME, "--goal", GOAL, "--stop-condition", STOP, "--cron", cron, *extra)
 
 
 def envelope(result) -> dict:
@@ -159,12 +160,12 @@ def _reply(answer: str) -> str:
 
 
 def test_monitor_needs_a_goal_or_a_stop_condition(flowpad):
-    refused(monitor("-p", AP_ID, "--name", NAME, "--triggered-by", "turn_end"), "MISSING_GOAL")
+    refused(monitor("-p", AP_ID, "--name", NAME, "--cron", CRON), "MISSING_GOAL")
     assert flowpad.calls == []
 
 
 def test_monitor_needs_a_name(flowpad):
-    result = monitor("-p", AP_ID, "--goal", GOAL, "--triggered-by", "turn_end")
+    result = monitor("-p", AP_ID, "--goal", GOAL, "--cron", CRON)
     assert result.exit_code != 0
     assert "--name" in result.output  # not "No such command"
     assert flowpad.calls == []
@@ -172,31 +173,20 @@ def test_monitor_needs_a_name(flowpad):
 
 @pytest.mark.parametrize("name", ["", "a/b", "a\\b", "..", "has space"])
 def test_monitor_refuses_a_name_that_cannot_be_a_folder(flowpad, name):
-    refused(monitor("-p", AP_ID, "--name", name, "--goal", GOAL, "--triggered-by", "turn_end"), "BAD_NAME")
+    refused(monitor("-p", AP_ID, "--name", name, "--goal", GOAL, "--cron", CRON), "BAD_NAME")
     assert flowpad.calls == []
 
 
-@pytest.mark.parametrize("extra", [(), ("--triggered-by", "on_save")], ids=["missing", "unknown"])
-def test_monitor_needs_a_known_trigger(flowpad, extra):
-    result = _monitor(*extra)
+def test_monitor_needs_a_cron_mask(flowpad):
+    result = monitor("-p", AP_ID, "--name", NAME, "--goal", GOAL)
     assert result.exit_code != 0
-    assert "--triggered-by" in result.output  # not "No such command"
-    assert flowpad.calls == []
-
-
-def test_cron_needs_a_mask(flowpad):
-    refused(_monitor("--triggered-by", "cron"), "BAD_CRON")
+    assert "--cron" in result.output  # not "No such command"
     assert flowpad.calls == []
 
 
 @pytest.mark.parametrize("mask", ["every ten minutes", "61 * * * *", "* * *"])
 def test_a_bad_cron_mask_is_refused(flowpad, mask):
-    refused(_monitor("--triggered-by", "cron", "--cron", mask), "BAD_CRON")
-    assert flowpad.calls == []
-
-
-def test_a_mask_without_cron_is_refused(flowpad):
-    refused(_monitor("--triggered-by", "turn_end", "--cron", "*/5 * * * *"), "BAD_CRON")
+    refused(_monitor(cron=mask), "BAD_CRON")
     assert flowpad.calls == []
 
 
@@ -205,52 +195,41 @@ def test_a_mask_without_cron_is_refused(flowpad):
 
 def test_monitor_refuses_a_process_that_does_not_exist(flowpad):
     other = "99999999-9999-9999-9999-999999999999"
-    refused(monitor("-p", other, "--name", NAME, "--goal", GOAL, "--triggered-by", "turn_end"), "NOT_FOUND")
+    refused(monitor("-p", other, "--name", NAME, "--goal", GOAL, "--cron", CRON), "NOT_FOUND")
     assert not flowpad.folder.parent.exists()
 
 
 def test_monitor_refuses_a_project_with_no_folder(flowpad):
     flowpad.project["fs_storage_mount_path"] = None
-    refused(_monitor("--triggered-by", "turn_end"), "NO_PROJECT_FOLDER")
+    refused(_monitor(), "NO_PROJECT_FOLDER")
 
 
 def test_monitor_refuses_a_name_the_process_is_already_monitored_by(monitored):
-    refused(_monitor("--triggered-by", "turn_end"), "ALREADY_MONITORED")
+    refused(_monitor(), "ALREADY_MONITORED")
 
 
 # ── monitor: what it writes ─────────────────────────────────────────────────
 
 
-def test_a_turn_end_monitor_listens_to_this_process_turn_ends_only(flowpad):
-    result = _monitor("--triggered-by", "turn_end")
-    assert result.exit_code == 0, result.output
-    spec = _spec(flowpad)
-    # Once per turn: ``agent.status`` fires on every status change, many times a turn.
-    assert spec.tag is not None and spec.tag.on == "agent.turn_ended"
-    # This process's turns only — never its forks', or each nudge would set off the next.
-    assert spec.tag.target == f"agentic_process:{AP_ID}"
-    # One machine's session: nothing for a clone of the project to switch on.
-    assert spec.recommended is False
-    assert spec.then is not None and spec.then.run_script == f"flow process monitor-nudge {KEY}"
-
-
-def test_a_cron_monitor_is_a_cron_schedule(flowpad):
-    result = _monitor("--triggered-by", "cron", "--cron", "*/10 * * * *")
+def test_a_monitor_is_a_cron_schedule_that_runs_the_nudge(flowpad):
+    result = _monitor()
     assert result.exit_code == 0, result.output
     spec = _spec(flowpad)
     assert spec.schedule is not None
-    assert (spec.schedule.every, spec.schedule.expr) == ("cron", "*/10 * * * *")
+    assert (spec.schedule.every, spec.schedule.expr) == ("cron", CRON)
     assert spec.then is not None and spec.then.run_script == f"flow process monitor-nudge {KEY}"
+    # One machine's session: nothing for a clone of the project to switch on.
+    assert spec.recommended is False
 
 
 def test_monitor_keeps_the_goal_for_the_nudge(flowpad):
-    assert _monitor("--triggered-by", "turn_end").exit_code == 0
+    assert _monitor().exit_code == 0
     saved = json.loads((flowpad.folder / "monitor.json").read_text(encoding="utf-8"))
     assert (saved["process_id"], saved["goal"], saved["stop_condition"]) == (AP_ID, GOAL, STOP)
 
 
 def test_monitor_indexes_the_rule_and_switches_it_on(flowpad):
-    result = _monitor("--triggered-by", "turn_end")
+    result = _monitor()
     assert result.exit_code == 0, result.output
     indexed = flowpad.posted("compute_node/@local/fs-records/index")
     assert indexed and Path(indexed[-1]["path"]).resolve() == flowpad.folder.resolve()
@@ -335,18 +314,6 @@ def test_a_session_that_cannot_fork_is_asked_itself(monitored):
     assert result.exit_code == 0, result.output
     assert [pid for pid, _ in monitored.asked] == [AP_ID]
     assert "fork" not in monitored.asked[0][1]
-
-
-def test_the_turn_end_of_a_self_asked_question_is_skipped_once(monitored):
-    """Asked itself, the session takes a turn to answer; that turn's end is not news."""
-    monitored.fork_refused = True
-    monitored.answers = [_reply("continue_to_work"), _reply("continue_to_work")]
-    assert nudge().exit_code == 0
-    skipped = nudge()  # the question's own turn ended
-    assert skipped.exit_code == 0 and "skipped" in envelope(skipped)
-    assert len(monitored.asked) == 1
-    assert nudge().exit_code == 0  # the work it was prompted to do ended
-    assert len(monitored.asked) == 2
 
 
 def test_nudge_skips_while_another_check_runs(monitored, tmp_path):

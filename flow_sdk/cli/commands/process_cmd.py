@@ -34,7 +34,7 @@ Set a one-time callback into THIS session: at that time the session is started i
 and, once idle, receives the prompt. ``flow process schedules`` lists the ones still waiting;
 ``flow process unschedule <id>`` removes one. With ``--every 10m`` it repeats, ending by itself.
 
-``flow process monitor --name <n> --goal "<g>" --triggered-by turn_end | cron``
+``flow process monitor --name <n> --goal "<g>" --cron "*/10 * * * *"``
 
 Watch a session's goal: a trigger asset in its project runs ``flow process monitor-nudge <key>``, which
 asks a fork of the session whether the goal is met and prompts the session to continue until it is.
@@ -54,7 +54,6 @@ import re
 import shutil
 import tempfile
 import time
-from enum import Enum
 from pathlib import Path
 from typing import Iterator, Literal, Optional
 
@@ -258,7 +257,7 @@ def _seconds(value: str, flag: str) -> float:
         raise
 
 
-# ── monitor: a goal watched after each turn (or on a clock) ──────────────────
+# ── monitor: a goal watched on a clock ──────────────────────────────────────
 #
 # ``monitor`` writes a trigger ASSET into the process's project; the trigger runs ``monitor-nudge``,
 # which asks a fork of the session whether the goal is met, and either prompts the session to go on
@@ -270,14 +269,7 @@ _MONITOR_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}")
 _NUDGE_RETRIES = 3
 #: A nudge older than this is taken to have died, and its lock is taken over.
 _NUDGE_LOCK_STALE_S = 15 * 60
-#: After the session was asked itself, the next turn end is that question's own -- skipped once, if it comes soon.
-_SELF_ASK_SKIP_S = 120
 _REPLY_FORMAT = '{"answer": "goal_met" | "stop_condition_reached" | "continue_to_work"}'
-
-
-class MonitorTrigger(str, Enum):
-    TURN_END = "turn_end"
-    CRON = "cron"
 
 
 class MonitorVerdict(BaseModel):
@@ -347,22 +339,18 @@ def _remove_monitor(port: int, folder: Path) -> str:
 @process_app.command(
     "monitor",
     help=(
-        "Watch a session's goal: after each of its turns (--triggered-by turn_end) or on a clock "
-        "(--triggered-by cron --cron '*/10 * * * *'), a fork of the session is asked whether the goal is met "
-        "or the stop condition reached. Not yet: the session is prompted to continue. Met or reached: the "
+        "Watch a session's goal: on a cron mask (--cron '*/10 * * * *'), a fork of the session is asked "
+        "whether the goal is met or the stop condition reached. Not yet: the session is prompted to continue. Met or reached: the "
         "monitor ends, quietly. Kept as a trigger in the session's project; `unmonitor <key>` removes it."
     ),
 )
 def monitor_process(
     name: Annotated[str, typer.Option("--name", "-n", help="Names this monitor (letters, digits, '-', '_').")],
-    triggered_by: Annotated[
-        MonitorTrigger, typer.Option("--triggered-by", "-t", help="turn_end: after each turn. cron: on --cron.")
-    ],
+    cron: Annotated[str, typer.Option("--cron", "-c", help="When to check: a crontab mask ('*/10 * * * *').")],
     goal: Annotated[Optional[str], typer.Option("--goal", "-g", help="What done looks like.")] = None,
     stop_condition: Annotated[
         Optional[str], typer.Option("--stop-condition", "-s", help="When to stop even if the goal is not met.")
     ] = None,
-    cron: Annotated[Optional[str], typer.Option("--cron", help="With --triggered-by cron: a crontab mask.")] = None,
     process: Annotated[Optional[str], typer.Option("--process", "-p", help="Defaults to the current session.")] = None,
 ) -> None:
     # Everything that can be checked here is checked before anything is asked of the server.
@@ -371,25 +359,14 @@ def monitor_process(
     goal, stop_condition = (goal or "").strip(), (stop_condition or "").strip()
     if not (goal or stop_condition):
         _fail(EXIT_INVALID_ARG, "MISSING_GOAL", "Give --goal, --stop-condition, or both.")
-    if triggered_by is MonitorTrigger.CRON:
-        if not cron:
-            _fail(EXIT_INVALID_ARG, "BAD_CRON", "--triggered-by cron needs --cron '<mask>'.")
-        from apscheduler.triggers.cron import CronTrigger  # noqa: PLC0415
+    from apscheduler.triggers.cron import CronTrigger  # noqa: PLC0415
 
-        try:
-            CronTrigger.from_crontab(cron)
-        except ValueError as e:
-            _fail(EXIT_INVALID_ARG, "BAD_CRON", f"Cannot read the cron mask {cron!r}: {e}")
-    elif cron:
-        _fail(EXIT_INVALID_ARG, "BAD_CRON", "--cron goes with --triggered-by cron.")
+    try:
+        CronTrigger.from_crontab(cron)
+    except ValueError as e:
+        _fail(EXIT_INVALID_ARG, "BAD_CRON", f"Cannot read the cron mask {cron!r}: {e}")
 
-    from flow_sdk.schema.data_spec.trigger_spec import (  # noqa: PLC0415
-        ScheduleTriggerSpec,
-        TagTriggerSpec,
-        ThenSpec,
-        TriggerSpec,
-    )
-    from flow_sdk.tags.envelope import target_of  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.trigger_spec import ScheduleTriggerSpec, ThenSpec, TriggerSpec  # noqa: PLC0415
 
     process_id = _resolve_process_id(process)
     port = _discover_port()
@@ -403,9 +380,7 @@ def monitor_process(
         description=goal or stop_condition,
         # One machine's session: nothing to offer a clone of the project.
         recommended=False,
-        tag=TagTriggerSpec(on="agent.turn_ended", target=target_of("agentic_process", process_id))
-        if triggered_by is MonitorTrigger.TURN_END else None,
-        schedule=ScheduleTriggerSpec(every="cron", expr=cron) if triggered_by is MonitorTrigger.CRON else None,
+        schedule=ScheduleTriggerSpec(every="cron", expr=cron),
         then=ThenSpec(run_script=f"flow process monitor-nudge {key}"),
     )
     folder.mkdir(parents=True)
@@ -415,7 +390,7 @@ def monitor_process(
     )
     (folder / "monitor.json").write_text(json.dumps({
         "process_id": process_id, "name": name, "goal": goal, "stop_condition": stop_condition,
-        "triggered_by": triggered_by.value, "cron": cron,
+        "cron": cron,
     }, indent=2) + "\n", encoding="utf-8")
     try:
         trigger_id = _index_monitor(port, folder)
@@ -424,8 +399,7 @@ def monitor_process(
     except BaseException:
         shutil.rmtree(folder, ignore_errors=True)
         raise
-    _ok({"key": key, "trigger_id": trigger_id, "process_id": process_id, "triggered_by": triggered_by.value,
-         "folder": str(folder)})
+    _ok({"key": key, "trigger_id": trigger_id, "process_id": process_id, "cron": cron, "folder": str(folder)})
 
 
 def _state_dir() -> Path:
@@ -451,23 +425,6 @@ def _nudge_lock(key: str) -> Iterator[bool]:
     finally:
         with contextlib.suppress(FileNotFoundError):
             path.unlink()
-
-
-def _skip_own_turn_end(key: str) -> bool:
-    """Consume the mark a self-ask left: True when this turn end is that question's own."""
-    path = _state_dir() / f"{key}.self-ask"
-    try:
-        asked_at = path.stat().st_mtime
-    except FileNotFoundError:
-        return False
-    path.unlink(missing_ok=True)
-    return time.time() - asked_at < _SELF_ASK_SKIP_S
-
-
-def _mark_self_ask(key: str) -> None:
-    path = _state_dir() / f"{key}.self-ask"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.touch()
 
 
 def _fork(port: int, process_id: str) -> Optional[str]:
@@ -543,9 +500,6 @@ def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `moni
         _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No monitor {key}.")
     monitor = json.loads((folder / "monitor.json").read_text(encoding="utf-8"))
     goal, stop_condition = str(monitor.get("goal") or ""), str(monitor.get("stop_condition") or "")
-    if monitor.get("triggered_by") == MonitorTrigger.TURN_END.value and _skip_own_turn_end(key):
-        _ok({"key": key, "skipped": "the turn that ended was the monitor's own question"})
-        return
     if process.get("busy"):
         _ok({"key": key, "skipped": "the session is busy"})
         return
@@ -555,8 +509,6 @@ def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `moni
             return
         fork_id = _fork(port, process_id)
         asked = fork_id or process_id
-        if fork_id is None and monitor.get("triggered_by") == MonitorTrigger.TURN_END.value:
-            _mark_self_ask(key)  # this question is a turn of the session's own; its end is not news
         prompt = _check_prompt(goal, stop_condition, forked=fork_id is not None)
         verdict: Optional[MonitorVerdict] = None
         for _attempt in range(1 + _NUDGE_RETRIES):
