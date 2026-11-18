@@ -228,6 +228,26 @@ describe("PayingProviderSetup — Vertex on Flowpad's own Google identity (no ke
     expect(screen.getByTestId('credential-input')).toBeTruthy();
   });
 
+  it('offers nothing when the hub does not send the field at all (an older hub)', async () => {
+    const user = userEvent.setup();
+    const older: Partial<typeof org> = { ...org };
+    delete older.hub_identity_available;
+    render(<PayingProviderSetup orgId={ORG_ID} org={older as typeof org} />);
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-vertex'));
+    expect(screen.queryByTestId('org-root-hub-identity-toggle')).toBeNull();
+  });
+
+  it('offers the choice to a person the hub says may use it, and to nobody else', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-vertex'));
+    expect(screen.getByTestId('org-root-hub-identity-toggle')).toBeTruthy();
+    rerender(<PayingProviderSetup orgId={ORG_ID} org={{ ...org, hub_identity_available: false }} />);
+    expect(screen.queryByTestId('org-root-hub-identity-toggle')).toBeNull();
+  });
+
   it('offers the choice only for Vertex', async () => {
     const user = userEvent.setup();
     render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
