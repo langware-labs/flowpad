@@ -17,12 +17,19 @@ h1{margin:0;font-size:20px;font-weight:600}
 .toggle{display:inline-flex;background:var(--surface-2);border-radius:8px;padding:3px}
 .toggle button{border:0;background:none;color:var(--text-secondary);font:inherit;font-size:13px;font-weight:500;padding:4px 12px;border-radius:6px;cursor:pointer}
 .toggle button[aria-pressed=true]{background:var(--surface-1);color:var(--text-primary);box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.row{display:flex;align-items:flex-start;gap:16px}
 .canvas{position:relative;flex:1;min-width:0;overflow:hidden;border:1px solid var(--hairline);border-radius:12px;background:var(--surface-1)}
 .canvas svg{display:block;width:100%;height:calc(100vh - 170px);min-height:420px;touch-action:none;cursor:grab}
 .zoom{position:absolute;top:10px;right:10px;display:flex;gap:4px;z-index:1}
 .zoom button{border:1px solid var(--hairline-strong);background:var(--surface-1);color:var(--text-primary);border-radius:6px;height:28px;min-width:28px;padding:0 8px;font:inherit;font-size:12px;font-weight:500;cursor:pointer}
 svg text{font-family:inherit}
+.tablebox{display:none;overflow:auto;border:1px solid var(--hairline);border-radius:12px;background:var(--surface-1)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:start;vertical-align:top;padding:8px 12px;border-bottom:1px solid var(--hairline)}
+th{color:var(--text-secondary);font-weight:600;font-size:12px}
+body.table .tablebox{display:block}
+#tip{position:fixed;z-index:10;display:none;pointer-events:none;max-width:320px;border:1px solid var(--hairline-strong);border-radius:8px;background:var(--surface-1);padding:8px 10px;font-size:12px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+#tip b{display:block;font-size:13px}#tip .k{display:block;margin-top:2px;color:var(--text-secondary)}#tip .n{display:block;margin-top:4px;color:var(--text-muted)}
+.row{display:flex;align-items:flex-start;gap:16px}
 .node .body{fill:var(--surface-1);stroke:var(--hairline-strong);stroke-width:1}
 .node.question .body{stroke:var(--s1);stroke-width:1.5}
 .node.start .body{fill:var(--surface-2)}
@@ -52,13 +59,7 @@ aside li{border:1px solid transparent;border-radius:6px;padding:6px 8px;font-siz
 .badge{flex-shrink:0;margin-top:1px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--side-fact);color:#fff;font-size:11px;font-weight:700}
 .badge.quiet{width:16px;height:16px;margin:0;background:none;border:1px solid var(--hairline-strong);color:var(--text-secondary);font-size:10px}
 .about{margin-top:4px;display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted)}
-.tablebox{display:none;overflow:auto;border:1px solid var(--hairline);border-radius:12px;background:var(--surface-1)}
-table{border-collapse:collapse;width:100%;font-size:13px}
-th,td{text-align:start;vertical-align:top;padding:8px 12px;border-bottom:1px solid var(--hairline)}
-th{color:var(--text-secondary);font-weight:600;font-size:12px}
-body.table .row{display:none} body.table .tablebox{display:block}
-#tip{position:fixed;z-index:10;display:none;pointer-events:none;max-width:320px;border:1px solid var(--hairline-strong);border-radius:8px;background:var(--surface-1);padding:8px 10px;font-size:12px;box-shadow:0 6px 20px rgba(0,0,0,.18)}
-#tip b{display:block;font-size:13px}#tip .k{display:block;margin-top:2px;color:var(--text-secondary)}#tip .n{display:block;margin-top:4px;color:var(--text-muted)}
+body.table .row{display:none}
 @media (max-width:900px){.row{flex-direction:column}aside{width:100%}}
 </style></head>
 <body><div class="page">
@@ -106,7 +107,7 @@ const W=1704,H=1029,INFO={"start": {"n": "", "label": "User clicks Ask for help"
 const svg=document.getElementById('svg'),tip=document.getElementById('tip');
 let v={x:0,y:0,w:W,h:H};
 const apply=()=>svg.setAttribute('viewBox',[v.x,v.y,v.w,v.h].join(' '));
-// Fit = the full width from the top: a tall flow is panned down, never shrunk until it is unreadable.
+// Fit = the full width from the top: a tall chart is panned down, never shrunk until it is unreadable.
 const fit=()=>{const r=svg.getBoundingClientRect();if(!r.width)return;v={x:0,y:0,w:W,h:Math.min(H,W*r.height/r.width)};svg.setAttribute('preserveAspectRatio','xMidYMin meet');apply()};
 const zoom=(f,cx,cy)=>{const r=svg.getBoundingClientRect();const fx=cx===undefined?.5:(cx-r.left)/r.width,fy=cy===undefined?.5:(cy-r.top)/r.height;
   const w=Math.min(W*4,Math.max(W/12,v.w*f)),h=w/v.w*v.h;v={x:v.x+(v.w-w)*fx,y:v.y+(v.h-h)*fy,w,h};apply()};
@@ -117,11 +118,13 @@ svg.addEventListener('pointermove',e=>{if(!drag)return;v.x=drag.v.x-(e.clientX-d
 svg.addEventListener('pointerup',()=>drag=null);svg.addEventListener('pointercancel',()=>drag=null);
 document.getElementById('z-fit').onclick=fit;document.getElementById('z-in').onclick=()=>zoom(.8);document.getElementById('z-out').onclick=()=>zoom(1.25);
 addEventListener('resize',fit);fit();
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const view=t=>{document.body.classList.toggle('table',t);document.getElementById('v-table').setAttribute('aria-pressed',t);document.getElementById('v-chart').setAttribute('aria-pressed',!t);if(!t)fit()};
+document.getElementById('v-chart').onclick=()=>view(false);document.getElementById('v-table').onclick=()=>view(true);
 let lit=null;
 const light=id=>{if(id===lit)return;lit=id;document.querySelectorAll('.hot').forEach(el=>el.classList.remove('hot'));if(!id)return;
   document.querySelectorAll('.node,[data-for]').forEach(el=>{if((el.dataset.id||el.dataset.for)===id)el.classList.add('hot')});
   document.querySelectorAll('.edge').forEach(el=>{if(el.dataset.from===id||el.dataset.to===id)el.classList.add('hot')})};
-const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 document.querySelectorAll('.node').forEach(el=>{
   // The tooltip is built once per node; a move only carries it along.
   const show=e=>{if(drag)return;const i=INFO[el.dataset.id];
@@ -131,6 +134,4 @@ document.querySelectorAll('.node').forEach(el=>{
   el.addEventListener('pointermove',show);el.addEventListener('pointerleave',hide);
   el.addEventListener('focus',()=>{const r=el.getBoundingClientRect();show({clientX:r.right,clientY:r.top+72})});el.addEventListener('blur',hide)});
 document.querySelectorAll('aside li[data-for]').forEach(el=>{el.addEventListener('pointerenter',()=>light(el.dataset.for));el.addEventListener('pointerleave',()=>light(null))});
-const view=t=>{document.body.classList.toggle('table',t);document.getElementById('v-table').setAttribute('aria-pressed',t);document.getElementById('v-chart').setAttribute('aria-pressed',!t);if(!t)fit()};
-document.getElementById('v-chart').onclick=()=>view(false);document.getElementById('v-table').onclick=()=>view(true);
 </script></body></html>

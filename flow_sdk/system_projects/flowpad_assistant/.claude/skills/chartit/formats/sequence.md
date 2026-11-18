@@ -29,6 +29,9 @@ recurs (token refresh, a proxy hop, "select sources") is its own chart, and each
 ONE message with `ref: "<that chart's name>"` — a SUB-FLOW block with **Open ↗**. Its output enters
 the calling flow through `returns: "<what comes back>"`.
 
+Its HTML copy (`SKILL.md` §2) holds the lanes with their icons, the numbered messages, hover, zoom and a
+Table view; a sub-flow is drawn as a block naming its chart, not a link.
+
 Keep a chart under ~25 messages and ≤ 8 participants — past that, cut sub-flows. Participant colours
 are the base's categorical slots in fixed order (blue, orange, aqua, violet; a 5th+ is neutral), never
 cycled; replies are dashed.

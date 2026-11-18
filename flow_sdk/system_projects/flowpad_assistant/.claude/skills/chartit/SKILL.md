@@ -117,6 +117,21 @@ flow record index "$D" --types chart        # prints the chart-<uuid> TypeId
 flow show entity chart-<uuid>
 ```
 
+**The copy that opens anywhere — one HTML file.** A format that has `templates/<format>/export_html.py`
+(today: `sequence`, `flowchart`) also gets `$D/<name>.html`, next to its source file:
+
+```bash
+python3 -I <this skill>/templates/<format>/export_html.py "$D"
+```
+
+It is the chart in light and dark with hover, zoom and a Table view, and nothing loaded from the network
+— the file to send to someone, or to open where there is no Flowpad. Run it again after every change to
+the source file; it is a copy, never the source, so never edit it by hand. Show it with
+`flow show file "$D/<name>.html"` when the user asks for the file. It leaves out what needs Flowpad:
+change requests and **Open ↗**. Its layout is the script's own, so positions can differ from the
+editor's; look at the file once before you hand it over. A new format's exporter builds on
+`templates/export_page.py` (the page, the themes, pan and zoom, the command line).
+
 ## 3. A chart is an asset — link it both ways
 
 A chart is a folder asset like any other, so it takes part in Flowpad's asset links: an optional
@@ -162,4 +177,5 @@ new `sequence` / `mermaid` chart from it.
 Open the chart (`flow show entity`) and look at it — every participant and arrow present, in order,
 self-calls on the right lane, each Open ↗ reaching its chart. For a C4 chart: every box inside its
 boundary, no label sitting on a line, each Open ↗ reaching the chart one level down. For a flowchart:
-the three rules of `formats/flowchart.md` hold on screen. Never report a chart you have not seen.
+the three rules of `formats/flowchart.md` hold on screen. Where the format has an HTML copy (§2): it
+is written and opens. Never report a chart you have not seen.
