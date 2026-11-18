@@ -24,18 +24,25 @@ afterEach(() => {
 
 const ITEMS = [
   { name: 'diagnosis.value.json', content: '{"status":"ok","title":"Flowpad looks healthy"}' },
-  { name: 'logs.txt', content: 'ERROR something' },
+  { name: 'logs.value.json', content: '{"spec_kind": "logs", "files": []}' },
 ];
 
 describe('ContentReviewDialog', () => {
   it('reviews what will be sent with Share / Leave out, never Install', () => {
     const onLeftOutChange = vi.fn();
     render(
-      <ContentReviewDialog open onClose={() => {}} items={ITEMS} leftOut={[]} onLeftOutChange={onLeftOutChange} onShare={() => {}} />,
+      <ContentReviewDialog
+        open
+        onClose={() => {}}
+        items={ITEMS}
+        leftOut={[]}
+        onLeftOutChange={onLeftOutChange}
+        onShare={() => {}}
+      />,
     );
 
     expect(screen.getByText('Context to share — review before sending.')).toBeInTheDocument();
-    expect(screen.getByTestId('content-review-row-logs.txt')).toBeInTheDocument();
+    expect(screen.getByTestId('content-review-row-logs.value.json')).toBeInTheDocument();
     expect(screen.getByTestId('content-review-body').textContent).toContain('"title": "Flowpad looks healthy"');
     expect(screen.queryByTestId('asset-install-project')).toBeNull();
 
@@ -48,7 +55,7 @@ describe('HelpRequestLine', () => {
   it('offers Share for context kept here, and sends what was not left out', async () => {
     sdk.context.mockResolvedValue({ items: ITEMS, private: false });
     sdk.diagnosis.mockResolvedValue({ diagnosing: false });
-    sdk.share.mockResolvedValue(['diagnosis.value.json', 'logs.txt']);
+    sdk.share.mockResolvedValue(['diagnosis.value.json', 'logs.value.json']);
     render(<HelpRequestLine conversationId="c1" isMine />);
 
     fireEvent.click(await screen.findByTestId('help-request-share'));

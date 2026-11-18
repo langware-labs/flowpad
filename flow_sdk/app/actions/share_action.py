@@ -366,8 +366,9 @@ async def conversation_add_message() -> ApiResponse:
     on_reply = str(body.pop("on_reply", "") or "").strip()
     wait_seconds = body.pop("wait_seconds", None)
     if on_reply and not origin_process:
-        return ApiFailResponse(message="Only a session can wait for a reply (--on-reply runs inside one).",
-                               status_code=422)
+        return ApiFailResponse(
+            message="Only a session can wait for a reply (--on-reply runs inside one).", status_code=422
+        )
     response = await handle_add_message(
         body,
         request_info.someone_typeid,
@@ -390,7 +391,10 @@ async def conversation_add_message() -> ApiResponse:
         message_id = response.data.get("flow_message_id") or response.data.get("id")
         try:
             rule = await reply_callbacks.create(
-                origin_process, body["conversation_id"], str(message_id), on_reply,
+                origin_process,
+                body["conversation_id"],
+                str(message_id),
+                on_reply,
                 timedelta(seconds=float(wait_seconds)) if wait_seconds else None,
             )
         except ValueError as exc:
@@ -502,10 +506,6 @@ async def conversation_send_external() -> ApiResponse:
             return ApiFailResponse(message=str(exc), status_code=exc.status_code)
         if not scope.source_ids:
             return ApiFailResponse(message="Agent stream inbox has no message source", status_code=404)
-        from flow_sdk.app.ticket_approval import unapproved_reason  # noqa: PLC0415
-
-        if reason := await unapproved_reason(request_info.target_entity_typeid.id):
-            return ApiFailResponse(message=reason)
 
     # The source is the conversation's own — the one its messages arrived through — never the
     # agent's "first" source: an agent with a mailbox AND a channel answers each on its channel.

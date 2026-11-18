@@ -67,6 +67,8 @@ import { AutomationMessageActions } from './AutomationMessageActions';
 import { DiagnosisMessageActions } from './DiagnosisMessageActions';
 import { HelpRequestLine } from './HelpRequestLine';
 import { IssueReplyLine } from './IssueReplyLine';
+import { highlightMentions, namesOfMentioned } from './mentions';
+import { TicketDraftLine } from './TicketDraftLine';
 import { ItReplyLine } from './ItReplyLine';
 import { ItSendTable } from './ItSendTable';
 import type { ItSend } from './it-sends';
@@ -578,6 +580,9 @@ export function FlowMessageBubble({
   // An issue's own message is its card (IssueReplyLine) instead of its text; the "Resolved: …" follow-up the
   // hub posts after it is a line of text alone.
   const issueCard = fm.issue_reply && !fm.issue_reply.follow_up ? fm.issue_reply : null;
+  // `@name` of the people this message tags reads in bold; a message that tags the reader is tinted too.
+  const mentionedNames = namesOfMentioned(fm.mentions, participants);
+  const mentionsViewer = !!viewerCloudUserId && !!fm.mentions?.includes(viewerCloudUserId);
   const message: ConversationMessage = {
     role,
     content:
@@ -585,7 +590,7 @@ export function FlowMessageBubble({
         ? ''
         : diagnosisHeadline
           ? (fm.text ?? '').replace(/Diagnosis: on its way\s*$/, `Diagnosis: ${diagnosisHeadline}`)
-          : (fm.text ?? ''),
+          : highlightMentions(fm.text ?? '', mentionedNames),
     sender_id: fm.sender_id ?? '',
     timestamp,
   };
@@ -865,6 +870,7 @@ export function FlowMessageBubble({
         <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
       )}
       {issueCard && <IssueReplyLine reply={issueCard} />}
+      {fm.ticket_draft && <TicketDraftLine draft={fm.ticket_draft} messageId={messageId} text={fm.text ?? ''} />}
       {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
@@ -967,10 +973,11 @@ export function FlowMessageBubble({
         onSelect={onSelect}
         quoted={quoted}
         reactions={reactions}
-        onReact={channelTraits?.reacts && fm?.origin ? handleReact : undefined}
+        onReact={channelTraits?.reacts && fm?.origin ? (emoji, remove) => void handleReact(emoji, remove) : undefined}
         onReply={onReply && fm && (channelTraits?.native ? !fm.is_draft : fm.origin) ? () => onReply(fm) : undefined}
         replyInThread={!channelTraits?.quotes}
         continuation={continuation}
+        mentionsViewer={mentionsViewer}
       />
       {fm.invite && (
         <div className="ms-10" data-testid="message-invite">

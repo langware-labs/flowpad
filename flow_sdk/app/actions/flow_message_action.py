@@ -2161,9 +2161,10 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         fm = FlowMessage.model_validate(payload)
         # The same derived fields materialize_flow_message fills on every other arrival path: this pull is the
         # one a reply takes when it lands before the live push (an IT machine answering within a second).
-        from flow_sdk.builtin.flow_message import derive_it_reply  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message import derive_it_reply, derive_ticket_draft  # noqa: PLC0415
 
         derive_it_reply(fm, raw)
+        derive_ticket_draft(fm, raw)
         await fm.save()
     except Exception as e:  # noqa: BLE001
         logger.warning("[fm-process] bundle-less fm=%s save failed: %s", fm_id[:8], e)
@@ -2388,18 +2389,33 @@ async def stream_inbox_search() -> ApiResponse:
         # Narrow in the query before the shared hierarchy predicate. LIKE is
         # only a candidate filter (a legal underscore is a LIKE wildcard), so
         # apply_tag_filter remains the exact canonical matcher.
-        tag_match = ExpressionNode(op=QueryOp.AND, operands=[
-            ExpressionNode(op=QueryOp.OR, operands=[
-                ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}"%']),
-                ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}.%']),
-            ]) for tag in selected_tags
-        ]) if selected_tags else None
+        tag_match = (
+            ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    ExpressionNode(
+                        op=QueryOp.OR,
+                        operands=[
+                            ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}"%']),
+                            ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}.%']),
+                        ],
+                    )
+                    for tag in selected_tags
+                ],
+            )
+            if selected_tags
+            else None
+        )
 
         def filtered(match):
-            return QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[match, tag_match]) if tag_match else match)
+            return QueryFilter(
+                match=ExpressionNode(op=QueryOp.AND, operands=[match, tag_match]) if tag_match else match
+            )
 
         if not needle:
-            messages = apply_tag_filter(await FlowMessage.get_all(QueryFilter(match=tag_match), hydrate=False), selected_tags)
+            messages = apply_tag_filter(
+                await FlowMessage.get_all(QueryFilter(match=tag_match), hydrate=False), selected_tags
+            )
             ids = {str(m.conversation_id) for m in messages if m.conversation_id}
             if scope is not None:
                 ids &= scope.conversation_ids
@@ -2423,7 +2439,9 @@ async def stream_inbox_search() -> ApiResponse:
                 hydrate=False,
             ),
         )
-        conversation_ids: set[str] = {str(m.conversation_id) for m in apply_tag_filter(native, selected_tags) if m.conversation_id}
+        conversation_ids: set[str] = {
+            str(m.conversation_id) for m in apply_tag_filter(native, selected_tags) if m.conversation_id
+        }
         if items:
             refs = await FlowMessage.get_all(
                 filtered(
@@ -2434,7 +2452,9 @@ async def stream_inbox_search() -> ApiResponse:
                 ),
                 hydrate=False,
             )
-            conversation_ids |= {str(m.conversation_id) for m in apply_tag_filter(refs, selected_tags) if m.conversation_id}
+            conversation_ids |= {
+                str(m.conversation_id) for m in apply_tag_filter(refs, selected_tags) if m.conversation_id
+            }
         if scope is not None:
             conversation_ids &= scope.conversation_ids
         return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})
@@ -5084,7 +5104,9 @@ async def message_set_tags(self: FlowMessage) -> ApiResponse:
         await self.set_tags(body["tags"])
     except ValueError as exc:
         return ApiFailResponse(message=str(exc), status_code=400)
-    return ApiSuccessResponse(data={
-        "tags": self.tags,
-        "message_processing": self.message_processing.model_dump(mode="json") if self.message_processing else None,
-    })
+    return ApiSuccessResponse(
+        data={
+            "tags": self.tags,
+            "message_processing": self.message_processing.model_dump(mode="json") if self.message_processing else None,
+        }
+    )

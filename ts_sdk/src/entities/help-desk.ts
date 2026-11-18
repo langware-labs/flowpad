@@ -178,3 +178,38 @@ export async function openTeamConversation(ticketId: string, text: string): Prom
   const team = await dataManager.callAction<unknown, { id: string }>(action);
   return team.id;
 }
+
+/** Which side of a ticket a desk's agent works. Mirrors the backend's `HelpdeskAgentSide`. */
+export enum HelpDeskAgentSide {
+  /** Answers the customer (a draft on the team side while moderated). */
+  CUSTOMER = 'customer',
+  /** Writes notes for the team only. */
+  TEAM = 'team',
+}
+
+/** One of a desk's optional agents, as the desk's page sets it up: the side it works and when it replies. */
+export interface HelpDeskAgent {
+  desk_project_id: string;
+  side: HelpDeskAgentSide;
+  instructions?: string;
+  reply_not_picked_up: boolean;
+  reply_tagged: boolean;
+  moderated: boolean;
+  agent_id?: string | null;
+  agent_name?: string | null;
+}
+
+/** The desk's agents on this computer, one per side at most. Desktop only: an agent runs on a machine. */
+export async function helpDeskAgents(deskId: string): Promise<HelpDeskAgent[]> {
+  if (isHubOnly()) return [];
+  const action = new ActionInfo('helpdesk-agents', null, null, 'POST');
+  action.bodyParameters = { desk_project_id: deskId };
+  return (await dataManager.callAction<unknown, HelpDeskAgent[]>(action)) ?? [];
+}
+
+/** Make one of the desk's agents: the agent, its source on the desk, and its deployment on this computer. */
+export async function createHelpDeskAgent(agent: HelpDeskAgent, deskName: string): Promise<HelpDeskAgent> {
+  const action = new ActionInfo('helpdesk-agent', null, null, 'POST');
+  action.bodyParameters = { ...agent, desk_name: deskName };
+  return (await dataManager.callAction<unknown, HelpDeskAgent>(action))!;
+}

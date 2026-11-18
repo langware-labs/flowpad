@@ -14,10 +14,10 @@ from flow_sdk.schema.data_spec.diagnose_spec import (
     DiagnosisSpec,
     DiagnosisStatus,
     FlowContextSpec,
-    LogTail,
     SessionState,
     SessionTurn,
 )
+from flow_sdk.schema.data_spec.logs_spec import LogTail
 
 __all__ = [
     "DiagnoseError",

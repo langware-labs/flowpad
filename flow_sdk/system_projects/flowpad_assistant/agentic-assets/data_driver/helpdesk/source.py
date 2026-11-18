@@ -34,6 +34,7 @@ from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, 
 
 from pydantic import StringConstraints
 
+from flow_sdk.schema.data_spec.helpdesk_agent_spec import HelpdeskAgentSide
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import ChoiceEntry, SourceConfig
@@ -72,16 +73,33 @@ class HelpdeskMessageData(MessageData):
     #: The hub's own id for the message, for adoption.
     hub_message_id: Optional[str] = None
     raw: Optional[dict] = None
+    #: Not a call for the agent to act: the ticket is a person's now and nobody tagged the agent, or the
+    #: agent was set to answer only when tagged.
+    quiet: bool = False
+    #: A write on the team side: the team conversation's own copy comes from the hub (a draft with its buttons),
+    #: so nothing is recorded here -- recorded, it would be placed in the ticket the customer sees.
+    recorded: bool = False
 
 
 #: A desk this login holds no role on: a source reading it would see no tickets and raise no error.
 NOT_ON_DESK = "you are not on this desk's team, so its tickets will not show"
 
 
+#: How a person calls the agent into a ticket it would otherwise leave alone.
+TAG = "@agent"
+
+
 class HelpdeskConfig(SourceConfig):
-    """What a helpdesk source is configured with."""
+    """What a helpdesk source is configured with. The rest is how the agent that owns it answers: on the
+    customer's side (to the requester, moderated or not) or on the team's side (notes only), and when. The
+    defaults are a person's own desk source, which answers the customer at once; a desk's agent is made with
+    every one of them stated (``helpdesk_agent_action``), ``moderated`` on unless its owner turned it off."""
 
     desk_project_id: Union[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)], ChoiceEntry]
+    side: HelpdeskAgentSide = HelpdeskAgentSide.CUSTOMER
+    reply_not_picked_up: bool = True
+    reply_tagged: bool = True
+    moderated: bool = False
 
 
 class HelpdeskSource(MessageSource):
@@ -93,9 +111,6 @@ class HelpdeskSource(MessageSource):
     pages_backward = True
     #: Strangers are the point: an empty allowlist admits every requester.
     open_inbound = True
-    #: A turn's text goes back to the customer only the first time (the acknowledgement); every later word
-    #: to them is an explicit reply that the team approved.
-    answers_once: ClassVar[bool] = True
     identity_config_key = "desk_project_id"
     #: Every thread here is a help-desk ticket.
     conversation_kind = "helpdesk"
@@ -105,6 +120,8 @@ class HelpdeskSource(MessageSource):
     def __init__(self, binding: SourceBinding, hub: Optional[HubTransport] = None) -> None:
         super().__init__(binding)
         self._hub = hub
+        #: Tickets a person has picked up, as the last pool read said.
+        self._staffed: set[str] = set()
 
     @classmethod
     def resume_at(cls, watermark: str, tickets: Mapping[str, tuple[str, str, list[str]]]) -> str:
@@ -169,6 +186,19 @@ class HelpdeskSource(MessageSource):
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.schema.data_spec.choice_spec import Choice  # noqa: PLC0415
 
+        if field == "side":
+            return [
+                Choice(
+                    id=HelpdeskAgentSide.CUSTOMER.value,
+                    name="Customer side",
+                    detail="makes sure the team has everything from the customer",
+                ),
+                Choice(
+                    id=HelpdeskAgentSide.TEAM.value,
+                    name="Team side",
+                    detail="writes a first root-cause analysis for the team",
+                ),
+            ]
         if field != "desk_project_id":
             return []
         known: list[tuple[str, str, str]] = []
@@ -202,6 +232,7 @@ class HelpdeskSource(MessageSource):
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.ingest.health import SourceHealth  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import default_owner  # noqa: PLC0415
 
         walk = await HubProxy.walk("project")
         driver = DataDriver.loaded(cls.provider)
@@ -213,7 +244,9 @@ class HelpdeskSource(MessageSource):
             desk_id = str(project.get("id") or "").strip()
             if not desk.get("enabled") or not desk_id:
                 continue
-            held = await DataSource.find_for_account(cls.provider, cls.identity_config_key, desk_id)
+            # The staffer's own source: a desk agent's source on the same desk is the agent's, not theirs.
+            owner = await default_owner()
+            held = await DataSource.find_for_account(cls.provider, cls.identity_config_key, desk_id, owner=owner)
             if held is not None:
                 # This walk just succeeded with a login that holds a role on the desk, so a source parked by an
                 # earlier 401 (the hub restarted or the login lapsed) is no longer a configuration error.
@@ -223,11 +256,11 @@ class HelpdeskSource(MessageSource):
             name = str(desk.get("display_name") or project.get("name") or desk_id)
             config = driver.create_config(**{cls.identity_config_key: desk_id})
             try:
-                await driver.create_source(config, name=name).save()
+                await driver.create_source(config, name=name, owner=owner).save()
             except AssetPathCollisionError:
                 # Two desks may share a name (a source's folder is named by it): the second is told apart by
                 # its id, or its staff would never receive its tickets.
-                await driver.create_source(config, name=f"{name} ({desk_id[:8]})").save()
+                await driver.create_source(config, name=f"{name} ({desk_id[:8]})", owner=owner).save()
             made += 1
         return made
 
@@ -353,6 +386,15 @@ class HelpdeskSource(MessageSource):
             await self.hub.get("project", self.desk, "helpdesk_conversations", params={"include_closed": "true"})
         )
         pool = []
+        # Picked up by someone other than this login: the agent's own pickup (an unmoderated answer) is not a
+        # person taking the ticket. On one computer the agent and its owner share a login, so the owner's own
+        # pickup there does not quiet it either -- a deployed agent signs in as itself.
+        me = self.hub.me()
+        self._staffed = {
+            str(row.get("conversation_id") or "").strip()
+            for row in rows
+            if any(who != me for who in row.get("picked_up_by") or [])
+        }
         for row in rows:
             ticket = str(row.get("conversation_id") or "").strip()
             if ticket:
@@ -374,8 +416,15 @@ class HelpdeskSource(MessageSource):
             hub_conversation_id=ticket,
             hub_message_id=fm_id,
             raw=fm,
+            quiet=not self._calls_the_agent(ticket, str(fm.get("text") or "")),
         )
         return MessageItem(origin=self.origin(fm_id, ticket), data=data)
+
+    def _calls_the_agent(self, ticket: str, text: str) -> bool:
+        """Whether a ticket message is the agent's to answer: nobody has the ticket yet, or it was tagged."""
+        if self.config.get("reply_tagged", True) and TAG in text.lower():
+            return True
+        return bool(self.config.get("reply_not_picked_up", True)) and ticket not in self._staffed
 
     # ── identity ────────────────────────────────────────────────────────────
     async def whoami(self) -> tuple[UserProfile, ...]:
@@ -403,6 +452,54 @@ class HelpdeskSource(MessageSource):
         return await self._answer(ticket, data.text or "", origin)
 
     async def _answer(self, ticket: str, text: str, answered: Optional[CloudOrigin]) -> MessageItem:
+        """Where a reply goes, by the source's config: a note on the team's side, a draft there for a person to send
+        (``moderated``), or straight to the requester. Nothing waits unless the config says so: a person's own source
+        states nothing, so what they type goes out; the desk's agents state it (``helpdesk_agent_action``)."""
+        if self.config.get("side") == HelpdeskAgentSide.TEAM:
+            return await self._on_team_side(ticket, text, answered, None)
+        if self.config.get("moderated", False):
+            return await self._on_team_side(ticket, text, answered, "draft")
+        return await self._to_requester(ticket, text, answered)
+
+    async def _on_team_side(
+        self, ticket: str, text: str, answered: Optional[CloudOrigin], action: Optional[str]
+    ) -> MessageItem:
+        """A note in the ticket's team conversation, or (``action="draft"``) a draft the hub keeps there."""
+        if action == "draft":
+            body = await self.hub.post("conversation", {"text": text}, ticket, "draft")
+        else:
+            team = await self.hub.get("conversation", ticket, "team_conversation")
+            team_id = str((team or {}).get("id") or "")
+            if not team_id:
+                opened = await self.hub.post(
+                    "conversation", {"title": "", "text": text}, ticket, "open_team_conversation"
+                )
+                return self._sent(ticket, str((opened or {}).get("id") or ""), {"text": text}, answered)
+            body = await self.hub.post(
+                "conversation", {"text": text, "conversation_id": team_id}, team_id, "add_message"
+            )
+        team_id = str((body or {}).get("conversation_id") or "")
+        return self._sent(ticket, team_id, {"text": text, **(body or {})}, answered)
+
+    def _sent(self, ticket: str, where: str, body: dict, answered: Optional[CloudOrigin]) -> MessageItem:
+        """What a team-side write returns: the message under the ticket's scope, adopted by the team conversation's
+        own mirrored row (never the ticket's)."""
+        message_id = str(body.get("id") or "") or where
+        if not message_id:
+            raise OutcomeUnknown("the hub accepted the note but returned no id for it")
+        item = self._item(ticket, {"sender_id": self.hub.me(), **body, "id": message_id})
+        data = item.data.model_copy(
+            update={
+                "hub_conversation_id": where or None,
+                "in_reply_to": answered,
+                "quiet": True,
+                "recorded": True,
+                "sent_at": item.data.sent_at or datetime.now(timezone.utc),
+            }
+        )
+        return MessageItem(origin=item.origin, data=data)
+
+    async def _to_requester(self, ticket: str, text: str, answered: Optional[CloudOrigin]) -> MessageItem:
         """Pick the ticket up, then post. The hub fans a ticket out to participants only, so pickup is
         what makes the answer (and the guest's next word) reach this machine; the hub makes a second
         pickup a no-op, so it is always sent rather than paid for with a read first."""

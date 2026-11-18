@@ -11,17 +11,21 @@ import {
   ensureHelpDeskSources,
   cloudManager,
   getMembers,
+  helpDeskAgents,
   helpDeskCard,
   helpDeskProject,
   helpDeskTickets,
   inviteHelpDeskStaff,
   myHelpDesks,
   setHelpDeskEnabled,
+  HelpDeskAgentSide,
+  type HelpDeskAgent,
   type HelpDeskCard,
   type HelpDeskProject,
   type HelpDeskTicketRow,
   type Participant,
 } from '@sdk';
+import { isClosedConversation } from '@sdk/entities/conversation';
 import { useAuth } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, LifeBuoy } from 'lucide-react';
@@ -33,6 +37,8 @@ import { SegmentedControl } from '@src/components/ui/segmented-control';
 import { Switch } from '@src/components/ui/switch';
 import { helpDeskUrl } from '@src/lib/hub-page-url';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { HelpDeskAgentDialog } from './HelpDeskAgentDialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /** A desk's title line: its name, what it is, then whatever the viewer may do with it. */
@@ -52,7 +58,13 @@ function DeskTitle({ name, children }: { name: string; children?: ReactNode }) {
 }
 
 type Loaded =
-  | { as: 'team'; project: HelpDeskProject; tickets: HelpDeskTicketRow[]; staff: Participant[] }
+  | {
+      as: 'team';
+      project: HelpDeskProject;
+      tickets: HelpDeskTicketRow[];
+      staff: Participant[];
+      agents: HelpDeskAgent[];
+    }
   | { as: 'asker'; card: HelpDeskCard; mine: boolean }
   | { as: 'nobody' };
 
@@ -65,17 +77,19 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
   const [busy, setBusy] = useState(false);
   const [invitee, setInvitee] = useState('');
   const [tab, setTab] = useState<'tickets' | 'team' | 'settings'>('tickets');
+  const [settingUp, setSettingUp] = useState<HelpDeskAgentSide | null>(null);
 
   const load = useCallback(async () => {
     if (!deskId) return setLoaded({ as: 'nobody' });
     try {
       // The project row answers only its team; the queue and roster are theirs too.
       const project = await helpDeskProject(deskId);
-      const [tickets, staff] = await Promise.all([
+      const [tickets, staff, agents] = await Promise.all([
         helpDeskTickets(deskId).catch(() => []),
         getMembers(new TypeId('project', deskId)).catch(() => []),
+        helpDeskAgents(deskId).catch(() => []),
       ]);
-      setLoaded({ as: 'team', project, tickets, staff });
+      setLoaded({ as: 'team', project, tickets, staff, agents });
     } catch {
       try {
         const [card, desks] = await Promise.all([helpDeskCard(deskId), me ? myHelpDesks(me) : Promise.resolve([])]);
@@ -147,7 +161,7 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
     );
   }
 
-  const { project, tickets, staff } = loaded;
+  const { project, tickets, staff, agents } = loaded;
   const name = project.helpdesk?.display_name || project.name || t`Help desk`;
   const on = !!project.helpdesk?.enabled;
   // The hub's own address: where this page is served from on the hub, the cloud app's elsewhere.
@@ -203,7 +217,7 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
                 data-testid="help-desk-ticket-row"
               >
                 <span className="shrink-0 rounded border px-1.5 text-[11px] text-muted-foreground">
-                  {ticket.status === 'closed' ? (
+                  {isClosedConversation(ticket.status) ? (
                     <Trans>Closed</Trans>
                   ) : ticket.picked_up_by?.length ? (
                     <Trans>Picked up</Trans>
@@ -287,7 +301,64 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
               copiedLabel={<Trans>Copied</Trans>}
             />
           </div>
+          {/* The optional agents run on a computer, so they are set up from the desktop app. */}
+          {!isHubOnly() &&
+            Object.values(HelpDeskAgentSide).map((side) => {
+              const agent = agents.find((a) => a.side === side);
+              return (
+                <div key={side} className={row} data-testid={`help-desk-agent-${side}`}>
+                  <span className="w-32 shrink-0 text-muted-foreground">
+                    {side === HelpDeskAgentSide.CUSTOMER ? <Trans>Customer agent</Trans> : <Trans>Team agent</Trans>}
+                  </span>
+                  <span className="flex-1 text-xs text-muted-foreground">
+                    {agent ? (
+                      <span className="text-sm text-foreground">{agent.agent_name}</span>
+                    ) : side === HelpDeskAgentSide.CUSTOMER ? (
+                      <Trans>
+                        Optional — on the customer side: makes sure the team has everything it needs from the customer.
+                      </Trans>
+                    ) : (
+                      <Trans>
+                        Optional — on the team side: writes a first root-cause analysis for a team member to review.
+                      </Trans>
+                    )}
+                  </span>
+                  {agent ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        agent.agent_id &&
+                        navigation.openDockOnThisPage(
+                          DockPointer.forAssetEditorByTypeId('agent', new TypeId('agent', agent.agent_id)),
+                        )
+                      }
+                    >
+                      <Trans>Open</Trans>
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSettingUp(side)}
+                      data-testid={`help-desk-agent-setup-${side}`}
+                    >
+                      <Trans>Set up</Trans>
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
         </section>
+      )}
+      {settingUp && (
+        <HelpDeskAgentDialog
+          deskId={deskId}
+          deskName={name}
+          side={settingUp}
+          onOpenChange={(open) => !open && setSettingUp(null)}
+          onLaunched={() => void load()}
+        />
       )}
     </div>
   );

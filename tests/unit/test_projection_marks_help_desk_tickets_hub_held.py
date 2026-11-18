@@ -63,3 +63,33 @@ async def test_a_ticket_projected_before_the_mark_existed_is_marked_on_the_next_
     await project_source_item(item, source=source, notify=False, announce=False)
 
     assert (await Conversation.get_one({"id": ticket})).remote is True
+
+
+async def test_each_owner_of_the_desk_gets_its_own_thread_for_a_shared_ticket_message(initialize_test_db) -> None:
+    """A desk's two agents (and its staff) each own a source on the same desk: one hub message, one row, but a thread
+    per owner -- the agent whose source placed it second must still find a conversation to answer in."""
+    from flow_sdk.builtin.message_thread import MessageThread
+    from flow_sdk.fs_store.type_id import TypeId
+
+    source, item, ticket = await _queued_ticket()
+    await project_source_item(item, source=source, notify=False, announce=False)
+    agent_source = DataSource(
+        name=f"agent desk {uuid.uuid4().hex[:8]}",
+        provider="helpdesk",
+        channel="helpdesk",
+        config=dict(source.config),
+        owner=TypeId(f"agent-{uuid.uuid4()}"),
+    )
+    await agent_source.save()
+    twin = SourceItem(**{**item.model_dump(exclude={"id", "data_source_id"}), "data_source_id": str(agent_source.id)})
+    await twin.save()
+
+    from flow_sdk.builtin.flow_message import FlowMessage
+
+    placed = (await FlowMessage.get_by_id(item.message_id)).thread_id
+    for _ in range(2):  # re-projections leave the shared row where it was placed
+        await project_source_item(twin, source=agent_source, notify=False, announce=False)
+
+    owners = {str(t.owner) for t in await MessageThread.get_all({"conversation_id": ticket})}
+    assert str(agent_source.owner) in owners and len(owners) == 2
+    assert (await FlowMessage.get_by_id(item.message_id)).thread_id == placed

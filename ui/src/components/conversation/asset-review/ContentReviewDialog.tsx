@@ -15,12 +15,15 @@ export interface ContentItem {
 function describe(name: string): { typeWord: string; description: string } {
   switch (name) {
     case 'diagnosis.value.json':
-      return { typeWord: t`Diagnosis`, description: t`What the check found on this computer: status, findings, versions.` };
+      return {
+        typeWord: t`Diagnosis`,
+        description: t`What the check found on this computer: status, findings, versions.`,
+      };
     case 'screen.value.json':
       return { typeWord: t`Screen`, description: t`The screen you were on when you asked.` };
     case 'session.value.json':
       return { typeWord: t`Session`, description: t`The session on screen and its last messages, secrets masked.` };
-    case 'logs.txt':
+    case 'logs.value.json':
       return { typeWord: t`Logs`, description: t`The last lines of this computer's logs, secrets masked.` };
     default:
       return { typeWord: t`File`, description: '' };
@@ -69,8 +72,7 @@ export function ContentReviewDialog({
   if (!selected) return null;
   const out = leftOut.includes(selected.name);
   const meta = describe(selected.name);
-  const toggle = () =>
-    onLeftOutChange(out ? leftOut.filter((n) => n !== selected.name) : [...leftOut, selected.name]);
+  const toggle = () => onLeftOutChange(out ? leftOut.filter((n) => n !== selected.name) : [...leftOut, selected.name]);
   const iconOf = (name: string) => (name.endsWith('.json') ? Braces : FileText);
 
   return (

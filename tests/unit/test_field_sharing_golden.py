@@ -328,6 +328,8 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "it_request",
                 # `issue_reply`: a Monitoring message's issue, re-derived from the hub's metadata on every arrival.
                 "issue_reply",
+                # `ticket_draft`: a team conversation's draft and its decision, re-derived from the hub's metadata.
+                "ticket_draft",
                 # `message_processing`: this machine's classification, tag provenance and automation queue.
                 "message_processing",
             ],

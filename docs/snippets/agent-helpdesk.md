@@ -41,9 +41,20 @@ live by `tests/hub_tests/test_helpdesk_source_roundtrip.py`.
 From here the built-in stream inbox runtime does the rest while Flowpad's server runs:
 each poll lists the desk's pool, ingests a ticket's messages onto the hub's own
 ids, projects them into the Agent's stream inbox, and runs the Agent on every inbound
-message it did not write itself. Its reply goes back through the same source —
-the driver picks the ticket up first, since the hub fans a ticket out to
-participants only — and the hub masks it to the desk's brand.
+message it did not write itself. Where its reply goes is the source's own config:
+
+- `moderated=True` (what the desk page's Customer agent setup turns on): the reply waits in the ticket's team conversation as a
+  draft; a person on the staff sends it (as written or edited), which picks the ticket up
+  for them, or discards it.
+- `moderated=False` (the default, and a person's own desk source): the driver picks the ticket up and answers the requester directly,
+  masked to the desk's brand.
+- `side="team"`: every word goes to the team conversation as a note; nothing reaches the
+  requester.
+
+The agent answers a ticket nobody has picked up (`reply_not_picked_up`) and one where
+someone wrote `@agent` (`reply_tagged`); once a person has the ticket it stays quiet
+unless tagged. The desk's page sets all of this up from its Customer agent / Team agent
+rows.
 
 `create_source(..., allowed_senders=[...])` restricts the desk to those hub user
 ids; leaving it empty keeps the desk open. Pausing the source (the switch on the

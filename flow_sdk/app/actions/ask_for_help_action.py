@@ -12,11 +12,13 @@ POST /api/v1/graph/help-requests       — my requests, both kinds, one row shap
 POST /api/v1/graph/conversation/<id>/resend — the person's Retry: deliver it again, refusals included
 POST /api/v1/graph/conversation/<id>/help-request-report — Report it: a private request becomes a desk ticket
 
-The diagnosis never holds the request up: the conversation and the person's message are written at once,
-the diagnosis runs in the background and lands as a ``diagnosis`` message of its own (its text the bottom
-line, ``diagnosis.value.json`` the details), and only then is the request delivered. "Diagnose & fix" is the
-same request with nobody asked and ``purpose=repair``: private, repairs what it can, and offers Report it
-when someone else owns the fix (``DiagnosisSpec.reportable``).
+The diagnosis never holds the request up: the conversation and the person's message are written at once
+("Diagnosis: on its way"), the diagnosis runs in the background, and only then is the request delivered. A
+request that is going to someone takes the diagnosis INTO the message, before anything left this computer: its
+last line becomes the bottom line and ``diagnosis.value.json`` rides on it -- one message, never two.
+"Diagnose & fix" is the same request with nobody asked and ``purpose=repair``: private, it keeps the diagnosis
+as a ``diagnosis`` message of its own, and offers Report it when someone else owns the fix
+(``DiagnosisSpec.reportable``).
 """
 
 from __future__ import annotations
@@ -86,7 +88,8 @@ IDEMPOTENT_TICKETS = "idempotent_guest_conversation"
 #: A diagnosis travels as ``diagnosis.value.json``: a ``.value.json`` opens in its kind's viewer.
 DIAGNOSIS_FILE = "diagnosis.value.json"
 #: The context a help request can carry, in the order the review lists it.
-CONTEXT_FILES = (DIAGNOSIS_FILE, "screen.value.json", "session.value.json", "logs.txt")
+LOGS_FILE = "logs.value.json"
+CONTEXT_FILES = (DIAGNOSIS_FILE, "screen.value.json", "session.value.json", LOGS_FILE)
 
 
 def _parse_request(body: dict) -> AskForHelpRequest:
@@ -191,6 +194,7 @@ async def capture_context(ask: AskForHelpRequest, recorded=None) -> dict[str, by
     Every file the person left out in the review is dropped here, before anything is written."""
     from flow_sdk.diagnose import DiagnosePurpose, build_flow_context, run_diagnose  # noqa: PLC0415
     from flow_sdk.diagnose.baseline import log_tails  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.logs_spec import LogsSpec  # noqa: PLC0415
 
     ctx = await build_flow_context(
         purpose=DiagnosePurpose.REPORT,
@@ -212,7 +216,7 @@ async def capture_context(ask: AskForHelpRequest, recorded=None) -> dict[str, by
         files["session.value.json"] = value_json(ctx)
     logs = diagnosis.logs if diagnosis is not None and diagnosis.logs else await asyncio.to_thread(log_tails)
     if logs:
-        files["logs.txt"] = "\n\n".join(f"== {t.file}\n" + "\n".join(t.lines) for t in logs).encode("utf-8")
+        files[LOGS_FILE] = value_json(LogsSpec(files=list(logs)))
     left_out = set(ask.left_out)
     return {name: content for name, content in files.items() if name not in left_out}
 
@@ -433,11 +437,68 @@ async def _diagnose_then_deliver(conv_ids: list[str], ask: AskForHelpRequest, so
         if conv is None:
             continue
         try:
-            await _post_diagnosis(conv, ask, diagnosis, diagnosis_id, someone)
+            # Going to someone: the diagnosis joins the request, which has not left this computer. Anything else
+            # (a private run, a request already written by an earlier send) keeps a message of its own.
+            if not (conv.hub_bound and await _fold_diagnosis(conv, ask, diagnosis, diagnosis_id, someone)):
+                await _post_diagnosis(conv, ask, diagnosis, diagnosis_id, someone)
         except Exception:  # noqa: BLE001
             logger.warning("[ask-for-help] posting the diagnosis into %s failed", conv_id, exc_info=True)
         if conv.hub_bound:
             await _first_delivery(conv, "ask-for-help")
+
+
+async def _fold_diagnosis(conv, ask: AskForHelpRequest, diagnosis, diagnosis_id, someone) -> bool:
+    """Put the diagnosis into the request message itself: its last line says what was found, ``diagnosis.value.json``
+    and the diagnosis chip ride on it, and its carrier stops saying "diagnosing". Done before the first delivery, so
+    the hub only ever sees the finished message. False -- nothing changed -- when the message is not the one this
+    function wrote (it was delivered, or edited), and the caller posts the diagnosis on its own."""
+    from flow_sdk.app.actions.notification_action import (  # noqa: PLC0415
+        _attach_asset_references,
+        _attach_uploaded_files,
+    )
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
+
+    fm = await _opening_message(conv)
+    pending = f"\n\n{diagnosis_line(diagnosing=True, attached=False)}"
+    if fm is None or _kind(fm) != FlowMessageKind.HELP_REQUEST.value or not (fm.text or "").endswith(pending):
+        return False
+    if fm.delivery_status not in (DeliveryStatus.CREATED.value, DeliveryStatus.PENDING_SEND.value):
+        return False
+    carrier_file = carrier_attachment(fm)
+    if carrier_file is None:
+        return False
+
+    shared = _shares_context(ask) and DIAGNOSIS_FILE not in set(ask.left_out)
+    files = (
+        {DIAGNOSIS_FILE: value_json(diagnosis.model_copy(update={"logs": [], "context": None}))}
+        if diagnosis is not None
+        else {}
+    )
+    if files and not shared:
+        await asyncio.to_thread(_hold, conv.id, files)  # the person reviews it before it leaves
+    line = bottom_line(diagnosis) if diagnosis is not None else "could not run. You can still report it."
+    fm.text = (fm.text or "")[: -len(pending)] + f"\n\n{DIAGNOSIS_LINE}{line}"
+
+    storage = get_entity_embedded_storage(TypeId(type="flow_message", id=fm.id))
+    carrier_path = Path(storage.get_storage_path(carrier_file.data))
+    carrier = HelpRequestCarrier.model_validate(
+        {k: v for k, v in json.loads(carrier_path.read_text(encoding="utf-8")).items() if k != "spec_kind"}
+    )
+    carrier = carrier.model_copy(
+        update={
+            "diagnosing": False,
+            "context": [*carrier.context, *(n for n in files if shared and n not in carrier.context)],
+        }
+    )
+    carrier_path.write_bytes(value_json(carrier))
+
+    if shared and files:
+        await _attach_uploaded_files(fm, [Upload(n, c) for n, c in files.items()])
+    if shared and diagnosis_id:
+        await _attach_asset_references(fm, [f"flowpad_diagnosis-{diagnosis_id}"])
+    await fm.save(someone)
+    return True
 
 
 async def _post_diagnosis(conv, ask: AskForHelpRequest, diagnosis, diagnosis_id, someone) -> None:
@@ -450,7 +511,8 @@ async def _post_diagnosis(conv, ask: AskForHelpRequest, diagnosis, diagnosis_id,
     if files and not shared:
         await asyncio.to_thread(_hold, conv.id, files)
     await post_message(
-        conv.id, text,
+        conv.id,
+        text,
         kind=FlowMessageKind.DIAGNOSIS,
         sender_name="Flowpad Diagnosis",
         someone=someone,
@@ -608,7 +670,9 @@ async def _posted_diagnosis(conv, messages=None):
         return held, True
     posted = False
     for fm in reversed(messages if messages is not None else await conv.messages()):
-        if _kind(fm) != FlowMessageKind.DIAGNOSIS.value:
+        # A diagnosis message of its own, or a request that took the diagnosis in (``_fold_diagnosis``).
+        carries = any(str(a.data).rsplit("/", 1)[-1] == DIAGNOSIS_FILE for a in fm.attachment or [])
+        if _kind(fm) != FlowMessageKind.DIAGNOSIS.value and not carries:
             continue
         posted = True
         for a in fm.attachment or []:
@@ -636,7 +700,7 @@ async def _diagnosis_worker(messages) -> str:
             ref = str(a.data)
             if not ref.startswith(prefix):
                 continue
-            record = await recorded_diagnosis(ref[len(prefix):])
+            record = await recorded_diagnosis(ref[len(prefix) :])
             for tid in (record.private_context_entities if record is not None else None) or []:
                 if tid.type == "agentic_process":
                     return tid.id
@@ -1016,7 +1080,9 @@ async def help_recipients() -> ApiResponse:
             desks.insert(
                 len(desks) - (1 if default is not None else 0),
                 HelpRecipient(
-                    kind=HelpRecipientKind.DESK, desk_project_id=mine["id"], name=mine.get("display_name") or "Help desk"
+                    kind=HelpRecipientKind.DESK,
+                    desk_project_id=mine["id"],
+                    name=mine.get("display_name") or "Help desk",
                 ).model_dump(mode="json"),
             )
     state = "known" if default is not None else ("not_configured" if reached else "unknown")

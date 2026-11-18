@@ -27,6 +27,7 @@ from flow_sdk.builtin.flow_message import (
     derive_issue_reply,
     derive_it_reply,
     derive_session_fields,
+    derive_ticket_draft,
     session_snapshot_from_header,
 )
 from flow_sdk.core.entity.entity_model import remote_reflection
@@ -263,6 +264,7 @@ async def materialize_flow_message(
             derive_help_request_kind(fm)
             derive_it_reply(fm, payload)
             derive_issue_reply(fm, payload)
+            derive_ticket_draft(fm, payload)
             # Pure reflection: preserve the hub's created_by/updated_by/dates
             # verbatim, never the local sync user.
             with remote_reflection():
@@ -293,6 +295,7 @@ async def materialize_flow_message(
         derive_help_request_kind(fm)
         derive_it_reply(fm, payload)
         derive_issue_reply(fm, payload)
+        derive_ticket_draft(fm, payload)
         if classify_message:
             from flow_sdk.stream_inbox.message_tags import enroll
 

@@ -2002,6 +2002,7 @@ msgstr ""
 msgid "← All sources"
 msgstr ""
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "← Back"
 msgstr "← חזרה"
@@ -2192,6 +2193,10 @@ msgstr "⚡ {latencyMs} ms"
 #: src/components/conversation/ConversationActions.tsx
 msgid "✓ {label} · {when}"
 msgstr "✓ {label} · {when}"
+
+#: src/components/conversation/TicketClosedBar.tsx
+msgid "✓ {who} closed this ticket · {time}"
+msgstr "✓ {who} סגר/ה את הפנייה · {time}"
 
 #: src/components/conversation/SessionCard.tsx
 msgid "✓ Update sent to {guest}"
@@ -3521,6 +3526,10 @@ msgstr "משאבי הסוכן"
 msgid "Agent stream inbox not found"
 msgstr "הדואר הנכנס של הסוכן לא נמצא"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Agent tagged"
+msgstr "תיוג הסוכן"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Agent title"
@@ -4236,6 +4245,10 @@ msgstr ""
 msgid "Answer or ask the agent…"
 msgstr ""
 
+#: src/components/conversation/TicketDraftLine.tsx
+msgid "Answer to the customer"
+msgstr "תשובה ללקוח"
+
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Answered by"
 msgstr "נענה על ידי"
@@ -4714,7 +4727,7 @@ msgstr "בקשו מהבעלים לשתף את הפרויקט עם {0}."
 msgid "Ask someone for help"
 msgstr "לבקש עזרה ממישהו"
 
-#: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/TicketClosedBar.tsx
 msgid "Ask something new"
 msgstr ""
 
@@ -6319,6 +6332,10 @@ msgstr "מזהה ערוץ (C0123456789)"
 #: src/components/inbound/DestinationPicker.tsx
 msgid "Channel id (data source id there)"
 msgstr "מזהה ערוץ (מזהה מקור נתונים שם)"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Channel: Help desk · {deskName}"
+msgstr "ערוץ: מרכז תמיכה · {deskName}"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/asset-counters/agent-counters.tsx
@@ -8084,6 +8101,10 @@ msgstr "שיחה נמחקה"
 msgid "Conversation not found"
 msgstr "השיחה לא נמצאה"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Conversation not picked up"
+msgstr "השיחה לא נלקחה לטיפול"
+
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Conversation project set"
 msgstr "הגדירו פרויקט השיחה"
@@ -8702,6 +8723,10 @@ msgstr "לא ניתן היה לכבות את הסניפר"
 msgid "Could not discard"
 msgstr "לא ניתן היה להשליך"
 
+#: src/components/conversation/TicketDraftLine.tsx
+msgid "Could not discard the draft"
+msgstr "לא ניתן היה לזרוק את הטיוטה"
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "Could not disconnect from {0}."
@@ -8793,6 +8818,10 @@ msgstr ""
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Could not keep the task"
 msgstr "לא ניתן לשמור את המשימה"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Could not launch the agent"
+msgstr "לא ניתן היה להפעיל את הסוכן"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
@@ -9321,6 +9350,10 @@ msgstr "לא ניתן לשלוח"
 #: src/components/automations/BusView.tsx
 msgid "Could not send it"
 msgstr "לא ניתן לשלוח"
+
+#: src/components/conversation/TicketDraftLine.tsx
+msgid "Could not send the draft"
+msgstr "לא ניתן היה לשלוח את הטיוטה"
 
 #: src/components/install/InstallButton.tsx
 msgid "Could not send the install"
@@ -10119,6 +10152,11 @@ msgstr "תוכן הטיפ המותאם אישית למחוון הטעינה"
 #: src/components/settings-view/settings-utils.ts
 msgid "Custom verbs for the progress spinner"
 msgstr "פעלים מותאמים אישית למחוון ההתקדמות"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Customer agent"
+msgstr "סוכן לקוחות"
 
 #: src/components/project-home/ProjectHome.tsx
 msgid "Customize"
@@ -11366,6 +11404,7 @@ msgid "Disallowed tools"
 msgstr "כלים אסורים"
 
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
+#: src/components/conversation/TicketDraftLine.tsx
 #: src/components/image-annotator/ImageAnnotator.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
@@ -11403,6 +11442,10 @@ msgstr "השליכו טיוטה זו?"
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Discard unsaved changes and go back to stream inbox"
 msgstr "בטלו שינויים שלא נשמרו וחזרו לדואר הנכנס"
+
+#: src/components/conversation/TicketDraftLine.tsx
+msgid "Discarded by {by}"
+msgstr "נזרק על ידי {by}"
 
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/LiveSessionView.tsx
@@ -11787,6 +11830,10 @@ msgstr "מוריד… {0}%"
 msgid "Draft"
 msgstr "טיוטה"
 
+#: src/components/conversation/TicketDraftLine.tsx
+msgid "Draft for the customer — not sent"
+msgstr "טיוטה ללקוח — לא נשלחה"
+
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Drag files or folders here, or use the + button"
 msgstr "גררו לכאן קבצים או תיקיות, או השתמשו בכפתור +"
@@ -11986,6 +12033,7 @@ msgstr "קצוות לפי סוג"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/TicketDraftLine.tsx
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -12115,6 +12163,10 @@ msgstr "ערכו את הטיוטה שלכם…"
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Edited"
 msgstr "נערך"
+
+#: src/components/conversation/TicketDraftLine.tsx
+msgid "Edited and sent to the customer by {by}"
+msgstr "נערך ונשלח ללקוח על ידי {by}"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Edited items could not be loaded. Chat sessions are still shown."
@@ -16255,6 +16307,10 @@ msgstr "הוראות — הנחיית המערכת של הסוכן"
 msgid "Instructions for their agent"
 msgstr "הוראות לסוכן שלהם"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Instructions, in your words. Leave empty for the default for this side."
+msgstr "הוראות, במילים שלכם. השאירו ריק לברירת המחדל של הצד הזה."
+
 #: src/i18n/pref-labels.ts
 msgid "Interface language and text direction."
 msgstr "שפת הממשק וכיוון הטקסט."
@@ -16639,6 +16695,10 @@ msgstr ""
 #: src/components/links/LinkMenu.tsx
 msgid "It will run {0}."
 msgstr "היא תרוץ {0}."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "it writes a draft and does not send it; a team member sends"
+msgstr "הסוכן כותב טיוטה ולא שולח אותה; איש צוות שולח"
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 msgid "It's in your projects list, marked new."
@@ -17156,6 +17216,10 @@ msgstr "הפעילו את {name}"
 #: src/components/terminal/interactive-terminal/SessionAnchor.tsx
 msgid "Launch a session first"
 msgstr "יש להפעיל סשן תחילה"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Launch agent"
+msgstr "הפעלת הסוכן"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Launch anyway"
@@ -19045,6 +19109,10 @@ msgstr "מודלים חסומים (תבניות glob)"
 msgid "Models Used"
 msgstr "מודלים בשימוש"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Moderated replies"
+msgstr "תשובות באישור"
+
 #: src/components/browseable-tree/adapters/fsFolderRoot.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/open-project-component/open-project-component.tsx
@@ -19750,6 +19818,7 @@ msgstr "החדשים ביותר תחילה"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #: src/components/media-viewer/MediaPager.tsx
 #: src/components/ui/pagination.tsx
 #: src/journey/JourneyTray.tsx
@@ -21276,6 +21345,10 @@ msgstr ""
 msgid "Nobody may write to this agent yet — add their address under Allowed senders."
 msgstr "אף אחד עדיין לא יכול לכתוב לסוכן הזה — הוסף את הכתובת שלו תחת שולחים מורשים."
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "nobody on the team has taken the ticket"
+msgstr "אף אחד בצוות לא לקח את הפנייה"
+
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Nobody picked: it stays a private conversation on this computer, with the diagnosis."
 msgstr "לא נבחר אף אחד: זו נשארת שיחה פרטית במחשב הזה, עם האבחון."
@@ -22169,6 +22242,10 @@ msgstr "בטעינה — בכל פעם שהוא מוצג"
 msgid "On the cloud, click to open."
 msgstr "בענן, יש ללחוץ כדי לפתוח."
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "On the customer side: makes sure the team has everything it needs from the customer."
+msgstr "בצד הלקוח: דואג שיהיה לצוות כל מה שהוא צריך מהלקוח."
+
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "On the hub"
 msgstr "ב-hub"
@@ -22180,6 +22257,10 @@ msgstr "במכונה הריצו <0>flow connect</0>. אם היא לא מחובר
 #: src/components/automations/automation-words.ts
 msgid "On the schedule {expr}"
 msgstr "לפי התזמון {expr}"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "On the team side: writes a first root-cause analysis for a team member to review."
+msgstr "בצד הצוות: כותב ניתוח ראשוני של שורש הבעיה, לבדיקת איש צוות."
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "On this machine"
@@ -22400,6 +22481,7 @@ msgstr "אופס! הדף לא נמצא"
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/items/item-state.ts
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -23429,6 +23511,14 @@ msgstr "אופציונלי"
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Optional — leave blank for home"
 msgstr "אופציונלי — השאירו ריק עבור בית"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Optional — on the customer side: makes sure the team has everything it needs from the customer."
+msgstr "אופציונלי — בצד הלקוח: דואג שיהיה לצוות כל מה שהוא צריך מהלקוח."
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Optional — on the team side: writes a first root-cause analysis for a team member to review."
+msgstr "אופציונלי — בצד הצוות: כותב ניתוח ראשוני של שורש הבעיה, לבדיקת איש צוות."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional — skipped on this machine"
@@ -26519,8 +26609,8 @@ msgid "Rename worker"
 msgstr "שינוי שם העובד"
 
 #: src/components/conversation/ConversationView.tsx
-#: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/IssueReplyLine.tsx
+#: src/components/conversation/TicketClosedBar.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
 msgstr "פתחו מחדש"
@@ -26626,6 +26716,10 @@ msgstr ""
 #: src/components/conversation/MessageComposer.tsx
 msgid "Reply to sender…"
 msgstr "הגיבו למשלח…"
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "Reply when (pick any)"
+msgstr "להגיב כאשר (אפשר לבחור כמה)"
 
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "Reply…"
@@ -28926,6 +29020,10 @@ msgstr "שליחה למכונה אחת"
 msgid "Send to agent"
 msgstr ""
 
+#: src/components/conversation/TicketDraftLine.tsx
+msgid "Send to the customer"
+msgstr "שליחה ללקוח"
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Send to the machines"
 msgstr "שליחה למכונות"
@@ -29000,6 +29098,10 @@ msgstr "נשלח יחד"
 #: src/components/conversation/MessageFormCard.tsx
 msgid "Sent as a new reply; the first stays in the thread."
 msgstr ""
+
+#: src/components/conversation/TicketDraftLine.tsx
+msgid "Sent to the customer by {by}"
+msgstr "נשלח ללקוח על ידי {by}"
 
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Sent to the help desk"
@@ -29317,6 +29419,7 @@ msgstr ""
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/credentials-view/SecretVaultPanel.tsx
 #: src/components/git/GitSetupWizard.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
@@ -30713,6 +30816,10 @@ msgstr "מישהו אחר שינה את הקובץ הזה במאגר המרוח�
 msgid "Someone else is using this machine"
 msgstr "מישהו אחר משתמש במחשב הזה"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "someone writes @agent in the conversation"
+msgstr "מישהו כותב @agent בשיחה"
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Something went wrong"
 msgstr "משהו השתבש"
@@ -31899,6 +32006,11 @@ msgstr "צוות"
 msgid "Team · {teamCount}"
 msgstr ""
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Team agent"
+msgstr "סוכן צוות"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Team collaboration mode"
 msgstr "מצב שיתוף פעולה בצוות"
@@ -32444,6 +32556,10 @@ msgstr "האורח"
 #: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
 msgid "The health check did not answer"
 msgstr "בדיקת התקינות לא קיבלה מענה"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "The help desk"
+msgstr "מרכז התמיכה"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "the help desk could not load"
@@ -36000,6 +36116,11 @@ msgstr "מה לא עובד, מה לצרף ומי מקבל"
 msgid "What it did"
 msgstr "מה נעשה"
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "What it does"
+msgstr "מה הסוכן עושה"
+
 #: src/components/credentials/CredentialDialog.tsx
 msgid "What it is"
 msgstr "מה זה"
@@ -36166,9 +36287,17 @@ msgstr "כשסוכן מדווח על {events}"
 msgid "When any of these message tags is assigned"
 msgstr ""
 
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "When it replies"
+msgstr "מתי הוא מגיב"
+
 #: src/i18n/pref-labels.ts
 msgid "When on, the server re-creates the Welcome bookmark + feed entry on the next start, then turns this off."
 msgstr "כשמופעל, השרת יוצר מחדש בהפעלה הבאה את סימניית קבלת הפנים ואת רשומת הפיד, ולאחר מכן מכבה הגדרה זו."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "When should it reply on {deskName}?"
+msgstr "מתי הוא יגיב ב-{deskName}?"
 
 #: src/components/automations/automation-words.ts
 msgid "When something happens"
@@ -36669,6 +36798,7 @@ msgstr "שלך"
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/ChannelMessageExtras.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/conversation/TicketClosedBar.tsx
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 #: src/components/lens-viewer/shared/transcript-features/ChatEntryItem.tsx
 #: src/components/token-plan/FundingChain.tsx

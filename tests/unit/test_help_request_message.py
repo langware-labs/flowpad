@@ -129,7 +129,7 @@ async def _settle() -> None:
         await asyncio.gather(*list(afh._DIAGNOSING))
 
 
-async def test_the_request_is_written_at_once_and_the_diagnosis_follows_as_its_own_message(hub):
+async def test_the_request_is_written_at_once_and_the_diagnosis_joins_it_before_it_leaves(hub):
     body = _ask()
 
     response = await _call(afh.ask_for_help, body)
@@ -143,9 +143,12 @@ async def test_the_request_is_written_at_once_and_the_diagnosis_follows_as_its_o
 
     await _settle()
 
-    _request, diagnosis = await _messages(body["conversation_id"])
-    assert diagnosis.kind == FlowMessageKind.DIAGNOSIS
-    assert json.loads(_files(diagnosis)[afh.DIAGNOSIS_FILE])["title"] == "Backend down"
+    (request,) = await _messages(body["conversation_id"])  # one message, never two
+    assert request.kind == FlowMessageKind.HELP_REQUEST
+    assert request.text.splitlines()[-1].startswith("Diagnosis: ") and "on its way" not in request.text
+    assert json.loads(_files(request)[afh.DIAGNOSIS_FILE])["title"] == "Backend down"
+    carrier = json.loads(_files(request)[HELP_REQUEST_FILE])
+    assert carrier["diagnosing"] is False and afh.DIAGNOSIS_FILE in carrier["context"]
     hub.assert_awaited()
 
 
@@ -164,8 +167,8 @@ async def test_a_failing_diagnose_still_answers_its_baseline(diagnose_with, body
     await _call(afh.ask_for_help, ask)
     await _settle()
 
-    _request, diagnosis = await _messages(ask["conversation_id"])
-    assert json.loads(_files(diagnosis)[afh.DIAGNOSIS_FILE])["status"] == "partial"
+    (request,) = await _messages(ask["conversation_id"])
+    assert json.loads(_files(request)[afh.DIAGNOSIS_FILE])["status"] == "partial"
 
 
 async def test_unshared_context_stays_here_and_share_sends_it_later(hub):
@@ -174,8 +177,9 @@ async def test_unshared_context_stays_here_and_share_sends_it_later(hub):
     await _call(afh.ask_for_help, ask)
     await _settle()
 
-    request, diagnosis = await _messages(ask["conversation_id"])
-    assert set(_files(request)) == {HELP_REQUEST_FILE} and _files(diagnosis) == {}, "nothing left this computer"
+    (request,) = await _messages(ask["conversation_id"])
+    assert set(_files(request)) == {HELP_REQUEST_FILE}, "nothing left this computer"
+    assert request.text.splitlines()[-1].startswith("Diagnosis: ") and "on its way" not in request.text
     assert afh.DIAGNOSIS_FILE in afh.held_context(ask["conversation_id"])
 
     shared = await _call(afh.help_request_share, {}, ask["conversation_id"])
@@ -197,12 +201,12 @@ async def test_review_first_sends_nothing_until_share(hub):
     assert not conv.hub_bound
     hub.assert_not_awaited()
 
-    await _call(afh.help_request_share, {"left_out": ["logs.txt"]}, ask["conversation_id"])
+    await _call(afh.help_request_share, {"left_out": [afh.LOGS_FILE]}, ask["conversation_id"])
 
     conv = await Conversation.get_one({"id": ask["conversation_id"]})
     assert conv.hub_bound
     *_, follow = await _messages(ask["conversation_id"])
-    assert "logs.txt" not in _files(follow), "what the person left out stays out"
+    assert afh.LOGS_FILE not in _files(follow), "what the person left out stays out"
     hub.assert_awaited()
 
 
@@ -405,3 +409,31 @@ async def test_diagnosis_message_names_the_worker_that_ran_it(monkeypatch):
 
     assert await afh._diagnosis_worker([fm]) == "proc-1"
     assert await afh._diagnosis_worker([]) == ""
+
+
+async def test_a_private_diagnosis_keeps_a_message_of_its_own(hub):
+    """Nobody asked (a request kept on this computer): the diagnosis is the answer the person reads and may report."""
+    ask = _ask(send="review_first")
+
+    await _call(afh.ask_for_help, ask)
+    await _settle()
+
+    request, diagnosis = await _messages(ask["conversation_id"])
+    assert request.kind == FlowMessageKind.HELP_REQUEST and diagnosis.kind == FlowMessageKind.DIAGNOSIS
+
+
+async def test_a_diagnosis_that_ends_after_the_request_already_left_follows_as_its_own_message(hub):
+    """A long diagnosis can outlast a hub reconnect or a restart, whose delivery sends what the conversation owes --
+    the waiting request included. A message already sent is never edited: the diagnosis follows it instead."""
+    body = _ask()
+    await _call(afh.ask_for_help, body)
+    (request,) = await _messages(body["conversation_id"])
+    assert "on its way" in request.text
+
+    await request.mark_sent()  # the outbox delivered it while the diagnosis still ran
+    await _settle()
+
+    sent, diagnosis = await _messages(body["conversation_id"])
+    assert "on its way" in sent.text and afh.DIAGNOSIS_FILE not in _files(sent), "the sent message is left as it was"
+    assert diagnosis.kind == FlowMessageKind.DIAGNOSIS
+    assert json.loads(_files(diagnosis)[afh.DIAGNOSIS_FILE])["title"] == "Backend down"

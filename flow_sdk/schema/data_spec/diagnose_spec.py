@@ -14,6 +14,7 @@ from typing import ClassVar, Optional
 
 from pydantic import Field
 
+from flow_sdk.schema.data_spec.logs_spec import LogTail
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 DIAGNOSE_FILE = "diagnose.json"
@@ -146,15 +147,6 @@ class DiagnosisEnvironment(DataSpec):
     instance: str = ""
     backend_port: Optional[int] = None
     hub_url: str = ""
-
-
-class LogTail(DataSpec):
-    """The last lines of one log file, secrets redacted."""
-
-    spec_kind: ClassVar[str] = "diagnosis.log_tail"
-
-    file: str
-    lines: list[str] = Field(default_factory=list)
 
 
 class DiagnosisSpec(DataSpec):

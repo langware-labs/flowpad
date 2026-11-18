@@ -40,6 +40,7 @@ DESK = "4f9f1fd1-39b6-5465-9c20-cb4c59b08318"
 TICKET = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 ME = "11111111-1111-4111-8111-111111111111"
 GUEST = "22222222-2222-4222-8222-222222222222"
+TEAM = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 POOL = [
     {
         "conversation_id": TICKET,
@@ -75,16 +76,25 @@ class _Hub:
             {TICKET},
         )
         self.params = {}
+        self.team = None
 
     async def get(self, entity_type, entity_id, action, *, params=None):
         self.calls.append(("get", entity_type, entity_id, action))
         self.params[action] = dict(params or {})
+        if action == "team_conversation":
+            return self.team
         return self.pool if action == "helpdesk_conversations" else self.messages
 
     async def post(self, entity_type, payload, entity_id, action):
         self.calls.append(("post", entity_type, entity_id, action))
+        if action == "add_message" and self.team and entity_id == self.team["id"]:
+            return {"id": "note-1", "conversation_id": entity_id, "text": payload["text"]}
         if entity_id not in self.tickets:
             raise NotFound("no such ticket")
+        if action == "draft":
+            return {"id": "draft-1", "conversation_id": TEAM, "kind": "ticket_draft", "text": payload["text"]}
+        if action == "open_team_conversation":
+            return {"id": TEAM}
         if action == "add_message":
             sent = {
                 "id": str(uuid.uuid4()),
@@ -137,7 +147,7 @@ async def test_conformance(check):
             for n in (1, 2, 3)
         ],
     )
-    binding = SourceBinding(config={"desk_project_id": DESK})
+    binding = SourceBinding(config={"desk_project_id": DESK, "moderated": False})
     probe = HelpdeskSource(binding, hub=fake)
     await check.run(
         Subject(
@@ -325,7 +335,9 @@ class TestMapping:
 
 class TestSend:
     async def test_it_picks_the_ticket_up_before_answering_every_time(self, hub):
-        out = await DataDriver.loaded("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
+        out = await DataDriver.loaded("helpdesk").send(
+            _row(moderated=False), thread_key=TICKET, to=TICKET, text="try restarting it"
+        )
         assert [c for c in hub.calls if c[0] == "post"] == [
             ("post", "conversation", TICKET, "pickup"),
             ("post", "conversation", TICKET, "add_message"),
@@ -339,7 +351,7 @@ class TestSend:
         them) lands beside it: the staff reply shows twice."""
         from flow_sdk.builtin.source_item import SourceItem
 
-        row = _row()
+        row = _row(moderated=False)
         out = await DataDriver.loaded("helpdesk").send(row, thread_key=TICKET, to=TICKET, text="try restarting it")
         (item,) = [
             i for i in await SourceItem.get_all({"data_source_id": str(row.id)}) if i.external_id == out.external_id
@@ -362,6 +374,56 @@ class TestSend:
         hub.tickets = set()
         with pytest.raises(ValueError):
             await DataDriver.loaded("helpdesk").send(_row(), thread_key="", to=TICKET, text="x")
+
+
+class TestHowTheAgentAnswers:
+    """The desk's agent: a draft on the team side by default, notes only on the team side, and quiet once a
+    person has the ticket unless tagged."""
+
+    async def test_a_moderated_answer_is_a_draft_on_the_team_side(self, hub):
+        out = await DataDriver.loaded("helpdesk").send(
+            _row(moderated=True), thread_key=TICKET, to=TICKET, text="try restarting it"
+        )
+        assert [c for c in hub.calls if c[0] == "post"] == [("post", "conversation", TICKET, "draft")]
+        assert out.external_id == "draft-1"
+        assert out.recorded is True, (
+            "the team conversation's copy comes from the hub; recorded here it lands in the ticket"
+        )
+
+    async def test_a_persons_own_desk_source_answers_the_customer_at_once(self, hub):
+        """No agent settings: the staffer's own source -- a reply they type goes out, never waits as a draft."""
+        await DataDriver.loaded("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
+        assert [c for c in hub.calls if c[0] == "post"] == [
+            ("post", "conversation", TICKET, "pickup"),
+            ("post", "conversation", TICKET, "add_message"),
+        ]
+
+    async def test_a_team_side_agent_opens_the_team_conversation_then_writes_in_it(self, hub):
+        row = _row(side="team")
+        await DataDriver.loaded("helpdesk").send(row, thread_key=TICKET, to=TICKET, text="first RCA")
+        hub.team = {"id": TEAM}
+        await DataDriver.loaded("helpdesk").send(row, thread_key=TICKET, to=TICKET, text="more")
+        assert [c for c in hub.calls if c[0] == "post"] == [
+            ("post", "conversation", TICKET, "open_team_conversation"),
+            ("post", "conversation", TEAM, "add_message"),
+        ]
+
+    @pytest.mark.parametrize(
+        "picked_by, text, config, quiet",
+        [
+            ([], "help", {}, False),
+            (["staff-1"], "help", {}, True),
+            ([ME], "help", {}, False),  # its own (unmoderated) answer picked the ticket up: still its to answer
+            (["staff-1"], "@Agent can you look?", {}, False),
+            ([], "help", {"reply_not_picked_up": False}, True),
+            (["staff-1"], "@agent", {"reply_tagged": False}, True),
+        ],
+    )
+    async def test_the_agent_answers_an_unpicked_ticket_or_a_tag(self, hub, picked_by, text, config, quiet):
+        hub.pool = [{**POOL[0], "picked_up_by": picked_by}]
+        hub.messages = [{**MSG, "text": text}]
+        (item,) = (await DataDriver.loaded("helpdesk").traverse(_row(**config), _view())).items
+        assert item.data.quiet is quiet
 
 
 class TestTheAppHub:
@@ -496,11 +558,45 @@ class TestTwoDesksOneName:
 
         async def walk(_type):
             desk = {"enabled": True, "display_name": name}
-            return SimpleNamespace(rows=[{"id": first, "helpdesk": desk}, {"id": second, "helpdesk": desk}], complete=True)
+            return SimpleNamespace(
+                rows=[{"id": first, "helpdesk": desk}, {"id": second, "helpdesk": desk}], complete=True
+            )
 
         monkeypatch.setattr(HubProxy, "walk", walk)
         assert await HelpdeskSource.ensure_sources() == 2
         for desk_id in (first, second):
             held = await DataSource.find_for_account("helpdesk", "desk_project_id", desk_id)
             assert held is not None, f"desk {desk_id} has no source: its staff would never get its tickets"
+        assert await HelpdeskSource.ensure_sources() == 0
+
+    async def test_a_desk_agents_source_does_not_stand_in_for_the_staffers_own(self, monkeypatch):
+        import uuid  # noqa: PLC0415
+
+        from flow_sdk.builtin.data_driver import DataDriver as Driver  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+        desk_id = str(uuid.uuid4())
+        driver = Driver.loaded("helpdesk")
+        agent_owned = driver.create_source(
+            driver.create_config(desk_project_id=desk_id),
+            name=f"agent {desk_id[:6]}",
+            owner=TypeId(f"agent-{uuid.uuid4()}"),
+        )
+        await agent_owned.save()
+
+        async def walk(_type):
+            return SimpleNamespace(
+                rows=[{"id": desk_id, "helpdesk": {"enabled": True, "display_name": "Acme"}}], complete=True
+            )
+
+        import flow_sdk.stream_inbox.projection as projection  # noqa: PLC0415
+
+        me = TypeId(f"user-{uuid.uuid4()}")
+
+        async def default_owner():
+            return me
+
+        monkeypatch.setattr(HubProxy, "walk", walk)
+        monkeypatch.setattr(projection, "default_owner", default_owner)  # the signed-in staffer, as in the app
+        assert await HelpdeskSource.ensure_sources() == 1, "the staffer gets their own source beside the agent's"
         assert await HelpdeskSource.ensure_sources() == 0

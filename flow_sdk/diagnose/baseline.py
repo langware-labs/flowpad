@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisEnvironment, LogTail
+from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisEnvironment
+from flow_sdk.schema.data_spec.logs_spec import LogTail
 
 logger = logging.getLogger(__name__)
 

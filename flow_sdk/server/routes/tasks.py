@@ -162,10 +162,6 @@ async def conversation_reply(conversation_id: str, request: Request):
     if not text and not files:
         return ApiFailResponse(message="nothing to say")
     reply_to = str(body.get("reply_to_id") or "").strip() or None
-    from flow_sdk.app.ticket_approval import unapproved_reason  # noqa: PLC0415
-
-    if reason := await unapproved_reason(conversation_id):
-        return ApiFailResponse(message=reason)
     response = await dispatch_channel_reply(conversation_id, text=text, reply_to=reply_to, files=files)
     # The send runs in the background (no message id yet): only the conversation learns its session.
     origin_process = str(body.get("origin_process") or "").strip()

@@ -24,9 +24,9 @@ from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
+from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
-from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
 from flow_sdk.tags.envelope import parse_target
@@ -125,6 +125,10 @@ class FlowMessageKind(str, Enum):
     #: A help-desk ticket was closed or reopened: the hub writes this line into the ticket, which is how the other
     #: side learns of it (``metadata.ticket_event`` = ``{status, by}``; the text is the plain fallback).
     TICKET_EVENT = "ticket_event"
+    #: An answer for a ticket's requester, waiting in the ticket's team conversation for a person to send, edit or
+    #: drop it. Hub-written (``metadata.ticket_draft`` = ``{ticket_id, status, by, answer_id, edited}``) and kept
+    #: current by the hub as it is decided; re-derived from that metadata on every arrival (:func:`derive_ticket_draft`).
+    TICKET_DRAFT = "ticket_draft"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
@@ -454,6 +458,16 @@ def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
         fm.it_request = {k: it.get(k) for k in ("agent_id", "op_id", "send_id")}
 
 
+def derive_ticket_draft(fm: "FlowMessage", payload: dict) -> None:
+    """Carry a team conversation's draft (``metadata.ticket_draft``, hub-written) onto ``ticket_draft``. Idempotent;
+    absent leaves it as is, so a refresh without metadata keeps the last decision the hub sent."""
+    metadata = payload.get("metadata")
+    draft = metadata.get(FlowMessageKind.TICKET_DRAFT.value) if isinstance(metadata, dict) else None
+    if isinstance(draft, dict) and draft.get("ticket_id"):
+        fm.ticket_draft = dict(draft)
+        fm.kind = FlowMessageKind.TICKET_DRAFT
+
+
 def issue_of(payload: dict) -> "dict | None":
     """The ``metadata.issue`` a hub Monitoring message carries (it names ``issue_typeid``), else None."""
     metadata = payload.get("metadata")
@@ -615,7 +629,9 @@ class FlowMessage(Entity):
 
     type: str = APIField(default="flow_message")
     message_processing: Optional[MessageProcessing] = EntityField(
-        default=None, sharing=Sharing.PRIVATE, persist=Persist.TRUE,
+        default=None,
+        sharing=Sharing.PRIVATE,
+        persist=Persist.TRUE,
         description="Local classification, tag provenance and once-per-message automation queue.",
     )
 
@@ -640,6 +656,7 @@ class FlowMessage(Entity):
         from flow_sdk.core.entity.entity_model import _require_tag
 
         return await self._change_tags(remove=[_require_tag(name)])
+
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
     attachment: list[Attachment] = APIField(default_factory=list)
@@ -794,6 +811,12 @@ class FlowMessage(Entity):
     thread_root_id: Optional[str] = APIField(
         None, sharing=Sharing.HUB_WRITE, description="Native thread root message id; None = not in a native thread"
     )
+    # The people the sender tagged (``@name``): hub user ids. The sender names them; the hub keeps only members who
+    # may read the conversation and tells them by email, so a receiver reads who was really tagged. Fixed at
+    # creation, like ``reply_to_id``: HUB_WRITE.
+    mentions: list[str] = APIField(
+        default_factory=list, sharing=Sharing.HUB_WRITE, description="Hub user ids tagged in this message"
+    )
 
     # Who reacted with what, on a channel message — projected from ``SourceItem.reactions``
     # (``stream_inbox.reactions``). PRIVATE like ``envelope``: re-derived here, so a hub refresh
@@ -815,6 +838,9 @@ class FlowMessage(Entity):
     # cause, machine, opened_at, resolved_at}`` (``follow_up`` marks the "Resolved: …" line posted after it).
     # The hub updates the same message as the issue moves (count, status). PRIVATE, re-derived like ``it_reply``.
     issue_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
+    # A ticket draft in a team conversation (``FlowMessageKind.TICKET_DRAFT``): the hub's ``metadata.ticket_draft``.
+    # PRIVATE, re-derived like ``issue_reply``.
+    ticket_draft: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)

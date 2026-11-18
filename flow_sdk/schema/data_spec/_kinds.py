@@ -90,10 +90,12 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.git_share_spec  # noqa: F401  — registers ``project.git_share``
     import flow_sdk.schema.data_spec.health_spec  # noqa: F401  — registers ``health.endpoint`` / ``health.node``
     import flow_sdk.schema.data_spec.help_request_spec  # noqa: F401  — registers ``help.recipient`` / ``help.request``
+    import flow_sdk.schema.data_spec.helpdesk_agent_spec  # noqa: F401  — registers ``helpdesk.agent``
     import flow_sdk.schema.data_spec.hub_failure_spec  # noqa: F401  — registers ``hub.failure``
     import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
     import flow_sdk.schema.data_spec.launch_failure_spec  # noqa: F401  — registers ``agent.launch_failure``
     import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``
+    import flow_sdk.schema.data_spec.logs_spec  # noqa: F401  — registers ``logs`` / ``diagnosis.log_tail``
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
     import flow_sdk.schema.data_spec.message_form_spec  # noqa: F401  — registers ``message.form`` / ``message.form_answers``
     import flow_sdk.schema.data_spec.message_invite_spec  # noqa: F401  — registers ``message.invite``
@@ -105,11 +107,11 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
     import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
     import flow_sdk.schema.data_spec.process_call_spec  # noqa: F401  — registers ``process.call``
-    import flow_sdk.schema.data_spec.prompt_run_summary_spec  # noqa: F401  — registers ``prompt.run_summary``
     import flow_sdk.schema.data_spec.project_cleanup_spec  # noqa: F401  — registers ``project.cleanup`` and friends
     import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
     import flow_sdk.schema.data_spec.project_setup_spec  # noqa: F401  — registers ``project.setup.requirement`` / ``project.setup.var``
     import flow_sdk.schema.data_spec.project_status_spec  # noqa: F401  — registers ``project.status`` / ``project.status.part``
+    import flow_sdk.schema.data_spec.prompt_run_summary_spec  # noqa: F401  — registers ``prompt.run_summary``
     import flow_sdk.schema.data_spec.rag_spec  # noqa: F401  — registers ``rag.chunk`` / ``rag.hit``
     import flow_sdk.schema.data_spec.requirement_spec  # noqa: F401  — registers ``agent.requirement`` / ``agent.readiness`` / ``agent.readiness.item``
     import flow_sdk.schema.data_spec.returned_value_spec  # noqa: F401  — registers ``compute.returned`` and its ``.cli`` / ``.prompt`` / ``.ask`` / ``.wizard`` / ``.decision`` answers

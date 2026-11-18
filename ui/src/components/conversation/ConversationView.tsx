@@ -4,6 +4,7 @@ import { useMessageSessions } from '@src/hooks/conversation/useMessageAutomation
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Trans } from '@lingui/react/macro';
+import { TicketClosedBar } from './TicketClosedBar';
 import { useLingui } from '@lingui/react/macro';
 import { CheckCircle2, LifeBuoy, RefreshCw, RotateCcw } from 'lucide-react';
 import {
@@ -54,7 +55,12 @@ import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { syncConversationMessages } from '@src/components/stream-inbox-view/stream-inbox-api';
-import { FlowMessageKind, markFlowMessagesReceived, DIAGNOSIS_FILE, attachmentDataString } from '@sdk/entities/flow-message';
+import {
+  FlowMessageKind,
+  markFlowMessagesReceived,
+  DIAGNOSIS_FILE,
+  attachmentDataString,
+} from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
@@ -316,7 +322,9 @@ export function ConversationView({
     if (!staffRead) return;
     let current = true;
     void ticketMessagesFromHub(conversationId)
-      .then((rows) => current && rows && setStaffRows({ conversationId, rows: rows.map((row) => new FlowMessage(row)) }))
+      .then(
+        (rows) => current && rows && setStaffRows({ conversationId, rows: rows.map((row) => new FlowMessage(row)) }),
+      )
       .catch(() => undefined);
     return () => {
       current = false;
@@ -806,8 +814,11 @@ export function ConversationView({
   const diagnosisHeadline = useMemo(() => {
     for (const fm of messagesById.values()) {
       // The kind, or the file every diagnosis carries (a row a channel delivered may have lost its kind).
+      // A request that took its diagnosis in (it carries the file too) is not the diagnosis: its text is the person's.
       const isDiagnosis =
-        fm.kind === FlowMessageKind.DIAGNOSIS || (fm.attachment ?? []).some((file) => attachmentDataString(file).split('/').pop() === DIAGNOSIS_FILE);
+        fm.kind !== FlowMessageKind.HELP_REQUEST &&
+        (fm.kind === FlowMessageKind.DIAGNOSIS ||
+          (fm.attachment ?? []).some((file) => attachmentDataString(file).split('/').pop() === DIAGNOSIS_FILE));
       if (isDiagnosis) return (fm.text ?? '').trim().split('\n')[0] || null;
     }
     return null;
@@ -815,7 +826,10 @@ export function ConversationView({
   const lastTicketEventId = useMemo(() => {
     for (let i = orderedItems.length - 1; i >= 0; i--) {
       const it = orderedItems[i];
-      if (it.kind === ConversationItemKind.POINTER && messagesById.get(it.messageId)?.kind === FlowMessageKind.TICKET_EVENT)
+      if (
+        it.kind === ConversationItemKind.POINTER &&
+        messagesById.get(it.messageId)?.kind === FlowMessageKind.TICKET_EVENT
+      )
         return it.messageId;
     }
     return null;
@@ -833,31 +847,15 @@ export function ConversationView({
       // A ticket's close or reopen: a line, not a bubble. The person who asked can reopen from the line
       // that says it is closed (they have no ticket controls of their own).
       if (fm?.kind === FlowMessageKind.TICKET_EVENT) {
-        const reopenable = isClosed && isConversationOwner && id === lastTicketEventId;
+        // The person who asked is told by the bar under the composer (``TicketClosedBar``), not by a line.
+        if (isClosed && isConversationOwner && id === lastTicketEventId) return null;
         return (
-          <div key={item.key} data-testid="ticket-event-line" className="py-0.5 text-center text-[11px] italic text-muted-foreground/80">
+          <div
+            key={item.key}
+            data-testid="ticket-event-line"
+            className="py-0.5 text-center text-[11px] italic text-muted-foreground/80"
+          >
             {fm.text}
-            {reopenable && (
-              <>
-                <button
-                  type="button"
-                  className="ms-2 not-italic text-primary underline"
-                  onClick={() => void handleSettle()}
-                  disabled={settling}
-                  data-testid="ticket-event-reopen"
-                >
-                  <Trans>Reopen</Trans>
-                </button>
-                <button
-                  type="button"
-                  className="ms-2 not-italic text-primary underline"
-                  onClick={() => requestUiAction('ask-for-help-dialog')}
-                  data-testid="ticket-event-ask-new"
-                >
-                  <Trans>Ask something new</Trans>
-                </button>
-              </>
-            )}
           </div>
         );
       }
@@ -1206,6 +1204,16 @@ export function ConversationView({
       setSettling(false);
     }
   }, [conversationId, isClosed, handleRefresh]);
+  // The asker of a closed ticket: who closed it (the desk by its name, else the asker) and when.
+  const closedEvent = lastTicketEventId ? messagesById.get(lastTicketEventId) : undefined;
+  const closedNotice =
+    isClosed && isConversationOwner && closedEvent
+      ? {
+          closedBy:
+            closedEvent.sender_id === conversation?.initiated_by ? null : closedEvent.sender_name || t`The help desk`,
+          at: closedEvent.sent_at ?? closedEvent.created_date,
+        }
+      : null;
 
   // The status button: the hub calls that reach the chosen state, one after the other, then one refresh.
   const ticket =
@@ -1286,7 +1294,12 @@ export function ConversationView({
     );
 
   const statusControl = ticket ? (
-    <TicketStatusControl ticket={ticket} mine={isParticipant} busy={settling} onChoose={(target) => void handleStatus(target)} />
+    <TicketStatusControl
+      ticket={ticket}
+      mine={isParticipant}
+      busy={settling}
+      onChoose={(target) => void handleStatus(target)}
+    />
   ) : null;
   const controls = (
     <>
@@ -1470,7 +1483,6 @@ export function ConversationView({
 
   const footer = (
     <>
-
       {/* A channel's conversation is answered by the owning agent's run, not by this pane —
           so show that run working, and a caller mid-sentence, while it happens. */}
       {channel && (
@@ -1528,6 +1540,8 @@ export function ConversationView({
               setNotSent(null);
               setSendingText(text);
             }}
+            mentionable={participants}
+            viewerId={cloudUserId}
             placeholder={lockedText ?? embed?.placeholder ?? composerPlaceholder}
             disabled={!!lockedText}
             onSend={sendItAgain}
@@ -1544,6 +1558,17 @@ export function ConversationView({
             threadTarget={threadTarget}
             onTaskIt={handleTaskIt}
           />
+          {closedNotice && (
+            <div className="mt-2">
+              <TicketClosedBar
+                closedBy={closedNotice.closedBy}
+                at={closedNotice.at}
+                busy={settling}
+                onReopen={() => void handleSettle()}
+                onAskNew={() => requestUiAction('ask-for-help-dialog')}
+              />
+            </div>
+          )}
         </div>
       )}
     </>

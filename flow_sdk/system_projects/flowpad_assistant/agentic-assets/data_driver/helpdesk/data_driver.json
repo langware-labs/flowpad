@@ -17,6 +17,25 @@
       "label": "Desk",
       "placeholder": "hub project id",
       "hint": "Pick a desk you belong to, or paste the hub project id of one."
+    },
+    "side": {
+      "type": "text",
+      "choices": true,
+      "label": "Side",
+      "hint": "customer: answers the requester. team: writes notes for the team only."
+    },
+    "reply_not_picked_up": {
+      "type": "bool",
+      "label": "Reply while nobody has picked the ticket up"
+    },
+    "reply_tagged": {
+      "type": "bool",
+      "label": "Reply when tagged (@agent)"
+    },
+    "moderated": {
+      "type": "bool",
+      "label": "Moderated replies",
+      "hint": "A reply waits on the team side as a draft; a team member sends it."
     }
   }
 }

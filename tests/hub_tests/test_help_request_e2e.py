@@ -22,7 +22,7 @@ from tests.hub_tests.test_ask_for_help_never_fails import _eventually, _hub, des
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(60)]  # do not increase timeout without approval
 
-#: logs.txt rides too when the instance has logs; a fresh test instance has none. The diagnosis is a message of
+#: logs.value.json rides too when the instance has logs; a fresh test instance has none. The diagnosis is a message of
 #: its own, after the request.
 CONTEXT = {"help_request.value.json", "screen.value.json"}
 DIAGNOSIS = "diagnosis.value.json"
@@ -171,8 +171,12 @@ async def test_a_private_request_never_reaches_the_hub(hub_session, task_storage
 
 
 async def test_diagnose_and_fix_stays_private_until_report_it_opens_a_ticket(
-    hub_session, task_storage, bob_token, desk, monkeypatch
-):  # noqa: F811
+    hub_session,
+    task_storage,  # noqa: F811
+    bob_token,
+    desk,  # noqa: F811
+    monkeypatch,
+):
     """Diagnose & fix: private (nothing on the hub) until Report it -- then one ticket in the desk the cause
     points at, carrying the diagnosis and the context."""
     from flow_sdk.app.actions import ask_for_help_action as afh

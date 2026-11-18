@@ -10,6 +10,27 @@ import { issueStatusOf, type IssueFix, type IssueSeverity, type IssueStatus } fr
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
+/** Where a ticket draft stands. Mirrors the hub's `DraftStatus`. */
+export enum TicketDraftStatus {
+  /** Waiting on the team side for a person to send, edit or drop it. */
+  PENDING = 'pending',
+  /** A person sent it to the requester. */
+  SENT = 'sent',
+  /** A person dropped it; it never reached the requester. */
+  DISCARDED = 'discarded',
+}
+
+/** An answer for a ticket's requester waiting in the ticket's team conversation (`metadata.ticket_draft`). */
+export interface TicketDraftMeta {
+  ticket_id: string;
+  status: TicketDraftStatus;
+  /** Who sent or dropped it. */
+  by?: string;
+  /** The answer it became in the ticket, once sent. */
+  answer_id?: string;
+  edited?: boolean;
+}
+
 /** A Monitoring message's issue, as the hub stamps it (`metadata.issue`) and keeps it current. */
 export interface IssueReplyMeta {
   issue_typeid: string;
@@ -85,6 +106,8 @@ export enum FlowMessageKind {
   AUTOMATION_RESULT = 'automation_result',
   /** A help-desk ticket was closed or reopened: the hub's line in the ticket, how the other side learns of it. */
   TICKET_EVENT = 'ticket_event',
+  /** An answer for a ticket's requester, waiting on the team side for a person to send, edit or drop it. */
+  TICKET_DRAFT = 'ticket_draft',
 }
 
 /** The file a diagnosis message carries once shared -- re-derives the kind when the hub drops it. */
@@ -338,6 +361,8 @@ export interface IFlowMessage extends IEntity {
   it_request?: ItRequestMeta | null;
   /** An Issue in a project's Monitoring conversation: the hub's `metadata.issue` (kept locally as `issue_reply`). */
   issue_reply?: IssueReplyMeta | null;
+  /** A ticket draft in a team conversation: the hub's `metadata.ticket_draft` (kept locally as `ticket_draft`). */
+  ticket_draft?: TicketDraftMeta | null;
   /** Hub-relayed opaque metadata (a hub-page read carries it raw). */
   metadata?: Record<string, unknown> | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
@@ -351,6 +376,8 @@ export interface IFlowMessage extends IEntity {
   /** Flowpad's own chat: the message whose thread this one is in (the native thread's wire fact;
    *  the backend resolves it to `thread_id`). Null on channel messages. */
   thread_root_id?: string | null;
+  /** The people tagged (`@name`): hub user ids. The hub keeps only members who may read the conversation. */
+  mentions?: string[] | null;
   /** Set on a REFERENCE row: the SourceItem whose body this message renders.
    *  The stored row's `text` is always empty; reads arrive hydrated. */
   source_item_id?: string | null;
@@ -389,6 +416,14 @@ export function itReplyOf(metadata: Record<string, unknown> | null | undefined):
   const it = metadata?.it;
   // Only a machine's reply names its node; the owner's IT message carries `metadata.it` too (its attachment names).
   return it && typeof it === 'object' && (it as ItReplyMeta).node_typeid ? (it as ItReplyMeta) : null;
+}
+
+/** The draft a team-conversation message's `metadata.ticket_draft` carries, else null. */
+export function ticketDraftOf(metadata: Record<string, unknown> | null | undefined): TicketDraftMeta | null {
+  const draft = metadata?.ticket_draft as Partial<TicketDraftMeta> | undefined;
+  return draft && typeof draft === 'object' && typeof draft.ticket_id === 'string' && draft.status
+    ? (draft as TicketDraftMeta)
+    : null;
 }
 
 /** The Issue a Monitoring message's `metadata.issue` carries (it names `issue_typeid`), else null. */
@@ -465,11 +500,13 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   it_reply?: ItReplyMeta | null;
   it_request?: ItRequestMeta | null;
   issue_reply?: IssueReplyMeta | null;
+  ticket_draft?: TicketDraftMeta | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
   envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
   reply_to_id?: string | null;
   thread_root_id?: string | null;
+  mentions?: string[] | null;
   source_item_id?: string | null;
   reactions?: IMessageReaction[];
   mark?: IMessageMark | null;
@@ -535,10 +572,13 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.it_request = entity.it_request ?? itRequestOf(entity.metadata);
     // The hub rewrites `metadata.issue` as the issue moves; a raw hub read's metadata is the newest copy.
     this.issue_reply = issueReplyOf(entity.metadata) ?? entity.issue_reply ?? null;
+    // Like `metadata.issue`, the hub rewrites `metadata.ticket_draft` as the draft is decided.
+    this.ticket_draft = ticketDraftOf(entity.metadata) ?? entity.ticket_draft ?? null;
     this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;
     this.thread_root_id = entity.thread_root_id ?? null;
+    this.mentions = entity.mentions ?? [];
     this.source_item_id = entity.source_item_id ?? null;
     this.reactions = entity.reactions ?? [];
     this.mark = entity.mark ?? null;

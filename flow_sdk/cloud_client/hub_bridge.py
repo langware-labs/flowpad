@@ -103,6 +103,17 @@ def _is_session_traffic(payload: dict) -> bool:
     return SESSION_START_MARKER_KEY not in (carrier_marker(atts) or {})
 
 
+async def _tags_me(payload: dict) -> bool:
+    """Whether an inbound message tags the person this computer belongs to: ``mentions`` carries hub user ids, and
+    this machine's person has more than one id (``User.self_ids``)."""
+    tagged = {m for m in payload.get("mentions") or [] if isinstance(m, str)}
+    if not tagged:
+        return False
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    return bool(tagged & await User.self_ids())
+
+
 def _attachment_only_body(payload: dict) -> str:
     """The notification line for a message with no text. ``Sent you: <type>`` is a fixed
     sentence the UI matches and rebuilds in the person's language (``localizedBody``)."""
@@ -792,6 +803,7 @@ class HubWsBridge:
                                 sender_name=payload.get("sender_name") or "",
                                 text=payload.get("text") or "",
                                 fallback=_attachment_only_body(payload),
+                                mentioned=await _tags_me(payload),
                             )
                         except Exception as _notify_err:
                             logger.warning(
@@ -939,6 +951,11 @@ class HubWsBridge:
             if issue is not None:
                 data = {**data, "issue_reply": issue}
                 fields = (*fields, "issue_reply", *(("text",) if isinstance(data.get("text"), str) else ()))
+            # A ticket draft is decided on the hub (sent, discarded): its ``metadata.ticket_draft`` moves with it.
+            draft = (data.get("metadata") or {}).get("ticket_draft") if isinstance(data.get("metadata"), dict) else None
+            if isinstance(draft, dict) and draft.get("ticket_id"):
+                data = {**data, "ticket_draft": dict(draft)}
+                fields = (*fields, "ticket_draft")
             for field in fields:
                 # The hub leaves a cleared field out of a full message: no ``handling_at`` on a message that is
                 # otherwise whole means "not working any more".
