@@ -225,6 +225,7 @@ EXPECTED = {
     "AGENT_MAILBOX": "agent_mailbox",
     "WEBHOOK": "webhook",
     "ISSUE": "issue",
+    "MONITOR": "monitor",
 }
 
 

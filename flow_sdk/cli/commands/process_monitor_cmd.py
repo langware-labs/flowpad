@@ -42,9 +42,11 @@ from flow_sdk.cli.commands.process_cmd import EXIT_ACTION_FAILED, _action_failed
 
 # ── monitor: a goal watched on a clock ──────────────────────────────────────
 #
-# ``monitor`` writes a trigger ASSET into the process's project; the trigger runs ``monitor-nudge``,
-# which asks a fork of the session whether the goal is met, and either prompts the session to go on
-# or ends the monitor. ``unmonitor`` removes it. The asset is keyed ``<process id>_monitor_<name>``.
+# ``monitor`` writes two ASSETS into the process's project, side by side under one key
+# ``<process id>_monitor_<name>``: the Monitor (``agentic-assets/monitor/<key>/monitor.json``, the goal)
+# and its cron trigger (``agentic-assets/trigger/<key>/trigger.json``), which runs ``monitor-nudge``.
+# The nudge asks a fork of the session whether the goal is met, and either prompts the session to go on
+# or ends the monitor. ``unmonitor`` removes both.
 
 EXIT_NOT_FOUND = 4
 _MONITOR_SEP = "_monitor_"
@@ -81,8 +83,8 @@ def _not_found(what: str):
     return on_error
 
 
-def _process_and_folder(port: int, process_id: str, name: str) -> tuple[dict, Path]:
-    """The session, and its monitor's folder under its project (which may not exist yet)."""
+def _process_and_folders(port: int, process_id: str, name: str) -> tuple[dict, Path, Path]:
+    """The session, and the monitor's trigger and Monitor folders under its project (which may not exist yet)."""
     process = get_graph_json(graph_url(port, f"agentic_process/{process_id}"),
                               on_error=_not_found(f"session {process_id}"))
     if not process:
@@ -94,27 +96,33 @@ def _process_and_folder(port: int, process_id: str, name: str) -> tuple[dict, Pa
     if not mount:
         fail(EXIT_ACTION_FAILED, "NO_PROJECT_FOLDER",
               f"Session {process_id} has no project folder to keep a monitor in.")
-    return process, Path(mount) / "agentic-assets" / "trigger" / _monitor_key(process_id, name)
+    assets, key = Path(mount) / "agentic-assets", _monitor_key(process_id, name)
+    return process, assets / "trigger" / key, assets / "monitor" / key
 
 
-def _index_monitor(port: int, folder: Path) -> str:
-    """Index the monitor's folder (which arms it); the trigger's id. Re-indexing an unchanged folder
-    answers the same id, so this is also how ``unmonitor`` finds the row."""
+def _index(port: int, folder: Path, type_name: str) -> str:
+    """Index one asset folder (a trigger is armed by it); its row's id. Re-indexing an unchanged folder
+    answers the same id, so this is also how ``unmonitor`` finds the rows."""
     data = post_graph_json(graph_url(port, "compute_node/@local/fs-records/index"), None,
-                            params={"type": "trigger", "path": str(folder.resolve())}, timeout=120,
+                            params={"type": type_name, "path": str(folder.resolve())}, timeout=120,
                             on_error=_action_failed)
     typeid = next(iter(data.get("typeids") or []), "")
     if not typeid:
-        fail(EXIT_ACTION_FAILED, "INDEX_FAILED", f"The monitor at {folder} did not index.")
-    return typeid.removeprefix("trigger-")
+        fail(EXIT_ACTION_FAILED, "INDEX_FAILED", f"The {type_name} at {folder} did not index.")
+    return typeid.removeprefix(f"{type_name}-")
 
 
-def _remove_monitor(port: int, folder: Path) -> str:
-    """Folder first, then the row: a row whose folder is still on disk comes back with the next index."""
-    trigger_id = _index_monitor(port, folder)
-    shutil.rmtree(folder)
-    delete_graph_json(graph_url(port, f"trigger/{trigger_id}"), on_error=_action_failed)
-    return trigger_id
+def _remove_monitor(port: int, trigger_folder: Path, monitor_folder: Path) -> dict:
+    """The trigger first (it stops firing), then the Monitor. For each: folder, then row -- a row whose
+    folder is still on disk comes back with the next index."""
+    removed = {}
+    for type_name, folder in (("trigger", trigger_folder), ("monitor", monitor_folder)):
+        if folder.is_dir():
+            row_id = _index(port, folder, type_name)
+            shutil.rmtree(folder)
+            delete_graph_json(graph_url(port, f"{type_name}/{row_id}"), on_error=_action_failed)
+            removed[f"{type_name}_id"] = row_id
+    return removed
 
 
 @process_app.command(
@@ -122,7 +130,8 @@ def _remove_monitor(port: int, folder: Path) -> str:
     help=(
         "Watch a session's goal: on a cron mask (--cron '*/10 * * * *'), a fork of the session is asked "
         "whether the goal is met or the stop condition reached. Not yet: the session is prompted to continue. Met or reached: the "
-        "monitor ends, quietly. Kept as a trigger in the session's project; `unmonitor <key>` removes it."
+        "monitor ends, quietly. Kept in the session's project as a Monitor and its trigger; "
+        "`unmonitor <key>` removes both."
     ),
 )
 def monitor_process(
@@ -157,28 +166,34 @@ def monitor_process(
     except SpecFileError as e:
         fail(EXIT_INVALID_ARG, "BAD_CRON", f"Cannot use the cron mask {cron!r}: {e}")
 
+    from flow_sdk.assets.asset import Asset  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.monitor_spec import MonitorSpec  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
     port = discover_port()
-    _, folder = _process_and_folder(port, process_id, name)
-    if folder.exists():
+    _, folder, monitor_folder = _process_and_folders(port, process_id, name)
+    if folder.exists() or monitor_folder.exists():
         fail(EXIT_INVALID_ARG, "ALREADY_MONITORED",
               f"Session {process_id} already has a monitor named {name!r}; `unmonitor` it first.")
-    folder.mkdir(parents=True)
-    (folder / "trigger.json").write_text(
-        json.dumps(spec.model_dump(mode="json", exclude_defaults=True, by_alias=True), indent=2) + "\n",
-        encoding="utf-8",
-    )
-    (folder / "monitor.json").write_text(json.dumps({
-        "process_id": process_id, "name": name, "goal": goal, "stop_condition": stop_condition,
-        "cron": cron,
-    }, indent=2) + "\n", encoding="utf-8")
     try:
-        trigger_id = _index_monitor(port, folder)
+        folder.mkdir(parents=True)
+        (folder / "trigger.json").write_text(
+            json.dumps(spec.model_dump(mode="json", exclude_defaults=True, by_alias=True), indent=2) + "\n",
+            encoding="utf-8",
+        )
+        Asset.create(monitor_folder, type=EntityType.MONITOR, spec=MonitorSpec(
+            name=name, process_id=process_id, goal=goal, stop_condition=stop_condition, cron=cron,
+        ))
+        monitor_id = _index(port, monitor_folder, "monitor")
+        trigger_id = _index(port, folder, "trigger")
         # A rule indexed from a project file starts off; this machine's switch is turned on here.
         patch_graph_json(graph_url(port, f"trigger/{trigger_id}"), {"enabled": True}, on_error=_action_failed)
     except BaseException:
         shutil.rmtree(folder, ignore_errors=True)
+        shutil.rmtree(monitor_folder, ignore_errors=True)
         raise
-    ok({"key": key, "trigger_id": trigger_id, "process_id": process_id, "cron": cron, "folder": str(folder)})
+    ok({"key": key, "monitor_id": monitor_id, "trigger_id": trigger_id, "process_id": process_id, "cron": cron,
+        "folder": str(monitor_folder)})
 
 
 async def _fork(process_id: str) -> Optional[str]:
@@ -301,11 +316,14 @@ def _self_check_prompt(goal: str, stop_condition: str, key: str) -> str:
 def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `monitor` printed.")]) -> None:
     process_id, name = _split_monitor_key(key)
     port = discover_port()
-    process, folder = _process_and_folder(port, process_id, name)
-    if not (folder / "monitor.json").is_file():
+    from flow_sdk.schema.data_spec.monitor_spec import MonitorSpec  # noqa: PLC0415
+
+    process, folder, monitor_folder = _process_and_folders(port, process_id, name)
+    document = monitor_folder / MonitorSpec.main_file
+    if not document.is_file():
         fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No monitor {key}.")
-    monitor = json.loads((folder / "monitor.json").read_text(encoding="utf-8"))
-    goal, stop_condition = str(monitor.get("goal") or ""), str(monitor.get("stop_condition") or "")
+    monitor = MonitorSpec.model_validate_json(document.read_text(encoding="utf-8"))
+    goal, stop_condition = monitor.goal, monitor.stop_condition
     if process.get("busy"):
         ok({"key": key, "skipped": "the session is busy"})
         return
@@ -323,15 +341,14 @@ def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `moni
         _prompt_session(port, process_id, _continue_prompt(goal, stop_condition))
         ok({"key": key, "answer": verdict.answer, "asked": fork_id})
         return
-    trigger_id = _remove_monitor(port, folder)
-    ok({"key": key, "answer": verdict.answer, "asked": fork_id, "removed": trigger_id})
+    ok({"key": key, "answer": verdict.answer, "asked": fork_id, "removed": _remove_monitor(port, folder, monitor_folder)})
 
 
-@process_app.command("unmonitor", help="Remove a monitor: its trigger and its folder in the project.")
+@process_app.command("unmonitor", help="Remove a monitor: the Monitor and its trigger, folders and rows.")
 def unmonitor_process(key: Annotated[str, typer.Argument(help="The monitor key `monitor` printed.")]) -> None:
     process_id, name = _split_monitor_key(key)
     port = discover_port()
-    _, folder = _process_and_folder(port, process_id, name)
-    if not folder.is_dir():
+    _, folder, monitor_folder = _process_and_folders(port, process_id, name)
+    if not (folder.is_dir() or monitor_folder.is_dir()):
         fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No monitor {key}.")
-    ok({"key": key, "removed": _remove_monitor(port, folder)})
+    ok({"key": key, "removed": _remove_monitor(port, folder, monitor_folder)})

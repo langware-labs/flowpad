@@ -17,12 +17,14 @@ import pytest
 from typer.testing import CliRunner
 
 from flow_sdk.cli.commands import _common, process_cmd, process_monitor_cmd
+from flow_sdk.schema.data_spec.monitor_spec import MonitorSpec
 from flow_sdk.schema.data_spec.trigger_spec import TriggerSpec
 
 AP_ID = "11111111-1111-1111-1111-111111111111"
 FORK_ID = "22222222-2222-2222-2222-222222222222"
 PROJECT_ID = "33333333-3333-3333-3333-333333333333"
 TRIGGER_ID = "44444444-4444-4444-4444-444444444444"
+MONITOR_ID = "55555555-5555-5555-5555-555555555555"
 NAME = "tests-green"
 KEY = f"{AP_ID}_monitor_{NAME}"
 GOAL = "all unit tests under tests/unit pass"
@@ -63,6 +65,7 @@ class FakeFlowpad:
         self.process = {"id": AP_ID, "type": "agentic_process", "project_id": PROJECT_ID, "busy": False}
         self.project = {"id": PROJECT_ID, "type": "project", "fs_storage_mount_path": str(project_dir)}
         self.folder = project_dir / "agentic-assets" / "trigger" / KEY
+        self.monitor_folder = project_dir / "agentic-assets" / "monitor" / KEY
         self.fork_refused = False
         self.prompt_refused = False
         self.forked: list[str] = []
@@ -70,7 +73,8 @@ class FakeFlowpad:
         self.calls: list[tuple[str, str, dict]] = []
         self.answers: list[str] = []
         self.asked: list[tuple[str, str]] = []
-        self.folder_existed_at_delete: bool | None = None
+        #: Per row type: whether its folder was still on disk when the row was deleted.
+        self.folder_existed_at_delete: dict[str, bool] = {}
 
     def request(self, method: str, url: str, **kwargs):
         path = urlsplit(url).path.split("/api/v1/graph/", 1)[1]
@@ -82,13 +86,18 @@ class FakeFlowpad:
         if route == ("GET", f"project/{PROJECT_ID}"):
             return _Response(200, self.project)
         if route == ("POST", "compute_node/@local/fs-records/index"):
-            return _Response(200, {"type": "trigger", "indexed": 1, "errors": 0, "typeids": [f"trigger-{TRIGGER_ID}"]})
+            kind = body["type"]
+            row_id = {"trigger": TRIGGER_ID, "monitor": MONITOR_ID}[kind]
+            return _Response(200, {"type": kind, "indexed": 1, "errors": 0, "typeids": [f"{kind}-{row_id}"]})
         if route == ("PATCH", f"trigger/{TRIGGER_ID}"):
             return _Response(200, {"id": TRIGGER_ID, **body})
         if route == ("POST", f"trigger/{TRIGGER_ID}/cancel"):
             return _Response(200, {"status": "cancelled"})
         if route == ("DELETE", f"trigger/{TRIGGER_ID}"):
-            self.folder_existed_at_delete = self.folder.exists()
+            self.folder_existed_at_delete["trigger"] = self.folder.exists()
+            return _Response(200, {})
+        if route == ("DELETE", f"monitor/{MONITOR_ID}"):
+            self.folder_existed_at_delete["monitor"] = self.monitor_folder.exists()
             return _Response(200, {})
         if route == ("POST", f"agentic_process/{AP_ID}/prompt"):
             response = _Response(409, message="another prompt turn is already in flight for this process") \
@@ -225,7 +234,7 @@ def test_a_mask_the_server_accepts_is_accepted(flowpad):
 def test_monitor_refuses_a_process_that_does_not_exist(flowpad):
     other = "99999999-9999-9999-9999-999999999999"
     refused(monitor("-p", other, "--name", NAME, "--goal", GOAL, "--cron", CRON), "NOT_FOUND")
-    assert not flowpad.folder.parent.exists()
+    assert not flowpad.folder.parent.exists() and not flowpad.monitor_folder.parent.exists()
 
 
 def test_monitor_refuses_a_project_with_no_folder(flowpad):
@@ -251,20 +260,21 @@ def test_a_monitor_is_a_cron_schedule_that_runs_the_nudge(flowpad):
     assert spec.recommended is False
 
 
-def test_monitor_keeps_the_goal_for_the_nudge(flowpad):
+def test_monitor_keeps_the_goal_in_a_monitor_beside_the_trigger(flowpad):
     assert _monitor().exit_code == 0
-    saved = json.loads((flowpad.folder / "monitor.json").read_text(encoding="utf-8"))
-    assert (saved["process_id"], saved["goal"], saved["stop_condition"]) == (AP_ID, GOAL, STOP)
+    saved = MonitorSpec.model_validate_json((flowpad.monitor_folder / "monitor.json").read_text(encoding="utf-8"))
+    assert (saved.process_id, saved.name, saved.goal, saved.stop_condition, saved.cron) == (AP_ID, NAME, GOAL, STOP, CRON)
+    assert not (flowpad.folder / "monitor.json").exists()  # the trigger's folder holds the trigger only
 
 
-def test_monitor_indexes_the_rule_and_switches_it_on(flowpad):
+def test_monitor_indexes_both_and_switches_the_trigger_on(flowpad):
     result = _monitor()
     assert result.exit_code == 0, result.output
-    indexed = flowpad.posted("compute_node/@local/fs-records/index")
-    assert indexed and Path(indexed[-1]["path"]).resolve() == flowpad.folder.resolve()
+    indexed = {body["type"]: Path(body["path"]).resolve() for body in flowpad.posted("compute_node/@local/fs-records/index")}
+    assert indexed == {"trigger": flowpad.folder.resolve(), "monitor": flowpad.monitor_folder.resolve()}
     # A rule indexed from a project file starts off and undecided (docs/automations.md, "On, off and recommended").
     assert ("PATCH", f"trigger/{TRIGGER_ID}", {"enabled": True}) in flowpad.calls
-    assert envelope(result)["key"] == KEY
+    assert (envelope(result)["key"], envelope(result)["monitor_id"]) == (KEY, MONITOR_ID)
 
 
 # ── nudge ───────────────────────────────────────────────────────────────────
@@ -312,8 +322,9 @@ def test_a_met_goal_or_a_reached_stop_ends_the_monitor_and_tells_no_one(monitore
     monitored.answers = [_reply(verdict)]
     result = nudge()
     assert result.exit_code == 0, result.output
-    assert not monitored.folder.exists()
+    assert not monitored.folder.exists() and not monitored.monitor_folder.exists()
     assert ("DELETE", f"trigger/{TRIGGER_ID}", {}) in monitored.calls
+    assert ("DELETE", f"monitor/{MONITOR_ID}", {}) in monitored.calls
     assert monitored.prompted() == []
 
 
@@ -359,13 +370,14 @@ def test_a_session_that_cannot_fork_checks_itself(monitored):
 # ── unmonitor ───────────────────────────────────────────────────────────────
 
 
-def test_unmonitor_removes_the_folder_then_the_row(monitored):
+def test_unmonitor_removes_both_folders_then_their_rows(monitored):
     result = unmonitor()
     assert result.exit_code == 0, result.output
-    assert not monitored.folder.exists()
-    assert ("DELETE", f"trigger/{TRIGGER_ID}", {}) in monitored.calls
+    assert not monitored.folder.exists() and not monitored.monitor_folder.exists()
+    deleted = [path for method, path, _ in monitored.calls if method == "DELETE"]
+    assert deleted == [f"trigger/{TRIGGER_ID}", f"monitor/{MONITOR_ID}"]  # the trigger first: it stops firing
     # The indexer resurrects a row whose folder is still on disk (agent_schedule.remove_schedule).
-    assert monitored.folder_existed_at_delete is False
+    assert monitored.folder_existed_at_delete == {"trigger": False, "monitor": False}
 
 
 @pytest.mark.parametrize("command", [nudge, unmonitor], ids=["nudge", "unmonitor"])

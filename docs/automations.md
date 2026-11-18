@@ -190,14 +190,14 @@ session id is one machine's, so no `trigger.json` can say it.
 
 ## A monitor on a session's goal
 
-`flow process monitor [-p <session>] --name <n> [--goal "<g>"] [--stop-condition "<s>"] --cron '<mask>'` writes a
-cron trigger asset into the session's project (`agentic-assets/trigger/<session id>_monitor_<name>/`, `recommended:
-false`) and switches it on. Each tick runs `flow process monitor-nudge <key>`: skipped while the session is `busy`;
-otherwise it forks the session and asks the fork in its own process (SDK, a second SQLite writer — accepted) for a
-`MonitorVerdict` (`goal_met` | `stop_condition_reached` | `continue_to_work`, retried 3× with pydantic's error).
-`continue_to_work` sends the session a prompt through its `prompt` action (stream drained: a terminal turn is
-cancelled when its listener hangs up); met or reached removes the monitor, quietly. A session that cannot fork is
-prompted to judge for itself. `flow process unmonitor <key>` removes a monitor.
+`flow process monitor [-p <session>] --name <n> [--goal "<g>"] [--stop-condition "<s>"] --cron '<mask>'` writes, under
+one key `<session id>_monitor_<name>`, a `Monitor` (`agentic-assets/monitor/<key>/monitor.json`, `MonitorSpec`: the
+goal) and its cron trigger beside it (`agentic-assets/trigger/<key>/`, `recommended: false`, switched on). Each tick runs
+`flow process monitor-nudge <key>`: skipped while the session is `busy`; otherwise it forks the session and asks the fork
+in its own process (SDK, a second SQLite writer — accepted) for a `MonitorVerdict` (`goal_met` | `stop_condition_reached`
+| `continue_to_work`, retried 3× with pydantic's error). `continue_to_work` prompts the session through its `prompt`
+action (stream drained: a terminal turn is cancelled when its listener hangs up); met or reached removes both, quietly.
+A session that cannot fork is prompted to judge for itself. `flow process unmonitor <key>` removes both.
 
 ## Rules that are easy to break
 

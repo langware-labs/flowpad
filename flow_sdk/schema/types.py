@@ -301,6 +301,10 @@ class EntityType(StrEnum):
     SKILLIT_SESSION = "skillit_session"
     SKILLIT_CONFIG = "skillit_config"
 
+    # ── Monitor ──────────────────────────────────────────────────────────────
+    # A session's goal watched on a clock (``flow process monitor``): ``monitor.json``, beside its cron trigger.
+    MONITOR = "monitor"
+
 
 #: Membership containers: hub-owned roots whose rows only the hub membership
 #: mirror writes. One never rides a message as an entities.json envelope, never
