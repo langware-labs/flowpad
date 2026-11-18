@@ -527,6 +527,14 @@ is what our `SubAgent` mirrors; a Chief of Staff uses it natively for short jobs
 | **Tasks channel** | `data_driver/task_manager` | A principal's tasks as a standard, PULLED message source: each task it asked, owns, is assigned or reported is a thread, each change and comment a message, and a message sent into the thread is a comment on the task (the ledger's `replied` on a delegated one). One driver, two kinds of row: the local person's (`user:local`, created at startup, `ensure_user_tasks_channel`) and a chief's (`agent:<id>`, follows the checkbox). The bus only says "pull now" (`bus_topics` + `wants`, after the writer commits). The machinery finds it by what it declares (`principal_channel`), never by name. |
 | `created · started · note · asked · replied · done · failed · canceled · stalled` | `TaskEvent` | Ledger events. Statuses: `submitted → working ⇄ input_required → done \| failed \| canceled` (A2A), each on the three-bucket board via `status_family`. |
 
+## Page state key (2026-11-18)
+
+**Ours.** A random string the LOCAL server mints for a page it was asked to run (`flow_sdk/server/page_state.py`),
+mapped to a `PageState` value (`page.state`: `context`, `grant`). Unrelated to the OAuth `state`
+parameter, to `stream_inbox.message.state`, and to the cookie gate (which keeps unauthorized users off the machine;
+this keeps a link from running something in the user's own app). Written `stateKey` in a dock address,
+`X-Flowpad-State` on a call, `__FLOWPAD_STATE_KEY__` in a page. Local installs only.
+
 ## Project setup (2026-09-24)
 
 **Ours.** The wizard is the stock `WizardSpec` + ComputeOps; nothing here mirrors a provider.

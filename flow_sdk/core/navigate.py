@@ -289,7 +289,7 @@ async def _send_to_tab(connection: tuple[str, Any], target: dict[str, Any]) -> N
     if kind == DisplayTargetKind.ENTITY:
         await send_ui_command(ws, "navigate_entity", type=target["type"], id=target["id"])
     elif kind == DisplayTargetKind.VFS:
-        await send_ui_command(ws, "navigate_vfs", path=target["path"])
+        await send_ui_command(ws, "navigate_vfs", path=target["path"], state_key=target.get("state_key"))
     else:
         await send_ui_command(
             ws,
@@ -310,6 +310,25 @@ def where_shown(placement: dict[str, Any]) -> str:
     return where + "; the person's view was not switched — tell them where to find it."
 
 
+def with_state_key(target: dict[str, Any], process: Optional["AgenticProcess"]) -> dict[str, Any]:
+    """*target*, plus a state key when it runs a page — what lets the app open it without asking.
+
+    Whoever shows a page on this machine (`flow show`, an agent) is its opener: it mints the key, naming the
+    session the page was shown beside, and the UI passes it to the page. A link from outside has no key, so
+    the app asks first. The caller's own copy of the target stays free of the key.
+    """
+    from flow_sdk.core.display_target import runs_a_page  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.page_state_spec import PageState  # noqa: PLC0415
+    from flow_sdk.server import page_state  # noqa: PLC0415
+
+    if not runs_a_page(target) or target.get("state_key"):
+        return target
+    path = str(target.get("path") or "")
+    context = {"process": f"agentic_process-{process.id}"} if process is not None else {}
+    key = page_state.mint(PageState(context=context, title=Path(path).name if path else str(target.get("typeid") or "")))
+    return {**target, "state_key": key}
+
+
 async def deliver(
     pointer: str,
     target: dict[str, Any],
@@ -319,13 +338,14 @@ async def deliver(
 ) -> NavigateResult:
     """Hand a resolved target to a session's display or a browser tab. ``OK`` when
     delivered, else why not; the target's health is ``probe_target``'s question."""
+    opened = with_state_key(target, process)
     if process is not None:
-        placement = await process.on_show(target)
+        placement = await process.on_show(opened)
         return NavigateResult.satisfied(where_shown(placement), pointer=pointer, delivered=True)
     connection = pick_connection(connection_id)
     if isinstance(connection, NavigateResult):
         return connection.model_copy(update={"pointer": pointer})
-    await _send_to_tab(connection, target)
+    await _send_to_tab(connection, opened)
     return NavigateResult.satisfied(pointer=pointer, connection_id=connection[0], delivered=True)
 
 

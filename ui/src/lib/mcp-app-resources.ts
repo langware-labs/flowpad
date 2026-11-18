@@ -24,9 +24,15 @@ const TEXT_MIME_BY_EXT: Record<string, string> = {
  * `inject_process_id` (`flow_sdk/builtin/faas/serve_static.py`) for pages that
  * never pass through `fs/serve` (an MCP App arrives in the sandbox as text).
  */
-export function pageSdkPrelude(apiUrl: string, processId: string | null | undefined): string {
+export function pageSdkPrelude(
+  apiUrl: string,
+  processId: string | null | undefined,
+  stateKey?: string | null,
+): string {
   const assignments = [`globalThis.__FLOWPAD_API_URL__=${JSON.stringify(apiUrl)};`];
   if (processId) assignments.push(`globalThis.__FLOWPAD_PROCESS_ID__=${JSON.stringify(processId)};`);
+  // The key this page was opened with: its SDK sends it on every call the local server answers.
+  if (stateKey) assignments.push(`globalThis.__FLOWPAD_STATE_KEY__=${JSON.stringify(stateKey)};`);
   // `<` never appears unescaped inside the script body, so a value cannot close the tag.
   return `<script>${assignments.join('').replace(/</g, '\\u003c')}</script>`;
 }

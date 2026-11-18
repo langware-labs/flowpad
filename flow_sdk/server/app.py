@@ -1223,7 +1223,7 @@ async def _spa_fallback(request: _Request, full_path: str):
             # Inject the runtime API origin so deep links (e.g. /dock/shell/…)
             # hit the serving backend, not the bundle's baked URL.
             # encoding= on purpose: the shell is UTF-8, the host codepage is not.
-            return serve_index_html(candidate.read_text(encoding="utf-8"))
+            return serve_index_html(candidate.read_text(encoding="utf-8"), request)
     return _HTMLResponse(content="UI not found", status_code=404)
 
 

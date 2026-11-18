@@ -27,7 +27,8 @@ use the Flowpad SDK from inside the sandbox — the host provides the globals:
 ```js
 const sdk = await import(globalThis.__FLOWPAD_API_URL__ + '/sdk/flowpad-sdk.js');
 await sdk.initSdk();
-const proc = await sdk.dataManager.getByTypeId(new sdk.TypeId('agentic_process', globalThis.__FLOWPAD_PROCESS_ID__));
+const page = await sdk.htmlPage();            // what the opener minted this page's key for: { context, params, process }
+const proc = await sdk.dataManager.getByTypeId(page.process);
 await proc.setDisplayContext({ step: 2, answer: '...' }); // quiet; the agent sees it on its next turn
 await proc.enqueue('The user asked for help.', 'page');   // wakes the agent when it matters
 ```

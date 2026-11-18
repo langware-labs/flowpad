@@ -3,6 +3,7 @@ import { ApiFailResponse, ApiWarning } from './ApiResponse';
 import { alert } from './alert';
 import { APIStats } from './apiStats';
 import config from './config';
+import { STATE_HEADER, showPageStateError, stateKey, stateRefusal } from './page-state';
 import { API_PREFIX } from './config/SDKConfig';
 
 //@ts-ignore
@@ -177,6 +178,13 @@ function initApiClient(client: ApiAxiosInstance) {
         request.headers['X-Flow-Caller'] = window.location.pathname.slice(0, 200);
       }
 
+      // The key this window or page was opened with: the local server answers nothing without one.
+      const key = stateKey();
+      if (key && !request.headers?.[STATE_HEADER]) {
+        request.headers = request.headers || {};
+        request.headers[STATE_HEADER] = key;
+      }
+
       return request;
     },
     function (error) {
@@ -226,6 +234,10 @@ function initApiClient(client: ApiAxiosInstance) {
           return sleep(delay).then(() => client.request(cfg));
         }
       }
+
+      // The local server refused the page's key: say why inside the page (the reason rides a header).
+      const refusal = stateRefusal(error.response?.headers);
+      if (refusal) showPageStateError(refusal);
 
       // Check for network errors (backend unavailable)
       if (error.code === 'ERR_NETWORK' || error.code === 'ERR_CONNECTION_REFUSED' || !error.response) {
