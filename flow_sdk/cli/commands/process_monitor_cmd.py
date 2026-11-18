@@ -12,15 +12,11 @@ part of ``flow process``.
 
 from __future__ import annotations
 
-import contextlib
 import json
-import os
 import re
 import shutil
-import tempfile
-import time
 from pathlib import Path
-from typing import Iterator, Literal, Optional
+from typing import Literal, Optional
 
 import requests
 import typer
@@ -54,8 +50,6 @@ EXIT_NOT_FOUND = 4
 _MONITOR_SEP = "_monitor_"
 _MONITOR_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}")
 _NUDGE_RETRIES = 3
-#: A nudge older than this is taken to have died, and its lock is taken over.
-_NUDGE_LOCK_STALE_S = 15 * 60
 _REPLY_FORMAT = '{"answer": "goal_met" | "stop_condition_reached" | "continue_to_work"}'
 
 
@@ -189,31 +183,6 @@ def monitor_process(
     _ok({"key": key, "trigger_id": trigger_id, "process_id": process_id, "cron": cron, "folder": str(folder)})
 
 
-def _state_dir() -> Path:
-    """This machine's nudge bookkeeping -- never in the project folder, which travels."""
-    return Path(tempfile.gettempdir()) / "flowpad-monitor"
-
-
-@contextlib.contextmanager
-def _nudge_lock(key: str) -> Iterator[bool]:
-    """True when this nudge is the only one running for ``key``."""
-    path = _state_dir() / f"{key}.lock"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with contextlib.suppress(FileNotFoundError):
-        if time.time() - path.stat().st_mtime > _NUDGE_LOCK_STALE_S:
-            path.unlink()
-    try:
-        os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-    except FileExistsError:
-        yield False
-        return
-    try:
-        yield True
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            path.unlink()
-
-
 async def _fork(process_id: str) -> Optional[str]:
     """A headless fork of the session, made here through the SDK; None when its worker cannot fork."""
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
@@ -329,7 +298,7 @@ def _self_check_prompt(goal: str, stop_condition: str, key: str) -> str:
 
 @process_app.command(
     "monitor-nudge",
-    help="Check a monitor now -- what its trigger runs. Skipped while the session is busy or another check runs.",
+    help="Check a monitor now -- what its trigger runs. Skipped while the session is busy.",
 )
 def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `monitor` printed.")]) -> None:
     process_id, name = _split_monitor_key(key)
@@ -342,24 +311,22 @@ def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `moni
     if process.get("busy"):
         _ok({"key": key, "skipped": "the session is busy"})
         return
-    with _nudge_lock(key) as only:
-        if not only:
-            _ok({"key": key, "skipped": "another check is running"})
-            return
-        fork_id, verdict = run_async(_check(process_id, goal, stop_condition))
-        if fork_id is None:
-            _prompt_session(port, process_id, _self_check_prompt(goal, stop_condition, key))
-            _ok({"key": key, "answer": None, "asked": process_id, "note": "cannot fork: the session checks itself"})
-            return
-        if verdict is None:
-            _fail(EXIT_ACTION_FAILED, "INVALID_ANSWER",
-                  f"No valid answer after {_NUDGE_RETRIES} retries; the monitor is unchanged.")
-        if verdict.answer == "continue_to_work":
-            _prompt_session(port, process_id, _continue_prompt(goal, stop_condition))
-            _ok({"key": key, "answer": verdict.answer, "asked": fork_id})
-            return
-        trigger_id = _remove_monitor(port, folder)
-        _ok({"key": key, "answer": verdict.answer, "asked": fork_id, "removed": trigger_id})
+    # No lock against a second check: the scheduler runs one instance of a trigger's job at a time
+    # (APScheduler's max_instances=1), and the job awaits this command.
+    fork_id, verdict = run_async(_check(process_id, goal, stop_condition))
+    if fork_id is None:
+        _prompt_session(port, process_id, _self_check_prompt(goal, stop_condition, key))
+        _ok({"key": key, "answer": None, "asked": process_id, "note": "cannot fork: the session checks itself"})
+        return
+    if verdict is None:
+        _fail(EXIT_ACTION_FAILED, "INVALID_ANSWER",
+              f"No valid answer after {_NUDGE_RETRIES} retries; the monitor is unchanged.")
+    if verdict.answer == "continue_to_work":
+        _prompt_session(port, process_id, _continue_prompt(goal, stop_condition))
+        _ok({"key": key, "answer": verdict.answer, "asked": fork_id})
+        return
+    trigger_id = _remove_monitor(port, folder)
+    _ok({"key": key, "answer": verdict.answer, "asked": fork_id, "removed": trigger_id})
 
 
 @process_app.command("unmonitor", help="Remove a monitor: its trigger and its folder in the project.")

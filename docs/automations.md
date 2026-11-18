@@ -200,7 +200,7 @@ mask — is checked before the server is asked anything.
 - **On.** Indexed from a file, a rule starts off; `monitor` indexes it and switches it on (`PATCH trigger/<id>
   {"enabled": true}`). `recommended: false` — a clone of the project has no such session to watch.
 - **The check** (`flow process monitor-nudge <key>`, what the rule's `then.run_script` runs). Skipped while the
-  session is busy (its `busy` over the API) or another check of the same monitor runs. Otherwise the nudge forks
+  session is busy (its `busy` over the API); the scheduler never runs two checks of one monitor at once. It forks
   the session and asks the fork **in its own process**, through the SDK — `AgenticProcess.fork(..., pty_mode=False)`
   and `TurnEngine().run(turn, process=fork)` — a second SQLite writer beside the server, accepted for this. The
   answer is a `MonitorVerdict` (`{"answer": "goal_met" | "stop_condition_reached" | "continue_to_work"}`, nothing

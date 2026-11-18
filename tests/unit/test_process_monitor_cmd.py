@@ -122,7 +122,6 @@ def flowpad(tmp_path, monkeypatch) -> FakeFlowpad:
     monkeypatch.setattr(process_monitor_cmd, "_discover_port", lambda *a, **k: 4242)
     monkeypatch.setattr(process_monitor_cmd, "_fork", fake.fork)
     monkeypatch.setattr(process_monitor_cmd, "_ask", fake.ask)
-    monkeypatch.setattr(process_monitor_cmd, "_state_dir", lambda: tmp_path / "state")
     return fake
 
 
@@ -348,15 +347,6 @@ def test_a_session_that_cannot_fork_checks_itself(monitored):
     assert GOAL in prompt and STOP in prompt
     assert f"flow process unmonitor {KEY}" in prompt
     assert monitored.folder.exists()
-
-
-def test_nudge_skips_while_another_check_runs(monitored, tmp_path):
-    (tmp_path / "state").mkdir()
-    (tmp_path / "state" / f"{KEY}.lock").touch()
-    result = nudge()
-    assert result.exit_code == 0, result.output
-    assert "skipped" in envelope(result)
-    assert monitored.asked == []
 
 
 # ── unmonitor ───────────────────────────────────────────────────────────────
