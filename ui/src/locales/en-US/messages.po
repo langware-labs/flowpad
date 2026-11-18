@@ -25436,6 +25436,14 @@ msgstr "Prompt to run"
 msgid "Prompt to run on {hostName}'s machine…"
 msgstr "Prompt to run on {hostName}'s machine…"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Message to {hostName}…"
+msgstr "Message to {hostName}…"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "Read the full prompt"
+msgstr "Read the full prompt"
+
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run:"
 msgstr "Prompt to run:"

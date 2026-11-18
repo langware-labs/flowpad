@@ -17,7 +17,15 @@ const fileId = (file: File) => fileIds.get(file) ?? (fileIds.set(file, ++nextFil
 
 /** What a draft is, as one comparable value: two states with the same signature store the same row. */
 const signatureOf = (d: ComposerDraft) =>
-  JSON.stringify([d.text, d.files.map(fileId), d.assetRefs.map((a) => a.typeid), d.replyToId, d.taskIt, d.promptCall]);
+  JSON.stringify([
+    d.text,
+    d.files.map(fileId),
+    d.assetRefs.map((a) => a.typeid),
+    d.replyToId,
+    d.taskIt,
+    d.promptCall,
+    d.promptText,
+  ]);
 
 /** An empty composer: what is held right after a send. */
 const EMPTY_SIGNATURE = signatureOf({
@@ -27,6 +35,7 @@ const EMPTY_SIGNATURE = signatureOf({
   replyToId: null,
   taskIt: false,
   promptCall: false,
+  promptText: '',
 });
 
 /**

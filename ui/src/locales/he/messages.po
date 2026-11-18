@@ -25436,6 +25436,14 @@ msgstr "פרומפט להרצה"
 msgid "Prompt to run on {hostName}'s machine…"
 msgstr "פרומפט להרצה במחשב של {hostName}…"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Message to {hostName}…"
+msgstr "הודעה אל {hostName}…"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "Read the full prompt"
+msgstr "קראו את הפרומפט המלא"
+
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run:"
 msgstr "פרומפט להרצה:"

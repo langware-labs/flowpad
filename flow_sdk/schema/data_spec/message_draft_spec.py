@@ -17,7 +17,11 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 class MessageDraftOptions(DataSpec):
     #: The ``MessageThread`` whose composer this is typed in; None = the conversation's own composer.
     thread_id: Optional[str] = None
-    #: Send the text as a prompt call the receiver approves and runs, not as the body.
+    #: The composer's prompt box is open; a prompt typed there is sent as a prompt call the
+    #: receiver approves and runs.
     call: bool = False
+    #: That prompt, typed in its own box beside the message text. None on a draft stored before the
+    #: prompt had a box of its own: there the draft's text IS the prompt.
+    call_prompt: Optional[str] = None
     #: Make the sent message a task as well.
     task: bool = False

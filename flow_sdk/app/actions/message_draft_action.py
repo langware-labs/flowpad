@@ -42,7 +42,7 @@ def _opt(body: dict, key: str) -> Optional[str]:
 
 async def handle_put_draft(conversation_id: str, body: dict, someone_typeid: str) -> ApiResponse:
     """Make the composer's draft what ``body`` says it is: ``text``, ``reply_to_id``, ``thread_root_id``,
-    ``asset_references``, ``call`` / ``task``, ``file_names`` (the files it keeps) and ``files`` (new
+    ``asset_references``, ``call`` / ``call_prompt`` / ``task``, ``file_names`` (the files it keeps) and ``files`` (new
     ones). ``thread_id`` names the thread whose composer it is. Answers ``{draft}`` — None when empty."""
     from flow_sdk.app.actions.notification_action import (  # noqa: PLC0415
         _as_list,
@@ -56,6 +56,7 @@ async def handle_put_draft(conversation_id: str, body: dict, someone_typeid: str
 
     thread_id = _opt(body, "thread_id")
     text = str(body.get("text") or "")
+    call_prompt = str(body.get("call_prompt") or "")
     assets = list(dict.fromkeys(_parse_asset_references(body.get("asset_references"))))
     kept = set(map(str, _as_list(_json_field(body.get("file_names") or [], []))))
     uploads = [u for u in _as_list(body.get("files") or []) if hasattr(u, "read")]
@@ -65,7 +66,7 @@ async def handle_put_draft(conversation_id: str, body: dict, someone_typeid: str
         if fm is not None and fm.id in _SENDING:
             return ApiFailResponse(message="This draft is being sent", status_code=409)
         keeps_file = fm is not None and bool(kept.intersection(fm.file_names()))
-        if not (text.strip() or assets or uploads or keeps_file):
+        if not (text.strip() or call_prompt.strip() or assets or uploads or keeps_file):
             if fm is not None:
                 await fm.destroy()  # row, record folder and files: a discarded draft leaves nothing
             return ApiSuccessResponse(data={"draft": None})
@@ -84,7 +85,10 @@ async def handle_put_draft(conversation_id: str, body: dict, someone_typeid: str
         fm.reply_to_id = _opt(body, "reply_to_id")
         fm.thread_root_id = _opt(body, "thread_root_id")
         fm.draft_options = MessageDraftOptions(
-            thread_id=thread_id, call=_truthy(body.get("call")), task=_truthy(body.get("task"))
+            thread_id=thread_id,
+            call=_truthy(body.get("call")),
+            call_prompt=call_prompt,
+            task=_truthy(body.get("task")),
         )
 
         # The draft's files and assets, as the body states them: a file it no longer keeps is
@@ -144,11 +148,19 @@ async def _send(fm: FlowMessage, body: dict, someone_typeid: str, *, pending_sen
     composed = not fm.remote_worker_session_id
     text = (fm.text or "").strip()
     call = _truthy(body["call"]) if "call" in body else options.call
+    if not call:
+        message, prompt = text, ""
+    elif options.call_prompt is None:
+        # Stored before the prompt had its own box: the text is the prompt. A draft opened since
+        # was restated by the composer (`loadComposerDraft` reads it the same way).
+        message, prompt = "", text
+    else:
+        message, prompt = text, options.call_prompt.strip()
     response = await handle_add_message(
         {
             "conversation_id": fm.conversation_id,
-            "message": "" if call else text,
-            "call_prompt": text if call else "",
+            "message": message,
+            "call_prompt": prompt,
             "reply_to_id": _opt(body, "reply_to_id") or fm.reply_to_id,
             "thread_root_id": _opt(body, "thread_root_id") or fm.thread_root_id,
             # A held reply's attachments are its session's, already checked when it was written.

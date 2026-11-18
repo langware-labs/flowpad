@@ -18,7 +18,10 @@ export interface ComposerDraft {
   assetRefs: AssetDescriptor[];
   replyToId: string | null;
   taskIt: boolean;
+  /** The prompt box is open. */
   promptCall: boolean;
+  /** What is typed in the prompt box. */
+  promptText: string;
 }
 
 /** Which composer a draft belongs to: a conversation's own, or one of its threads'. */
@@ -29,7 +32,8 @@ export interface ComposerDraftKey {
   threadRootId?: string | null;
 }
 
-export const isEmptyDraft = (d: ComposerDraft) => !d.text.trim() && d.files.length === 0 && d.assetRefs.length === 0;
+export const isEmptyDraft = (d: ComposerDraft) =>
+  !d.text.trim() && !d.promptText.trim() && d.files.length === 0 && d.assetRefs.length === 0;
 
 const fileNamesOf = (fm: FlowMessage) =>
   (fm.attachment ?? [])
@@ -80,16 +84,21 @@ export async function loadComposerDraft(key: ComposerDraftKey): Promise<{ row: F
       return new File([blob], name, { type: blob.type });
     }),
   );
+  const options = row.draft_options;
+  // A draft stored before the prompt had its own box holds the prompt as its text (the backend's
+  // `_send` reads an unopened one the same way).
+  const textIsPrompt = !!options?.call && options.call_prompt == null;
   return {
     row,
     draft: {
-      text: row.text ?? '',
+      text: textIsPrompt ? '' : (row.text ?? ''),
       files,
       // A chip reads its label from the entity cache by typeid; nothing else of the descriptor is sent.
       assetRefs: assetTypeIdsOf(row).map((typeid) => ({ typeid, source: 'project_dir', posix_path: null })),
       replyToId: row.reply_to_id ?? null,
-      taskIt: !!row.draft_options?.task,
-      promptCall: !!row.draft_options?.call,
+      taskIt: !!options?.task,
+      promptCall: !!options?.call,
+      promptText: (textIsPrompt ? row.text : options?.call_prompt) ?? '',
     },
   };
 }
@@ -115,6 +124,7 @@ export async function putComposerDraft(
     file_names: JSON.stringify(draft.files.filter((f) => stored.has(f)).map((f) => f.name)),
     task: String(draft.taskIt),
     call: String(draft.promptCall),
+    call_prompt: draft.promptText,
   };
   if (fresh.length > 0) {
     // Multipart: binary bodies only travel over REST.
@@ -126,7 +136,7 @@ export async function putComposerDraft(
     action.bodyParameters = fields;
     // A window that closes mid-typing still delivers its last save. The browser carries only a
     // small body past the page's end, so a long text goes the ordinary way.
-    action.keepalive = draft.text.length < KEEPALIVE_MAX_CHARS;
+    action.keepalive = draft.text.length + draft.promptText.length < KEEPALIVE_MAX_CHARS;
   }
   const res = await dataManager.callAction<unknown, { draft: Record<string, unknown> | null }>(action);
   return res?.draft ? new FlowMessage(res.draft) : null;

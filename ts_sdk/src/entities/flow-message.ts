@@ -206,6 +206,9 @@ export type DeliveryStatus = 'draft' | 'pending_send' | 'created' | 'sent' | 'de
 export interface MessageDraftOptions {
   thread_id?: string | null;
   call?: boolean;
+  /** The prompt of that call, typed in its own box. Absent on a draft stored before the prompt
+   *  had a box: there the draft's text is the prompt. */
+  call_prompt?: string | null;
   task?: boolean;
 }
 
@@ -623,7 +626,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
 
   /** Send this draft: the same message, through the send every message takes. `replyToId` names
    *  what it answers now and `threadRootId` the native thread it is written in; `call` says whether its
-   *  text goes as a prompt call (default: as it was drafted). */
+   *  prompt goes with it as a prompt call (default: as it was drafted). */
   async sendDraft(
     opts: { replyToId?: string | null; threadRootId?: string | null; call?: boolean } = {},
   ): Promise<{ id: string; flow_message_id: string; conversation_id: string; message_count: number }> {

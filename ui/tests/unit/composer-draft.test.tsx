@@ -34,6 +34,7 @@ const holding = (text: string): ComposerDraft => ({
   replyToId: null,
   taskIt: false,
   promptCall: false,
+  promptText: '',
 });
 const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 0))));
 

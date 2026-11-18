@@ -4,9 +4,9 @@ import { Paperclip } from 'lucide-react';
 import { Prompt, isImagePath, type TypeId } from '@sdk';
 import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import { useEntity } from '@sdk/react/hooks';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { cn } from '@src/lib/utils';
 import { localAttachmentUrl } from '../attachment-url';
+import { PromptToRunDialog, type DialogPart } from '../PromptToRunDialog';
 import { isPromptEntityAttachment } from './prompt-attachment';
 
 const TRIM_LIMIT = 180;
@@ -75,8 +75,6 @@ export const PromptRequestAnswerContext = createContext<PromptRequestAnswer | nu
 
 const ANSWER_BUTTON =
   'shrink-0 rounded px-2 py-0.5 font-sans text-[11px] font-medium not-italic transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
-
-type DialogPart = { kind: 'text'; text: string } | { kind: 'image'; url: string; filename: string };
 
 /**
  * The prompt CONTENT renderer for the attachment-actions row — "Prompt to
@@ -341,40 +339,12 @@ export function PromptAttachmentPreview({
 
       {answerButtons('row')}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>
-              <Trans>Prompt to run</Trans>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="max-h-[60vh] space-y-3 overflow-auto">
-            {dialogParts.length === 0 && (
-              <p className="text-sm italic text-muted-foreground">
-                <Trans>(prompt content unavailable)</Trans>
-              </p>
-            )}
-            {dialogParts.map((part, i) =>
-              part.kind === 'image' ? (
-                <img
-                  key={i}
-                  src={part.url}
-                  alt={part.filename}
-                  className="max-h-[50vh] max-w-full rounded-md border border-border object-contain"
-                />
-              ) : (
-                <pre
-                  key={i}
-                  className="whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 font-mono text-xs text-foreground"
-                >
-                  {part.text}
-                </pre>
-              ),
-            )}
-          </div>
-          {request && <div className="flex justify-end gap-2">{answerButtons('dialog')}</div>}
-        </DialogContent>
-      </Dialog>
+      <PromptToRunDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        parts={dialogParts}
+        footer={request ? answerButtons('dialog') : null}
+      />
     </>
   );
 }

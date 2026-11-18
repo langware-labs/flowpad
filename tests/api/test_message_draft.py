@@ -79,6 +79,42 @@ async def test_send_moves_the_same_row_into_the_conversation(bootstrapped_client
     assert again.json().get("status") != "SUCCESS"
 
 
+def _call_prompts(fm):
+    return [a for a in fm.attachment or [] if str(a.data).startswith("process_call-")]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_draft_holds_the_message_and_its_prompt_and_sends_both(bootstrapped_client, user):
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    draft = await _put(client, conv_id, {"text": "try this", "call": "true", "call_prompt": "run npm ci"})
+    fm = await FlowMessage.find_composer_draft(conv_id)
+    assert (fm.text, fm.draft_options.call, fm.draft_options.call_prompt) == ("try this", True, "run npm ci")
+    # The prompt alone is a draft worth keeping.
+    assert (await _put(client, conv_id, {"text": "", "call": "true", "call_prompt": "run npm ci"}))["id"] == draft["id"]
+    await _put(client, conv_id, {"text": "try this", "call": "true", "call_prompt": "run npm ci"})
+
+    resp = await client.post(f"/api/v1/graph/flow_message/{draft['id']}/send-draft", json={"call": True})
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    fm = await FlowMessage.get_one({"id": draft["id"]})
+    assert fm.text == "try this" and len(_call_prompts(fm)) == 1 and "run npm ci" in fm.model_dump_json()
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_draft_stored_before_the_prompt_box_sends_its_text_as_the_prompt(bootstrapped_client, user):
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    draft = await _put(client, conv_id, {"text": "run npm ci", "call": "true"})
+    fm = await FlowMessage.find_composer_draft(conv_id)
+    fm.draft_options = fm.draft_options.model_copy(update={"call_prompt": None})
+    await fm.save()
+
+    resp = await client.post(f"/api/v1/graph/flow_message/{draft['id']}/send-draft", json={})
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    fm = await FlowMessage.get_one({"id": draft["id"]})
+    assert not fm.text and len(_call_prompts(fm)) == 1
+
+
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_drafted_session_prompt_is_sent_by_the_same_action(bootstrapped_client, user):
     from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession

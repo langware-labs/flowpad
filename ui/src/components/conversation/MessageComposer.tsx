@@ -122,6 +122,14 @@ const MAX_COMPOSER_HEIGHT_PX = 240;
 const ICON_BUTTON_CLASS =
   'flex h-11 w-11 shrink-0 items-center justify-center rounded text-muted-foreground md:h-7 md:w-7 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40';
 
+/** Grow a textarea to what is typed in it — wrapped lines count — up to MAX_COMPOSER_HEIGHT_PX. */
+function fitToContent(textarea: HTMLTextAreaElement | null) {
+  if (!textarea) return;
+  // Reset first, so scrollHeight reports the content and not the current, larger box.
+  textarea.style.height = 'auto';
+  textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_COMPOSER_HEIGHT_PX)}px`;
+}
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -231,8 +239,10 @@ export function MessageComposer({
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   // "Task it" on send: the next send also becomes a task. One send's worth — resets after it.
   const [taskItOn, setTaskItOn] = useState(false);
-  // Prompt call on send: the text goes as a one-shot prompt the receiver approves and runs once.
+  // Prompt call on send: a second box takes a one-shot prompt the receiver approves and runs once.
   const [promptCallOn, setPromptCallOn] = useState(false);
+  const [promptText, setPromptText] = useState('');
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const [sending, setSending] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -251,6 +261,9 @@ export function MessageComposer({
         ? t`Live sessions are not available here`
         : null;
   const canStartSession = !liveSessionId && sessionUnavailableReason === null;
+  const promptBoxOpen = promptCallOn && canStartSession;
+  // The prompt this send carries; an open box left empty sends a plain message.
+  const callPrompt = promptBoxOpen ? promptText.trim() : '';
   const terminal = variant === 'terminal';
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
@@ -262,16 +275,13 @@ export function MessageComposer({
   const attachmentsDisabled = isDisabled || (!!channel && !channelAcceptsFiles);
   const assetsDisabled = isDisabled || !!channel;
 
-  // Auto-grow the composer to fit what's been typed so far — wrapped lines
-  // count, not just explicit newlines — up to MAX_COMPOSER_HEIGHT_PX, after
-  // which it scrolls. Height must be reset to 'auto' first so scrollHeight
-  // reports the content height rather than the current (larger) box.
+  // Each box grows with what is typed in it, then scrolls.
   useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_COMPOSER_HEIGHT_PX)}px`;
+    fitToContent(textareaRef.current);
   }, [text, isDraftMode]);
+  useLayoutEffect(() => {
+    fitToContent(promptRef.current);
+  }, [promptText, promptBoxOpen]);
 
   // Draft auto-save: persist edits into the FlowMessage so a reload doesn't
   // lose them. No-op outside draft mode.
@@ -308,6 +318,7 @@ export function MessageComposer({
       replyToId: replyTo?.id ?? null,
       taskIt: taskItOn,
       promptCall: promptCallOn,
+      promptText,
     },
     (saved) => {
       setText(saved.text);
@@ -315,6 +326,7 @@ export function MessageComposer({
       setAssetRefs(saved.assetRefs);
       setTaskItOn(saved.taskIt);
       setPromptCallOn(saved.promptCall);
+      setPromptText(saved.promptText);
       if (saved.replyToId) onRestoreReply?.(saved.replyToId);
     },
   );
@@ -389,15 +401,13 @@ export function MessageComposer({
   const send = async () => {
     if (isBusy) return;
     const trimmed = text.trim();
-    if (!trimmed && files.length === 0 && assetRefs.length === 0) {
+    if (!trimmed && !callPrompt && files.length === 0 && assetRefs.length === 0) {
       return;
     }
     // Inside a session view every send is a prompt: it rides as a PROMPT
     // attachment (the host's gate keys on it; the backend synthesizes the body).
     const isPromptSend = !!trimmed && !!liveSessionId;
-    // A prompt call: the text rides as the call, not as the message body.
-    const isCallSend = !!trimmed && promptCallOn && canStartSession;
-    const messageBody = isPromptSend || isCallSend ? '' : trimmed;
+    const messageBody = isPromptSend ? '' : trimmed;
     const outgoingFiles = isPromptSend ? undefined : files.length > 0 ? files : undefined;
     const extras: NonNullable<Parameters<typeof sendReply>[3]> = isPromptSend
       ? buildSessionStartExtras({
@@ -406,7 +416,7 @@ export function MessageComposer({
           sessionId: liveSessionId ?? null,
         })
       : {};
-    if (isCallSend) extras.callPrompt = trimmed;
+    if (callPrompt) extras.callPrompt = callPrompt;
     // Assets (skill/agent/markdown/spec) ride as assetReferences.
     if (assetSelection.selectedTypeIds.length > 0) {
       extras.assetReferences = assetSelection.selectedTypeIds;
@@ -465,7 +475,7 @@ export function MessageComposer({
             // The stored draft IS the message: store what is held now, then send that same row.
             const row = await stored.flush();
             if (!row) throw new Error(t`Could not save the message. Try again.`);
-            sent = await row.sendDraft({ replyToId: answering, threadRootId, call: isCallSend });
+            sent = await row.sendDraft({ replyToId: answering, threadRootId, call: !!callPrompt });
             stored.sent();
           } else {
             if (!isPromptSend) {
@@ -495,7 +505,7 @@ export function MessageComposer({
         setFiles([]);
         setAssetRefs([]);
         setTaskItOn(false);
-        setPromptCallOn(false);
+        closePrompt();
       }
       // Your own send always brings you to the latest, even if you had scrolled up.
       scrollToLatest?.();
@@ -521,6 +531,10 @@ export function MessageComposer({
   }, [sending, isDraftMode]);
 
   const handleSend = () => void send();
+  const closePrompt = () => {
+    setPromptCallOn(false);
+    setPromptText('');
+  };
 
   useEffect(() => {
     if (!sendQueued) return;
@@ -598,7 +612,7 @@ export function MessageComposer({
     await addFiles(pastedImages, { initialCaption: e.clipboardData.getData('text/plain'), caret: { start, end } });
   };
 
-  const canSend = (!!text.trim() || files.length > 0 || assetRefs.length > 0) && !isDisabled;
+  const canSend = (!!text.trim() || !!callPrompt || files.length > 0 || assetRefs.length > 0) && !isDisabled;
 
   // ── Shared building blocks (identical in both modes) ────────────────────
 
@@ -718,14 +732,18 @@ export function MessageComposer({
     <span title={sessionUnavailableReason ? t`Prompt request: ${sessionUnavailableReason}` : undefined}>
       <button
         type="button"
-        onClick={() => setPromptCallOn((on) => !on)}
+        onClick={() => {
+          if (promptCallOn) return closePrompt();
+          setPromptCallOn(true);
+          requestAnimationFrame(() => promptRef.current?.focus());
+        }}
         disabled={isDisabled || !canStartSession}
         aria-pressed={promptCallOn}
         title={
           sessionUnavailableReason
             ? undefined
             : promptCallOn
-              ? t`This message is a prompt — ${hostName} approves it, it runs once on their machine, you get its status`
+              ? t`Remove prompt`
               : t`Attach a prompt — runs once on ${hostName}'s machine after they approve it`
         }
         data-testid="composer-prompt-call"
@@ -895,53 +913,89 @@ export function MessageComposer({
         onDrop={onDrop}
         data-variant={variant}
         className={cn(
-          'mb-[var(--sab)] flex items-end gap-2 rounded-md border px-2 py-1.5 transition-colors',
+          'mb-[var(--sab)] flex flex-col gap-1.5 rounded-md border px-2 py-1.5 transition-colors',
           terminal
             ? 'border-emerald-500/40 bg-background font-mono text-foreground focus-within:border-emerald-500/70 dark:bg-zinc-950 dark:focus-within:border-emerald-400/70'
             : 'border-border bg-background focus-within:border-primary/50',
           dragging && 'border-primary bg-primary/5',
         )}
       >
-        <div className="flex shrink-0 items-center gap-1.5 self-end pb-0.5">
-          {attachButtons}
-          {/* A phone keeps the box wide: attach and send; the desktop's run toggles stay off it. */}
-          <span className="contents max-md:hidden">
-            {sessionToggle}
-            {promptCallToggle}
-          </span>
-        </div>
-        {terminal && (
-          <span className="select-none self-center text-sm text-emerald-600 dark:text-emerald-400" aria-hidden>
-            ❯
-          </span>
-        )}
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onFocus={liftAboveKeyboard}
-          onBlur={dropLift}
-          onPaste={(e) => void handlePaste(e)}
-          placeholder={
-            dragging
-              ? t`Drop files here`
-              : promptCallOn
-                ? t`Prompt to run on ${hostName}'s machine…`
-                : (placeholder ?? t`Reply to sender…`)
-          }
-          rows={1}
-          disabled={isDisabled}
-          data-testid={terminal ? 'live-session-input' : undefined}
-          className={cn(
-            'min-h-[1.5rem] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-base outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
-            terminal
-              ? 'font-mono text-foreground placeholder:text-muted-foreground'
-              : 'text-foreground placeholder:text-muted-foreground',
+        <div className="flex items-end gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 self-end pb-0.5">
+            {attachButtons}
+            {/* A phone keeps the box wide: attach and send; the desktop's run toggles stay off it. */}
+            <span className="contents max-md:hidden">
+              {sessionToggle}
+              {promptCallToggle}
+            </span>
+          </div>
+          {terminal && (
+            <span className="select-none self-center text-sm text-emerald-600 dark:text-emerald-400" aria-hidden>
+              ❯
+            </span>
           )}
-        />
-        <span className="contents max-md:hidden">{taskItToggle}</span>
-        {sendButton}
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={liftAboveKeyboard}
+            onBlur={dropLift}
+            onPaste={(e) => void handlePaste(e)}
+            placeholder={
+              dragging
+                ? t`Drop files here`
+                : promptBoxOpen
+                  ? t`Message to ${hostName}…`
+                  : (placeholder ?? t`Reply to sender…`)
+            }
+            rows={1}
+            disabled={isDisabled}
+            data-testid={terminal ? 'live-session-input' : undefined}
+            className={cn(
+              'min-h-[1.5rem] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-base outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
+              terminal
+                ? 'font-mono text-foreground placeholder:text-muted-foreground'
+                : 'text-foreground placeholder:text-muted-foreground',
+            )}
+          />
+          <span className="contents max-md:hidden">{taskItToggle}</span>
+          {!promptBoxOpen && sendButton}
+        </div>
+        {promptBoxOpen && (
+          <div className="flex items-end gap-2">
+            <div
+              className="flex min-w-0 flex-1 items-start gap-2 rounded-md border border-violet-500/40 bg-violet-500/10 px-2 py-1 font-mono"
+              data-testid="composer-prompt-box"
+            >
+              <span className="select-none py-1 text-sm text-violet-700 dark:text-violet-300" aria-hidden>
+                ❯
+              </span>
+              <textarea
+                ref={promptRef}
+                value={promptText}
+                onChange={(e) => setPromptText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t`Prompt to run on ${hostName}'s machine…`}
+                rows={1}
+                disabled={isDisabled}
+                data-testid="composer-prompt-input"
+                className="min-h-[1.5rem] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 font-mono text-base text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-xs"
+              />
+              <button
+                type="button"
+                onClick={closePrompt}
+                disabled={isDisabled}
+                title={t`Remove prompt`}
+                aria-label={t`Remove prompt`}
+                className="py-1 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {sendButton}
+          </div>
+        )}
       </div>
 
       {chipLists}

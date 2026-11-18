@@ -289,7 +289,7 @@ Two kinds, one state:
 - **The composer's draft** — what is being typed in a conversation. At most one
   per conversation and thread (`FlowMessage.find_composer_draft`); its
   `draft_options` (`MessageDraftOptions`) name the thread's composer and the
-  send choices (prompt call, Task it). `POST conversation/<id>/draft` is its one
+  send choices (prompt call and its prompt, Task it). `POST conversation/<id>/draft` is its one
   writer: the body states the whole draft, and an empty one is destroyed — row,
   record folder and files. The composer loads it on mount, stores it as it
   changes (`useComposerDraft`), and Send promotes it. Only where messages are
