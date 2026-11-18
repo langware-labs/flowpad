@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, NamedTuple, Optional
 
 import requests
 import typer
@@ -252,25 +252,35 @@ async def try_prompt_ap(process_id: str, prompt: str) -> Optional[str]:
     return (answer.text or "") if answer.ok else None
 
 
-async def try_check_goal(
-    process_id: str, goal: str, stop_condition: str
-) -> tuple[Optional[str], Optional[MonitorVerdict], Optional[str]]:
-    """Fork the session and ask the fork, here: ``(fork id, verdict, problem)``. No fork:
-    ``(None, None, None)``. No verdict: ``(fork id, None, "ASK_FAILED" | "INVALID_ANSWER")``."""
+class GoalCheck(NamedTuple):
+    """What ``try_check_goal`` found."""
+
+    #: The fork that was asked; None when the session could not be forked.
+    fork_id: Optional[str]
+    #: Its answer; None when there is none, and ``problem`` says why.
+    verdict: Optional[MonitorVerdict]
+    #: ``"ASK_FAILED"`` (the fork did not answer) or ``"INVALID_ANSWER"`` (no valid answer after the retries).
+    problem: Optional[str]
+
+
+async def try_check_goal(process_id: str, goal: str, stop_condition: str) -> GoalCheck:
+    """Fork the session and ask the fork, here."""
     fork_id = await _try_fork_agentic_process(process_id)
     if fork_id is None:
-        return None, None, None
+        return GoalCheck(fork_id=None, verdict=None, problem=None)
     prompt = _check_prompt(goal, stop_condition)
     for _attempt in range(1 + _NUDGE_RETRIES):
         reply = await try_prompt_ap(fork_id, prompt)
         if reply is None:
-            return fork_id, None, "ASK_FAILED"
+            return GoalCheck(fork_id=fork_id, verdict=None, problem="ASK_FAILED")
         try:
-            return fork_id, MonitorVerdict.from_raw_agent_response(reply), None
+            verdict = MonitorVerdict.from_raw_agent_response(reply)
         except ValidationError as e:
             errors = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'reply'}: {err['msg']}" for err in e.errors())
             prompt = f"Invalid answer, error on {errors}. Reply with only this JSON, nothing else: {_REPLY_FORMAT}"
-    return fork_id, None, "INVALID_ANSWER"
+            continue
+        return GoalCheck(fork_id=fork_id, verdict=verdict, problem=None)
+    return GoalCheck(fork_id=fork_id, verdict=None, problem="INVALID_ANSWER")
 
 
 def _prompt_session(port: int, process_id: str, message: str) -> None:
@@ -337,7 +347,8 @@ def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `moni
         return
     # No lock against a second check: the scheduler runs one instance of a trigger's job at a time
     # (APScheduler's max_instances=1), and the job awaits this command.
-    fork_id, verdict, problem = run_async(try_check_goal(process_id, goal, stop_condition))
+    check = run_async(try_check_goal(process_id, goal, stop_condition))
+    fork_id, verdict, problem = check.fork_id, check.verdict, check.problem
     if fork_id is None:
         _prompt_session(port, process_id, _self_check_prompt(goal, stop_condition, key))
         ok({"key": key, "answer": None, "asked": process_id, "note": "cannot fork: the session checks itself"})
