@@ -14342,9 +14342,17 @@ msgstr "Flowpad works best with a few tools on your machine: Claude Code, Python
 msgid "Flowpad.ai Logo"
 msgstr "Flowpad.ai Logo"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Flowpad's Google identity is not available to you"
+msgstr "Flowpad's Google identity is not available to you"
+
 #: src/components/inbound/InboundView.tsx
 msgid "Flowpad's number · linked sender"
 msgstr "Flowpad's number · linked sender"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Flowpad's own Google identity pays for this organization. No key is needed."
+msgstr "Flowpad's own Google identity pays for this organization. No key is needed."
 
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Flowpad's setup comes first"
@@ -15751,6 +15759,10 @@ msgstr "Hub: {cloudUrl}"
 #: src/components/code-editor/DiffContent.tsx
 msgid "Hunk {hunkNumber}: Lines {oldStart}–{oldEnd} → {newStart}–{newEnd}"
 msgstr "Hunk {hunkNumber}: Lines {oldStart}–{oldEnd} → {newStart}–{newEnd}"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "I have a key after all"
+msgstr "I have a key after all"
 
 #. placeholder {0}: m[1]
 #: src/notifications/renderDesktopNotification.ts
@@ -20614,6 +20626,10 @@ msgstr "no key on that root"
 msgid "No key stored — this root cannot serve requests until one is saved."
 msgstr "No key stored — this root cannot serve requests until one is saved."
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "No key? Use Flowpad's Google identity"
+msgstr "No key? Use Flowpad's Google identity"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "No known event matches. Type the event name under Advanced."
 msgstr "No known event matches. Type the event name under Advanced."
@@ -23752,6 +23768,7 @@ msgstr "Org role"
 msgid "Organization"
 msgstr "Organization"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Organization activated"
 msgstr "Organization activated"
@@ -31120,6 +31137,10 @@ msgid "Specific unix sockets allowed in sandbox"
 msgstr "Specific unix sockets allowed in sandbox"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Spending now bills Flowpad's Google Vertex AI."
+msgstr "Spending now bills Flowpad's Google Vertex AI."
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Spending now bills your own {providerLabel}."
 msgstr "Spending now bills your own {providerLabel}."
 
@@ -32902,6 +32923,10 @@ msgstr "The number before the colon in the bot token."
 #: src/components/help/AskForHelpDialog.tsx
 msgid "The one you already took"
 msgstr "The one you already took"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "The organization was created. Add your own key below."
+msgstr "The organization was created. Add your own key below."
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/FlowMessageBubble.tsx

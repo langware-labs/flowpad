@@ -14342,9 +14342,17 @@ msgstr "Flowpad עובד הכי טוב עם כמה כלים במחשב שלכם:
 msgid "Flowpad.ai Logo"
 msgstr "לוגו Flowpad.ai"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Flowpad's Google identity is not available to you"
+msgstr "הזהות של Flowpad ב-Google לא זמינה לך"
+
 #: src/components/inbound/InboundView.tsx
 msgid "Flowpad's number · linked sender"
 msgstr "מספר Flowpad · שולח מקושר"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Flowpad's own Google identity pays for this organization. No key is needed."
+msgstr "הזהות של Flowpad ב-Google משלמת עבור הארגון הזה. אין צורך במפתח."
 
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Flowpad's setup comes first"
@@ -15751,6 +15759,10 @@ msgstr "Hub: {cloudUrl}"
 #: src/components/code-editor/DiffContent.tsx
 msgid "Hunk {hunkNumber}: Lines {oldStart}–{oldEnd} → {newStart}–{newEnd}"
 msgstr "מקטע {hunkNumber}: שורות {oldStart}–{oldEnd} → {newStart}–{newEnd}"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "I have a key after all"
+msgstr "בכל זאת יש לי מפתח"
 
 #. placeholder {0}: m[1]
 #: src/notifications/renderDesktopNotification.ts
@@ -20614,6 +20626,10 @@ msgstr "אין מפתח בשורש הזה"
 msgid "No key stored — this root cannot serve requests until one is saved."
 msgstr "לא נשמר מפתח — השורש הזה לא יכול לשרת בקשות עד שיישמר אחד."
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "No key? Use Flowpad's Google identity"
+msgstr "אין מפתח? השתמש בזהות של Flowpad ב-Google"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "No known event matches. Type the event name under Advanced."
 msgstr "לא נמצא אירוע תואם. הקלידו את שם האירוע תחת מתקדם."
@@ -23752,6 +23768,7 @@ msgstr ""
 msgid "Organization"
 msgstr "ארגון"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Organization activated"
 msgstr "הארגון הופעל"
@@ -31120,6 +31137,10 @@ msgid "Specific unix sockets allowed in sandbox"
 msgstr "Unix sockets ספציפיים המורשים בסנדבוקס"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Spending now bills Flowpad's Google Vertex AI."
+msgstr "ההוצאה מחויבת עכשיו ל-Google Vertex AI של Flowpad."
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Spending now bills your own {providerLabel}."
 msgstr ""
 
@@ -32902,6 +32923,10 @@ msgstr "המספר שלפני הנקודתיים בטוקן הבוט."
 #: src/components/help/AskForHelpDialog.tsx
 msgid "The one you already took"
 msgstr "זה שכבר ביצעתם"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "The organization was created. Add your own key below."
+msgstr "הארגון נוצר. הוסף מפתח משלך למטה."
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
