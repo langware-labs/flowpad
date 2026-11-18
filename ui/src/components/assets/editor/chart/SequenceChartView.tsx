@@ -534,7 +534,9 @@ export function SequenceChartView({ fsRef, chart, projectId, actions, changes }:
                   xmlns="http://www.w3.org/2000/svg"
                   role="img"
                   className="block"
-                  style={{ width: '100%', height: 'calc(100dvh - 290px)', minHeight: 360 }}
+                  // The diagram is laid out left to right in fixed coordinates: under an RTL page (Hebrew) SVG text-anchor
+                  // "start" would mean the right end, so labels ran over their icons and punctuation moved to the wrong side.
+                  style={{ width: '100%', height: 'calc(100dvh - 290px)', minHeight: 360, direction: 'ltr' }}
                   viewBox={pz.viewBox}
                   data-zoomed={pz.zoomed ? 'true' : 'false'}
                   aria-label={t`${value.title || t`Sequence chart`}: ${value.participants.length} participants, ${value.messages.length} messages`}
