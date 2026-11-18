@@ -3,8 +3,8 @@
 The server is faked at the HTTP boundary (``_common.local_request``), so these tests pin what each
 command refuses, what it writes into the project and which calls it makes. They do NOT test the
 automation engine: that the cron rule fires and runs the nudge is the trigger system's job.
-The nudge forks and asks in its own process, through the SDK: faked at ``process_cmd._fork`` and
-``process_cmd._ask``.
+The nudge forks and asks in its own process, through the SDK: faked at ``process_monitor_cmd._fork`` and
+``process_monitor_cmd._ask``.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 import pytest
 from typer.testing import CliRunner
 
-from flow_sdk.cli.commands import _common, process_cmd
+from flow_sdk.cli.commands import _common, process_cmd, process_monitor_cmd
 from flow_sdk.schema.data_spec.trigger_spec import TriggerSpec
 
 AP_ID = "11111111-1111-1111-1111-111111111111"
@@ -119,10 +119,10 @@ def flowpad(tmp_path, monkeypatch) -> FakeFlowpad:
     project_dir.mkdir()
     fake = FakeFlowpad(project_dir)
     monkeypatch.setattr(_common, "local_request", fake.request)
-    monkeypatch.setattr(process_cmd, "_discover_port", lambda *a, **k: 4242)
-    monkeypatch.setattr(process_cmd, "_fork", fake.fork)
-    monkeypatch.setattr(process_cmd, "_ask", fake.ask)
-    monkeypatch.setattr(process_cmd, "_state_dir", lambda: tmp_path / "state")
+    monkeypatch.setattr(process_monitor_cmd, "_discover_port", lambda *a, **k: 4242)
+    monkeypatch.setattr(process_monitor_cmd, "_fork", fake.fork)
+    monkeypatch.setattr(process_monitor_cmd, "_ask", fake.ask)
+    monkeypatch.setattr(process_monitor_cmd, "_state_dir", lambda: tmp_path / "state")
     return fake
 
 
