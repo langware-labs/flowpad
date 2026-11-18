@@ -3,7 +3,12 @@ import { ViewerChatSlot } from '../ViewerChatToggle';
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
 import { gfmSlug } from '@src/lib/heading-slug';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
-import { MilkdownEditor, type CommentLayer, type RequestChangeOpts, type RequestedChange } from '@src/components/milkdown-editor/MilkdownEditor';
+import {
+  MilkdownEditor,
+  type CommentLayer,
+  type RequestChangeOpts,
+  type RequestedChange,
+} from '@src/components/milkdown-editor/MilkdownEditor';
 import type { ChangeMark } from '@src/components/milkdown-editor/plugins/change-marks';
 import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurface';
 import { Button } from '@src/components/ui/button';
@@ -399,12 +404,17 @@ function MarkdownEditorContent({
     reload,
     lastSync,
   } = useMarkdownContent(fsRef, { autoSave: !readOnly, autoSaveMs: 2000, reloadKey });
-  const markEntityEdited = useCallback(() => { if (!readOnly) editEntity?.markEdit(); }, [editEntity, readOnly]);
-  const setEditedField = useCallback((key: string, value: import('@sdk/fs/AssetDocument').DocumentValue) => {
-    if (readOnly) return;
-    setField(key, value);
-    markEntityEdited();
-  }, [markEntityEdited, setField, readOnly]);
+  const markEntityEdited = useCallback(() => {
+    if (!readOnly) editEntity?.markEdit();
+  }, [editEntity, readOnly]);
+  const setEditedField = useCallback(
+    (key: string, value: import('@sdk/fs/AssetDocument').DocumentValue) => {
+      if (readOnly) return;
+      setField(key, value);
+      markEntityEdited();
+    },
+    [markEntityEdited, setField, readOnly],
+  );
 
   const [propsExpanded, setPropsExpanded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -496,9 +506,12 @@ function MarkdownEditorContent({
 
   const setBodyRef = useRef(setBody);
   setBodyRef.current = setBody;
-  const handleBodyChange = useCallback((newBody: string) => {
-    if (!readOnly) setBodyRef.current(newBody);
-  }, [readOnly]);
+  const handleBodyChange = useCallback(
+    (newBody: string) => {
+      if (!readOnly) setBodyRef.current(newBody);
+    },
+    [readOnly],
+  );
 
   const sourcePathStr = typeof sourcePath === 'string' ? sourcePath : '';
   const fileName = sourcePathStr.split('/').pop() || sourcePathStr;
@@ -685,10 +698,12 @@ function MarkdownEditorContent({
             {missingFileCopy?.note ?? <Trans>Note: File is missing</Trans>}
           </p>
           {!missingFileCopy && <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>}
-          {!readOnly && <Button variant="outline" size="sm" onClick={() => void recreate()}>
-            <FilePlus2 className="mr-1 h-4 w-4" />
-            {missingFileCopy?.actionLabel ?? <Trans>Re-create it</Trans>}
-          </Button>}
+          {!readOnly && (
+            <Button variant="outline" size="sm" onClick={() => void recreate()}>
+              <FilePlus2 className="mr-1 h-4 w-4" />
+              {missingFileCopy?.actionLabel ?? <Trans>Re-create it</Trans>}
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -757,6 +772,7 @@ function MarkdownEditorContent({
       editorRef={milkdownRef}
       onCursorLineChange={handleEditorLineChange}
       initialLine={initialBodyLine}
+      scrollKey={sourcePath}
       direction={normalizeDirection(fields.direction)}
       toolbarPortalTarget={mode === 'editor' ? editorToolbarTarget : undefined}
       toolbarRight={
@@ -829,7 +845,7 @@ function MarkdownEditorContent({
         showLearningMode={showLearningMode}
       />
 
-      <DocumentSaveNotice {...{saveError, metadataError, conflict, inspectCurrent, reload, currentDocument}} />
+      <DocumentSaveNotice {...{ saveError, metadataError, conflict, inspectCurrent, reload, currentDocument }} />
       {linkDialog}
       {hasFields && (
         <div className="flex-shrink-0 border-b">
@@ -846,19 +862,19 @@ function MarkdownEditorContent({
               {Object.entries(fields)
                 .filter(([key]) => key !== 'id') // identity is the carrier, not a user property
                 .map(([key, value]) => (
-                <div key={key} className="flex flex-col gap-1">
-                  <label className="text-xs capitalize text-muted-foreground">{key}</label>
-                  <input
-                    className="rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring"
-                    value={value}
-                    readOnly={readOnly}
-                    onChange={(e) => {
-                      setField(key, e.target.value);
-                      if (e.nativeEvent.isTrusted) markEntityEdited();
-                    }}
-                  />
-                </div>
-              ))}
+                  <div key={key} className="flex flex-col gap-1">
+                    <label className="text-xs capitalize text-muted-foreground">{key}</label>
+                    <input
+                      className="rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring"
+                      value={value}
+                      readOnly={readOnly}
+                      onChange={(e) => {
+                        setField(key, e.target.value);
+                        if (e.nativeEvent.isTrusted) markEntityEdited();
+                      }}
+                    />
+                  </div>
+                ))}
             </div>
           )}
         </div>

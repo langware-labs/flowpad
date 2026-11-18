@@ -1,5 +1,13 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx, remarkStringifyOptionsCtx } from '@milkdown/core';
+import {
+  Editor,
+  rootCtx,
+  defaultValueCtx,
+  editorViewCtx,
+  editorViewOptionsCtx,
+  parserCtx,
+  remarkStringifyOptionsCtx,
+} from '@milkdown/core';
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react';
 import {
   commonmark,
@@ -35,12 +43,31 @@ import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openFilePreview } from '@src/components/file-preview/file-preview';
 import {
-  Bold, Italic, Code, Heading1, Heading2, Heading3,
-  List, ListOrdered, SquareCode, Pilcrow, ExternalLink,
-  Link as LinkIcon, Check, X, Pencil, Unlink,
-  ChevronsRight, ChevronsLeft, Languages,
-  AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Table as TableIcon, WandSparkles,
+  Bold,
+  Italic,
+  Code,
+  Heading1,
+  Heading2,
+  Heading3,
+  List,
+  ListOrdered,
+  SquareCode,
+  Pilcrow,
+  ExternalLink,
+  Link as LinkIcon,
+  Check,
+  X,
+  Pencil,
+  Unlink,
+  ChevronsRight,
+  ChevronsLeft,
+  Languages,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Table as TableIcon,
+  WandSparkles,
 } from 'lucide-react';
 
 import './milkdown.css';
@@ -48,7 +75,12 @@ import './plugins/fence-render/fence-render.css';
 import { configureRefractor } from './plugins/prism-languages';
 import { fenceRenderPlugins, fenceHostServicesCtx, type FenceHostServices } from './plugins/fence-render';
 import { changeMarksKey, changeMarksPlugin, type ChangeMark } from './plugins/change-marks';
-import { commentSlot, commentWidgetsKey, commentWidgetsPlugin, type CommentAnchorMark } from './plugins/comment-widgets';
+import {
+  commentSlot,
+  commentWidgetsKey,
+  commentWidgetsPlugin,
+  type CommentAnchorMark,
+} from './plugins/comment-widgets';
 // Concrete fence renderers self-register on import. Listed here, at the
 // composition point, rather than inside the plugin — the same direction
 // `AssetsPage` imports its column modules, and it keeps `fence-render/` free of
@@ -59,9 +91,12 @@ import './plugins/fence-render/renderers/interface';
 import './plugins/fence-render/renderers/breadcrumb';
 import {
   bidiPlugins,
-  setDirCommand, unsetDirCommand,
-  setAlignCommand, unsetAlignCommand,
-  type BidiDir, type BidiAlign,
+  setDirCommand,
+  unsetDirCommand,
+  setAlignCommand,
+  unsetAlignCommand,
+  type BidiDir,
+  type BidiAlign,
 } from './plugins/bidi';
 
 /**
@@ -243,6 +278,11 @@ interface MilkdownEditorProps {
    */
   initialLine?: number | null;
   /**
+   * Names the document so its scroll offset survives the editor unmounting (a
+   * tab switch). Omit to start at the top on every mount.
+   */
+  scrollKey?: string;
+  /**
    * Document-wide base direction sourced from the file's `direction` frontmatter
    * key (`ltr` | `rtl`). When set, applied as `dir=...` on the editor wrapper —
    * blockquote bars, list bullets, indent, and table cell alignment flip to the
@@ -281,7 +321,9 @@ function LinkPopup({
   const { t } = useLingui();
   const { rect, mode, href } = state;
   const [value, setValue] = useState(href);
-  useEffect(() => { setValue(href); }, [href, mode]);
+  useEffect(() => {
+    setValue(href);
+  }, [href, mode]);
 
   const showAbove = rect.top > 56;
   const left = Math.min(Math.max(8, rect.left), window.innerWidth - 320);
@@ -309,8 +351,13 @@ function LinkPopup({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); onApply(value.trim()); }
-              else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onApply(value.trim());
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                onClose();
+              }
             }}
             placeholder="https://..."
             className="h-6 w-[240px] rounded border bg-transparent px-1.5 text-xs outline-none focus:border-primary"
@@ -318,7 +365,10 @@ function LinkPopup({
           />
           <button
             type="button"
-            onMouseDown={(e) => { e.preventDefault(); onApply(value.trim()); }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onApply(value.trim());
+            }}
             title={t`Apply`}
             className="flex items-center rounded px-1 py-0.5 text-xs hover:bg-muted"
             data-testid="milkdown-link-apply"
@@ -327,7 +377,10 @@ function LinkPopup({
           </button>
           <button
             type="button"
-            onMouseDown={(e) => { e.preventDefault(); onClose(); }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onClose();
+            }}
             title={t`Cancel`}
             className="flex items-center rounded px-1 py-0.5 text-xs hover:bg-muted"
           >
@@ -340,7 +393,11 @@ function LinkPopup({
           <div className="h-3.5 w-px bg-border" />
           <button
             type="button"
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(href); }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpen(href);
+            }}
             className="flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium hover:bg-muted"
             title={t`Open link`}
           >
@@ -349,7 +406,11 @@ function LinkPopup({
           </button>
           <button
             type="button"
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEdit();
+            }}
             className="flex items-center rounded px-1 py-0.5 text-xs hover:bg-muted"
             title={t`Edit link`}
             data-testid="milkdown-link-edit"
@@ -358,7 +419,11 @@ function LinkPopup({
           </button>
           <button
             type="button"
-            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onRemove();
+            }}
             className="flex items-center rounded px-1 py-0.5 text-xs hover:bg-muted"
             title={t`Remove link`}
             data-testid="milkdown-link-remove"
@@ -450,16 +515,22 @@ interface ActiveState {
   bulletList: boolean;
   orderedList: boolean;
   codeBlock: boolean;
-  link: boolean;        // cursor is inside or selection contains a link
-  canAddLink: boolean;  // selection is non-empty, not already a link, not in code block
+  link: boolean; // cursor is inside or selection contains a link
+  canAddLink: boolean; // selection is non-empty, not already a link, not in code block
   bidiDir: BidiActiveDir;
   bidiAlign: BidiActiveAlign;
 }
 
 const EMPTY_ACTIVE: ActiveState = {
-  bold: false, italic: false, inlineCode: false,
-  headingLevel: 0, bulletList: false, orderedList: false, codeBlock: false,
-  link: false, canAddLink: false,
+  bold: false,
+  italic: false,
+  inlineCode: false,
+  headingLevel: 0,
+  bulletList: false,
+  orderedList: false,
+  codeBlock: false,
+  link: false,
+  canAddLink: false,
   bidiDir: null,
   bidiAlign: null,
 };
@@ -473,7 +544,7 @@ function getActiveState(state: EditorState): ActiveState {
   const markActive = (markName: string): boolean => {
     const markType = schema.marks[markName];
     if (!markType) return false;
-    if (empty) return !!(state.storedMarks || $from.marks()).find(m => m.type === markType);
+    if (empty) return !!(state.storedMarks || $from.marks()).find((m) => m.type === markType);
     return state.doc.rangeHasMark(from, to, markType);
   };
 
@@ -526,7 +597,19 @@ function getActiveState(state: EditorState): ActiveState {
     }
   }
 
-  return { bold, italic, inlineCode, headingLevel, bulletList, orderedList, codeBlock, link, canAddLink, bidiDir, bidiAlign };
+  return {
+    bold,
+    italic,
+    inlineCode,
+    headingLevel,
+    bulletList,
+    orderedList,
+    codeBlock,
+    link,
+    canAddLink,
+    bidiDir,
+    bidiAlign,
+  };
 }
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
@@ -590,19 +673,28 @@ function TextFormatButtons({
         title={t`Bold`}
         icon={<Bold className="h-3.5 w-3.5" />}
         active={bold}
-        onMouseDown={(e) => { e.preventDefault(); act(callCommand(toggleStrongCommand.key)); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          act(callCommand(toggleStrongCommand.key));
+        }}
       />
       <FormatButton
         title={t`Italic`}
         icon={<Italic className="h-3.5 w-3.5" />}
         active={italic}
-        onMouseDown={(e) => { e.preventDefault(); act(callCommand(toggleEmphasisCommand.key)); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          act(callCommand(toggleEmphasisCommand.key));
+        }}
       />
       <FormatButton
         title={t`Inline code`}
         icon={<Code className="h-3.5 w-3.5" />}
         active={inlineCode}
-        onMouseDown={(e) => { e.preventDefault(); act(callCommand(toggleInlineCodeCommand.key)); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          act(callCommand(toggleInlineCodeCommand.key));
+        }}
       />
       <FormatButton
         title={link ? t`Edit link` : canAddLink ? t`Add link` : t`Select text to add a link`}
@@ -610,7 +702,10 @@ function TextFormatButtons({
         active={link}
         disabled={!linkEnabled}
         testId="milkdown-toolbar-link"
-        onMouseDown={(e) => { e.preventDefault(); if (linkEnabled) onRequestLink(); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (linkEnabled) onRequestLink();
+        }}
       />
     </>
   );
@@ -646,7 +741,10 @@ function MilkdownToolbar({
       title={title}
       icon={icon}
       active={active}
-      onMouseDown={(e) => { e.preventDefault(); act(fn); }}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        act(fn);
+      }}
     />
   );
 
@@ -676,25 +774,59 @@ function MilkdownToolbar({
       data-testid="milkdown-toolbar"
       data-embedded={embedded ? 'true' : 'false'}
     >
-      <TextFormatButtons
-        activeState={activeState}
-        onRequestLink={onRequestLink}
-        onEditIntent={onEditIntent}
-      />
+      <TextFormatButtons activeState={activeState} onRequestLink={onRequestLink} onEditIntent={onEditIntent} />
       <div className="mx-1.5 h-4 w-px bg-border" />
-      {headingBtn(t`Normal text`, <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key), headingLevel === 0 && !codeBlock)}
-      {headingBtn(t`Heading 1`, <Heading1 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 1), headingLevel === 1)}
-      {headingBtn(t`Heading 2`, <Heading2 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 2), headingLevel === 2)}
-      {headingBtn(t`Heading 3`, <Heading3 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 3), headingLevel === 3)}
+      {headingBtn(
+        t`Normal text`,
+        <Pilcrow className="h-3.5 w-3.5" />,
+        callCommand(turnIntoTextCommand.key),
+        headingLevel === 0 && !codeBlock,
+      )}
+      {headingBtn(
+        t`Heading 1`,
+        <Heading1 className="h-3.5 w-3.5" />,
+        callCommand(wrapInHeadingCommand.key, 1),
+        headingLevel === 1,
+      )}
+      {headingBtn(
+        t`Heading 2`,
+        <Heading2 className="h-3.5 w-3.5" />,
+        callCommand(wrapInHeadingCommand.key, 2),
+        headingLevel === 2,
+      )}
+      {headingBtn(
+        t`Heading 3`,
+        <Heading3 className="h-3.5 w-3.5" />,
+        callCommand(wrapInHeadingCommand.key, 3),
+        headingLevel === 3,
+      )}
       <div className="mx-1.5 h-4 w-px bg-border" />
-      {headingBtn(t`Bullet list`, <List className="h-3.5 w-3.5" />, callCommand(wrapInBulletListCommand.key), bulletList)}
-      {headingBtn(t`Ordered list`, <ListOrdered className="h-3.5 w-3.5" />, callCommand(wrapInOrderedListCommand.key), orderedList)}
-      {headingBtn(t`Code block`, <SquareCode className="h-3.5 w-3.5" />, callCommand(createCodeBlockCommand.key), codeBlock)}
+      {headingBtn(
+        t`Bullet list`,
+        <List className="h-3.5 w-3.5" />,
+        callCommand(wrapInBulletListCommand.key),
+        bulletList,
+      )}
+      {headingBtn(
+        t`Ordered list`,
+        <ListOrdered className="h-3.5 w-3.5" />,
+        callCommand(wrapInOrderedListCommand.key),
+        orderedList,
+      )}
+      {headingBtn(
+        t`Code block`,
+        <SquareCode className="h-3.5 w-3.5" />,
+        callCommand(createCodeBlockCommand.key),
+        codeBlock,
+      )}
       <FormatButton
         title={t`Insert table`}
         icon={<TableIcon className="h-3.5 w-3.5" />}
         testId="milkdown-toolbar-table"
-        onMouseDown={(e) => { e.preventDefault(); act(callCommand(insertTableCommand.key, { row: 3, col: 3 })); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          act(callCommand(insertTableCommand.key, { row: 3, col: 3 }));
+        }}
       />
       <div className="mx-1.5 h-4 w-px bg-border" />
       <FormatButton
@@ -703,7 +835,10 @@ function MilkdownToolbar({
         active={bidiDir === 'ltr'}
         disabled={dirDisabled}
         testId="milkdown-toolbar-dir-ltr"
-        onMouseDown={(e) => { e.preventDefault(); if (!dirDisabled) onDirClick('ltr'); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (!dirDisabled) onDirClick('ltr');
+        }}
       />
       <FormatButton
         title={t`Right-to-left paragraph`}
@@ -711,7 +846,10 @@ function MilkdownToolbar({
         active={bidiDir === 'rtl'}
         disabled={dirDisabled}
         testId="milkdown-toolbar-dir-rtl"
-        onMouseDown={(e) => { e.preventDefault(); if (!dirDisabled) onDirClick('rtl'); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (!dirDisabled) onDirClick('rtl');
+        }}
       />
       <FormatButton
         title={t`Auto-detect direction from first strong character`}
@@ -719,7 +857,10 @@ function MilkdownToolbar({
         active={bidiDir === 'auto'}
         disabled={dirDisabled}
         testId="milkdown-toolbar-dir-auto"
-        onMouseDown={(e) => { e.preventDefault(); if (!dirDisabled) onDirClick('auto'); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (!dirDisabled) onDirClick('auto');
+        }}
       />
       <div className="mx-1.5 h-4 w-px bg-border" />
       {/*
@@ -736,7 +877,10 @@ function MilkdownToolbar({
         active={bidiAlign === 'start'}
         disabled={alignDisabled}
         testId="milkdown-toolbar-align-start"
-        onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('start'); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (!alignDisabled) onAlignClick('start');
+        }}
       />
       <FormatButton
         title={t`Align center`}
@@ -744,7 +888,10 @@ function MilkdownToolbar({
         active={bidiAlign === 'center'}
         disabled={alignDisabled}
         testId="milkdown-toolbar-align-center"
-        onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('center'); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (!alignDisabled) onAlignClick('center');
+        }}
       />
       <FormatButton
         title={t`Align end (right in LTR, left in RTL)`}
@@ -752,7 +899,10 @@ function MilkdownToolbar({
         active={bidiAlign === 'end'}
         disabled={alignDisabled}
         testId="milkdown-toolbar-align-end"
-        onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('end'); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (!alignDisabled) onAlignClick('end');
+        }}
       />
       <FormatButton
         title={t`Justify`}
@@ -760,7 +910,10 @@ function MilkdownToolbar({
         active={bidiAlign === 'justify'}
         disabled={alignDisabled}
         testId="milkdown-toolbar-align-justify"
-        onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('justify'); }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (!alignDisabled) onAlignClick('justify');
+        }}
       />
       {rightSlot && (
         <>
@@ -836,11 +989,7 @@ function SelectionToolbar({
       className="flex items-center gap-0.5 rounded-md border border-border bg-popover p-1 shadow-md"
       onMouseDown={(e) => e.preventDefault()}
     >
-      <TextFormatButtons
-        activeState={activeState}
-        onRequestLink={onRequestLink}
-        onEditIntent={onEditIntent}
-      />
+      <TextFormatButtons activeState={activeState} onRequestLink={onRequestLink} onEditIntent={onEditIntent} />
       {onRequestChange && (
         <>
           <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
@@ -848,7 +997,10 @@ function SelectionToolbar({
             title={t`Change this…`}
             icon={<WandSparkles className="h-3.5 w-3.5 text-primary" />}
             testId="selection-toolbar-change"
-            onMouseDown={(e) => { e.preventDefault(); onRequestChange(); }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onRequestChange();
+            }}
           />
         </>
       )}
@@ -890,7 +1042,14 @@ function ChangeBox({
       role="dialog"
       aria-label={t`Change this`}
       data-testid="change-this-box"
-      style={{ position: 'fixed', top: state.rect.top + 28, left, transform: 'translateX(-50%)', zIndex: 50, width: BOX_WIDTH }}
+      style={{
+        position: 'fixed',
+        top: state.rect.top + 28,
+        left,
+        transform: 'translateX(-50%)',
+        zIndex: 50,
+        width: BOX_WIDTH,
+      }}
       className="flex flex-col gap-2 rounded-md border border-border bg-popover p-2 shadow-md"
     >
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -905,14 +1064,23 @@ function ChangeBox({
         placeholder={t`What should change here?`}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') { e.preventDefault(); onClose(); }
-          else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(true); }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            onClose();
+          } else if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            submit(true);
+          }
         }}
         className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
       <div className="flex items-center justify-between">
         <div className="ms-auto flex items-center gap-1">
-          <button type="button" onClick={onClose} className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+          >
             {t`Cancel`}
           </button>
           <button
@@ -941,13 +1109,30 @@ function ChangeBox({
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef, changeMarks, commentLayer }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
+function MilkdownEditorInner({
+  content,
+  onChange,
+  onUserEdit,
+  editorMode,
+  plugins,
+  onActiveStateChange,
+  onSelectionRectChange,
+  onCursorLineChange,
+  initialLine,
+  direction,
+  editorRef,
+  changeMarks,
+  commentLayer,
+}: MilkdownEditorProps & {
+  onActiveStateChange?: (s: ActiveState) => void;
+  onSelectionRectChange?: (r: SelectionRect | null) => void;
+  editorRef?: React.MutableRefObject<Editor | null>;
+}) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const { navigation, currentDock } = useDockNavigation();
 
   /** The entity files are addressed through — the document's own compute node. */
-  const docEntityTypeId = (): TypeId =>
-    VFSPath.parse(currentDock?.pointer ?? '').typeId ?? LOCAL_COMPUTE_NODE;
+  const docEntityTypeId = (): TypeId => VFSPath.parse(currentDock?.pointer ?? '').typeId ?? LOCAL_COMPUTE_NODE;
 
   const openMachinePath = (path: string, options?: { line?: number }) => {
     navigation.openMachinePath(path, docEntityTypeId(), options);
@@ -980,11 +1165,9 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
     // `LOCAL_COMPUTE_NODE` is only a fallback (it serializes to the `@local`
     // uname, which the code editor does not resolve to a filesystem).
     openFile: (path, options) => openMachinePath(path, options),
-    previewFile: (path, options) =>
-      openFilePreview({ path, line: options?.line, typeId: docEntityTypeId() }),
+    previewFile: (path, options) => openFilePreview({ path, line: options?.line, typeId: docEntityTypeId() }),
     documentProjectRoot: () => projectRootOf(dataContext.project),
-    projectRootById: (projectId) =>
-      dataContext.project?.id === projectId ? projectRootOf(dataContext.project) : null,
+    projectRootById: (projectId) => (dataContext.project?.id === projectId ? projectRootOf(dataContext.project) : null),
   };
 
   const localRef = useRef<Editor | null>(null);
@@ -995,10 +1178,7 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
 
   // Strip HTML comments + rewrite [[wikilinks]] → markdown-link form so
   // CommonMark renders them as clickable anchors. Reverse on save.
-  const displayContent = useMemo(
-    () => wikilinksToMdLinks(stripHtmlComments(content)),
-    [content],
-  );
+  const displayContent = useMemo(() => wikilinksToMdLinks(stripHtmlComments(content)), [content]);
   const initialContentRef = useRef(displayContent);
   // Track the last markdown we emitted via onChange so we can tell user edits
   // apart from external content changes (e.g. file rewritten on disk).
@@ -1218,7 +1398,9 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
   useEffect(() => {
     const editor = get?.();
     if (!editor) return;
-    const onUser = () => { userInteractedRef.current = true; };
+    const onUser = () => {
+      userInteractedRef.current = true;
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       onUser();
       if (event.isTrusted && !isReadOnlyRef.current && isEditingKey(event)) onUserEdit?.();
@@ -1297,7 +1479,63 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
   );
 }
 
-export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, onRequestChange, changeMarks, commentLayer, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
+/** Scroll offsets by document, kept for the life of the page: the editor unmounts on a tab switch. */
+const scrollOffsets = new Map<string, number>();
+
+/**
+ * Records `el`'s scroll offset under `key` and puts it back on mount. The
+ * content renders after the first paint, so the restore waits until the saved
+ * offset is reachable (the content has grown tall enough), then stops.
+ */
+export function useRememberedScroll(el: HTMLElement | null, key: string | undefined) {
+  useEffect(() => {
+    if (!el || !key) return;
+    let target = scrollOffsets.get(key) ?? 0;
+    const restore = () => {
+      if (target <= 0) return true;
+      if (el.scrollHeight - el.clientHeight < target) return false;
+      el.scrollTop = target;
+      target = 0;
+      return true;
+    };
+    const onScroll = () => {
+      // Our own restore fires a scroll event too; only a user scroll before it lands cancels it.
+      if (target > 0 && el.scrollTop !== target) target = 0;
+      scrollOffsets.set(key, el.scrollTop);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    let observer: ResizeObserver | null = null;
+    if (!restore() && el.firstElementChild) {
+      observer = new ResizeObserver(() => {
+        if (restore()) observer?.disconnect();
+      });
+      observer.observe(el.firstElementChild);
+    }
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      observer?.disconnect();
+    };
+  }, [el, key]);
+}
+
+export function MilkdownEditor({
+  content,
+  onChange,
+  onUserEdit,
+  editorMode = 'editor',
+  plugins,
+  onLinkClick,
+  onRequestChange,
+  changeMarks,
+  commentLayer,
+  editorRef: externalEditorRef,
+  toolbarRight,
+  toolbarPortalTarget,
+  onCursorLineChange,
+  initialLine,
+  scrollKey,
+  direction,
+}: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
@@ -1308,9 +1546,15 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
   const editorRef = externalEditorRef ?? internalEditorRef;
   const markEditIntent = useCallback(() => onUserEdit?.(), [onUserEdit]);
 
-  useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
+  useEffect(
+    () => () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    },
+    [],
+  );
   const [findOpen, setFindOpen] = useState(false);
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  useRememberedScroll(scrollEl, scrollKey);
   const handleFindKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!isFindShortcut(e)) return;
     e.preventDefault();
@@ -1328,7 +1572,10 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
   }, [editorMode]);
 
   const cancelHide = useCallback(() => {
-    if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
   }, []);
 
   const scheduleHide = useCallback(() => {
@@ -1338,51 +1585,60 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
     }, 300);
   }, [cancelHide]);
 
-  const handleMouseOver = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    // View mode is wiki-style: no hover popup, clicks open directly.
-    if (editorMode === 'view') return;
-    const anchor = (e.target as HTMLElement).closest('a') as HTMLElement | null;
-    if (anchor) {
-      const href = anchor.getAttribute('href');
-      if (!href || href.startsWith('#')) return;
-      cancelHide();
-      setLinkPopup((current) => {
-        if (current && current.mode !== 'view') return current; // don't override edit/new while user is typing
-        return { mode: 'view', href, rect: anchor.getBoundingClientRect(), anchor };
-      });
-    } else {
-      scheduleHide();
-    }
-  }, [cancelHide, scheduleHide, editorMode]);
+  const handleMouseOver = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      // View mode is wiki-style: no hover popup, clicks open directly.
+      if (editorMode === 'view') return;
+      const anchor = (e.target as HTMLElement).closest('a') as HTMLElement | null;
+      if (anchor) {
+        const href = anchor.getAttribute('href');
+        if (!href || href.startsWith('#')) return;
+        cancelHide();
+        setLinkPopup((current) => {
+          if (current && current.mode !== 'view') return current; // don't override edit/new while user is typing
+          return { mode: 'view', href, rect: anchor.getBoundingClientRect(), anchor };
+        });
+      } else {
+        scheduleHide();
+      }
+    },
+    [cancelHide, scheduleHide, editorMode],
+  );
 
   // Intercept anchor clicks across all modes — wiki/internal hrefs (e.g.
   // /dock/assets/wiki/...) are SPA routes the browser can't resolve on its
   // own; default-navigation would land on a 404. ProseMirror's mousedown
   // already placed the caret by the time click fires, so editing isn't
   // broken; editing the link itself still goes through the hover popup.
-  const handleContainerClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const anchor = (e.target as HTMLElement).closest('a') as HTMLElement | null;
-    if (!anchor) return;
-    const href = anchor.getAttribute('href');
-    if (!href) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (/^https?:\/\//.test(href)) {
-      window.open(href, '_blank', 'noopener,noreferrer');
-    } else {
-      onLinkClick?.(href);
-    }
-  }, [onLinkClick]);
+  const handleContainerClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const anchor = (e.target as HTMLElement).closest('a') as HTMLElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (/^https?:\/\//.test(href)) {
+        window.open(href, '_blank', 'noopener,noreferrer');
+      } else {
+        onLinkClick?.(href);
+      }
+    },
+    [onLinkClick],
+  );
 
-  const handleOpenLink = useCallback((href: string) => {
-    setLinkPopup(null);
-    cancelHide();
-    if (/^https?:\/\//.test(href)) {
-      window.open(href, '_blank', 'noopener,noreferrer');
-    } else {
-      onLinkClick?.(href);
-    }
-  }, [onLinkClick, cancelHide]);
+  const handleOpenLink = useCallback(
+    (href: string) => {
+      setLinkPopup(null);
+      cancelHide();
+      if (/^https?:\/\//.test(href)) {
+        window.open(href, '_blank', 'noopener,noreferrer');
+      } else {
+        onLinkClick?.(href);
+      }
+    },
+    [onLinkClick, cancelHide],
+  );
 
   const handleClosePopup = useCallback(() => {
     setLinkPopup(null);
@@ -1440,27 +1696,30 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
     setLinkPopup(null);
   }, [linkPopup, markEditIntent]);
 
-  const handleApply = useCallback((href: string) => {
-    const current = linkPopup;
-    if (!current || current.mode === 'view') return;
-    const editor = editorRef.current;
-    if (!editor) return;
-    const { range } = current;
-    try {
-      editor.action((ctx) => {
-        const view = ctx.get(editorViewCtx);
-        const linkType = linkSchema.type(ctx);
-        const tr = view.state.tr;
-        tr.removeMark(range.from, range.to, linkType);
-        if (href) tr.addMark(range.from, range.to, linkType.create({ href }));
-        markEditIntent();
-        view.dispatch(tr);
-      });
-    } catch {
-      // ignore
-    }
-    setLinkPopup(null);
-  }, [linkPopup, markEditIntent]);
+  const handleApply = useCallback(
+    (href: string) => {
+      const current = linkPopup;
+      if (!current || current.mode === 'view') return;
+      const editor = editorRef.current;
+      if (!editor) return;
+      const { range } = current;
+      try {
+        editor.action((ctx) => {
+          const view = ctx.get(editorViewCtx);
+          const linkType = linkSchema.type(ctx);
+          const tr = view.state.tr;
+          tr.removeMark(range.from, range.to, linkType);
+          if (href) tr.addMark(range.from, range.to, linkType.create({ href }));
+          markEditIntent();
+          view.dispatch(tr);
+        });
+      } catch {
+        // ignore
+      }
+      setLinkPopup(null);
+    },
+    [linkPopup, markEditIntent],
+  );
 
   // Toolbar "Link" clicked — open in 'edit' (if cursor in a link) or 'new' (if selection non-empty).
   const handleRequestLink = useCallback(() => {
@@ -1545,11 +1804,14 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
     }
   }, [changeBox, editorRef]);
 
-  const handleAddChange = useCallback((instruction: string, runNow: boolean) => {
-    const box = changeBox;
-    closeChangeBox();
-    if (box) onRequestChange?.({ quote: box.quote, from: box.from, to: box.to, instruction }, { runNow });
-  }, [changeBox, closeChangeBox, onRequestChange]);
+  const handleAddChange = useCallback(
+    (instruction: string, runNow: boolean) => {
+      const box = changeBox;
+      closeChangeBox();
+      if (box) onRequestChange?.({ quote: box.quote, from: box.from, to: box.to, instruction }, { runNow });
+    },
+    [changeBox, closeChangeBox, onRequestChange],
+  );
 
   const formattingToolbar = (
     <MilkdownToolbar
@@ -1563,7 +1825,11 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
 
   return (
     <MilkdownProvider>
-      <div className="relative flex h-full flex-col overflow-hidden outline-none" tabIndex={-1} onKeyDownCapture={handleFindKey}>
+      <div
+        className="relative flex h-full flex-col overflow-hidden outline-none"
+        tabIndex={-1}
+        onKeyDownCapture={handleFindKey}
+      >
         {!isReadOnly && toolbarPortalTarget === undefined && formattingToolbar}
         {findOpen && <MarkdownFindBar root={scrollEl} onClose={closeFind} />}
         <div
@@ -1573,12 +1839,24 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
           onMouseLeave={scheduleHide}
           onClickCapture={handleContainerClick}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} changeMarks={changeMarks} commentLayer={commentLayer} />
+          <MilkdownEditorInner
+            content={content}
+            onChange={onChange}
+            onUserEdit={onUserEdit}
+            editorMode={editorMode}
+            plugins={plugins}
+            onActiveStateChange={setActiveState}
+            onSelectionRectChange={setSelectionRect}
+            editorRef={editorRef}
+            onCursorLineChange={onCursorLineChange}
+            initialLine={initialLine}
+            direction={direction}
+            changeMarks={changeMarks}
+            commentLayer={commentLayer}
+          />
         </div>
       </div>
-      {!isReadOnly && toolbarPortalTarget
-        ? createPortal(formattingToolbar, toolbarPortalTarget)
-        : null}
+      {!isReadOnly && toolbarPortalTarget ? createPortal(formattingToolbar, toolbarPortalTarget) : null}
       {commentLayer?.marks.map((m) => createPortal(commentLayer.renderCard(m.id), commentSlot(m.id), m.id))}
       {!isReadOnly && !linkPopup && !changeBox && (
         <SelectionToolbar
@@ -1589,9 +1867,7 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
           onRequestChange={onRequestChange ? handleRequestChange : undefined}
         />
       )}
-      {changeBox && !isReadOnly && (
-        <ChangeBox state={changeBox} onAdd={handleAddChange} onClose={closeChangeBox} />
-      )}
+      {changeBox && !isReadOnly && <ChangeBox state={changeBox} onAdd={handleAddChange} onClose={closeChangeBox} />}
       {linkPopup && (
         <LinkPopup
           state={linkPopup}
