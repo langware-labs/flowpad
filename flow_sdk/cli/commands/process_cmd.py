@@ -427,42 +427,50 @@ def _nudge_lock(key: str) -> Iterator[bool]:
             path.unlink()
 
 
-def _fork(port: int, process_id: str) -> Optional[str]:
-    """A headless fork of the session to ask, or None when it cannot fork."""
+async def _fork(process_id: str) -> Optional[str]:
+    """A headless fork of the session, made here through the SDK; None when its worker cannot fork."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+    from flow_sdk.migrations.runner import _bootstrap_local  # noqa: PLC0415
 
-    class _Refused(Exception):
-        pass
-
-    def refused(status_code: int, body: dict) -> None:
-        raise _Refused(body.get("message") or f"HTTP {status_code}")
-
-    try:
-        data = _post_graph_json(_graph_url(port, f"agentic_process/{process_id}/fork"), {"headless": True},
-                                timeout=60, on_error=refused)
-    except _Refused as e:
-        logging.getLogger(__name__).info("monitor: %s cannot fork (%s) -- asking it itself", process_id, e)
+    await _bootstrap_local()
+    parent = await AgenticProcess.get_by_id(process_id)
+    if parent is None:
+        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No session {process_id}.")
+    if not parent.session_id:
         return None
-    return str(data.get("id") or "") or None
-
-
-def _ask(port: int, process_id: str, prompt: str) -> str:
-    """One turn on an existing session, run by the server; the turn's final message."""
-    url = f"http://127.0.0.1:{port}/api/v1/agentic_process/headless-turn"
     try:
-        resp = _local_post(url, json={"prompt": prompt, "process": process_id}, stream=True, timeout=(10, None))
-    except requests.exceptions.RequestException as e:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
-    if resp.status_code != 200:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
-    done: dict = {}
-    for line in resp.iter_lines(decode_unicode=True):
-        if line:
-            event = json.loads(line)
-            if event.get("kind") == "done":
-                done = event
-    if not done.get("ok"):
-        _fail(EXIT_ACTION_FAILED, "ASK_FAILED", str(done.get("detail") or f"Session {process_id} did not answer."))
-    return str(done.get("reply") or "")
+        fork = AgenticProcess.fork(
+            session_id=parent.session_id,
+            workdir=parent.workdir,
+            worker_type=parent.worker_type,
+            cli_config=parent.cli_config,
+            project_id=parent.project_id,
+            visible=False,
+            # Only asked a question: no terminal, whatever the session runs in.
+            pty_mode=False,
+            shared_context_entities=list(parent.shared_context_entities or []),
+            name=None,
+        )
+    except NotImplementedError:
+        return None
+    await fork.save()
+    return str(fork.id)
+
+
+async def _ask(process_id: str, prompt: str) -> str:
+    """One turn on the session, run here; the turn's final message."""
+    import uuid  # noqa: PLC0415
+
+    from flow_sdk.builtin.agent_serve import Turn, TurnEngine  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+    ap = await AgenticProcess.get_by_id(process_id)
+    if ap is None:
+        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No session {process_id}.")
+    answer = await TurnEngine().run(Turn(session=str(ap.typeid), key=str(uuid.uuid4()), body=prompt), process=ap)
+    if not answer.ok:
+        _fail(EXIT_ACTION_FAILED, "ASK_FAILED", answer.detail or f"Session {process_id} did not answer.")
+    return answer.text or ""
 
 
 def _verdict(reply: str) -> MonitorVerdict:
@@ -472,20 +480,64 @@ def _verdict(reply: str) -> MonitorVerdict:
     return MonitorVerdict.model_validate_json(text[start:end + 1] if 0 <= start < end else text)
 
 
-def _check_prompt(goal: str, stop_condition: str, *, forked: bool) -> str:
-    return "\n".join(line for line in (
+async def _check(process_id: str, goal: str, stop_condition: str) -> tuple[Optional[str], Optional[MonitorVerdict]]:
+    """Fork the session and ask the fork, here; ``(fork id, verdict)``. No fork: ``(None, None)``.
+    No valid answer after the retries: ``(fork id, None)``."""
+    fork_id = await _fork(process_id)
+    if fork_id is None:
+        return None, None
+    prompt = _check_prompt(goal, stop_condition)
+    for _attempt in range(1 + _NUDGE_RETRIES):
+        reply = await _ask(fork_id, prompt)
+        try:
+            return fork_id, _verdict(reply)
+        except ValidationError as e:
+            errors = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'reply'}: {err['msg']}" for err in e.errors())
+            prompt = f"Invalid answer, error on {errors}. Reply with only this JSON, nothing else: {_REPLY_FORMAT}"
+    return fork_id, None
+
+
+def _prompt_session(port: int, process_id: str, message: str) -> None:
+    """Send *message* to the session the way the UI does (its ``prompt`` action). Nothing in the answer is
+    read, but the stream is drained: a terminal session's turn is cancelled when its listener hangs up."""
+    url = _graph_url(port, f"agentic_process/{process_id}/prompt")
+    try:
+        resp = _local_post(url, json={"message": message}, stream=True, timeout=(10, None))
+    except requests.exceptions.RequestException as e:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
+    with resp:
+        if resp.status_code != 200:
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {}
+            _fail(EXIT_ACTION_FAILED, "PROMPT_REFUSED",
+                  str(body.get("message") or f"Session {process_id} did not take the prompt (HTTP {resp.status_code})."))
+        for _chunk in resp.iter_content(chunk_size=None):
+            pass
+
+
+def _check_prompt(goal: str, stop_condition: str) -> str:
+    return "\n".join((
         f"The goal is: {goal or '(none given)'}. The stop condition is: {stop_condition or '(none given)'}.",
         "Do not continue with your work, only answer.",
-        "You are the fork of the original session." if forked else "",
+        "You are the fork of the original session.",
         "As quickly as you can: is the goal met, is the stop condition met, or should the main process "
         "continue to work?",
         f"Reply with only this JSON: {_REPLY_FORMAT}",
-    ) if line)
+    ))
 
 
 def _continue_prompt(goal: str, stop_condition: str) -> str:
     return (f"The goal ({goal or 'none given'}) is not met and the stop condition "
             f"({stop_condition or 'none given'}) is not reached. Continue working toward the goal.")
+
+
+def _self_check_prompt(goal: str, stop_condition: str, key: str) -> str:
+    """For a session that cannot fork: it judges for itself, and ends the monitor itself when done."""
+    return (f"The goal is: {goal or '(none given)'}. The stop condition is: {stop_condition or '(none given)'}. "
+            f"If the goal is met or the stop condition is reached, run `flow process unmonitor {key}` and stop. "
+            "Otherwise, continue working toward the goal.")
 
 
 @process_app.command(
@@ -507,29 +559,20 @@ def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `moni
         if not only:
             _ok({"key": key, "skipped": "another check is running"})
             return
-        fork_id = _fork(port, process_id)
-        asked = fork_id or process_id
-        prompt = _check_prompt(goal, stop_condition, forked=fork_id is not None)
-        verdict: Optional[MonitorVerdict] = None
-        for _attempt in range(1 + _NUDGE_RETRIES):
-            reply = _ask(port, asked, prompt)
-            try:
-                verdict = _verdict(reply)
-                break
-            except ValidationError as e:
-                errors = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'reply'}: {err['msg']}" for err in e.errors())
-                prompt = f"Invalid answer, error on {errors}. Reply with only this JSON, nothing else: {_REPLY_FORMAT}"
+        fork_id, verdict = run_async(_check(process_id, goal, stop_condition))
+        if fork_id is None:
+            _prompt_session(port, process_id, _self_check_prompt(goal, stop_condition, key))
+            _ok({"key": key, "answer": None, "asked": process_id, "note": "cannot fork: the session checks itself"})
+            return
         if verdict is None:
             _fail(EXIT_ACTION_FAILED, "INVALID_ANSWER",
                   f"No valid answer after {_NUDGE_RETRIES} retries; the monitor is unchanged.")
         if verdict.answer == "continue_to_work":
-            _post_graph_json(_graph_url(port, f"agentic_process/{process_id}/enqueue"),
-                             {"prompt": _continue_prompt(goal, stop_condition), "source": "monitor"},
-                             on_error=_action_failed)
-            _ok({"key": key, "answer": verdict.answer, "asked": asked})
+            _prompt_session(port, process_id, _continue_prompt(goal, stop_condition))
+            _ok({"key": key, "answer": verdict.answer, "asked": fork_id})
             return
         trigger_id = _remove_monitor(port, folder)
-        _ok({"key": key, "answer": verdict.answer, "asked": asked, "removed": trigger_id})
+        _ok({"key": key, "answer": verdict.answer, "asked": fork_id, "removed": trigger_id})
 
 
 @process_app.command("unmonitor", help="Remove a monitor: its trigger and its folder in the project.")

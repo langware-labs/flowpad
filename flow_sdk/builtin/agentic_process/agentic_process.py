@@ -2579,14 +2579,11 @@ class AgenticProcess(Entity):
         Uses the parent provider's native fork command.
         Returns the new AgenticProcess entity data so the caller can open it.
         `visible` (bool, default False) controls whether the new process appears in the tabs view.
-        `headless` (bool, default False) makes the fork a chat (print-mode) process whatever the
-        parent is: a fork made only to be asked a question (``flow process monitor-nudge``) needs no terminal.
         """
         try:
             request_info = get_current_request_info()
             body = await request_info.get_post_data() if request_info else {}
             visible = bool((body or {}).get("visible", False))
-            headless = bool((body or {}).get("headless", False))
             owner = request_info.someone_typeid if request_info else None
 
             # The fork establishes its own name from its prompt/provider evidence.
@@ -2599,7 +2596,7 @@ class AgenticProcess(Entity):
                 visible=visible,
                 # A chat (headless) fork stays headless: its first prompt boots the
                 # forked worker through ``headless_prompt`` instead of a PTY.
-                pty_mode=False if headless else self.pty_mode,
+                pty_mode=self.pty_mode,
                 shared_context_entities=list(self.shared_context_entities or []),
                 name=None,
             )

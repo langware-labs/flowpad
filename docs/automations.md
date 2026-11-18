@@ -200,14 +200,16 @@ mask — is checked before the server is asked anything.
 - **On.** Indexed from a file, a rule starts off; `monitor` indexes it and switches it on (`PATCH trigger/<id>
   {"enabled": true}`). `recommended: false` — a clone of the project has no such session to watch.
 - **The check** (`flow process monitor-nudge <key>`, what the rule's `then.run_script` runs). Skipped while the
-  session is busy or another check of the same monitor runs. Otherwise it forks the session headless (`fork`
-  with `{"headless": true}`) and asks the fork through `headless-turn` with `process` set — the turn's final
-  message comes back in the `done` event's `reply`. The answer is a `MonitorVerdict`
-  (`{"answer": "goal_met" | "stop_condition_reached" | "continue_to_work"}`, nothing else); an invalid one is
-  asked again with pydantic's error, three times, then the check fails and changes nothing.
-- **The outcome.** `continue_to_work`: the session is prompted (queued) to go on toward the goal. `goal_met` /
-  `stop_condition_reached`: the monitor removes itself — folder, then row — and tells no one.
-- **A session that cannot fork** is asked itself.
+  session is busy (its `busy` over the API) or another check of the same monitor runs. Otherwise the nudge forks
+  the session and asks the fork **in its own process**, through the SDK — `AgenticProcess.fork(..., pty_mode=False)`
+  and `TurnEngine().run(turn, process=fork)` — a second SQLite writer beside the server, accepted for this. The
+  answer is a `MonitorVerdict` (`{"answer": "goal_met" | "stop_condition_reached" | "continue_to_work"}`, nothing
+  else); an invalid one is asked again with pydantic's error, three times, then the check fails and changes nothing.
+- **The outcome.** `continue_to_work`: the session is sent a prompt to go on, through its `prompt` action as the
+  UI sends one. Nothing in the answer is read, but the stream is drained: a terminal session's turn is cancelled
+  when its listener hangs up. `goal_met` / `stop_condition_reached`: the monitor removes itself — folder, then
+  row — and tells no one.
+- **A session that cannot fork** is prompted to judge for itself: continue, or run `flow process unmonitor <key>`.
 
 ## Rules that are easy to break
 

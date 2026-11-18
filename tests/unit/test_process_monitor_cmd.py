@@ -3,7 +3,8 @@
 The server is faked at the HTTP boundary (``_common.local_request``), so these tests pin what each
 command refuses, what it writes into the project and which calls it makes. They do NOT test the
 automation engine: that the cron rule fires and runs the nudge is the trigger system's job.
-Asking an agent is faked at ``process_cmd._ask`` (the streamed ``prompt`` action).
+The nudge forks and asks in its own process, through the SDK: faked at ``process_cmd._fork`` and
+``process_cmd._ask``.
 """
 
 from __future__ import annotations
@@ -39,9 +40,20 @@ class _Response:
         ok = status_code == 200
         self._body = {"status": "SUCCESS", "data": data} if ok else {"status": "FAIL", "message": message}
         self.text = json.dumps(self._body)
+        self.drained = False
 
     def json(self):
         return self._body
+
+    def iter_content(self, chunk_size=None):
+        self.drained = True
+        yield b"data: <flow/>\n\n"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
 
 
 class FakeFlowpad:
@@ -52,6 +64,9 @@ class FakeFlowpad:
         self.project = {"id": PROJECT_ID, "type": "project", "fs_storage_mount_path": str(project_dir)}
         self.folder = project_dir / "agentic-assets" / "trigger" / KEY
         self.fork_refused = False
+        self.prompt_refused = False
+        self.forked: list[str] = []
+        self.prompt_responses: list[_Response] = []
         self.calls: list[tuple[str, str, dict]] = []
         self.answers: list[str] = []
         self.asked: list[tuple[str, str]] = []
@@ -75,17 +90,24 @@ class FakeFlowpad:
         if route == ("DELETE", f"trigger/{TRIGGER_ID}"):
             self.folder_existed_at_delete = self.folder.exists()
             return _Response(200, {})
-        if route == ("POST", f"agentic_process/{AP_ID}/fork"):
-            if self.fork_refused:
-                return _Response(500, message="claude_code does not support session forks")
-            return _Response(200, {"id": FORK_ID, "type": "agentic_process"})
-        if route == ("POST", f"agentic_process/{AP_ID}/enqueue"):
-            return _Response(200, [body])
+        if route == ("POST", f"agentic_process/{AP_ID}/prompt"):
+            response = _Response(409, message="another prompt turn is already in flight for this process") \
+                if self.prompt_refused else _Response(200)
+            self.prompt_responses.append(response)
+            return response
         return _Response(404, message=f"not found: {method} {path}")
 
-    def ask(self, port: int, process_id: str, prompt: str) -> str:
+    async def fork(self, process_id: str):
+        self.forked.append(process_id)
+        return None if self.fork_refused else FORK_ID
+
+    async def ask(self, process_id: str, prompt: str) -> str:
         self.asked.append((process_id, prompt))
         return self.answers.pop(0)
+
+    def prompted(self) -> list[str]:
+        """What the session was sent through its ``prompt`` action."""
+        return [body["message"] for body in self.posted(f"agentic_process/{AP_ID}/prompt")]
 
     def posted(self, path: str) -> list[dict]:
         return [body for method, p, body in self.calls if method == "POST" and p == path]
@@ -98,6 +120,7 @@ def flowpad(tmp_path, monkeypatch) -> FakeFlowpad:
     fake = FakeFlowpad(project_dir)
     monkeypatch.setattr(_common, "local_request", fake.request)
     monkeypatch.setattr(process_cmd, "_discover_port", lambda *a, **k: 4242)
+    monkeypatch.setattr(process_cmd, "_fork", fake.fork)
     monkeypatch.setattr(process_cmd, "_ask", fake.ask)
     monkeypatch.setattr(process_cmd, "_state_dir", lambda: tmp_path / "state")
     return fake
@@ -245,14 +268,14 @@ def test_nudge_skips_a_busy_process(monitored):
     monitored.process["busy"] = True
     result = nudge()
     assert result.exit_code == 0, result.output
-    assert monitored.asked == []
-    assert monitored.posted(f"agentic_process/{AP_ID}/fork") == []
+    assert monitored.forked == [] and monitored.asked == []
+    assert monitored.prompted() == []
 
 
-def test_nudge_asks_a_headless_fork_not_the_session(monitored):
+def test_nudge_asks_a_fork_not_the_session(monitored):
     monitored.answers = [_reply("continue_to_work")]
     assert nudge().exit_code == 0
-    assert monitored.posted(f"agentic_process/{AP_ID}/fork") == [{"headless": True}]
+    assert monitored.forked == [AP_ID]
     assert [pid for pid, _ in monitored.asked] == [FORK_ID]
     question = monitored.asked[0][1]
     assert GOAL in question and STOP in question
@@ -264,10 +287,18 @@ def test_continue_to_work_prompts_the_session_to_go_on(monitored):
     monitored.answers = [_reply("continue_to_work")]
     result = nudge()
     assert result.exit_code == 0, result.output
-    prompts = [body["prompt"] for body in monitored.posted(f"agentic_process/{AP_ID}/enqueue")]
+    prompts = monitored.prompted()
     assert len(prompts) == 1
     assert GOAL in prompts[0] and STOP in prompts[0]
+    # Nothing in it is read, but a terminal session's turn is cancelled when its listener hangs up.
+    assert monitored.prompt_responses[0].drained
     assert monitored.folder.exists()  # still monitoring
+
+
+def test_a_prompt_the_session_does_not_take_fails_the_nudge(monitored):
+    monitored.answers = [_reply("continue_to_work")]
+    monitored.prompt_refused = True
+    refused(nudge(), "PROMPT_REFUSED")
 
 
 @pytest.mark.parametrize("verdict", ["goal_met", "stop_condition_reached"])
@@ -277,7 +308,7 @@ def test_a_met_goal_or_a_reached_stop_ends_the_monitor_and_tells_no_one(monitore
     assert result.exit_code == 0, result.output
     assert not monitored.folder.exists()
     assert ("DELETE", f"trigger/{TRIGGER_ID}", {}) in monitored.calls
-    assert monitored.posted(f"agentic_process/{AP_ID}/enqueue") == []
+    assert monitored.prompted() == []
 
 
 def test_an_invalid_answer_is_asked_again_on_the_same_fork(monitored):
@@ -287,7 +318,7 @@ def test_an_invalid_answer_is_asked_again_on_the_same_fork(monitored):
     retry = monitored.asked[1][1]
     assert "invalid" in retry.lower()
     assert "Invalid JSON" in retry  # pydantic's own error, handed back
-    assert len(monitored.posted(f"agentic_process/{AP_ID}/enqueue")) == 1
+    assert len(monitored.prompted()) == 1
 
 
 @pytest.mark.parametrize(
@@ -303,17 +334,20 @@ def test_after_three_retries_the_nudge_fails_and_changes_nothing(monitored, bad)
     monitored.answers = [bad] * 4
     refused(nudge(), "INVALID_ANSWER")
     assert len(monitored.asked) == 4  # the first ask and three retries
-    assert monitored.posted(f"agentic_process/{AP_ID}/enqueue") == []
+    assert monitored.prompted() == []
     assert monitored.folder.exists()
 
 
-def test_a_session_that_cannot_fork_is_asked_itself(monitored):
+def test_a_session_that_cannot_fork_checks_itself(monitored):
+    """No fork to ask: the session is prompted to judge for itself and end the monitor when done."""
     monitored.fork_refused = True
-    monitored.answers = [_reply("continue_to_work")]
     result = nudge()
     assert result.exit_code == 0, result.output
-    assert [pid for pid, _ in monitored.asked] == [AP_ID]
-    assert "fork" not in monitored.asked[0][1]
+    assert monitored.asked == []
+    (prompt,) = monitored.prompted()
+    assert GOAL in prompt and STOP in prompt
+    assert f"flow process unmonitor {KEY}" in prompt
+    assert monitored.folder.exists()
 
 
 def test_nudge_skips_while_another_check_runs(monitored, tmp_path):
