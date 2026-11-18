@@ -1,13 +1,4 @@
-import {
-  forwardRef,
-  lazy,
-  Suspense,
-  useMemo,
-  useState,
-  type ButtonHTMLAttributes,
-  type CSSProperties,
-  type ReactNode,
-} from 'react';
+import { forwardRef, useMemo, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
 import { Tag as TagIcon, X, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { FlowMessage, QueryRequest, Tag, tagIsWithin, tagTree } from '@sdk';
@@ -15,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useAutomations } from '@src/hooks/automations/useAutomations';
 import { EntityChip, iconForEntity } from '@src/components/conversation/EntityChip';
+import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -22,9 +14,6 @@ import { errorMessage } from '@src/lib/error-message';
 import { TagInput } from './TagInput';
 import { TagOffIcon } from './TagOffIcon';
 import { messageTagContext, messageTagReturn } from './message-tag-navigation';
-
-// Loaded on demand: the table draws these chips, so a static import would be a cycle.
-const ClassifyDialog = lazy(() => import('./ClassifyTable').then((m) => ({ default: m.ClassifyDialog })));
 
 export const streamInboxTagsQuery = new QueryRequest({ type: Tag.type, scope: [], name: 'tags:definitions' });
 export const classificationSettingsKey = ['tags', 'classification-settings'];
@@ -261,14 +250,8 @@ function useTagChange(message: FlowMessage) {
 /** The quick menu around `children` (its trigger). Content mounts only while open. */
 function QuickMenu({ message, children }: { message: FlowMessage; children: ReactNode }) {
   const { isOpen, setOpen } = useMessagePanel(message);
-  const [classifying, setClassifying] = useState(false);
   return (
     <Popover open={isOpen('picker')} onOpenChange={(open) => setOpen('picker', open)}>
-      {classifying && message.id && (
-        <Suspense fallback={null}>
-          <ClassifyDialog messageIds={[message.id]} onClose={() => setClassifying(false)} />
-        </Suspense>
-      )}
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
         // The tree is the menu: opening must not focus the add field, whose suggestions would cover it.
@@ -277,28 +260,13 @@ function QuickMenu({ message, children }: { message: FlowMessage; children: Reac
         className="w-72 p-3"
         data-testid="message-tags-picker"
       >
-        <TagPicker
-          message={message}
-          onDone={() => setOpen('picker', false)}
-          onClassify={() => {
-            setOpen('picker', false);
-            setClassifying(true);
-          }}
-        />
+        <TagPicker message={message} onDone={() => setOpen('picker', false)} />
       </PopoverContent>
     </Popover>
   );
 }
 
-function TagPicker({
-  message,
-  onDone,
-  onClassify,
-}: {
-  message: FlowMessage;
-  onDone: () => void;
-  onClassify: () => void;
-}) {
+function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => void }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const definitions = useTagDefinitions();
@@ -329,21 +297,37 @@ function TagPicker({
       ),
     [definitions, root],
   );
+  /** The tag tree editor, opened on this message so its Try pane is about it. */
+  const manageTags = (extra: Record<string, string> = {}) =>
+    DockPointer.forTagGraph(null, {
+      carry: { ...messageTagContext(message), origin_tag: tags[0] ?? '', manage: 'stream_inbox', ...extra },
+    });
   // The add field suggests this tree's tags, not every tag in use anywhere.
   const names = useMemo(() => rows.map((row) => row.name), [rows]);
   return (
     <>
-      <div className="mb-2 flex min-h-6 flex-wrap items-center gap-1" data-testid="message-picker-tags">
-        {tags.length ? (
-          tags.map((name) => (
-            <AssignedTag key={name} message={message} name={name} onRemove={() => void mutate(name, true)} />
-          ))
-        ) : (
-          <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-            <TagOffIcon className="size-3 text-foreground" />
-            <Trans>No tags yet — tick one below</Trans>
-          </span>
-        )}
+      <div className="mb-2 flex items-start gap-2">
+        <div className="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-1" data-testid="message-picker-tags">
+          {tags.length ? (
+            tags.map((name) => (
+              <AssignedTag key={name} message={message} name={name} onRemove={() => void mutate(name, true)} />
+            ))
+          ) : (
+            <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <TagOffIcon className="size-3 text-foreground" />
+              <Trans>No tags yet — tick one below</Trans>
+            </span>
+          )}
+        </div>
+        {/* Opens the tag tree's Try pane on this message and runs it at once (`run=1`). */}
+        <Button
+          size="sm"
+          className="h-6 shrink-0 px-2"
+          data-testid="message-tags-classify"
+          onClick={() => navigation.openDock(manageTags({ run: '1' }))}
+        >
+          <Trans>Classify</Trans>
+        </Button>
       </div>
       <TagInput
         tags={tags}
@@ -408,24 +392,12 @@ function TagPicker({
         </p>
       )}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
-        {!message.outbound && (
-          // The dry run for this one message: where it would land, why, and Apply.
-          <button type="button" className="text-xs underline" data-testid="message-tags-classify" onClick={onClassify}>
-            <Trans>Classify</Trans>
-          </button>
-        )}
         <span className="flex-1" />
         <button
           type="button"
           className="text-xs underline"
           data-testid="message-tags-manage"
-          onClick={() =>
-            navigation.openDock(
-              DockPointer.forTagGraph(null, {
-                carry: { ...messageTagContext(message), origin_tag: tags[0] ?? '', manage: 'stream_inbox' },
-              }),
-            )
-          }
+          onClick={() => navigation.openDock(manageTags())}
         >
           <Trans>Edit tags…</Trans>
         </button>

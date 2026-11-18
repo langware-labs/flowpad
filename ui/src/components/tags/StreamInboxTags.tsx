@@ -14,6 +14,8 @@ import { Switch } from '@src/components/ui/switch';
 import { IfThenLine } from '@src/components/automations/IfThenLine';
 import { useAutomationWords } from '@src/components/automations/automation-words';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
+import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import {
@@ -24,6 +26,7 @@ import {
   useTagAutomations,
 } from './MessageTags';
 import { TagOffIcon } from './TagOffIcon';
+import { KindValue } from '@src/components/value-viewer/KindValue';
 import { ClassifyDialog } from './ClassifyTable';
 import { messageLabel, TagChip } from './tag-chip';
 
@@ -123,6 +126,13 @@ export function StreamInboxTags() {
     onSuccess: (answer) =>
       setRuns((all) => [...all.filter((r) => r.message === messageId).slice(-1), { message: messageId!, answer }]),
   });
+  // `run=1` is a one-shot from a Classify button: it starts the run and leaves the URL, so a reload asks nothing.
+  useEffect(() => {
+    if (options.run !== '1' || !message) return;
+    run.mutate();
+    open({ run: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per `run=1`, not per render
+  }, [options.run, message?.id]);
   const mine = runs.filter((r) => r.message === messageId);
   const result = mine.at(-1)?.answer;
   const landed = result?.exit_code === 0 ? result.value?.tag : undefined;
@@ -461,7 +471,17 @@ export function StreamInboxTags() {
                   <span className="text-xs text-muted-foreground">
                     <Trans>{ticked.length} selected</Trans>
                   </span>
-                  <Button size="sm" onClick={() => setClassifying(ticked)} data-testid="stream-inbox-tag-try-classify">
+                  <Button
+                    size="sm"
+                    // One message runs right here in the Try pane; several get the dry-run table.
+                    onClick={() => {
+                      if (ticked.length > 1) return setClassifying(ticked);
+                      const conversation = recent.find((m) => m.id === ticked[0])?.conversation_id ?? null;
+                      setTicked([]);
+                      open({ message: ticked[0], conversation, pick: null, run: '1' });
+                    }}
+                    data-testid="stream-inbox-tag-try-classify"
+                  >
                     <Tags className="size-3.5" />
                     <Trans>Classify</Trans>
                   </Button>
@@ -483,8 +503,17 @@ export function StreamInboxTags() {
                   <Trans>Select message</Trans>
                   <ChevronDown className="size-2.5" />
                 </button>
-                <b>{sender}</b>
-                <div className="truncate">{subject}</div>
+                {/* The message in full, as the inbox opens it — in a wide popup, so the editor stays put. */}
+                <button
+                  type="button"
+                  className="block w-full text-start hover:opacity-80"
+                  disabled={!message?.conversation_id}
+                  onClick={() => open({ reading: '1' })}
+                  data-testid="stream-inbox-tag-try-open-message"
+                >
+                  <b>{sender}</b>
+                  <div className="truncate">{subject}</div>
+                </button>
               </div>
               <div className="mt-2 flex items-center gap-2">
                 <Button
@@ -564,7 +593,28 @@ export function StreamInboxTags() {
             </>
           )}
         </div>
+        {!picking && result?.run && (
+          // The whole decision as it happened — the message it read, the tags it chose from, the answer.
+          <div
+            className={cn('col-span-3 rounded-md border border-border p-3', stale && 'opacity-50')}
+            data-testid="stream-inbox-tag-try-data"
+          >
+            <KindValue kind="decision.run" value={result.run} testId="stream-inbox-tag-try-run-data" />
+          </div>
+        )}
       </div>
+      {options.reading === '1' && message?.conversation_id && (
+        <Dialog open onOpenChange={(isOpen) => !isOpen && open({ reading: null })}>
+          <DialogContent className="flex h-[85vh] max-w-6xl flex-col p-0" data-testid="stream-inbox-tag-try-reading">
+            <DialogTitle className="sr-only">{subject}</DialogTitle>
+            <ConversationPanel
+              conversationId={message.conversation_id}
+              selectedMessageId={message.id}
+              className="min-h-0 flex-1"
+            />
+          </DialogContent>
+        </Dialog>
+      )}
       {classifying && <ClassifyDialog messageIds={classifying} onClose={() => setClassifying(null)} />}
       <ConfirmDialog
         open={!!deleting}

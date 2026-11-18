@@ -4969,9 +4969,11 @@ async def message_classification_settings() -> ApiResponse:
 @action.post(action_name="classify", types=["flow_message"])
 async def message_classify(self: FlowMessage) -> ApiResponse:
     """Dry run: where this message lands in the classification tree. Writes nothing."""
+    from flow_sdk.stream_inbox.message_subject import message_state
     from flow_sdk.stream_inbox.message_tags import classify, ontology
 
-    answer = await classify(self, await ontology())
+    # A person asked about this message, so it answers even for one they sent themselves.
+    answer = await classify(message_state(self), await ontology())
     run = answer.run.model_dump(mode="json", exclude_none=True) if answer.run is not None else None
     return ApiSuccessResponse(data={**answer.model_dump(mode="json"), "run": run})
 
