@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Literal
 
 from pydantic import ValidationError, field_validator
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,24 @@ logger = logging.getLogger(__name__)
 #: runtimes, one rule): change both together.
 _DSN = re.compile(r"^https://[0-9a-f]{16,64}@[a-z0-9.-]+(?::[0-9]{1,5})?/[0-9]{1,20}$")
 
-SentryEnvironment = Literal["development", "staging", "production"]
+
+class SentryEnvironment(StrEnum):
+    """The environments a hub reports as (its ``DEPLOY_ENV``, ``local`` excluded: a local hub is off).
+    A closed set on purpose: a new one needs a wheel update."""
+
+    DEVELOPMENT = "development"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+
+class SyncOutcome(StrEnum):
+    UPDATED = "updated"  # the hub answered a new value
+    UNCHANGED = "unchanged"  # the hub re-confirmed the stored value (freshness renewed)
+    CLEARED = "cleared"  # the hub answered null (or an invalid value): off
+    UNSUPPORTED = "unsupported"  # the hub has no such action (an older hub): off
+    KEPT = "kept"  # no authoritative answer (offline, 5xx, no hub, another refusal): stored value untouched
+    SIGNED_OUT = "signed_out"  # no hub login to ask with: stored value untouched
+    PRIVACY_LOCAL = "privacy_local"  # Local privacy mode: nothing may leave the box
 
 
 class SentryInfo(DataSpec):
@@ -52,7 +69,7 @@ class SentryInfoStatus(DataSpec):
 class SentryInfoSyncResult(SentryInfoStatus):
     """What ``POST @local/sentry-info/sync`` answers: the status after the sync, and how it went."""
 
-    outcome: str
+    outcome: SyncOutcome
 
 
 def parse_sentry_info(raw: object) -> SentryInfo | None:

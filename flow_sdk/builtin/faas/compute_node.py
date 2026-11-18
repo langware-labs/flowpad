@@ -1803,7 +1803,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return ApiSuccessResponse(data=sentry_info_status().model_dump(mode="json"))
         if method == "POST" and sub_path == "sync":
             outcome = await sync_sentry_info_from_hub()
-            result = SentryInfoSyncResult(outcome=outcome.value, **sentry_info_status().model_dump())
+            result = SentryInfoSyncResult(outcome=outcome, **sentry_info_status().model_dump())
             return ApiSuccessResponse(data=result.model_dump(mode="json"))
         return ApiFailResponse(message=f"Unknown sentry-info request {method} {sub_path!r}", status_code=404)
 

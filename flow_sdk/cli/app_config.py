@@ -23,6 +23,15 @@ USER_KEY = "user"
 PRINCIPAL_KEY = "principal"
 
 
+def config_file_stamp() -> int | None:
+    """The config file's mtime in ns (``None`` if it does not exist): a cheap "did anything write it" check
+    for callers that memoize a parsed value, since another process may be the writer."""
+    try:
+        return _config_file_path().stat().st_mtime_ns
+    except OSError:
+        return None
+
+
 def _config_file_path() -> Path:
     """Resolve the per-instance config.json path. Lazy so import doesn't
     create the directory (or fail if instance_settings isn't loadable)."""

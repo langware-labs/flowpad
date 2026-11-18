@@ -30,10 +30,9 @@ import logging
 import time
 from datetime import datetime, timezone
 
-from flow_sdk._compat import StrEnum
 from flow_sdk.cli import app_config
 from flow_sdk.instance_settings import get_instance_settings
-from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfo, SentryInfoStatus, parse_sentry_info
+from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfo, SentryInfoStatus, SyncOutcome, parse_sentry_info
 
 logger = logging.getLogger(__name__)
 
@@ -53,16 +52,6 @@ HUB_ACTION = "sentry-info"
 _NO_SUCH_ACTION_STATUSES = frozenset({404, 422})
 
 
-class SyncOutcome(StrEnum):
-    UPDATED = "updated"  # the hub answered a new value
-    UNCHANGED = "unchanged"  # the hub re-confirmed the stored value (freshness renewed)
-    CLEARED = "cleared"  # the hub answered null (or an invalid value): off
-    UNSUPPORTED = "unsupported"  # the hub has no such action (an older hub): off
-    KEPT = "kept"  # no authoritative answer (offline, 5xx, no hub, another refusal): stored value untouched
-    SIGNED_OUT = "signed_out"  # no hub login to ask with: stored value untouched
-    PRIVACY_LOCAL = "privacy_local"  # Local privacy mode: nothing may leave the box
-
-
 # Memo of the parsed record per instance NAME, re-checked against config.json's stamp -- the
 # same reasons as ``runtime._cache``: this is on the bootstrap path, and the write may land in
 # another process (the box runs several) than the one serving bootstrap.
@@ -71,17 +60,10 @@ _cache: dict[str, tuple[int | None, SentryInfo | None, float | None]] = {}
 _inflight: dict[tuple[str, int], asyncio.Future] = {}
 
 
-def _config_stamp() -> int | None:
-    try:
-        return (get_instance_settings().instance_dir / "config.json").stat().st_mtime_ns
-    except OSError:
-        return None
-
-
 def _read() -> tuple[SentryInfo | None, float | None]:
     """The stored value and when the hub last vouched for it, ignoring expiry."""
     key = get_instance_settings().instance_name
-    stamp = _config_stamp()
+    stamp = app_config.config_file_stamp()
     cached = _cache.get(key)
     if cached is not None and cached[0] == stamp:
         return cached[1], cached[2]
@@ -122,20 +104,16 @@ def sentry_info_status() -> SentryInfoStatus:
 def _store(info: SentryInfo | None) -> bool:
     """Record an authoritative answer; returns whether the EFFECTIVE value changed."""
     before = get_sentry_info()
-    app_config.set_config(_CONFIG_KEY, {"value": info.model_dump() if info else None, "synced_at": time.time()})
+    app_config.set_config(
+        _CONFIG_KEY, {"value": info.model_dump(mode="json") if info else None, "synced_at": time.time()}
+    )
     _cache.pop(get_instance_settings().instance_name, None)
     return before != info
 
 
 async def _announce(info: SentryInfo | None) -> None:
-    """Drop the cached bootstrap and tell every open client. Best-effort, like
-    ``privacy_mode.apply_privacy_mode``: a failed broadcast leaves the next bootstrap right."""
-    try:
-        from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache  # noqa: PLC0415
-
-        invalidate_bootstrap_cache()
-    except Exception:  # noqa: BLE001
-        logger.debug("sentry_info: bootstrap cache invalidation failed", exc_info=True)
+    """Tell every open client. Best-effort: a failed broadcast leaves the next bootstrap right (it stamps
+    ``sentry_info`` per request, outside the bootstrap cache, so there is nothing to invalidate)."""
     try:
         from flow_sdk.api.messages import SentryInfoMessage  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415

@@ -192,7 +192,14 @@ export interface BootstrapInfo {
 /** A Sentry browser DSN (a public client key, never a credential) and the environment it reports as. */
 export interface SentryInfo {
   dsn: string;
-  environment: 'development' | 'staging' | 'production';
+  environment: SentryEnvironment;
+}
+
+/** Mirrors `SentryEnvironment` in `flow_sdk/schema/data_spec/sentry_info_spec.py`. A closed set. */
+export enum SentryEnvironment {
+  DEVELOPMENT = 'development',
+  STAGING = 'staging',
+  PRODUCTION = 'production',
 }
 
 /** Optional runtime discovery; absent/null fields remain unknown. */

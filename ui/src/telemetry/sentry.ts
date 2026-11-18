@@ -25,7 +25,7 @@
  */
 
 import { comparer, reaction } from 'mobx';
-import { dataContext, privacyManager, type SentryInfo } from '@sdk';
+import { dataContext, privacyManager, RuntimeKind, SentryEnvironment, type SentryInfo } from '@sdk';
 import {
   SDK_CONTRACT,
   SDK_GLOBAL,
@@ -37,7 +37,7 @@ import {
 
 declare const __UI_VERSION__: string | undefined;
 
-type RuntimeKindReported = 'hub' | 'sandbox';
+type RuntimeKindReported = RuntimeKind.HUB | RuntimeKind.SANDBOX;
 export type ErrorSite = 'router' | 'boundary';
 
 export interface EffectiveConfig {
@@ -50,7 +50,7 @@ export interface EffectiveConfig {
 
 // Kept identical to `_DSN` in flow_sdk/schema/data_spec/sentry_info_spec.py (two runtimes, one rule): change both together.
 const DSN_RE = /^https:\/\/[0-9a-f]{16,64}@[a-z0-9.-]+(?::[0-9]{1,5})?\/[0-9]{1,20}$/;
-const ENVIRONMENTS = new Set(['development', 'staging', 'production']);
+const ENVIRONMENTS = new Set<string>(Object.values(SentryEnvironment));
 
 /**
  * Whether privacy mode is Local right now. The manager is seeded from the bootstrap payload a few
@@ -80,7 +80,7 @@ const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
  */
 export function sdkUrlFor(kind: RuntimeKindReported, bootstrap: unknown, pageOrigin: string): string | null {
   const raw =
-    kind === 'hub' ? pageOrigin : (bootstrap as { desktop_info?: { cloud_app_url?: unknown } })?.desktop_info?.cloud_app_url;
+    kind === RuntimeKind.HUB ? pageOrigin : (bootstrap as { desktop_info?: { cloud_app_url?: unknown } })?.desktop_info?.cloud_app_url;
   if (typeof raw !== 'string') return null;
   let url: URL;
   try {
@@ -98,7 +98,7 @@ export function effectiveConfig(bootstrap: unknown, isLocal: boolean): Effective
   if (isLocal || !bootstrap || typeof bootstrap !== 'object') return null;
   const info = bootstrap as { sentry_info?: unknown; runtime?: { kind?: unknown } };
   const kind = info.runtime?.kind;
-  if (kind !== 'hub' && kind !== 'sandbox') return null;
+  if (kind !== RuntimeKind.HUB && kind !== RuntimeKind.SANDBOX) return null;
   if (!isValidSentryInfo(info.sentry_info)) return null;
   const sdkUrl = sdkUrlFor(kind, bootstrap, window.location.origin);
   if (!sdkUrl) return null;
@@ -108,6 +108,8 @@ export function effectiveConfig(bootstrap: unknown, isLocal: boolean): Effective
 // ── the sanitizer ─────────────────────────────────────────────────────────────────────
 
 const TYPE_RE = /^[A-Za-z_$][\w$]{0,63}$/;
+/** The SDK's own dotted names (`auto.browser.global_handlers.onerror`): letters, digits, `_` and dots. */
+const MECHANISM_RE = /^[A-Za-z_][\w]{0,31}(?:\.[A-Za-z_]\w{0,31}){0,5}$/;
 const FUNCTION_RE = /^[\w$.<>]{1,80}$/;
 const ASSET_RE = /\/assets\/([\w.-]{1,120}\.m?js)(?:[?#].*)?$/;
 const SEGMENT_RE = /^[a-z-]{1,20}$/;
@@ -152,7 +154,7 @@ function scrubException(value: Record<string, unknown>): Record<string, unknown>
     // Never the message: it can carry a prompt, a file, a response body.
     value: REDACTED,
     mechanism: {
-      type: typeof mechanism.type === 'string' && TYPE_RE.test(mechanism.type) ? mechanism.type : 'generic',
+      type: typeof mechanism.type === 'string' && MECHANISM_RE.test(mechanism.type) ? mechanism.type : 'generic',
       handled: mechanism.handled === true,
     },
     ...(frames.length ? { stacktrace: { frames: frames.slice(-MAX_FRAMES).map(scrubFrame) } } : {}),

@@ -1,6 +1,7 @@
 /**
  * Live updates of the error-reporting config. A sandbox broadcasts `sentry_info_msg` whenever the
- * value the hub vouches for changes (set, replaced, cleared, gone stale); this mirrors it into
+ * value the hub vouches for changes (set, replaced or cleared; an expiry is NOT broadcast, it takes
+ * effect on the next bootstrap); this mirrors it into
  * `dataContext.bootstrapInfo.sentry_info`, which is the one place the UI reads it from.
  * Mirrors `privacy_mode.ts`'s `startSubscriptions`; started from `asyncSdkInit`.
  */

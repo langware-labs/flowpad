@@ -251,6 +251,14 @@ describe('privacy-sensitive exception payloads', () => {
       ...over,
     }) as ErrorEvent;
 
+  it('keeps the SDK\'s dotted mechanism name, and nothing free-form in its place', () => {
+    const mech = (type: string) =>
+      sanitizeEvent(base({ exception: { values: [{ type: 'Error', value: prompt, mechanism: { type } }] } }))!.exception!
+        .values![0].mechanism;
+    expect(mech('auto.browser.global_handlers.onerror')).toEqual({ type: 'auto.browser.global_handlers.onerror', handled: false });
+    expect(mech('see /Users/me/secret')).toEqual({ type: 'generic', handled: false });
+  });
+
   it('keeps only the allowlist and structured facts', () => {
     const err = Object.assign(new Error(prompt), { status: 503, code: 'HUB_DOWN', body: prompt });
     const out = sanitizeEvent(
