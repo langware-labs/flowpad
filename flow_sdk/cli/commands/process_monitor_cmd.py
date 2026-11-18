@@ -62,6 +62,14 @@ class MonitorVerdict(BaseModel):
 
     answer: Literal["goal_met", "stop_condition_reached", "continue_to_work"]
 
+    @staticmethod
+    def from_raw_agent_response(raw_agent_response: str) -> "MonitorVerdict":
+        """The agent's reply as a ``MonitorVerdict``: its JSON object, even inside a ``` fence or a sentence.
+        Raises ``ValidationError`` when the reply holds no valid verdict."""
+        text = raw_agent_response.strip()
+        start, end = text.find("{"), text.rfind("}")
+        return MonitorVerdict.model_validate_json(text[start:end + 1] if 0 <= start < end else text)
+
 
 def _monitor_key(process_id: str, name: str) -> str:
     return f"{process_id}{_MONITOR_SEP}{name}"
@@ -182,7 +190,7 @@ def monitor_process(
             encoding="utf-8",
         )
         Asset.create(monitor_folder, type=EntityType.MONITOR, spec=MonitorSpec(
-            name=name, process_id=process_id, goal=goal, stop_condition=stop_condition, cron=cron,
+            name=name, agentic_process_id=process_id, goal=goal, stop_condition=stop_condition, cron=cron,
         ))
         monitor_id = _index(port, monitor_folder, "monitor")
         trigger_id = _index(port, folder, "trigger")
@@ -196,16 +204,15 @@ def monitor_process(
         "folder": str(monitor_folder)})
 
 
-async def _fork(process_id: str) -> Optional[str]:
-    """A headless fork of the session, made here through the SDK; None when its worker cannot fork."""
+async def _try_fork_agentic_process(process_id: str) -> Optional[str]:
+    """A headless fork of the session, made here through the SDK: its id, or None when there is no session
+    to fork or its worker cannot fork. The caller decides what None means."""
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
     from flow_sdk.migrations.runner import _bootstrap_local  # noqa: PLC0415
 
     await _bootstrap_local()
     parent = await AgenticProcess.get_by_id(process_id)
-    if parent is None:
-        fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No session {process_id}.")
-    if not parent.session_id:
+    if parent is None or not parent.session_id:
         return None
     try:
         fork = AgenticProcess.fork(
@@ -226,8 +233,9 @@ async def _fork(process_id: str) -> Optional[str]:
     return str(fork.id)
 
 
-async def _ask(process_id: str, prompt: str) -> str:
-    """One turn on the session, run here; the turn's final message."""
+async def try_prompt_ap(process_id: str, prompt: str) -> Optional[str]:
+    """One turn on the session, run here: the turn's final message, or None when the session is gone or
+    the turn did not finish."""
     import uuid  # noqa: PLC0415
 
     from flow_sdk.builtin.agent_serve import Turn, TurnEngine  # noqa: PLC0415
@@ -235,31 +243,24 @@ async def _ask(process_id: str, prompt: str) -> str:
 
     ap = await AgenticProcess.get_by_id(process_id)
     if ap is None:
-        fail(EXIT_NOT_FOUND, "NOT_FOUND", f"No session {process_id}.")
+        return None
     answer = await TurnEngine().run(Turn(session=str(ap.typeid), key=str(uuid.uuid4()), body=prompt), process=ap)
-    if not answer.ok:
-        fail(EXIT_ACTION_FAILED, "ASK_FAILED", answer.detail or f"Session {process_id} did not answer.")
-    return answer.text or ""
-
-
-def _verdict(reply: str) -> MonitorVerdict:
-    """The reply as a ``MonitorVerdict``: its JSON object, even inside a ``` fence or a sentence."""
-    text = reply.strip()
-    start, end = text.find("{"), text.rfind("}")
-    return MonitorVerdict.model_validate_json(text[start:end + 1] if 0 <= start < end else text)
+    return (answer.text or "") if answer.ok else None
 
 
 async def _check(process_id: str, goal: str, stop_condition: str) -> tuple[Optional[str], Optional[MonitorVerdict]]:
     """Fork the session and ask the fork, here; ``(fork id, verdict)``. No fork: ``(None, None)``.
     No valid answer after the retries: ``(fork id, None)``."""
-    fork_id = await _fork(process_id)
+    fork_id = await _try_fork_agentic_process(process_id)
     if fork_id is None:
         return None, None
     prompt = _check_prompt(goal, stop_condition)
     for _attempt in range(1 + _NUDGE_RETRIES):
-        reply = await _ask(fork_id, prompt)
+        reply = await try_prompt_ap(fork_id, prompt)
+        if reply is None:
+            fail(EXIT_ACTION_FAILED, "ASK_FAILED", f"The fork {fork_id} of session {process_id} did not answer.")
         try:
-            return fork_id, _verdict(reply)
+            return fork_id, MonitorVerdict.from_raw_agent_response(reply)
         except ValidationError as e:
             errors = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'reply'}: {err['msg']}" for err in e.errors())
             prompt = f"Invalid answer, error on {errors}. Reply with only this JSON, nothing else: {_REPLY_FORMAT}"

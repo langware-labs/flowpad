@@ -17,7 +17,7 @@ class MonitorSpec(AssetDocumentSpec):
     #: The monitor's own name (the key's last part).
     name: str
     #: The agentic process whose goal is watched.
-    process_id: str
+    agentic_process_id: str
     #: What done looks like. A goal, a stop condition, or both.
     goal: str = ""
     #: When to stop even if the goal is not met.

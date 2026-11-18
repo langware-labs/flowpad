@@ -15,7 +15,7 @@ from flow_sdk.schema.types import EntityType
 class Monitor(Entity):
     type: str = APIField(default=EntityType.MONITOR.value)
     name: str = APIField("")
-    process_id: str = APIField("", description="The agentic process whose goal is watched")
+    agentic_process_id: str = APIField("", description="The agentic process whose goal is watched")
     goal: str = APIField("", description="What done looks like")
     stop_condition: str = APIField("", description="When to stop even if the goal is not met")
     cron: str = APIField("", description="When to check: a crontab mask")

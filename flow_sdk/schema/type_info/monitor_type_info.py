@@ -22,5 +22,5 @@ MONITOR = TypeInfo(
     asset_spec=MonitorSpec,
     identity_carrier=folder_json_identity(),
     fts_content=("name", "goal", "stop_condition"),
-    index_fields=["name", "process_id"],
+    index_fields=["name", "agentic_process_id"],
 )

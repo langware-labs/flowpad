@@ -3,8 +3,8 @@
 The server is faked at the HTTP boundary (``_common.local_request``), so these tests pin what each
 command refuses, what it writes into the project and which calls it makes. They do NOT test the
 automation engine: that the cron rule fires and runs the nudge is the trigger system's job.
-The nudge forks and asks in its own process, through the SDK: faked at ``process_monitor_cmd._fork`` and
-``process_monitor_cmd._ask``.
+The nudge forks and asks in its own process, through the SDK: faked at ``process_monitor_cmd._try_fork_agentic_process`` and
+``process_monitor_cmd.try_prompt_ap``.
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ class FakeFlowpad:
         self.forked.append(process_id)
         return None if self.fork_refused else FORK_ID
 
-    async def ask(self, process_id: str, prompt: str) -> str:
+    async def ask(self, process_id: str, prompt: str) -> str | None:
         self.asked.append((process_id, prompt))
         return self.answers.pop(0)
 
@@ -129,8 +129,8 @@ def flowpad(tmp_path, monkeypatch) -> FakeFlowpad:
     fake = FakeFlowpad(project_dir)
     monkeypatch.setattr(_common, "local_request", fake.request)
     monkeypatch.setattr(process_monitor_cmd, "discover_port", lambda *a, **k: 4242)
-    monkeypatch.setattr(process_monitor_cmd, "_fork", fake.fork)
-    monkeypatch.setattr(process_monitor_cmd, "_ask", fake.ask)
+    monkeypatch.setattr(process_monitor_cmd, "_try_fork_agentic_process", fake.fork)
+    monkeypatch.setattr(process_monitor_cmd, "try_prompt_ap", fake.ask)
     return fake
 
 
@@ -263,7 +263,7 @@ def test_a_monitor_is_a_cron_schedule_that_runs_the_nudge(flowpad):
 def test_monitor_keeps_the_goal_in_a_monitor_beside_the_trigger(flowpad):
     assert _monitor().exit_code == 0
     saved = MonitorSpec.model_validate_json((flowpad.monitor_folder / "monitor.json").read_text(encoding="utf-8"))
-    assert (saved.process_id, saved.name, saved.goal, saved.stop_condition, saved.cron) == (AP_ID, NAME, GOAL, STOP, CRON)
+    assert (saved.agentic_process_id, saved.name, saved.goal, saved.stop_condition, saved.cron) == (AP_ID, NAME, GOAL, STOP, CRON)
     assert not (flowpad.folder / "monitor.json").exists()  # the trigger's folder holds the trigger only
 
 
@@ -353,6 +353,13 @@ def test_after_three_retries_the_nudge_fails_and_changes_nothing(monitored, bad)
     assert len(monitored.asked) == 4  # the first ask and three retries
     assert monitored.prompted() == []
     assert monitored.folder.exists()
+
+
+def test_a_fork_that_does_not_answer_fails_the_nudge_and_changes_nothing(monitored):
+    monitored.answers = [None]
+    refused(nudge(), "ASK_FAILED")
+    assert monitored.prompted() == []
+    assert monitored.folder.exists() and monitored.monitor_folder.exists()
 
 
 def test_a_session_that_cannot_fork_checks_itself(monitored):
