@@ -503,7 +503,7 @@ export function StreamInboxTags() {
                   <Trans>Select message</Trans>
                   <ChevronDown className="size-2.5" />
                 </button>
-                {/* The message in full, as the inbox opens it — in a wide popup, so the editor stays put. */}
+                {/* The message in full, as the Stream Inbox opens it — in a wide popup, so the editor stays put. */}
                 <button
                   type="button"
                   className="block w-full text-start hover:opacity-80"

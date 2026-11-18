@@ -200,7 +200,7 @@ test('Another message → pick → Run; Apply tags the message', async ({ page }
   await expect.poll(() => tagsOf('one')).toContain('stream_inbox.sales.intro');
 });
 
-test('ticked inbox rows → Classify: a dry-run table; Why shows the decision; Apply tags without running anything', async ({ page }) => {
+test('ticked Stream Inbox rows → Classify: a dry-run table; Why shows the decision; Apply tags without running anything', async ({ page }) => {
   await graph('post', `flow_message/${arrived.one.id}/set-tags`, { tags: [] });
   await page.goto('/dock/stream_inbox');
   for (const key of ['one', 'many'] as const) await row(page, key).getByTestId('stream-inbox-row-select').click();

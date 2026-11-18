@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const MESSAGES: Record<string, { tags: string[]; text: string }> = {
-  a: { tags: ['inbox.billing', 'inbox.urgent'], text: 'charged twice' },
-  b: { tags: ['inbox.refund'], text: 'money back' },
+  a: { tags: ['stream_inbox.billing', 'stream_inbox.urgent'], text: 'charged twice' },
+  b: { tags: ['stream_inbox.refund'], text: 'money back' },
   c: { tags: [], text: 'export broke' },
 };
 const { classifyById, applyClassification } = vi.hoisted(() => ({ classifyById: vi.fn(), applyClassification: vi.fn() }));
@@ -41,7 +41,7 @@ describe('ClassifyDialog', () => {
 
   it('classifies each message, offers Apply only where the tag would change, and applies ticked rows', async () => {
     classifyById.mockImplementation((id: string) =>
-      id === 'c' ? Promise.reject(new Error('The decision API did not answer')) : Promise.resolve(landed('inbox.refund')),
+      id === 'c' ? Promise.reject(new Error('The decision API did not answer')) : Promise.resolve(landed('stream_inbox.refund')),
     );
     applyClassification.mockResolvedValue(undefined);
     render(<ClassifyDialog messageIds={['a', 'b', 'c']} onClose={() => undefined} />);
@@ -59,6 +59,6 @@ describe('ClassifyDialog', () => {
     fireEvent.click(row('b').querySelector('[role=checkbox]')!);
     fireEvent.click(screen.getByTestId('classify-selection-apply'));
     await waitFor(() => expect(screen.getByTestId('classify-summary').textContent).toBe('1 applied · no automation started'));
-    expect(applyClassification.mock.calls).toEqual([['a', 'inbox.refund']]);
+    expect(applyClassification.mock.calls).toEqual([['a', 'stream_inbox.refund']]);
   });
 });
