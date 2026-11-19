@@ -7,10 +7,10 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@src/components/quick-create/registry', () => ({
-  getDescriptor: (type: string) =>
+  customDialogFor: (type: string | null) =>
     type === 'chart'
-      ? { Dialog: ({ open, projectId }: { open: boolean; projectId?: string | null }) => (open ? <div data-testid="custom-dialog">{projectId}</div> : null) }
-      : { create: vi.fn() },
+      ? ({ open, projectId }: { open: boolean; projectId?: string | null }) => (open ? <div data-testid="custom-dialog">{projectId}</div> : null)
+      : undefined,
 }));
 vi.mock('@src/components/ui/input-dialog', () => ({
   InputDialog: ({ open }: { open: boolean }) => (open ? <div data-testid="name-dialog" /> : null),
@@ -31,5 +31,18 @@ describe('assets "+" dialog', () => {
     render(<NewOfTypeDialog type="markdown" {...props} />);
     expect(screen.getByTestId('name-dialog')).toBeTruthy();
     expect(screen.queryByTestId('custom-dialog')).toBeNull();
+  });
+});
+
+describe('which create dialog a type gets', () => {
+  it('skips a dialog the hub answers while signed out', async () => {
+    const { customDialogFor } = await vi.importActual<typeof import('@src/components/quick-create/registry')>(
+      '@src/components/quick-create/registry',
+    );
+    expect(customDialogFor('chart', false)).toBeTruthy();
+    expect(customDialogFor('agent', true)).toBeTruthy();
+    expect(customDialogFor('agent', false)).toBeUndefined();
+    expect(customDialogFor('markdown', true)).toBeUndefined();
+    expect(customDialogFor(null, true)).toBeUndefined();
   });
 });

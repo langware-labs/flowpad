@@ -125,8 +125,8 @@ export const HIGHLIGHT_PARAM = 'highlight';
 /** An entry of an `fs/` folder to show selected. */
 export const FS_SELECT_PARAM = 'select';
 /** The home's selected icon (an agent's or app's typeid) and, inside it, the deployment opened from its list. */
-export const HOME_TILE_PARAM = 'tile';
-export const HOME_TILE_DEPLOYMENT_PARAM = 'tileDeployment';
+const HOME_TILE_PARAM = 'tile';
+const HOME_TILE_DEPLOYMENT_PARAM = 'tileDeployment';
 /** A transcript entry to scroll to and select. */
 export const TRANSCRIPT_ENTRY_PARAM = 'transcript_entry_id';
 /** A timestamp to seek a transcript to. */
@@ -804,6 +804,19 @@ export class DockPointer implements IDockPointer {
    * generic form behind `withLang`/`withJourney` and the sticky-param
    * carry-forward in `openDock`.
    */
+  /** The home's selected icon and the deployment opened inside it. */
+  get homeTile(): { key: string | null; deployment: string | null } {
+    return {
+      key: this.options?.[HOME_TILE_PARAM] ?? null,
+      deployment: this.options?.[HOME_TILE_DEPLOYMENT_PARAM] ?? null,
+    };
+  }
+
+  /** Select an icon on the home (and a deployment inside it); null clears both. */
+  withHomeTile(key: string | null, deployment: string | null = null): DockPointer {
+    return this.withOption(HOME_TILE_PARAM, key).withOption(HOME_TILE_DEPLOYMENT_PARAM, key ? deployment : null);
+  }
+
   withOption(key: string, value: string | null): DockPointer {
     const nextOptions = { ...(this.options ?? {}) };
     if (value) nextOptions[key] = value;

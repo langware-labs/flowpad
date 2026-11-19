@@ -37,7 +37,8 @@ import {
 import { WikiButton, WikiTip } from '@src/components/wiki-tip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { QuickCreateDialog } from './QuickCreateDialog';
-import { QUICK_CREATE_REGISTRY, getDescriptor, type QuickCreateGroup } from './registry';
+import { QUICK_CREATE_REGISTRY, customDialogFor, type QuickCreateGroup } from './registry';
+import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
 import { providerMetaFor } from '@src/tabs/provider-meta';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
@@ -236,7 +237,7 @@ export function useQuickCreatePick(explicitProject?: Project | null) {
   // dialog — the generic name+path form would only ask it questions it can't
   // answer. Chosen here, not inside QuickCreateDialog, so the generic form's
   // project fetch + snapshot never run for a type that discards them.
-  const CustomDialog = activeType ? getDescriptor(activeType)?.Dialog : undefined;
+  const CustomDialog = customDialogFor(activeType, useCloudAuthed());
 
   const handleDialogChange = (next: boolean) => {
     setDialogOpen(next);

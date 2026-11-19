@@ -8,18 +8,20 @@ import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { ALL_AGENTS, ALL_DEPLOYMENTS } from '@src/components/asset-counters/agent-counters';
 import { useIssues } from '@src/components/asset-counters/issue-counters';
 import { colorForIdentityKey } from '@src/components/conversation/avatar-color';
+import { initialsFromLabel } from '@src/components/conversation/participant-display';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { useOpenProjectApp, useProjectApps } from '@src/components/top-nav-bar/use-project-apps';
 import { WebAppAvatar } from '@src/components/webapp-display/WebAppIcon';
 import { MAX_HOME_AGENTS, useProjectAgents } from '@src/hooks/use-project-agents';
 import { cn } from '@src/lib/utils';
-import { DockPointer, HOME_TILE_DEPLOYMENT_PARAM, HOME_TILE_PARAM } from '@src/navigation/DockPointer';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   buildAgentTiles,
   buildAppTiles,
   deploymentCount,
+  loneDeployment,
   resolveSelection,
   tileIsLocal,
   type HomeSelection,
@@ -67,19 +69,15 @@ export function useHomeTiles(project: Project | null | undefined): HomeTilesStat
   );
   const apps = useMemo(() => buildAppTiles(projectApps, deployments, issues), [projectApps, deployments, issues]);
 
-  const tileKey = currentDock?.options?.[HOME_TILE_PARAM];
-  const deploymentId = currentDock?.options?.[HOME_TILE_DEPLOYMENT_PARAM];
+  const { key: tileKey, deployment: deploymentId } = currentDock?.homeTile ?? {};
   const selection = useMemo(
-    () => resolveSelection([...agents, ...apps], tileKey, deploymentId),
+    () => resolveSelection(agents, tileKey, deploymentId) ?? resolveSelection(apps, tileKey, deploymentId),
     [agents, apps, tileKey, deploymentId],
   );
 
   const select = useCallback(
     (key: string | null, deployment: string | null = null) => {
-      if (!currentDock) return;
-      navigation.openDock(
-        currentDock.withOption(HOME_TILE_PARAM, key).withOption(HOME_TILE_DEPLOYMENT_PARAM, key ? deployment : null),
-      );
+      if (currentDock) navigation.openDock(currentDock.withHomeTile(key, deployment));
     },
     [navigation, currentDock],
   );
@@ -87,7 +85,7 @@ export function useHomeTiles(project: Project | null | undefined): HomeTilesStat
   const open = useCallback(
     (tile: HomeTile, deployment: Deployment | null = null) => {
       // A deployment opens where a deployment row opens everywhere else: its page.
-      const placed = deployment ?? (!tile.own && tile.deployments.length === 1 ? tile.deployments[0] : null);
+      const placed = deployment ?? loneDeployment(tile);
       if (placed) navigation.openDock(placed.projectPagePointer ?? placed.dockPointer);
       else if (!tile.own) return;
       else if (tile.app) void openApp(tile.app);
@@ -120,7 +118,7 @@ export function TileFace({ tile, className, glyphClassName }: { tile: HomeTile; 
         className,
       )}
     >
-      {tile.label.charAt(0).toUpperCase()}
+      {initialsFromLabel(tile.label, 1)}
     </span>
   );
 }
@@ -140,13 +138,18 @@ export function TileCount({ value, tone, testId }: { value: number; tone: 'prima
   );
 }
 
+/** Where something runs: this machine, or the cloud. */
+export function WhereIcon({ local, className }: { local: boolean; className?: string }) {
+  const Icon = local ? Monitor : Cloud;
+  return <Icon className={className} aria-hidden />;
+}
+
 function Tile({ tile, home }: { tile: HomeTile; home: HomeTilesState }) {
   const { t } = useLingui();
   const selected = home.selection?.tile.key === tile.key;
   const count = deploymentCount(tile);
   const local = tileIsLocal(tile);
   const where = local ? t`Runs on this machine` : t`Runs in the cloud`;
-  const Where = local ? Monitor : Cloud;
   return (
     <div className="relative h-20 w-20">
       <DesktopTile
@@ -169,7 +172,7 @@ function Tile({ tile, home }: { tile: HomeTile; home: HomeTilesState }) {
           data-testid="home-tile-where"
           data-where={local ? 'local' : 'cloud'}
         >
-          <Where className="h-3 w-3" aria-hidden />
+          <WhereIcon local={local} className="h-3 w-3" />
         </span>
       )}
       {count > 0 && (

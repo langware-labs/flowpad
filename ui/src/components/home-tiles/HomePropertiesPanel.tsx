@@ -1,26 +1,30 @@
 import { TypeId, type Deployment } from '@sdk';
+import type { I18n } from '@lingui/core';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ChevronLeft, ChevronRight, Cloud, Monitor, Plus, X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
-import { IssueBanners, issuesConcerning, useIssues } from '@src/components/asset-counters/issue-counters';
-import { grantableRoles } from '@src/components/conversation/participant-display';
+import { IssueBanners } from '@src/components/asset-counters/issue-counters';
+import { canInviteMembers } from '@src/components/conversation/participant-display';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { formatRelative } from '@src/components/git/relative-time';
 import { deploymentRowState, ITEM_STATES } from '@src/components/items/item-state';
 import { InviteRow } from '@src/components/organization/invite-row';
 import { MemberSection, type MemberActions } from '@src/components/organization/member-list';
+import { BreadcrumbChevron } from '@src/components/ui/breadcrumb';
 import { Button } from '@src/components/ui/button';
 import { useMembers } from '@src/hooks/use-members';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
-import { TileCount, TileFace, type HomeTilesState } from './HomeTiles';
-import { DEPLOYMENTS_PAGE_SIZE, pageOf, type HomeTile } from './home-tiles-model';
+import { TileCount, TileFace, WhereIcon, type HomeTilesState } from './HomeTiles';
+import { pageOf, type HomeTile } from './home-tiles-model';
 
 const ICON_BUTTON = 'rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground';
 
 /** Who can reach the selected thing; `+` opens the invite (address, role, Send). */
-function AccessSection({ typeId, own }: { typeId: TypeId; own: boolean }) {
+function AccessSection({ typeid, own }: { typeid: string; own: boolean }) {
   const { t } = useLingui();
+  // One TypeId per target: the roster hook refetches when it is handed a new one.
+  const typeId = useMemo(() => new TypeId(typeid), [typeid]);
   const { localUser } = useLocalUser();
   const { members, ready, updating, stale, available, reason, refresh, removeMember, setRole } = useMembers(typeId);
   const [inviting, setInviting] = useState(false);
@@ -33,14 +37,14 @@ function AccessSection({ typeId, own }: { typeId: TypeId; own: boolean }) {
   const actions: MemberActions = useMemo(() => {
     const guard = (title: string, run: () => Promise<void>) =>
       run().catch((err: unknown) => {
-        notify.error({ title, message: err instanceof Error ? err.message : '' });
+        notify.error({ title, message: err instanceof Error ? err.message : t`Unknown error.`, id: 'home-access' });
       });
     return {
       onSetRole: (principalId, roles) => guard(t`Could not change role`, () => setRole(principalId, roles)),
       onRemove: (principalId) => guard(t`Could not remove`, () => removeMember(principalId)),
     };
   }, [removeMember, setRole, t]);
-  const canInvite = available && ready && !stale && grantableRoles(me as never).length > 0;
+  const canInvite = available && ready && !stale && canInviteMembers(me as never);
 
   return (
     <section className="flex flex-col gap-2" data-testid="home-access">
@@ -90,10 +94,9 @@ function AccessSection({ typeId, own }: { typeId: TypeId; own: boolean }) {
 }
 
 function WhereLabel({ local }: { local: boolean }) {
-  const Icon = local ? Monitor : Cloud;
   return (
     <span className="inline-flex items-center gap-1.5">
-      <Icon className="h-3.5 w-3.5" aria-hidden />
+      <WhereIcon local={local} className="h-3.5 w-3.5" />
       {local ? <Trans>This machine</Trans> : <Trans>Cloud</Trans>}
     </span>
   );
@@ -111,24 +114,24 @@ function Property({ label, children }: { label: ReactNode; children: ReactNode }
 /** The deployments behind one icon. Nothing is marked in the list: a row opens that deployment as a sub view. */
 function DeploymentList({
   deployments,
+  issues,
   onPick,
 }: {
   deployments: Deployment[];
+  /** Open issues per deployment id. */
+  issues: Map<string, number>;
   onPick: (deployment: Deployment) => void;
 }) {
   const { t, i18n } = useLingui();
-  const { issues } = useIssues();
   const [page, setPage] = useState(0);
-  const { rows, pages } = pageOf(deployments, page);
-  const first = page * DEPLOYMENTS_PAGE_SIZE + 1;
+  const { rows, first, pages } = pageOf(deployments, page);
   return (
     <section className="flex flex-col gap-1.5" data-testid="home-deployments">
       <div className="text-xs text-muted-foreground">
         <Trans>Deployments · {deployments.length}</Trans>
       </div>
       {rows.map((deployment) => {
-        const open = issuesConcerning(issues, deployment.typeId.toString()).length;
-        const Where = deployment.isLocal ? Monitor : Cloud;
+        const open = issues.get(deployment.id) ?? 0;
         return (
           <button
             key={deployment.id}
@@ -138,11 +141,11 @@ function DeploymentList({
             data-testid="home-deployment-row"
             data-deployment-id={deployment.id}
           >
-            <Where className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <WhereIcon local={deployment.isLocal} className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 flex-1 truncate text-start">{deployment.name}</span>
             {open > 0 && <TileCount value={open} tone="issues" />}
-            <span className="shrink-0 text-muted-foreground">{i18n._(ITEM_STATES[deploymentRowState(deployment)].label)}</span>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="shrink-0 text-muted-foreground">{statusOf(deployment, i18n)}</span>
+            <BreadcrumbChevron className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
         );
       })}
@@ -160,7 +163,7 @@ function DeploymentList({
             disabled={page === 0}
             onClick={() => setPage(page - 1)}
           >
-            <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
+            <BreadcrumbChevron className="h-3.5 w-3.5 rotate-180" />
           </button>
           <button
             type="button"
@@ -170,12 +173,16 @@ function DeploymentList({
             onClick={() => setPage(page + 1)}
             data-testid="home-deployments-next"
           >
-            <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+            <BreadcrumbChevron className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
     </section>
   );
+}
+
+function statusOf(deployment: Deployment, i18n: I18n): string {
+  return i18n._(ITEM_STATES[deploymentRowState(deployment)].label);
 }
 
 function updated(entity: { updated_date?: Date | string | null } | null | undefined): string {
@@ -224,7 +231,7 @@ export function HomePropertiesPanel({ home }: { home: HomeTilesState }) {
           >
             {tile.label}
           </button>
-          <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <BreadcrumbChevron className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate font-medium text-foreground">{deployment?.name}</span>
         </nav>
       )}
@@ -242,12 +249,14 @@ export function HomePropertiesPanel({ home }: { home: HomeTilesState }) {
       </header>
 
       {target && description && <p className="text-sm text-muted-foreground">{description}</p>}
-      {listed.length > 0 && <DeploymentList deployments={listed} onPick={(d) => select(tile.key, d.id)} />}
+      {listed.length > 0 && (
+        <DeploymentList deployments={listed} issues={tile.deploymentIssues} onPick={(d) => select(tile.key, d.id)} />
+      )}
 
-      {target && targetKey && (
+      {targetKey && (
         <>
           <IssueBanners typeid={targetKey} className="overflow-hidden rounded-md border border-border" />
-          <AccessSection typeId={new TypeId(targetKey)} own={tile.own} />
+          <AccessSection typeid={targetKey} own={tile.own} />
           <div>
             {(deployment || tile.kind === 'agent') && (
               <Property label={<Trans>Runs on</Trans>}>
@@ -255,7 +264,7 @@ export function HomePropertiesPanel({ home }: { home: HomeTilesState }) {
               </Property>
             )}
             {deployment && (
-              <Property label={<Trans>Status</Trans>}>{i18n._(ITEM_STATES[deploymentRowState(deployment)].label)}</Property>
+              <Property label={<Trans>Status</Trans>}>{statusOf(deployment, i18n)}</Property>
             )}
             {when && <Property label={<Trans>Updated</Trans>}>{when}</Property>}
           </div>

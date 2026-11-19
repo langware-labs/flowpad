@@ -7,23 +7,19 @@ import {
 } from '@src/components/asset-counters/hub-counters';
 import { hubIssueCounterGroup } from '@src/components/asset-counters/issue-counters';
 import { hubSkillCounterGroup } from '@src/components/asset-counters/skill-counters';
-import type { AssetCounterGroup } from '@src/components/asset-counters/types';
 import type { TabDef } from './ItemsSection';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyGroup = AssetCounterGroup<any>;
-
 /**
- * The home tabs, written once. Hub and desk list the same kinds with the same words. Shown: Agents, Skills, Issues;
- * Machines, Deployments and Channels are hidden lists an agent card drills into. The only difference is that the desk counts agents and skills within the open project.
+ * The hub home's tabs. Shown: Agents, Skills, Issues; Machines, Deployments and Channels are hidden lists an
+ * agent card drills into. The desktop home shows icons instead (`components/home-tiles`).
  */
-const tabs = (agents: AnyGroup, skills: AnyGroup): TabDef[] => [
+export const HUB_TABS: TabDef[] = [
   {
-    group: agents,
+    group: hubAgentCounterGroup,
     emptyText: <Trans>No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram.</Trans>,
     createLabel: <Trans>Make an agent</Trans>,
   },
-  { group: skills, emptyText: <Trans>No skills yet. A skill teaches your agents one job.</Trans> },
+  { group: hubSkillCounterGroup, emptyText: <Trans>No skills yet. A skill teaches your agents one job.</Trans> },
   { group: hubIssueCounterGroup, hideWhenEmpty: true },
   // Opened from an agent card's summary (Agents › <agent> › Machines), never as tabs of their own.
   {
@@ -48,5 +44,3 @@ const tabs = (agents: AnyGroup, skills: AnyGroup): TabDef[] => [
     emptyText: <Trans>No channels yet. Add a number, bot or app that sends you messages.</Trans>,
   },
 ];
-
-export const HUB_TABS = tabs(hubAgentCounterGroup, hubSkillCounterGroup);
