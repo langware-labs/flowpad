@@ -258,7 +258,12 @@ async def change_tags(message_id: str, *, add=(), remove=(), replace=None,
         return apply_delta(m.tags, s, add=additions, remove=removals, replace=replacement,
                            source=source, rules=await scoped_rules(m, rules))
 
-    return await _mutate(message_id, change, wake_worker=True)
+    changed = await _mutate(message_id, change, wake_worker=True)
+    if source.source == "manual":
+        from flow_sdk.stream_inbox.classification import moderated  # noqa: PLC0415
+
+        moderated(changed)   # a labelled message's ground truth follows a person's change
+    return changed
 
 
 async def _request_automation(message_id: str) -> tuple[str, str, str, str] | None:
@@ -308,15 +313,22 @@ def wake(message_id: str) -> None:
     add_detached_done_callback(task, _tasks.discard)
 
 
-async def classify(message, definitions: list[dict[str, str]]):
-    """One tag for ``message`` out of ``definitions`` — the generic classifier, on the message's context."""
+async def message_context(message):
+    """What the classifier reads of ``message`` (a FlowMessage, or its state): the classifier's input, and the
+    ``input`` of the message's ground-truth row -- one builder, so an eval measures what a run sees."""
     from flow_sdk.schema.data_spec.message_state_spec import MessageState
     from flow_sdk.schema.data_spec.tag_classification_spec import MessageContextSpec
     from flow_sdk.stream_inbox.message_subject import _self_ids, state_of
-    from flow_sdk.tags.classify import choose
 
     state = message if isinstance(message, MessageState) else state_of(message, await _self_ids(), allow_foreign_agents=True)
-    return await choose(MessageContextSpec(message=state), {d["name"]: d["description"] or d["name"] for d in definitions})
+    return MessageContextSpec(message=state)
+
+
+async def classify(message, definitions: list[dict[str, str]]):
+    """One tag for ``message`` out of ``definitions`` — the generic classifier, on the message's context."""
+    from flow_sdk.tags.classify import choose
+
+    return await choose(await message_context(message), {d["name"]: d["description"] or d["name"] for d in definitions})
 
 
 async def _classify(message):
@@ -492,13 +504,22 @@ async def apply_classification(message_id: str, tag: str):
     goes, ``tag`` takes its place, tags a person added stay. Starts no automation."""
     if tag not in {d["name"] for d in await ontology()}:
         raise ValueError("The tag is outside the configured classification tree.")
+    return await retag_as_classification(
+        message_id, add=[tag], remove=lambda m, s: [t for t, a in s.assignments.items() if a.source == "classification" and t != tag])
+
+
+async def retag_as_classification(message_id: str, *, add, remove, rules=None):
+    """An applied classification on one message: ``add`` goes on (a person's earlier removal of it is forgotten),
+    ``remove`` -- names, or ``(message, state) -> names`` read inside the write -- goes off. Nothing is queued.
+    ``rules`` spares the read when one caller retags many messages."""
+    add = list(add)
+    rules = await _rules() if rules is None else rules
 
     async def change(m, s):
-        given = [t for t, a in s.assignments.items() if a.source == "classification" and t != tag]
-        s.suppressed_tags = [t for t in s.suppressed_tags if t != tag]
-        return apply_delta(m.tags, s, add=[tag], remove=given,
+        s.suppressed_tags = [t for t in s.suppressed_tags if t not in add]
+        return apply_delta(m.tags, s, add=add, remove=remove(m, s) if callable(remove) else remove,
                            source=TagAssignment(source="classification"),
-                           rules=await scoped_rules(m, await _rules()), start_automations=False)
+                           rules=await scoped_rules(m, rules), start_automations=False)
 
     return await _mutate(message_id, change)
 

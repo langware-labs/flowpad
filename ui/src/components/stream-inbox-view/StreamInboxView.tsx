@@ -71,7 +71,7 @@ import { updateMessage, bulkUpdateMessages, searchStreamInbox, watchMessageTags 
 import { TagFilterBar } from '@src/components/assets/TagFilterBar';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { MessageTags } from '@src/components/tags/MessageTags';
-import { ClassifyDialog } from '@src/components/tags/ClassifyTable';
+import { ClassifyDialog, useClassifyRun } from '@src/components/tags/ClassifyTable';
 import {
   type ChannelAttribution,
   SourceChip,
@@ -1012,8 +1012,8 @@ export function StreamInboxView({
   // Constrained to currently-visible rows when actions run, so a stale id left
   // over from a view switch can never act on a hidden conversation.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  // The ticked rows' messages, open in the dry-run classification table.
-  const [classifying, setClassifying] = useState<string[] | null>(null);
+  // The ticked conversations' classification run, open in its table (`classify=<call id>` in the URL).
+  const classifying = useClassifyRun();
   const [selDeleteOpen, setSelDeleteOpen] = useState(false);
 
   // Text search over message bodies — server-side, via the `stream-inbox-search`
@@ -1688,7 +1688,7 @@ export function StreamInboxView({
                   variant="ghost"
                   size="sm"
                   className="h-7 text-xs"
-                  onClick={() => setClassifying(selectedConvs.map(latestMessageId).filter((id): id is string => !!id))}
+                  onClick={() => classifying.start(selectedConvs.map((conv) => conv.id).filter((id): id is string => !!id))}
                   data-testid="stream-inbox-selection-classify"
                 >
                   <Tags className="me-1 h-3.5 w-3.5" />
@@ -2028,7 +2028,7 @@ export function StreamInboxView({
         <ContactsDialog open={showContacts} onOpenChange={setShowContacts} excludeUserId={cloudUser?.id ?? null} />
       )}
 
-      {classifying && <ClassifyDialog messageIds={classifying} onClose={() => setClassifying(null)} />}
+      {classifying.callId && <ClassifyDialog callId={classifying.callId} onClose={classifying.close} />}
 
       <BulkConfirmDialog
         open={bulkDialogOpen}

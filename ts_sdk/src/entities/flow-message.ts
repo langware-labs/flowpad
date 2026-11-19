@@ -7,6 +7,7 @@ import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
 import { IMessageEnvelope } from '../models/MessageEnvelope';
 import { IMessageSender } from '../models/MessageSender';
 import type { ItReplyMeta, ItRequestMeta } from './agent';
+import type { ComputeCall } from './compute-op';
 import { issueStatusOf, type IssueFix, type IssueSeverity, type IssueStatus } from './issue';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
@@ -278,6 +279,44 @@ export interface MessageClassification {
   run?: DecisionRun | null;
 }
 
+/** One conversation of a proposed classification (`stream_inbox.classification.conversation`). */
+export interface ConversationTagging {
+  conversation_id: string;
+  message_id: string;
+  title: string;
+  before: string[];
+  proposed: string[];
+  action: 'keep' | 'apply' | 'change' | 'remove';
+  reason: string;
+  /** A new tag the conversation's agent asked for, and the main agent's answer. */
+  asked?: { tag: string; meaning: string; answer: 'approved' | 'use_existing'; use?: string | null } | null;
+}
+
+/** One change to the tag tree (`stream_inbox.classification.tree_change`); `tag` is the name AFTER it. */
+export interface TagTreeChange {
+  op: 'added' | 'updated' | 'moved' | 'removed';
+  tag: string;
+  /** moved: the old name · updated: the old meaning. */
+  was?: string | null;
+  meaning?: string | null;
+  color?: string | null;
+  merged_into?: string | null;
+  reason: string;
+  asked_by?: number;
+}
+
+/** What a classification run proposes (`stream_inbox.classification`). It writes nothing; a person applies. */
+export interface StreamInboxClassification {
+  root: string;
+  since?: string | null;
+  until?: string | null;
+  conversations: ConversationTagging[];
+  tree_changes: TagTreeChange[];
+}
+
+/** A classification run: the durable call of the `stream-inbox-classifier` block. */
+export type ClassificationRun = ComputeCall<StreamInboxClassification>;
+
 export interface IFlowMessage extends IEntity {
   message_processing?: MessageProcessing | null;
   text?: string;
@@ -520,12 +559,35 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     return (await dataManager.callAction<unknown, MessageClassification>(action))!;
   }
 
-  /** Make a dry run's answer the message's classification: `tag` replaces the tag the classifier gave
-   *  before; tags a person added stay. No automation starts. */
-  static async applyClassification(id: string, tag: string): Promise<void> {
-    const action = new ActionInfo('apply-classification', FlowMessage.type, id, 'POST');
-    action.bodyParameters = { tag };
-    await dataManager.callAction(action);
+  /** Start a classification run on these conversations: one agent each. Durable — it outlives this page. */
+  static async classifyConversations(conversations: string[]): Promise<ClassificationRun> {
+    const action = new ActionInfo('classify-conversations', FlowMessage.type, null, 'POST');
+    action.bodyParameters = { conversations };
+    return (await dataManager.callAction<unknown, ClassificationRun>(action))!;
+  }
+
+  /** Read a classification run again; this never starts work. */
+  static async classificationRun(callId: string): Promise<ClassificationRun> {
+    const action = new ActionInfo('classify-conversations', FlowMessage.type, null, 'GET');
+    action.queryParameters = { call_id: callId };
+    return (await dataManager.callAction<unknown, ClassificationRun>(action))!;
+  }
+
+  /** Make a proposal real: `conversations` (ids; absent = every row) and, unless `tree` is false, the tag
+   *  tree changes. A row brings the tree change its tag needs. No automation starts. */
+  static async applyStreamInboxClassification(
+    value: StreamInboxClassification,
+    options: { conversations?: string[]; tree?: boolean } = {},
+  ): Promise<{ applied: string[]; failed: Record<string, string>; tree: Record<string, 'applied' | 'already'> }> {
+    const action = new ActionInfo('apply-stream-inbox-classification', FlowMessage.type, null, 'POST');
+    action.bodyParameters = { value, ...options };
+    return (await dataManager.callAction(action))!;
+  }
+
+  /** The ground truth so far: each labelled message's confirmed tag ('' = no tag fits) and its dataset. */
+  static async classificationTruth(): Promise<{ dataset_id: string | null; tags: Record<string, string> }> {
+    const action = new ActionInfo('classification-truth', FlowMessage.type, null, 'GET');
+    return (await dataManager.callAction(action))!;
   }
 
   async setTags(tags: string[]): Promise<void> {

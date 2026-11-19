@@ -1,0 +1,20 @@
+{
+  "name": "stream-inbox-tags",
+  "dataset_kind": "stream_inbox.tags.dataset",
+  "kinds": [
+    "eval"
+  ],
+  "entry": "eval.py",
+  "metrics": [
+    "accuracy"
+  ],
+  "slices": [
+    "labels.expected",
+    "labels.landed",
+    "data.source"
+  ],
+  "explain": {
+    "accuracy": "Of the labelled messages, how many the classifier puts under the tag a person confirmed. A message confirmed as 'no tag fits' is right only when the classifier also picks none. The classifier runs as it is now: today's tag tree and today's meanings."
+  },
+  "description": "The Stream Inbox tag classifier on each labelled message: the tag it picks from the tree as it is now, judged against the confirmed tag."
+}

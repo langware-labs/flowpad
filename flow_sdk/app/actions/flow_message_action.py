@@ -5008,6 +5008,65 @@ async def message_apply_classification(self: FlowMessage) -> ApiResponse:
     return ApiSuccessResponse(data=_tag_state(message))
 
 
+@action.all(action_name="classify-conversations", types=["flow_message"], methods=["get", "post"])
+async def classify_conversations() -> ApiResponse:
+    """POST ``{conversations: [id]}`` starts the shipped ``stream-inbox-classifier`` block on them -- a durable
+    call that outlives the request -- and answers its record. GET ``?call_id=`` reads that record again; its
+    ``result.value`` is the proposed ``stream_inbox.classification`` once the call completed. Nothing is tagged."""
+    from flow_sdk.builtin.compute_op import ComputeOp
+
+    info = get_current_request_info()
+    if info is None:
+        return ApiFailResponse(message="No request context available", status_code=400)
+    block = await ComputeOp.by_name("stream-inbox-classifier")
+    if block is None:
+        return ApiFailResponse(message="The conversation classifier is not installed on this instance.", status_code=503)
+    if info.request.method.upper() == "GET":
+        record = await block.get_call(str(info.request.query_params.get("call_id") or ""))
+        if record is None:
+            return ApiFailResponse(message="No such classification run", status_code=404)
+        return ApiSuccessResponse(data=record.model_dump(mode="json"))
+    body = await info.get_post_data()
+    picked = body.get("conversations") if isinstance(body, dict) else None
+    if not (isinstance(picked, list) and picked and all(isinstance(i, str) and i for i in picked)):
+        return ApiFailResponse(message="Expected the conversations to classify", status_code=400)
+    record = await block.start(input={"conversations": list(dict.fromkeys(picked))}, approved=True)
+    return ApiSuccessResponse(data=record.model_dump(mode="json"))
+
+
+@action.post(action_name="apply-stream-inbox-classification", types=["flow_message"])
+async def apply_stream_inbox_classification() -> ApiResponse:
+    """A person applies a proposed ``stream_inbox.classification``: ``conversations`` (ids; absent = every
+    row) and, unless ``tree`` is false, the tag tree changes. No automation starts; applied rows are kept
+    as ground truth."""
+    from pydantic import ValidationError
+
+    from flow_sdk.schema.data_spec.stream_inbox_classification_spec import StreamInboxClassification
+    from flow_sdk.stream_inbox import classification
+
+    info = get_current_request_info()
+    body = await info.get_post_data() if info is not None else None
+    if not isinstance(body, dict) or not isinstance(body.get("value"), dict):
+        return ApiFailResponse(message="Expected the classification value to apply", status_code=400)
+    picked = body.get("conversations")
+    if picked is not None and not (isinstance(picked, list) and all(isinstance(i, str) for i in picked)):
+        return ApiFailResponse(message="conversations is a list of conversation ids", status_code=400)
+    try:
+        value = StreamInboxClassification.model_validate({k: v for k, v in body["value"].items() if k != "spec_kind"})
+        return ApiSuccessResponse(data=await classification.apply(value, conversations=picked, tree=body.get("tree") is not False))
+    except (ValidationError, ValueError) as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+
+
+@action.get(action_name="classification-truth", types=["flow_message"])
+async def stream_inbox_classification_truth() -> ApiResponse:
+    """The ground truth so far: each labelled message's confirmed tag ('' = no tag), and the dataset that
+    holds them (None before the first applied row)."""
+    from flow_sdk.stream_inbox.classification import truth
+
+    return ApiSuccessResponse(data=await truth())
+
+
 @action.post(action_name="rerun-automation", types=["flow_message"])
 async def message_rerun_automation(self: FlowMessage) -> ApiResponse:
     """A person asks for one failed or interrupted automation of this message's queue to run again."""

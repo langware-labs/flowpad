@@ -324,11 +324,13 @@ def classify_path(path: str | Path) -> str | None:
 
     try:
         from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
-        from flow_sdk.core.log_dataset import temp_datasets  # noqa: PLC0415
+        from flow_sdk.core.log_dataset import kept_datasets, temp_datasets  # noqa: PLC0415
 
-        # Flowpad's own: its shipped project, and its logs' folder in temp (SmartNavigationLog, FlowCall
-        # logs). Only that folder: a project made under temp (a mock project, a test's) stays a project.
-        for system_root in (flowpad_assistant_project_root().resolve(), temp_datasets().resolve()):
+        # Flowpad's own: its shipped project, its logs' folder in temp (SmartNavigationLog, FlowCall
+        # logs) and the datasets it keeps on this instance (the Stream Inbox tags' ground truth). Only
+        # those folders: a project made under temp (a mock project, a test's) stays a project.
+        # Resolved one at a time: most paths match the first or none, on every asset the indexer meets.
+        for system_root in (root().resolve() for root in (flowpad_assistant_project_root, temp_datasets, kept_datasets)):
             if target == system_root or system_root in target.parents:
                 return Scope.SYSTEM.value
     except Exception:
