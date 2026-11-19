@@ -138,6 +138,15 @@ describe('PageAllowGate', () => {
     expect(page.getAttribute('data-key')).toBe(APP_KEY);
   });
 
+  it('loads the page without a context when the server is not running', async () => {
+    vi.spyOn(apiClient, 'get').mockRejectedValue(Object.assign(new Error('Network Error'), { isServiceUnavailable: true }));
+
+    render(ui());
+
+    expect(await screen.findByTestId('page')).toBeTruthy();
+    expect(screen.queryByTestId('page-allow-card')).toBeNull();
+  });
+
   it('does not run a page the user refuses', async () => {
     server({ enforced: true });
     render(ui());

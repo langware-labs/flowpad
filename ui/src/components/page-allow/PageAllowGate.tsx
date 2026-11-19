@@ -11,7 +11,7 @@ import { type ReactNode, useCallback, useEffect, useState } from 'react';
 /** What a page was opened about, as its state key says (`flow_sdk/schema/data_spec/page_state_spec.py`). */
 export type PageContext = Record<string, string>;
 
-type Access = { status: 'checking' } | { status: 'ok'; context: PageContext } | { status: 'ask' };
+type Access = { status: 'checking' } | { status: 'ok'; context: PageContext } | { status: 'ask' } | { status: 'offline' };
 
 /**
  * Whether the page this dock names may run: the local server asks for a key (`enforced`) and the dock
@@ -39,8 +39,11 @@ function usePageAccess(dockKey: string | undefined, enabled: boolean): Access {
         if (probed) setAccess({ status: 'ok', context: probed.context ?? {} });
         else setAccess(enforced ? { status: 'ask' } : { status: 'ok', context: {} });
       })
-      // A server that cannot be asked fails closed.
-      .catch(() => live && setAccess({ status: 'ask' }));
+      // A server that is not running answers nothing: the page loads without a context (the SDK's client shows
+      // its small closeable offline tag). A server that answers wrongly fails closed.
+      .catch((error: { isServiceUnavailable?: boolean }) => {
+        if (live) setAccess({ status: error?.isServiceUnavailable ? 'offline' : 'ask' });
+      });
     return () => {
       live = false;
     };
@@ -88,7 +91,7 @@ export function PageAllowGate({
   }, [access.status, silent, denied, allow]);
 
   if (!currentDock) return <>{children({ stateKey: dockKey, context: {} })}</>;
-  if (access.status === 'ok') return <>{children({ stateKey: dockKey, context: access.context })}</>;
+  if (access.status === 'ok' || access.status === 'offline') return <>{children({ stateKey: dockKey, context: access.status === 'ok' ? access.context : {} })}</>;
   if (access.status === 'checking' || (silent && !denied)) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t`Loading preview…`}</div>
