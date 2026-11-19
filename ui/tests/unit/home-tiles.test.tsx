@@ -45,7 +45,7 @@ const own: HomeTile = {
   label: 'Pirate',
   own: true,
   agent: { id: AGENT, name: 'pirate', displayName: 'Pirate', description: 'Answers like a pirate.', typeId: typeId(`agent-${AGENT}`) } as unknown as Agent,
-  deployments: [deployment(D1, 'Team inbox')],
+  deployments: [deployment(D1, 'Team desk')],
   issueCount: 2,
   deploymentIssues: new Map(),
 };
@@ -120,7 +120,7 @@ describe('home properties panel', () => {
     render(<HomePropertiesPanel home={home} />);
 
     expect(screen.getByTestId('home-properties')).toHaveAttribute('data-target', `deployment-${D1}`);
-    expect(screen.getByTestId('home-properties-title')).toHaveTextContent('Team inbox');
+    expect(screen.getByTestId('home-properties-title')).toHaveTextContent('Team desk');
     expect(screen.queryByTestId('home-properties-manage')).toBeNull();
     expect(screen.queryByTestId('home-deployment-row')).toBeNull();
 
