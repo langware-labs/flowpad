@@ -10,7 +10,9 @@ import pytest
 
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.testing.flow_hub import FakeFlowHub
+from flow_sdk.sources.errors import NotFound
+from flow_sdk.sources.protocols import Reacting
+from flow_sdk.sources.testing.flow_hub import FakeFlowHub, HubReaction
 from flow_sdk.sources.values.items import MessageData
 
 module = asset_module("flow_telegram")
@@ -87,3 +89,21 @@ def test_an_agent_answers_whatever_the_claim_delivers_on_any_machine():
 
     box_copy = SimpleNamespace(provider="flow_telegram", status=SourceStatus.ACTIVE.value, allowed_senders=[])
     assert FlowTelegramSource.open_inbound and admits(box_copy, ME)
+
+
+async def test_the_stages_of_a_message_are_reactions_the_hub_puts_through_the_claim():
+    hub = _Hub()
+    async with _source(hub, claim_id="C1", sender=ME) as source:
+        asked = source.message_origin(f"{ME}:7", ME)
+        await source.react(asked, "👀")
+        await source.react(asked, "👍")
+        await source.unreact(asked)
+        with pytest.raises(NotFound):
+            await source.react(source.message_origin("5550002:9", "5550002"), "👀")
+
+    assert issubclass(FlowTelegramSource, Reacting), "react_seen / react_received reach it like any reacting channel"
+    assert hub.reactions == [
+        HubReaction(claim_id="C1", event_id=f"{ME}:7", emoji="👀", removed=False),
+        HubReaction(claim_id="C1", event_id=f"{ME}:7", emoji="👍", removed=False),
+        HubReaction(claim_id="C1", event_id=f"{ME}:7", emoji="", removed=True),
+    ]
