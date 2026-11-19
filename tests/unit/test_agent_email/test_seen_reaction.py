@@ -6,6 +6,7 @@ driver's (test_message_files_and_reactions): a channel without reactions shows n
 """
 
 from types import SimpleNamespace
+from typing import NamedTuple
 
 import pytest
 
@@ -21,27 +22,34 @@ class _Driver:
     pass
 
 
+class Call(NamedTuple):
+    """One thing Flowpad did to the message, with what it said when it replied."""
+
+    name: str
+    text: str = ""
+
+
 class _Message:
     """A channel message that records, in order, what Flowpad does to it."""
 
     def __init__(self, body: str = "Hello, whats our status"):
         self.data_source_id, self.external_id = "ds-1", "<m-1>"
         self.author_external_id, self.author_display, self.body = "tg-42", "Dana", body
-        self.calls: list = []
+        self.calls: list[Call] = []
 
     async def react_seen(self):
-        self.calls.append("react_seen")
+        self.calls.append(Call(name="react_seen"))
         return "👀"
 
     async def react_received(self):
-        self.calls.append("react_received")
+        self.calls.append(Call(name="react_received"))
         return "👍"
 
     async def reply_spec(self, *, body, files=()):
         return body
 
     async def reply(self, spec):
-        self.calls.append(("reply", spec))
+        self.calls.append(Call(name="reply", text=spec))
 
     async def ack(self):
         pass
@@ -71,4 +79,8 @@ async def test_the_message_shows_seen_then_the_reply_then_received(engine):
 
     assert await answer_one(engine, message, source=SOURCE) is True
 
-    assert message.calls == ["react_seen", ("reply", "re: Hello, whats our status"), "react_received"]
+    assert message.calls == [
+        Call(name="react_seen"),
+        Call(name="reply", text="re: Hello, whats our status"),
+        Call(name="react_received"),
+    ]

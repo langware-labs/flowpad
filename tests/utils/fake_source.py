@@ -12,7 +12,7 @@ import asyncio
 from collections import deque
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import replace
-from typing import AsyncGenerator, ClassVar, Iterable, Optional
+from typing import AsyncGenerator, ClassVar, Iterable, NamedTuple, Optional
 
 from pydantic import PrivateAttr
 
@@ -46,6 +46,14 @@ from flow_sdk.utils.serialization import iso_to_utc
 SCRIPTED_KIND = "message"
 
 
+class Reacted(NamedTuple):
+    """One ``react``/``unreact`` the channel was asked for."""
+
+    target: str
+    emoji: str
+    removed: bool
+
+
 class Script:
     """What a test scripts and observes, shared by every session of one scripted provider."""
 
@@ -66,8 +74,8 @@ class Script:
         self._outgoing: dict = {}
         #: The bytes of every file an inbound message carried, by media key — what ``open`` serves.
         self.blobs: dict[str, bytes] = {}
-        #: Every ``react``/``unreact``: ``(target key, emoji, removed)``.
-        self.reacted: list[tuple[str, str, bool]] = []
+        #: Every ``react``/``unreact``, in order.
+        self.reacted: list[Reacted] = []
         #: The source's "write reads back" setting, and every ``mark_read``: ``(target key, read)``.
         self.writes_read = False
         self.marked: list[tuple[str, bool]] = []
@@ -148,10 +156,10 @@ class ScriptedSource(MessageSource):
     async def react(self, target: CloudOrigin, emoji: str) -> None:
         if emoji not in self.script.allowed_emoji:
             raise Rejected(f"{emoji} is not a reaction this channel shows")
-        self.script.reacted.append((target.key, emoji, False))
+        self.script.reacted.append(Reacted(target=target.key, emoji=emoji, removed=False))
 
     async def unreact(self, target: CloudOrigin, emoji: str = "") -> None:
-        self.script.reacted.append((target.key, emoji, True))
+        self.script.reacted.append(Reacted(target=target.key, emoji=emoji, removed=True))
 
     def writes_read_state(self) -> bool:
         return self.script.writes_read
@@ -265,4 +273,4 @@ def scripted_provider(provider: str = "scripted", *, pages: Iterable[list[dict]]
             DRIVERS.register(previous)
 
 
-__all__ = ["SCRIPTED_KIND", "Script", "ScriptedSource", "scripted_provider"]
+__all__ = ["SCRIPTED_KIND", "Reacted", "Script", "ScriptedSource", "scripted_provider"]

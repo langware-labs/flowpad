@@ -23,7 +23,7 @@ from flow_sdk.ingest.sync import sync_source
 from flow_sdk.sources.errors import Rejected
 from flow_sdk.stream_inbox.projection import project_source_item
 from flow_sdk.stream_inbox.reactions import OURS
-from tests.utils.fake_source import ScriptedSource, scripted_provider
+from tests.utils.fake_source import Reacted, ScriptedSource, scripted_provider
 
 pytestmark = [
     pytest.mark.timeout(30),  # do not increase timeout without approval
@@ -135,8 +135,12 @@ async def test_a_message_shows_seen_then_received_and_one_reaction_each_replaces
         assert await message.react_received() == "👍"
         stored = await SourceItem.get_one({"id": str(message._row.id)})
 
-    assert script.reacted == [("m1", "👀", False), ("m1", "👍", False)]
-    assert [(r.emoji, r.ours) for r in stored.reactions] == [("👍", True)], "one per person: 👍 replaced 👀"
+    assert script.reacted == [
+        Reacted(target="m1", emoji="👀", removed=False),
+        Reacted(target="m1", emoji="👍", removed=False),
+    ]
+    assert [r.emoji for r in stored.reactions] == ["👍"], "one per person: 👍 replaced 👀"
+    assert all(r.ours for r in stored.reactions)
 
 
 async def test_a_driver_names_the_emoji_its_channel_can_show(monkeypatch):
@@ -146,7 +150,7 @@ async def test_a_driver_names_the_emoji_its_channel_can_show(monkeypatch):
 
         assert await message.react_seen() == "✅"
 
-    assert script.reacted == [("m1", "✅", False)]
+    assert script.reacted == [Reacted(target="m1", emoji="✅", removed=False)]
 
 
 async def test_a_channel_without_reactions_shows_nothing_and_nothing_fails(monkeypatch):

@@ -14,11 +14,17 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Iterable, Optional
+from typing import TYPE_CHECKING, Any, Iterable, NamedTuple, Optional
 
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.sources.files import normalize_emoji
 from flow_sdk.sources.values.items import ReactionData, ReactionMode
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.builtin.source_item import SourceItem
 
 logger = logging.getLogger(__name__)
 
@@ -128,16 +134,23 @@ async def channel_of_source(source_id: Optional[str], provider: str = "", *, wha
     return source, driver
 
 
-async def _resolve(message: Any):
-    """``(source row, driver, source item)`` for a message that mirrors a channel message."""
+class ChannelMessage(NamedTuple):
+    """A message that mirrors a channel message: its source row, the driver that speaks it, its source item."""
+
+    source: DataSource
+    driver: DataDriver
+    item: SourceItem
+
+
+async def _resolve(message: SourceItem | FlowMessage | str) -> ChannelMessage:
     item = await source_item_of(message)
     if item is None or item.origin is None:
         raise ValueError("this message did not come through a channel on this machine; there is nothing to react to")
     source, driver = await channel_of_source(item.data_source_id, what=f"message {getattr(message, 'id', '?')}")
-    return source, driver, item
+    return ChannelMessage(source=source, driver=driver, item=item)
 
 
-async def react(message: Any, emoji: str) -> list[MessageReaction]:
+async def react(message: SourceItem | FlowMessage | str, emoji: str) -> list[MessageReaction]:
     """Put our ``emoji`` on a channel message (its SourceItem, a FlowMessage or its id); answers its
     reactions after.
     On a channel that keeps one per person (``reactions_per_actor == 1``) it replaces ours."""
@@ -146,8 +159,8 @@ async def react(message: Any, emoji: str) -> list[MessageReaction]:
     return await _put_reaction(await _resolve(message), emoji)
 
 
-async def _put_reaction(resolved: tuple, emoji: str) -> list[MessageReaction]:
-    source, driver, item = resolved
+async def _put_reaction(channel_message: ChannelMessage, emoji: str) -> list[MessageReaction]:
+    source, driver, item = channel_message.source, channel_message.driver, channel_message.item
     await driver.react(source, item.origin, emoji)
     one = getattr(driver.cls, "reactions_per_actor", 0) == 1
     folded = fold(item.reactions or [], OURS, (emoji,), ReactionMode.SET if one else ReactionMode.ADD, ours=True)
@@ -155,7 +168,7 @@ async def _put_reaction(resolved: tuple, emoji: str) -> list[MessageReaction]:
     return folded
 
 
-async def try_react_stage(message: Any, stage: str) -> Optional[str]:
+async def try_react_stage(message: SourceItem | FlowMessage | str, stage: str) -> Optional[str]:
     """Put the channel's own emoji for ``stage`` — ``"received_reaction"`` or ``"seen_reaction"``, a
     ``MessageSource`` attribute each driver may override — on a channel message, when its driver reacts.
     Answers the emoji put, or None: the channel has no reactions, or it refused. A stage reaction is the
@@ -163,12 +176,12 @@ async def try_react_stage(message: Any, stage: str) -> Optional[str]:
     from flow_sdk.sources.protocols import Reacting  # noqa: PLC0415
 
     try:
-        resolved = await _resolve(message)
-        cls = resolved[1].cls
+        channel_message = await _resolve(message)
+        cls = channel_message.driver.cls
         emoji = str(getattr(cls, stage, "") or "") if issubclass(cls, Reacting) else ""
         if not emoji:
             return None
-        await _put_reaction(resolved, emoji)
+        await _put_reaction(channel_message, emoji)
     except Exception as exc:  # noqa: BLE001 — feedback only; the message is handled either way
         logger.warning("no %s on message %s: %s", stage, getattr(message, "id", "?"), exc)
         return None
