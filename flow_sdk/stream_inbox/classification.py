@@ -79,14 +79,71 @@ async def _apply_change(change: TagTreeChange, rules: list) -> str:
     return "applied"
 
 
+def _values():
+    """Where this instance keeps the proposals its runs handed in."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    from flow_sdk.values import store_of  # noqa: PLC0415
+
+    return store_of(get_instance_settings().instance_dir)
+
+
+async def problems(value: StreamInboxClassification) -> list[str]:
+    """Why ``value`` could not be applied to the tag tree as it is now -- [] when it could. What the
+    value's own schema cannot know: which tags exist."""
+    from flow_sdk.stream_inbox.message_tags import ontology  # noqa: PLC0415
+
+    known = {d["name"] for d in await ontology()}
+    made = {c.tag for c in value.tree_changes if c.op in ("added", "moved")}
+    out = []
+    for change in value.tree_changes:
+        if change.op in ("updated", "removed") and change.tag not in known:
+            out.append(f"tree change {change.op} {change.tag}: no such tag in the tree")
+        if change.op == "moved" and change.was not in known:
+            out.append(f"tree change moved {change.tag}: its old name {change.was} is not in the tree")
+        if change.op == "added" and change.tag in known:
+            out.append(f"tree change added {change.tag}: the tag already exists")
+        if change.merged_into and change.merged_into not in known | made:
+            out.append(f"tree change removed {change.tag}: {change.merged_into} is neither in the tree nor made by this value")
+    out += [f"{row.title!r}: proposed {tag} is neither in the tree nor added by this value"
+            for row in value.conversations for tag in row.proposed if tag not in known | made]
+    return out
+
+
+async def submit(value: StreamInboxClassification) -> str:
+    """A run hands in its proposal: kept on this instance, and posted as the classifier automation's
+    message (its arrival is the one notification). Answers the value's reference -- what the run returns,
+    since the value itself is bigger than a block may return."""
+    from flow_sdk.app.automation_message import post_automation_result  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.automation_spec import AutomationRef  # noqa: PLC0415
+    from flow_sdk.stream_inbox.message_tags import classifier  # noqa: PLC0415
+    from flow_sdk.values import save_value  # noqa: PLC0415
+
+    ref = save_value(value, _values())
+    rule = await classifier()
+    if rule is not None:
+        changing = sum(row.action != "keep" for row in value.conversations)
+        line = f"Classified {len(value.conversations)} conversations: {changing} would change, {len(value.tree_changes)} tag changes. Nothing is applied yet."
+        await post_automation_result(AutomationRef(trigger_id=str(rule.id), name=rule.name or ""), line, value)
+    return ref
+
+
+def submitted(ref: str) -> StreamInboxClassification:
+    """The proposal a run handed in under ``ref``; ``LookupError`` when this instance does not hold it."""
+    from flow_sdk.values import resolve_ref  # noqa: PLC0415
+
+    return resolve_ref(ref, _values())
+
+
 async def _truth_row(message, tag: str, source: str) -> dict:
     """``message`` belongs under ``tag`` ('' = no tag fits): its ground-truth row, keyed by the message."""
+    from flow_sdk.stream_inbox.message_subject import message_state  # noqa: PLC0415
     from flow_sdk.stream_inbox.message_tags import message_context  # noqa: PLC0415
 
+    # ``message_state``: a person applied this by hand, so a message they sent themselves is labelled too.
     return {
         "key": str(message.id),
         "kind": "eval",
-        "input": (await message_context(message)).model_dump(mode="json"),
+        "input": (await message_context(message_state(message))).model_dump(mode="json"),
         "ground_truth": {"tag": tag},
         "data": {"source": source, "conversation_id": str(getattr(message, "conversation_id", "") or "")},
     }

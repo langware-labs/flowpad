@@ -124,6 +124,9 @@ export type ProcessRunsPointerOptions = ProcessRunScope & { run?: string | null 
 export const HIGHLIGHT_PARAM = 'highlight';
 /** An entry of an `fs/` folder to show selected. */
 export const FS_SELECT_PARAM = 'select';
+/** The home's selected icon (an agent's or app's typeid) and, inside it, the deployment opened from its list. */
+export const HOME_TILE_PARAM = 'tile';
+export const HOME_TILE_DEPLOYMENT_PARAM = 'tileDeployment';
 /** A transcript entry to scroll to and select. */
 export const TRANSCRIPT_ENTRY_PARAM = 'transcript_entry_id';
 /** A timestamp to seek a transcript to. */
@@ -725,15 +728,15 @@ export class DockPointer implements IDockPointer {
     return this.withPageBefore(null).withOption(STREAM_INBOX_CHANNEL_PARAM, value);
   }
 
-  /** The stream inbox's search text, or '' for none. */
-  get streamInboxSearch(): string {
-    return this.options?.[STREAM_INBOX_SEARCH_PARAM] ?? '';
   /** Clone with these tags ticked (`?tags=a,b`: a conversation shows when it carries any of them); none
    *  clears the filter. A new pick starts at now. */
   withStreamInboxTags(names: readonly string[]): DockPointer {
     return this.withPageBefore(null).withOption('tags', names.length ? names.join(',') : null);
   }
 
+  /** The stream inbox's search text, or '' for none. */
+  get streamInboxSearch(): string {
+    return this.options?.[STREAM_INBOX_SEARCH_PARAM] ?? '';
   }
 
   /** Clone with the given stream inbox filters set ('all' / '' clear them). A page is a page of ONE filter

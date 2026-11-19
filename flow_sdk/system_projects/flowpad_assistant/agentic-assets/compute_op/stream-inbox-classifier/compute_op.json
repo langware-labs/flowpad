@@ -7,7 +7,7 @@
   "subkind": "agent",
   "exe_data": {
     "agent": "stream-inbox-classifier",
-    "prompt": "Classify the conversations your input names (ids in `conversations`, or the window `since` / `until`) with the stream-inbox-classifier skill, and answer with the checked value."
+    "prompt": "Classify the conversations your input names (ids in `conversations`, or the window `since` / `until`) with the stream-inbox-classifier skill. Submit the checked value as the skill says and answer with the reference it gives you and the number of conversations."
   },
   "input": {
     "conversations": [
@@ -16,5 +16,8 @@
     "since": "?date",
     "until": "?date"
   },
-  "output": "stream_inbox.classification"
+  "output": {
+    "ref": "string",
+    "conversations": "int"
+  }
 }

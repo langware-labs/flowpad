@@ -27,9 +27,11 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openShellProcess: vi.fn(), openLens: vi.fn() } }),
 }));
 
+import { WebApp, type HostedApp } from '@sdk';
 import type { ActivityProgressSpec } from '@sdk/activity';
 import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { __resetActivityStoreForTest, handleActivitySnapshot } from '@src/store/activity-store';
+import { __resetHostedAppsStoreForTest } from '@src/store/hosted-apps-store';
 import { __resetTrackersForTest } from '@src/store/pending-actions-store';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 
@@ -66,11 +68,44 @@ async function openPopover() {
 }
 
 describe('footer chip — activities', () => {
+  let hosted: HostedApp[] = [];
   beforeEach(() => {
     captured = null;
+    hosted = [];
+    vi.spyOn(WebApp, 'hosted').mockImplementation(() => Promise.resolve(hosted));
     __resetActivityStoreForTest();
+    __resetHostedAppsStoreForTest();
     __resetTrackersForTest();
     setViewMode(ViewMode.Advanced);
+  });
+
+  it('lists a hosted app with nothing else running, and opens it onto who has it open', async () => {
+    hosted = [
+      {
+        webapp_id: 'w1', title: 'GTM Studio', project_id: '', state: 'up', since: '2026-09-03T12:00:00Z', port: 8012, pid: 48211,
+        connections: [
+          { webapp_id: 'w1', endpoint_id: 'e1', path: '/pipeline', browser: 'chrome', opened_by: '', since: '2026-09-03T12:00:00Z' },
+          { webapp_id: 'w1', endpoint_id: 'e1', path: '/leads', browser: 'agent', opened_by: 'agentic_process-3f2b8c1e-7a44-4d0b-9e21-5c6d7e8f9a01', since: '2026-09-03T12:00:00Z' },
+        ],
+      },
+    ];
+    render(<PendingActionsChip />);
+
+    // No process and no activity: the hosted app alone makes the panel reachable.
+    await userEvent.click(await screen.findByTestId('pending-actions-chip'));
+    await userEvent.click(screen.getByRole('tab', { name: 'Hosted apps' }));
+    const row = screen.getByTestId('hosted-app-row');
+    expect(row.textContent).toContain('GTM Studio');
+    expect(row.textContent).toContain('Running · :8012 · 2 connections');
+    expect(screen.queryByTestId('hosted-app-details')).toBeNull();
+
+    await userEvent.click(within(row).getByRole('button'));
+
+    expect(screen.getByTestId('hosted-app-details').textContent).toContain('localhost:8012 · pid 48211');
+    expect(screen.getAllByTestId('hosted-app-connection').map((line) => line.textContent?.replace(/\d+\w ago$/, ''))).toEqual([
+      'Your Chrome · you · /pipeline',
+      'Agent browser · session 3f2b8c1e · /leads',
+    ]);
   });
 
   afterEach(() => {

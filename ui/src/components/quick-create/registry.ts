@@ -20,6 +20,7 @@ import {
 import { msg } from '@lingui/core/macro';
 import { McpCreateDialog } from './McpCreateDialog';
 import { ChartCreateDialog } from './ChartCreateDialog';
+import { MakeAgentDialog } from './MakeAgentDialog';
 import { DatasetCreateDialog } from './DatasetCreateDialog';
 import { subjectEditorPointer } from '@src/navigation/subject-editor';
 import { DiagnosisRequestCreateDialog } from '@src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog';
@@ -121,6 +122,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     group: 'build',
     label: msg`Agent`,
     wikiword: 'Agent Management',
+    Dialog: MakeAgentDialog,
     create: async ({ project, name, destination }) => {
       const saved = await Agent.createInProject(project, name, destination);
       return {

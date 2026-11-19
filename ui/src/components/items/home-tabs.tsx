@@ -1,5 +1,4 @@
 import { Trans } from '@lingui/react/macro';
-import { agentCounterGroup } from '@src/components/asset-counters/agent-counters';
 import { channelCounterGroup } from '@src/components/asset-counters/channel-project-counters';
 import {
   hubAgentCounterGroup,
@@ -7,7 +6,7 @@ import {
   hubMachineCounterGroup,
 } from '@src/components/asset-counters/hub-counters';
 import { hubIssueCounterGroup } from '@src/components/asset-counters/issue-counters';
-import { hubSkillCounterGroup, skillCounterGroup } from '@src/components/asset-counters/skill-counters';
+import { hubSkillCounterGroup } from '@src/components/asset-counters/skill-counters';
 import type { AssetCounterGroup } from '@src/components/asset-counters/types';
 import type { TabDef } from './ItemsSection';
 
@@ -51,4 +50,3 @@ const tabs = (agents: AnyGroup, skills: AnyGroup): TabDef[] => [
 ];
 
 export const HUB_TABS = tabs(hubAgentCounterGroup, hubSkillCounterGroup);
-export const DESK_TABS = tabs(agentCounterGroup, skillCounterGroup);

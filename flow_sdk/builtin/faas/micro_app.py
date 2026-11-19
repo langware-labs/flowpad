@@ -124,6 +124,16 @@ class WebApp(SetupSkippable, Entity):
 
         return ApiSuccessResponse(data=self.lifecycle)
 
+    @classmethod
+    @action.get(action_name="hosted")
+    async def hosted_action(cls):
+        """``GET micro_app/hosted`` — every app this machine serves now, each with its live connections
+        (``webapp.hosted``, ``core/webapp/presence``)."""
+        from flow_sdk.core.webapp import presence  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=[app.model_dump(mode="json") for app in await presence.hosted()])
+
     @action.post(action_name="up")
     async def up_action(self, display: str = "", wait: bool = False):
         """``POST micro_app/<id>/up`` — bring the app up (``core/webapp/coordinator.bring_up``); answers its record."""

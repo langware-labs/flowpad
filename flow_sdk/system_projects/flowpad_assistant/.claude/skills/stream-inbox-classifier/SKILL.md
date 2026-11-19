@@ -75,6 +75,10 @@ Never hand over a value that did not fit. A conversation whose agent failed is l
 
 ## 5. Hand it over
 
-Write the checked value where your run was told to put its result (its output folder, in the layout given).
-With no such instruction, save it as `stream_inbox.classification.value.json` and show it:
-`flow show file <path>`. End with one line: how many conversations, how many would change, and each tree change.
+```bash
+CTL submit <file>     # {"fits": true, "ref": "stream_inbox.classification.id.<uuid>"} -- kept, and posted as a message
+```
+
+The value is too big to return itself: your answer is its reference. When your run was told where to write
+its result, write `{"ref": "<the ref>", "conversations": <how many>}` there. End with one line: how many
+conversations, how many would change, and each tree change.

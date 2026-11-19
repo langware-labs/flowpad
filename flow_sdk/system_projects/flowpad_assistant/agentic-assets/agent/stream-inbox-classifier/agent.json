@@ -17,6 +17,9 @@
     "since": "?date",
     "until": "?date"
   },
-  "output": "stream_inbox.classification",
-  "enabled": true
+  "enabled": true,
+  "load_flowpad_assistant": true,
+  "assistant_skills": [
+    "stream-inbox-classifier"
+  ]
 }

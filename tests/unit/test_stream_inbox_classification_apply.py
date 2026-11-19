@@ -100,3 +100,19 @@ async def test_the_shipped_eval_judges_the_classifier_on_the_ground_truth(monkey
     run, _ = await evals.run(Dataset.at(classification.GROUND_TRUTH.folder()))
     assert run.eval_name == "stream-inbox-tags" and run.metrics["accuracy"] == pytest.approx(2 / 3, abs=1e-3)
     assert (run.counts.get("correct"), run.counts.get("wrong")) == (2, 1)
+
+
+@async_context
+async def test_a_run_hands_its_proposal_in_by_reference_and_the_tree_decides_what_fits(monkeypatch, tmp_path):
+    base, t = await tree("billing")
+    message = await FlowMessage(text="invoice").save()
+    monkeypatch.setattr(classification, "_values", lambda: tmp_path / "values")
+    ghost = StreamInboxClassification.model_validate({"conversations": [row(message, [], [f"{base}.ghost"])],
+                                                      "tree_changes": [{"op": "added", "tag": t["billing"], "meaning": "x", "reason": "y"}]})
+    assert await classification.problems(ghost) == [
+        f"tree change added {t['billing']}: the tag already exists",
+        f"'invoice': proposed {base}.ghost is neither in the tree nor added by this value"]
+    good = StreamInboxClassification.model_validate({"conversations": [row(message, [], [t["billing"]])]})
+    assert await classification.problems(good) == []
+    ref = await classification.submit(good)
+    assert ref.startswith("stream_inbox.classification.id.") and classification.submitted(ref) == good

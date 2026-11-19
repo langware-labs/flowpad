@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgenticProcess, Project, TypeId, WorkerStatus } from '@sdk';
+import { AgenticProcess, isHubOnly, Project, TypeId, WorkerStatus } from '@sdk';
 import type { ActivityProgressSpec } from '@sdk/activity';
 import { Pencil } from 'lucide-react';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
@@ -22,7 +22,9 @@ import {
 } from '@src/store/pending-actions-store';
 import { cn } from '@src/lib/utils';
 import { useActivities } from '@src/store/activity-store';
+import { useHostedApps } from '@src/store/hosted-apps-store';
 import { ActivityRow } from './ActivityRow';
+import { HostedAppRow } from './HostedAppRow';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNotificationPulse } from './useNotificationPulse';
 import { workerStatusLabel } from './worker-status-label';
@@ -51,10 +53,12 @@ function buildWorkerRow(e: WorkerListEntry) {
 }
 
 type WorkerRowData = ReturnType<typeof buildWorkerRow>;
-type ActivityTab = 'overview' | 'processes' | 'errors';
+type ActivityTab = 'overview' | 'processes' | 'errors' | 'hosted';
 type ProcessFilter = 'all' | 'chat' | 'background';
 
 const ACTIVITY_TABS: readonly ActivityTab[] = ['overview', 'processes', 'errors'];
+/** The apps this machine serves and who has them open. A desk has them; the hub serves no local app. */
+const DESK_TABS: readonly ActivityTab[] = [...ACTIVITY_TABS, 'hosted'];
 const PROCESS_FILTERS: readonly ProcessFilter[] = ['all', 'chat', 'background'];
 const DISMISSED_COMPLETED_KEY = 'activity-panel-dismissed-completed';
 
@@ -118,6 +122,10 @@ export function PendingActionsChip() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<ActivityTab>('overview');
   const [processFilter, setProcessFilter] = useState<ProcessFilter>('all');
+  const { t } = useLingui();
+  const hostedApps = useHostedApps();
+  const [openApp, setOpenApp] = useState<string | null>(null);
+  const toggleApp = useCallback((id: string) => setOpenApp((current) => (current === id ? null : id)), []);
   const [dismissedCompleted, setDismissedCompleted] = useState<Record<string, number>>(readDismissedCompleted);
   const { navigation } = useDockNavigation();
   const pulsing = useNotificationPulse(3000);
@@ -232,7 +240,7 @@ export function PendingActionsChip() {
 
   // Hide the chip only when there is nothing happening at all.
   // MUST come after every hook above — see the handlePick note.
-  if (visibleRows.length === 0 && activities.length === 0) return null;
+  if (visibleRows.length === 0 && activities.length === 0 && hostedApps.length === 0) return null;
 
   const count = counts.running + counts.waiting + counts.error + activities.length;
   const tooltipText =
@@ -274,9 +282,9 @@ export function PendingActionsChip() {
           data-testid="pending-actions-popover"
         >
           <div className="flex border-b px-1" role="tablist" aria-label="Activity panel views">
-            {ACTIVITY_TABS.map((item) => (
-              <button key={item} type="button" role="tab" aria-selected={tab === item} onClick={() => setTab(item)} className={cn('px-2 py-1.5 text-xs font-medium capitalize', tab === item ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground')}>
-                {item === 'errors' ? `Errors${counts.error ? ` (${counts.error})` : ''}` : item}
+            {(isHubOnly() ? ACTIVITY_TABS : DESK_TABS).map((item) => (
+              <button key={item} type="button" role="tab" aria-selected={tab === item} onClick={() => setTab(item)} className={cn('px-2 py-1.5 text-xs font-medium', item !== 'hosted' && 'capitalize', tab === item ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground')}>
+                {item === 'hosted' ? t`Hosted apps` : item === 'errors' ? `Errors${counts.error ? ` (${counts.error})` : ''}` : item}
               </button>
             ))}
           </div>
@@ -294,6 +302,8 @@ export function PendingActionsChip() {
                 <Counter label="Errors" value={counts.error} />
                 </div>
               </div>
+            ) : tab === 'hosted' ? (
+              hostedApps.length === 0 ? <Empty label={t`No hosted apps`} /> : <ul className="flex flex-col" data-testid="hosted-apps-list">{hostedApps.map((app) => <HostedAppRow key={app.webapp_id} app={app} open={openApp === app.webapp_id} onToggle={toggleApp} />)}</ul>
             ) : tab === 'errors' ? (
               errors.length === 0 ? <Empty label="No errors" /> : <ul className="flex flex-col">{errors.map((row) => <WorkerRow key={row.processId} row={buildWorkerRow(row)} onPick={handlePick} onRenamed={bumpNameTick} />)}</ul>
             ) : (

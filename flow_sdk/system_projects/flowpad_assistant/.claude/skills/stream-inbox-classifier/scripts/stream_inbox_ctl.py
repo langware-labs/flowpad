@@ -2,14 +2,15 @@
 
 Run with the worker's own interpreter -- ``"$FLOWPAD_PYTHON" <skill>/scripts/stream_inbox_ctl.py <verb> ...``.
 Every call goes to THIS instance's backend through the ``flow`` CLI's gate-safe transport.
-Output: one JSON object, ``{"ok": true, ...}`` or ``{"ok": false, "error": ...}`` with exit 1. Nothing is written.
+Output: one JSON object, ``{"ok": true, ...}`` or ``{"ok": false, "error": ...}`` with exit 1. Nothing is tagged.
 
   conversations [--since DATE] [--until DATE]   the conversations whose latest message is in the window
   conversation ID [--last N]                    one conversation as an agent reads it: its latest message's id,
                                                 the tags it carries, and its newest N messages (default 12)
   tree                                          every tag under the classification root, with its meaning
-  check FILE                                    would FILE fit `stream_inbox.classification`, and does every
-                                                proposed tag exist in the tree or in the value's own changes?
+  check FILE                                    would FILE fit `stream_inbox.classification` and today's tag tree?
+                                                {fits, errors}
+  submit FILE                                   hand the value in: {fits, errors, ref} -- `ref` is what a run returns
 """
 
 from __future__ import annotations
@@ -19,8 +20,6 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
-
-KIND = "stream_inbox.classification"
 
 
 def _call(method: str, path: str, body: Any = None) -> Any:
@@ -74,27 +73,18 @@ def cmd_tree(args) -> dict:
     return {"root": root, "tags": _tree(root)}
 
 
+def _hand_in(path: str, dry: bool) -> dict:
+    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    answer = _call("POST", "/graph/flow_message/stream-inbox-classification", {"value": value, "dry": dry}) or {}
+    return {**answer, "conversations": len(value.get("conversations") or []), "tree_changes": len(value.get("tree_changes") or [])}
+
+
 def cmd_check(args) -> dict:
-    value = json.loads(Path(args.file).read_text(encoding="utf-8"))
-    value.pop("spec_kind", None)
-    answer = _call("POST", f"/kinds/{KIND}/check", {"value": value}) or {}
-    errors = list(answer.get("errors") or [])
-    if not errors:
-        root = value.get("root") or "stream_inbox"
-        known = {t["name"] for t in _tree(root)}
-        made = {c["tag"] for c in value.get("tree_changes") or [] if c.get("op") in ("added", "moved")}
-        for change in value.get("tree_changes") or []:
-            if change["op"] in ("updated", "removed") and change["tag"] not in known:
-                errors.append(f"tree change {change['op']} {change['tag']}: no such tag in the tree")
-            if change["op"] == "moved" and change.get("was") not in known:
-                errors.append(f"tree change moved {change['tag']}: its old name {change.get('was')} is not in the tree")
-            if change["op"] == "added" and change["tag"] in known:
-                errors.append(f"tree change added {change['tag']}: the tag already exists")
-        for row in value.get("conversations") or []:
-            errors += [f"{row.get('title')!r}: proposed {tag} is neither in the tree nor added by this value"
-                       for tag in row.get("proposed") or [] if tag not in known | made]
-    return {"fits": not errors, "errors": errors, "conversations": len(value.get("conversations") or []),
-            "tree_changes": len(value.get("tree_changes") or [])}
+    return _hand_in(args.file, dry=True)
+
+
+def cmd_submit(args) -> dict:
+    return _hand_in(args.file, dry=False)
 
 
 VERBS = {
@@ -102,6 +92,7 @@ VERBS = {
     "conversation": (cmd_conversation, [("id", {}), ("--last", {"type": int, "default": 12})]),
     "tree": (cmd_tree, []),
     "check": (cmd_check, [("file", {})]),
+    "submit": (cmd_submit, [("file", {})]),
 }
 
 

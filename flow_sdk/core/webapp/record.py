@@ -121,6 +121,9 @@ async def announce(webapp_id: str) -> None:
         app = await WebApp.get_by_id(_bare(webapp_id))
         if app is not None:
             await app.notify_updated()
+        from flow_sdk.core.webapp import presence  # noqa: PLC0415
+
+        await presence.announce()
     except Exception as exc:  # noqa: BLE001 — a screen missing a push re-reads the record; never a failed change
         logger.debug("lifecycle push of %s failed: %s", webapp_id, exc)
 

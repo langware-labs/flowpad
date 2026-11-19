@@ -5023,13 +5023,51 @@ async def classify_conversations() -> ApiResponse:
         record = await block.get_call(str(info.request.query_params.get("call_id") or ""))
         if record is None:
             return ApiFailResponse(message="No such classification run", status_code=404)
-        return ApiSuccessResponse(data=record.model_dump(mode="json"))
+        data = record.model_dump(mode="json")
+        handed = (data.get("result") or {}).get("value")
+        if isinstance(handed, dict) and handed.get("ref"):   # the run returns a reference; the table reads the value
+            from flow_sdk.stream_inbox.classification import submitted
+
+            try:
+                data["result"]["value"] = submitted(handed["ref"]).model_dump(mode="json")
+            except (LookupError, ValueError) as exc:
+                data["result"] = {**data["result"], "exit_code": 1, "detail": f"The run's proposal is gone: {exc}", "value": None}
+        return ApiSuccessResponse(data=data)
     body = await info.get_post_data()
     picked = body.get("conversations") if isinstance(body, dict) else None
     if not (isinstance(picked, list) and picked and all(isinstance(i, str) and i for i in picked)):
         return ApiFailResponse(message="Expected the conversations to classify", status_code=400)
-    record = await block.start(input={"conversations": list(dict.fromkeys(picked))}, approved=True)
+    # Its own folder on this instance: a run leaves its receipts where it works, never in the server's folder.
+    from flow_sdk.instance_settings import get_instance_settings
+
+    workdir = get_instance_settings().instance_dir / "classification-runs"
+    workdir.mkdir(parents=True, exist_ok=True)
+    record = await block.start(input={"conversations": list(dict.fromkeys(picked))}, approved=True, workdir=workdir)
     return ApiSuccessResponse(data=record.model_dump(mode="json"))
+
+
+@action.post(action_name="stream-inbox-classification", types=["flow_message"])
+async def submit_stream_inbox_classification() -> ApiResponse:
+    """A classification run hands in its proposal: ``{value, dry?}`` -> ``{fits, errors, ref?}``. The value is
+    held to its schema and to the tag tree as it is now; one that fits is kept and posted as a message unless
+    ``dry`` (the run's own check). Nothing is tagged."""
+    from pydantic import ValidationError
+
+    from flow_sdk.schema.data_spec.stream_inbox_classification_spec import StreamInboxClassification
+    from flow_sdk.stream_inbox import classification
+
+    info = get_current_request_info()
+    body = await info.get_post_data() if info is not None else None
+    if not isinstance(body, dict) or not isinstance(body.get("value"), dict):
+        return ApiFailResponse(message="Expected the classification value", status_code=400)
+    try:
+        value = StreamInboxClassification.model_validate({k: v for k, v in body["value"].items() if k != "spec_kind"})
+    except ValidationError as exc:
+        return ApiSuccessResponse(data={"fits": False, "errors": [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()]})
+    errors = await classification.problems(value)
+    if errors or body.get("dry"):
+        return ApiSuccessResponse(data={"fits": not errors, "errors": errors})
+    return ApiSuccessResponse(data={"fits": True, "errors": [], "ref": await classification.submit(value)})
 
 
 @action.post(action_name="apply-stream-inbox-classification", types=["flow_message"])
