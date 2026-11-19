@@ -1847,7 +1847,7 @@ export function StreamInboxView({
             row's px-3 / gap-3 / w-44 so each filter sits over its column. */}
         {!initialLoading && (
           <div
-            className="flex min-h-10 items-center gap-3 border-b border-border/40 bg-muted/20 px-3"
+            className="sticky top-0 z-10 flex min-h-10 items-center gap-3 border-b border-border/40 bg-background px-3"
             data-testid="stream-inbox-select-all-row"
           >
             <span className="flex w-3.5 shrink-0 items-center">
