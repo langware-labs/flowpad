@@ -35,7 +35,9 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.blocks.delivery import Delivered
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+    from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 from flow_sdk.builtin import deployment_process
 
@@ -1029,20 +1031,25 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     hook = getattr(driver_cls, "turn_session", None)
     if not session and callable(hook):
         session = str(hook(message) or "")
+    conversation = await conversation_of(message, source)
     if not session:
-        conversation = await conversation_of(message, source)
         if not conversation:
             logger.warning("agent %s: message on %s has no conversation yet", agent.name or agent.id, source.id)
             return False
         session = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation))
     who = display_name_of(getattr(message, "author_display", "") or "", author)
     outbox = reply_outbox(source, turn_key(message))
+    # Told before the turn whether its text goes back by itself, so the agent knows when to reply explicitly.
+    spoke = bool(getattr(driver_cls, "answers_once", False)) and await _answered_before(message, source, agent)
     outcome = await engine.run(
         Turn(
             session=session,
             key=turn_key(message),
             body=turn_body(
-                message, outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None
+                message,
+                outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None,
+                conversation_id=conversation,
+                forwarded=sends_turn_text(driver_cls, spoke=spoke),
             ),
             name=" · ".join(p for p in (agent.name, source.channel or source.provider, who) if p) or None,
         ),
@@ -1176,11 +1183,48 @@ def outbox_files(outbox) -> list[str]:
     return sorted(str(p) for p in outbox.iterdir() if p.is_file()) if outbox is not None and outbox.is_dir() else []
 
 
-def turn_body(message, *, outbox=None) -> str:
-    """What the agent reads for one channel message: the message it quotes, its words, the files it
-    carried (local paths it can open) and — when it carried files, on a channel that takes them —
-    where to put files to send back. A plain message is exactly its words."""
+def generate_conversation_source_context_prompt(
+    source: str, *, sender: str = "", sender_id: str = "", conversation_id: str = "", forwarded: bool = True
+) -> str:
+    """Where a channel message came from — the channel, who sent it, its Flowpad conversation — and how the
+    agent's answer reaches them: forwarded by itself, or (*forwarded* False) only through
+    ``flow conversation reply``."""
+    parts = [f"The user has sent a message from this source {source}"]
+    if sender or sender_id:
+        parts.append(f"sender: {sender or sender_id}" + (f" (id: {sender_id})" if sender and sender_id else ""))
+    if conversation_id:
+        parts.append(f"flowpad conversation: {conversation_id}")
+    parts.append("reply in a format suitable for the message.")
+    if forwarded:
+        how = "Your reply will be forwarded to the user automatically via flowpad."
+    else:
+        how = (
+            "Your reply is not sent to the user by itself: to answer them, run "
+            f'`flow conversation reply {conversation_id or "<conversation id>"} "<your answer>"`.'
+        )
+    return f"<flowpad>{', '.join(parts)} {how}</flowpad>"
+
+
+def turn_body(
+    message: Delivered[SourceItemSpec], *, outbox=None, conversation_id: Optional[str] = None, forwarded: bool = True
+) -> str:
+    """What the agent reads for one channel message: where it came from (the channel, its sender, its
+    conversation, and whether the turn's text is sent back by itself — *forwarded*), the message it quotes,
+    its words, the files it carried (local paths it can open) and — when it carried files, on a channel that
+    takes them — where to put files to send back."""
     lines = []
+    source = getattr(message, "provider", None)
+    if source:
+        lines.append(
+            generate_conversation_source_context_prompt(
+                source,
+                sender=str(getattr(message, "author_display", "") or ""),
+                sender_id=str(getattr(message, "author_external_id", "") or ""),
+                conversation_id=str(conversation_id or ""),
+                forwarded=forwarded,
+            )
+        )
+
     quoted = getattr(message, "reply_to", None)
     if quoted is not None:
         said = " ".join(str(getattr(quoted, "body", "") or "").split())

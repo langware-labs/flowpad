@@ -11,8 +11,10 @@ from types import SimpleNamespace
 import pytest
 
 import flow_sdk.builtin.agent_serve as agent_serve
-from flow_sdk.builtin.agent_serve import TurnEngine, answer
+from flow_sdk.blocks.delivery import Delivered
+from flow_sdk.builtin.agent_serve import TurnEngine, answer, turn_body
 from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]  # do not increase timeout without approval
 
@@ -129,3 +131,38 @@ async def test_only_the_last_message_of_the_turn_is_the_reply(engine, monkeypatc
 
     assert await answer(engine, m, session="customer/972500000000") is True
     assert m.replies == ["We received your message."]
+
+
+def _channel_message(provider: str = "telegram", **fields) -> Delivered:
+    """A message as the deployment loop hands it out: a stored SourceItem from *provider*."""
+    item = SourceItemSpec(
+        data_source_id="ds-1",
+        provider=provider,
+        kind="message",
+        external_id="m-1",
+        body="Hello, whats our status",
+        **fields,
+    )
+    return Delivered(item, position=None, row=None, source_id="ds-1")
+
+
+@pytest.mark.parametrize("provider", ["telegram", "slack", "whatsapp", "gmail", "http_chat"])
+async def test_agent_prompt_names_the_channel_the_message_came_from(provider: str):
+    assert provider in turn_body(_channel_message(provider))
+
+
+async def test_agent_prompt_has_sender_and_conversation_context():
+    message = _channel_message(author_display="Ishay Sela", author_external_id="tg-42")
+
+    agent_prompt = turn_body(message, conversation_id="conv-1")
+
+    assert "Ishay Sela" in agent_prompt and "tg-42" in agent_prompt
+    assert "conv-1" in agent_prompt
+    assert "forwarded to the user automatically" in agent_prompt
+
+
+async def test_agent_prompt_says_how_to_reply_when_the_turn_text_is_not_sent():
+    agent_prompt = turn_body(_channel_message(), conversation_id="conv-1", forwarded=False)
+
+    assert "flow conversation reply conv-1" in agent_prompt
+    assert "forwarded to the user automatically" not in agent_prompt
