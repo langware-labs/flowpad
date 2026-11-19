@@ -1,4 +1,5 @@
-import { ActionInfo, dataManager, type FlowMessage } from '@sdk';
+import { type FlowMessage } from '@sdk';
+import { sendReply } from '@sdk/entities/notifications';
 import { carriedValue } from '@sdk/entities/flow-message';
 
 /** Mirrors `flow_sdk/schema/data_spec/message_form_spec.py`. */
@@ -40,6 +41,7 @@ export interface MessageForm {
 export interface FormAnswers {
   form_id: string;
   values: Record<string, FormValue>;
+  /** Legacy: older answers stored these; newer ones are merged on read (`indexForms`). */
   changed?: string[];
   supersedes?: string | null;
 }
@@ -51,6 +53,8 @@ export interface AnswersEntry {
   at: string;
   /** The answers this one replaced — for the "was …" on changed rows. */
   previous: FormAnswers | null;
+  /** Fields that differ from `previous` (empty the first time) — derived, never stored. */
+  changed: string[];
 }
 
 export function formOf(fm: FlowMessage | null | undefined): MessageForm | null {
@@ -92,7 +96,13 @@ export function indexForms(fms: Iterable<FlowMessage>): {
   const answersByMessage = new Map<string, AnswersEntry>();
   for (const r of raw) {
     const list = answersByForm.get(r.answers.form_id) ?? [];
-    const entry: AnswersEntry = { ...r, previous: list.at(-1)?.answers ?? null };
+    const previous = list.at(-1)?.answers ?? null;
+    const changed = previous
+      ? [...new Set([...Object.keys(previous.values), ...Object.keys(r.answers.values)])].filter(
+          (k) => JSON.stringify(r.answers.values[k]) !== JSON.stringify(previous.values[k]),
+        )
+      : [];
+    const entry: AnswersEntry = { ...r, previous, changed };
     list.push(entry);
     answersByForm.set(r.answers.form_id, list);
     answersByMessage.set(r.messageId, entry);
@@ -125,24 +135,22 @@ export function shownValue(v: FormValue | undefined | null, yes: string, no: str
   return v === undefined || v === null ? '' : String(v);
 }
 
-/** Submit: one reply carrying the answers (and a `file` field's upload). */
+/** Submit: an ordinary reply to the form's message carrying the answers as a typed value (and a
+ *  `file` field's upload) — the standard `add_message` door, on the desktop and the hub alike. */
 export async function submitFormAnswers(
   conversationId: string,
   messageId: string,
+  formId: string,
   values: Record<string, FormValue>,
   files: File[],
 ) {
-  const action = new ActionInfo('form-answer', 'conversation', conversationId, 'POST');
-  if (files.length) {
-    const body = new FormData();
-    body.append('message_id', messageId);
-    body.append('values', JSON.stringify(values));
-    for (const f of files) body.append('files', f, f.name);
-    action.bodyParameters = body;
-  } else {
-    action.bodyParameters = { message_id: messageId, values };
-  }
-  return dataManager.callAction(action);
+  const answers: FormAnswers = { form_id: formId, values };
+  return sendReply({ conversationId }, '', files, {
+    replyToId: messageId,
+    attachment: [
+      { attachment_type: 'type_id', data: `${FORM_ANSWERS_TYPE}-${formId}`, prompt_preview: JSON.stringify(answers) },
+    ],
+  });
 }
 
 /** "Change answers" on an answers card reopens its form card (the two are separate bubbles). */

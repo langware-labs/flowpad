@@ -61,6 +61,9 @@ export interface ShowTarget {
   /** Display label the backend resolved for the target (artifact/app/entity
    *  name, falling back to its title). */
   name?: string;
+  /** The state key the opener minted for a page this target runs (`with_state_key`): it rides the dock as
+   *  `stateKey`, so the app opens the page without asking. */
+  state_key?: string;
   /** dock: a SCREEN — the frontend's own dock-address fields, so the client
    *  builds its DockPointer without re-parsing a URL. */
   view_type?: string;

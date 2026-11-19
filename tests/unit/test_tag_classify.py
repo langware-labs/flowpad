@@ -60,3 +60,13 @@ async def test_options_are_the_root_subtree_only():
     await Tag(name=f"{root}.old", deprecated=True).save()
     await Tag(name=f"{root}x.outside").save()
     assert await classifier.options(root) == {f"{root}.support": "help", f"{root}.support.billing": "charges"}
+
+
+async def test_the_verdict_keeps_the_decision_as_it_happened(decision_double):
+    decision_double["answers"] = {"tag": "stream_inbox.support.refund"}
+    run = (await classifier.choose(CONTEXT, CHOICES)).run
+    assert set(run.request.questions["tag"].options) == {classifier.NONE, *CHOICES}
+    assert run.response.answers["tag"].choice == "stream_inbox.support.refund" and run.wire.status == 200
+    decision_double["status"] = 429
+    failed = (await classifier.choose(CONTEXT, CHOICES)).run
+    assert failed.response is None and failed.wire.status == 429

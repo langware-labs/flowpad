@@ -920,6 +920,13 @@
       "url": "/dock/data-sources/5b112f8f-06d9-46ff-9ff0-d09748a4d512/events"
     },
     {
+      "name": "a page's state key rides the address as an option",
+      "view_type": "data-sources",
+      "pointer": "5b112f8f-06d9-46ff-9ff0-d09748a4d512",
+      "options": { "stateKey": "k1_-Abc9" },
+      "url": "/dock/data-sources/5b112f8f-06d9-46ff-9ff0-d09748a4d512?stateKey=k1_-Abc9"
+    },
+    {
       "name": "pointerless singleton",
       "view_type": "desktop",
       "url": "/dock/desktop"

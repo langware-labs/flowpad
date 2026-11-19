@@ -196,14 +196,14 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
 }
 
 // ── Recency sort — shared by StreamInboxView + RecentConversationsStrip ────────────
-// Newest `updated_date` first, with a STABLE `id` tiebreaker. Without the
-// tiebreaker, rows with equal or missing `updated_date` fall back to the input
+// Newest message first (`Conversation.recency`), with a STABLE `id` tiebreaker. Without the
+// tiebreaker, rows with equal or missing times fall back to the input
 // order — which is the server's non-deterministic result order — so the list
 // re-shuffled between fetches (i.e. on every stream inbox open). The tiebreaker makes
 // the sort a total order, so equal-timestamp rows keep a fixed position.
 export function compareConversationsByRecency(a: Conversation, b: Conversation): number {
-  const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
-  const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
+  const ta = a.recency ? new Date(a.recency).getTime() : 0;
+  const tb = b.recency ? new Date(b.recency).getTime() : 0;
   if (tb !== ta) return tb - ta;
   return (a.id ?? '').localeCompare(b.id ?? '');
 }

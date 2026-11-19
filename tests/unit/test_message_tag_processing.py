@@ -612,3 +612,24 @@ async def test_run_again_requeues_only_a_failed_entry_as_a_new_run(explicit_drai
     again = (await FlowMessage.get_by_id(message.id)).message_processing.queue[0]
     assert again.status == "succeeded" and again.id == entry.id and len(set(calls)) == 2
     assert await processing.run_again(message.id, entry.id) is None  # nothing to run again
+
+
+@async_context
+async def test_apply_classification_swaps_the_classifiers_tag_and_starts_nothing(explicit_drain, monkeypatch):
+    old, new, hand = (f"qa.{mint_uuid()}" for _ in range(3))
+    await rule(old), await rule(new)
+
+    async def ontology():
+        return [{"name": old, "description": ""}, {"name": new, "description": ""}]
+
+    monkeypatch.setattr(processing, "ontology", ontology)
+    message = await FlowMessage(text="incoming").save()
+    await processing.change_tags(message.id, add=[old], source=TagAssignment(source="classification"))
+    await processing.change_tags(message.id, add=[hand])
+    applied = await processing.apply_classification(message.id, new)
+    assert set(applied.tags) == {new, hand}
+    assert applied.message_processing.assignments[new].source == "classification"
+    # The old tag's queued rule is cancelled; the new tag's rule is never queued.
+    assert [e.status for e in applied.message_processing.queue if e.tag] == ["cancelled"]
+    with pytest.raises(ValueError):
+        await processing.apply_classification(message.id, "qa.outside")

@@ -1,30 +1,34 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Plus, Tag as TagIcon, Zap } from 'lucide-react';
+import { ChevronDown, Plus, Tag as TagIcon, Tags, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataManager, FlowMessage, QueryFilter, QueryRequest, Tag, TypeId } from '@sdk';
-import { profileLabel } from '@sdk/models/MessageEnvelope';
 import type { MessageClassification, MessageClassificationSettings } from '@sdk/entities/flow-message';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
+import { Checkbox } from '@src/components/ui/checkbox';
 import { Switch } from '@src/components/ui/switch';
 import { IfThenLine } from '@src/components/automations/IfThenLine';
 import { useAutomationWords } from '@src/components/automations/automation-words';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
+import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import {
   classificationSettingsKey,
   streamInboxTagsQuery,
-  tagChipStyle,
   treeRows,
   useClassificationSettings,
   useTagAutomations,
 } from './MessageTags';
 import { TagOffIcon } from './TagOffIcon';
+import { KindValue } from '@src/components/value-viewer/KindValue';
+import { ClassifyDialog } from './ClassifyTable';
+import { messageLabel, TagChip } from './tag-chip';
 
 const SWATCHES = ['#3b82f6', '#8b5cf6', '#f97316', '#ef4444', '#22c55e', '#14b8a6', '#eab308', '#a1a1aa'];
 const recentMessagesQuery = new QueryRequest({
@@ -32,11 +36,6 @@ const recentMessagesQuery = new QueryRequest({
   name: 'tags:try-messages',
   query: new QueryFilter({ limit: 30, order_by: { created_date: 'desc' } }),
 });
-
-function messageLabel(message: FlowMessage | null | undefined): [string, string] {
-  const subject = message?.envelope?.subject || message?.text?.slice(0, 80) || '';
-  return [message?.sender_name || profileLabel(message?.envelope?.sender), subject];
-}
 
 /** The classification tree under the stream_inbox root: build it, say what each tag means, and try it on a message. */
 export function StreamInboxTags() {
@@ -127,6 +126,13 @@ export function StreamInboxTags() {
     onSuccess: (answer) =>
       setRuns((all) => [...all.filter((r) => r.message === messageId).slice(-1), { message: messageId!, answer }]),
   });
+  // `run=1` is a one-shot from a Classify button: it starts the run and leaves the URL, so a reload asks nothing.
+  useEffect(() => {
+    if (options.run !== '1' || !message) return;
+    run.mutate();
+    open({ run: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per `run=1`, not per render
+  }, [options.run, message?.id]);
   const mine = runs.filter((r) => r.message === messageId);
   const result = mine.at(-1)?.answer;
   const landed = result?.exit_code === 0 ? result.value?.tag : undefined;
@@ -135,6 +141,9 @@ export function StreamInboxTags() {
   const picking = options.pick === '1' || !messageId;
   const { data: recent = [] } = useEntitiesQuery<FlowMessage>(recentMessagesQuery, { enabled: picking });
   const [search, setSearch] = useState('');
+  // Ticked in the picker: Classify opens the dry-run table for them.
+  const [ticked, setTicked] = useState<string[]>([]);
+  const [classifying, setClassifying] = useState<string[] | null>(null);
 
   const updateSettings = async (patch: Partial<MessageClassificationSettings>) => {
     try {
@@ -435,12 +444,21 @@ export function StreamInboxTags() {
                   .map((m) => {
                     const [who, what] = messageLabel(m);
                     return (
-                      <li key={m.id}>
+                      <li key={m.id} className="flex items-center gap-2 px-1">
+                        <Checkbox
+                          checked={ticked.includes(m.id!)}
+                          onCheckedChange={() =>
+                            setTicked((all) => (all.includes(m.id!) ? all.filter((id) => id !== m.id) : [...all, m.id!]))
+                          }
+                          aria-label={t`Select conversation`}
+                          data-testid={`stream-inbox-tag-try-tick-${m.id}`}
+                          className="h-3.5 w-3.5 border-muted-foreground"
+                        />
                         <button
                           type="button"
                           data-testid={`stream-inbox-tag-try-pick-${m.id}`}
                           onClick={() => open({ message: m.id, conversation: m.conversation_id ?? null, pick: null })}
-                          className="w-full truncate rounded px-2 py-1.5 text-start text-xs hover:bg-muted"
+                          className="min-w-0 flex-1 truncate rounded px-2 py-1.5 text-start text-xs hover:bg-muted"
                         >
                           <b>{who}</b> — {what}
                         </button>
@@ -448,6 +466,27 @@ export function StreamInboxTags() {
                     );
                   })}
               </ul>
+              {ticked.length > 0 && (
+                <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+                  <span className="text-xs text-muted-foreground">
+                    <Trans>{ticked.length} selected</Trans>
+                  </span>
+                  <Button
+                    size="sm"
+                    // One message runs right here in the Try pane; several get the dry-run table.
+                    onClick={() => {
+                      if (ticked.length > 1) return setClassifying(ticked);
+                      const conversation = recent.find((m) => m.id === ticked[0])?.conversation_id ?? null;
+                      setTicked([]);
+                      open({ message: ticked[0], conversation, pick: null, run: '1' });
+                    }}
+                    data-testid="stream-inbox-tag-try-classify"
+                  >
+                    <Tags className="size-3.5" />
+                    <Trans>Classify</Trans>
+                  </Button>
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -464,8 +503,17 @@ export function StreamInboxTags() {
                   <Trans>Select message</Trans>
                   <ChevronDown className="size-2.5" />
                 </button>
-                <b>{sender}</b>
-                <div className="truncate">{subject}</div>
+                {/* The message in full, as the Stream Inbox opens it — in a wide popup, so the editor stays put. */}
+                <button
+                  type="button"
+                  className="block w-full text-start hover:opacity-80"
+                  disabled={!message?.conversation_id}
+                  onClick={() => open({ reading: '1' })}
+                  data-testid="stream-inbox-tag-try-open-message"
+                >
+                  <b>{sender}</b>
+                  <div className="truncate">{subject}</div>
+                </button>
               </div>
               <div className="mt-2 flex items-center gap-2">
                 <Button
@@ -545,7 +593,29 @@ export function StreamInboxTags() {
             </>
           )}
         </div>
+        {!picking && result?.run && (
+          // The whole decision as it happened — the message it read, the tags it chose from, the answer.
+          <div
+            className={cn('col-span-3 rounded-md border border-border p-3', stale && 'opacity-50')}
+            data-testid="stream-inbox-tag-try-data"
+          >
+            <KindValue kind="decision.run" value={result.run} testId="stream-inbox-tag-try-run-data" />
+          </div>
+        )}
       </div>
+      {options.reading === '1' && message?.conversation_id && (
+        <Dialog open onOpenChange={(isOpen) => !isOpen && open({ reading: null })}>
+          <DialogContent className="flex h-[85vh] max-w-6xl flex-col p-0" data-testid="stream-inbox-tag-try-reading">
+            <DialogTitle className="sr-only">{subject}</DialogTitle>
+            <ConversationPanel
+              conversationId={message.conversation_id}
+              selectedMessageId={message.id}
+              className="min-h-0 flex-1"
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+      {classifying && <ClassifyDialog messageIds={classifying} onClose={() => setClassifying(null)} />}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(isOpen) => {
@@ -571,17 +641,5 @@ export function StreamInboxTags() {
         }}
       />
     </section>
-  );
-}
-
-function TagChip({ name, color }: { name: string; color?: string | null }) {
-  return (
-    <span
-      style={tagChipStyle(color)}
-      className="inline-flex items-center gap-1 rounded-full border border-border px-2 text-[11px] text-foreground"
-    >
-      <TagIcon className="size-3" />
-      {name.split('.').at(-1)}
-    </span>
   );
 }

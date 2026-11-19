@@ -77,8 +77,20 @@ _DIAGNOSING: set[asyncio.Task] = set()
 
 
 def _diagnosis_running(conv_id: str) -> bool:
-    """Whether a request's background diagnosis is still running here (its task is named for the conversation)."""
+    """Whether a request's background run is still going here: its diagnosis (the task is named for the
+    conversation) or its fix (``_fix_task``)."""
     return any(t.get_name() == conv_id for t in _DIAGNOSING)
+
+
+def _fix_task(conv_id: str) -> str:
+    return f"fix:{conv_id}"
+
+
+def _in_background(run, name: str) -> None:
+    task = asyncio.create_task(run, name=name)
+    _DIAGNOSING.add(task)
+    task.add_done_callback(_DIAGNOSING.discard)
+
 
 #: The hub capability that lets a ticket be opened under the id this machine minted (hub f9ff57ace).
 IDEMPOTENT_TICKETS = "idempotent_guest_conversation"
@@ -160,11 +172,7 @@ async def ask_for_help() -> ApiResponse:
     if running:
         pass
     elif background:
-        run = asyncio.create_task(
-            _diagnose_then_deliver([c.id for c, _t, _o in answers], ask, someone), name=answers[0][0].id
-        )
-        _DIAGNOSING.add(run)
-        run.add_done_callback(_DIAGNOSING.discard)
+        _in_background(_diagnose_then_deliver([c.id for c, _t, _o in answers], ask, someone), answers[0][0].id)
     else:
         for conv, _task, _opening in answers:
             if conv.hub_bound:
@@ -442,29 +450,31 @@ async def _diagnose_then_deliver(conv_ids: list[str], ask: AskForHelpRequest, so
     except Exception:  # noqa: BLE001 — the request stands without its diagnosis
         logger.warning("[ask-for-help] diagnosis failed", exc_info=True)
         diagnosis, diagnosis_id = None, None
+    shared = _shares_context(ask) and DIAGNOSIS_FILE not in set(ask.left_out)
     for conv_id in conv_ids:
         conv = await Conversation.get_one({"id": conv_id})
         if conv is None:
             continue
         try:
-            await _post_diagnosis(conv, ask, diagnosis, diagnosis_id, someone)
+            await _post_diagnosis(conv, diagnosis, diagnosis_id, someone, shared=shared)
         except Exception:  # noqa: BLE001
             logger.warning("[ask-for-help] posting the diagnosis into %s failed", conv_id, exc_info=True)
         if conv.hub_bound:
             await _first_delivery(conv, "ask-for-help")
 
 
-async def _post_diagnosis(conv, ask: AskForHelpRequest, diagnosis, diagnosis_id, someone) -> None:
+async def _post_diagnosis(conv, diagnosis, diagnosis_id, someone, *, shared: bool) -> None:
+    """The diagnosis, as a message of its own. ``shared``: its details go with it; else they wait here."""
     if diagnosis is None:
         text, files = "The diagnosis could not run. You can still report it.", {}
     else:
         text = bottom_line(diagnosis)
         files = {DIAGNOSIS_FILE: value_json(diagnosis.model_copy(update={"logs": [], "context": None}))}
-    shared = _shares_context(ask) and DIAGNOSIS_FILE not in set(ask.left_out)
     if files and not shared:
         await asyncio.to_thread(_hold, conv.id, files)
     await post_message(
-        conv.id, text,
+        conv.id,
+        text,
         kind=FlowMessageKind.DIAGNOSIS,
         sender_name="Flowpad Diagnosis",
         someone=someone,
@@ -612,7 +622,9 @@ def _kind(fm) -> str:
 
 
 async def _posted_diagnosis(conv, messages=None):
-    """The diagnosis a request's diagnosis message carries (shared), else the one held here (private)."""
+    """The diagnosis held here (private), else the latest one a message carries: the diagnosis message when
+    it was shared, or the request message that reported or shared the context later. ``posted``: a diagnosis
+    message is in the conversation."""
     from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
     from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisSpec  # noqa: PLC0415
     from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
@@ -620,11 +632,9 @@ async def _posted_diagnosis(conv, messages=None):
     held = _held_diagnosis(conv.id)
     if held is not None:
         return held, True
-    posted = False
-    for fm in reversed(messages if messages is not None else await conv.messages()):
-        if _kind(fm) != FlowMessageKind.DIAGNOSIS.value:
-            continue
-        posted = True
+    messages = messages if messages is not None else await conv.messages()
+    posted = any(_kind(fm) == FlowMessageKind.DIAGNOSIS.value for fm in messages)
+    for fm in reversed(messages):
         for a in fm.attachment or []:
             if str(a.data).rsplit("/", 1)[-1] != DIAGNOSIS_FILE:
                 continue
@@ -637,25 +647,113 @@ async def _posted_diagnosis(conv, messages=None):
     return None, posted
 
 
+def _diagnosis_refs(messages) -> list[str]:
+    """The ids of the recorded diagnoses the request's diagnosis messages point at, oldest first."""
+    prefix = "flowpad_diagnosis-"
+    return [
+        str(a.data)[len(prefix) :]
+        for fm in messages
+        if _kind(fm) == FlowMessageKind.DIAGNOSIS.value
+        for a in fm.attachment or []
+        if str(a.data).startswith(prefix)
+    ]
+
+
 async def _diagnosis_worker(messages) -> str:
     """The context worker that ran the request's diagnosis here: the record's own private link to its
     process (``cross_link_entities`` in ``flow diagnose``'s runner). Private, so it never travels."""
     from flow_sdk.app.actions.diagnose_action import recorded_diagnosis  # noqa: PLC0415
 
-    prefix = "flowpad_diagnosis-"
-    for fm in reversed(messages):
-        if _kind(fm) != FlowMessageKind.DIAGNOSIS.value:
-            continue
-        for a in fm.attachment or []:
-            ref = str(a.data)
-            if not ref.startswith(prefix):
-                continue
-            record = await recorded_diagnosis(ref[len(prefix):])
-            for tid in (record.private_context_entities if record is not None else None) or []:
-                if tid.type == "agentic_process":
-                    return tid.id
-        return ""
+    refs = _diagnosis_refs(messages)
+    record = await recorded_diagnosis(refs[-1]) if refs else None
+    for tid in (record.private_context_entities if record is not None else None) or []:
+        if tid.type == "agentic_process":
+            return tid.id
     return ""
+
+
+async def _worker_name(process_id: str) -> str:
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+    process = await AgenticProcess.get_by_id(process_id) if process_id else None
+    return (getattr(process, "name", "") or "") if process is not None else ""
+
+
+def _state(conv, diagnosis, *, diagnosing: bool, reported: bool) -> str:
+    """Where a request stands -- the one author of its status chip."""
+    from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisStatus  # noqa: PLC0415
+
+    if _diagnosis_running(_fix_task(conv.id)):
+        return "fixing"
+    if diagnosing:
+        return "diagnosing"
+    if conv.is_archived():
+        return "done"
+    if reported:
+        return "help_requested"
+    if diagnosis is not None and diagnosis.status is DiagnosisStatus.FIXED:
+        return "fixed"
+    if diagnosis is not None and diagnosis.status in (DiagnosisStatus.OK, DiagnosisStatus.INFORMATIONAL):
+        return "ok"
+    return "open"
+
+
+async def _fix_then_post(conv_id: str, worker: str, recorded: frozenset[str], shared: bool, someone) -> None:
+    """Fix: the session that diagnosed it applies its own fix, and what it records lands as the diagnosis."""
+    from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S  # noqa: PLC0415
+    from flow_sdk.cli.commands.diagnose_cmd import _run_diagnose  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.diagnose_spec import DiagnosisSpec  # noqa: PLC0415
+
+    conv = await Conversation.get_one({"id": conv_id})
+    if conv is None:
+        return
+    done: list[dict] = []
+    try:
+        await _run_diagnose(
+            conv.title or "",
+            DEFAULT_TRANSCRIPT_TIMEOUT_S,
+            emit=lambda event: done.append(event) if event and event.get("type") == "done" else None,
+            project_id=conv.origin_project_id,
+            feed=False,
+            fix_of=(worker, recorded),
+        )
+    except Exception:  # noqa: BLE001 — the diagnosis stands as it was; the message below says so
+        logger.warning("[help-request-fix] the fix run for %s failed", conv_id, exc_info=True)
+    last = done[-1] if done else {}
+    if not last.get("ok") or not last.get("diagnosis"):
+        await post_message(
+            conv_id,
+            "The fix could not be applied. Open the diagnosis session to see why, or ask for help.",
+            kind=FlowMessageKind.USER,
+            sender_name="Flowpad Diagnosis",
+            someone=someone,
+        )
+        return
+    diagnosis = DiagnosisSpec.model_validate({k: v for k, v in last["diagnosis"].items() if k != "spec_kind"})
+    await _post_diagnosis(conv, diagnosis, last.get("diagnosis_id"), someone, shared=shared)
+
+
+@action.post(action_name="help-request-fix", types=["conversation"])
+async def help_request_fix() -> ApiResponse:
+    """``POST /graph/conversation/<id>/help-request-fix`` — Fix: the diagnosis said it can apply its fix here
+    (``local_fix``), so the same worker session is asked to. Answers at once; the result is a diagnosis message."""
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid or not request_info.someone_typeid:
+        return ApiFailResponse(message="help-request-fix: target conversation required", status_code=400)
+    conv = await Conversation.get_one({"id": request_info.target_entity_typeid.id})
+    if conv is None:
+        return ApiFailResponse(message="Conversation not found", status_code=404)
+    messages = await conv.messages()
+    diagnosis, _posted = await _posted_diagnosis(conv, messages)
+    if diagnosis is None or not diagnosis.local_fix:
+        return ApiFailResponse(message="This diagnosis has no fix Flowpad can apply here", status_code=400)
+    worker, refs = await _diagnosis_worker(messages), frozenset(_diagnosis_refs(messages))
+    if not worker:
+        return ApiFailResponse(message="The session that diagnosed this is not on this computer", status_code=400)
+    if not _diagnosis_running(_fix_task(conv.id)):
+        shared = _held_diagnosis(conv.id) is None  # held: the details stay here, as the diagnosis did
+        _in_background(_fix_then_post(conv.id, worker, refs, shared, request_info.someone_typeid), _fix_task(conv.id))
+    return ApiSuccessResponse(data={"conversation_id": conv.id, "state": "fixing"})
 
 
 @action.post(action_name="help-request-diagnosis", types=["conversation"])
@@ -671,19 +769,28 @@ async def help_request_diagnosis() -> ApiResponse:
     messages = await conv.messages()  # read once: the diagnosis and the desk's last word both come from it
     diagnosis, posted = await _posted_diagnosis(conv, messages)
     reported = _is_ticket(conv) or bool(conv.members)
+    diagnosing = not posted and _diagnosis_running(conv.id)
+    state = _state(conv, diagnosis, diagnosing=diagnosing, reported=reported)
     desk, pass_on = "", ""
-    if diagnosis is not None and diagnosis.reportable and not reported:
+    if not reported and state not in ("diagnosing", "fixing"):  # asked on every poll of a run: no hub call then
         _id, desk, pass_on = await _report_target(conv, diagnosis)
+    worker = await _diagnosis_worker(messages)
+    request = next((m for m in messages if _kind(m) == FlowMessageKind.HELP_REQUEST.value), None)
     return ApiSuccessResponse(
         data={
-            "diagnosing": not posted and _diagnosis_running(conv.id),
+            "state": state,
+            #: The request in one line, and in full (its last line only says a diagnosis is coming).
+            "issue": conv.title or "",
+            "request": (request.text or "").split(f"\n\n{DIAGNOSIS_LINE}")[0] if request is not None else "",
+            "diagnosing": diagnosing,
             "diagnosis": diagnosis.model_dump(mode="json") if diagnosis is not None else None,
             "reportable": bool(diagnosis is not None and diagnosis.reportable and not reported),
             "reported": reported,
             "replied": reported and _desk_replied(messages),
             "desk": desk,
             "pass_on": pass_on,
-            "worker_process_id": await _diagnosis_worker(messages),
+            "worker_process_id": worker,
+            "worker_process_name": await _worker_name(worker),
         }
     )
 
@@ -1030,7 +1137,9 @@ async def help_recipients() -> ApiResponse:
             desks.insert(
                 len(desks) - (1 if default is not None else 0),
                 HelpRecipient(
-                    kind=HelpRecipientKind.DESK, desk_project_id=mine["id"], name=mine.get("display_name") or "Help desk"
+                    kind=HelpRecipientKind.DESK,
+                    desk_project_id=mine["id"],
+                    name=mine.get("display_name") or "Help desk",
                 ).model_dump(mode="json"),
             )
     state = "known" if default is not None else ("not_configured" if reached else "unknown")

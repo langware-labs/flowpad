@@ -1,5 +1,8 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgenticProcess, UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
+import { AgenticProcess, isBusy, UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
+import { ProcessRunLine } from '@src/components/agentic-progress/shared/process-run-line';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
+import { mostRecentProcess } from '@src/utils/process-recency';
 import { useHelpRequestDiagnosis } from '@src/components/conversation/use-help-request-diagnosis';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -153,7 +156,7 @@ function DiagnosisStatusLine({ conversationId }: { conversationId: string }) {
   const d = state?.diagnosis;
   let status: 'diagnosing' | 'replied' | 'reported' | 'fixed' | 'report' | 'diagnosed' | 'failed';
   let text: string;
-  if (!state || state.diagnosing) {
+  if (!state || state.state === 'diagnosing' || state.state === 'fixing') {
     status = 'diagnosing';
     text = t`Diagnosing… you'll get a message when it's done`;
   } else if (state.reported && state.replied) {
@@ -193,12 +196,19 @@ function DiagnosisStatusLine({ conversationId }: { conversationId: string }) {
   );
 }
 
+/** What a worker update's install run is found by. The message carries "from → to", so the next update
+ *  does not show this one's finished run. */
+const harnessUpdateTarget = (warning: UserWarning) => `${warning.id}/${warning.message}`;
+
 /** Install on a worker-update warning: a session that carries the warning (which worker, from and to which
- *  version, the command) and does the upgrade. It runs outside any project and opens as its own tab. */
+ *  version, the command) and does the upgrade. It runs in the background, outside any project; the card
+ *  shows its status line and the way into its terminal. */
 async function installHarnessUpdate(warning: UserWarning, failedTitle: string): Promise<void> {
   try {
     await AgenticProcess.launch({
       scratch: true,
+      background: true,
+      target: harnessUpdateTarget(warning),
       title: warning.message,
       launchPrompt: `${warning.message}. ${warning.description ?? ''}\nUpgrade it on this machine now, then run its --version and tell me the version that is installed.`,
     });
@@ -279,8 +289,8 @@ function DiagnoseButtons({
 interface WarningItemProps {
   warning: UserWarning;
   onClick: () => void;
-  /** The warning's own button (`warning.action`), already wired to close the popover. */
-  onAction: () => void;
+  /** The warning's own button (`warning.action`). */
+  onAction: () => void | Promise<void>;
   /** Diagnose & fix — starts it in place; the entry then shows its status. */
   onDiagnose: (detail: string, kind: DiagnoseKind, entryKey: string) => void;
   onDismiss: () => void;
@@ -299,6 +309,13 @@ function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: Warn
   const colors = colorMap[warning.color] || colorMap.yellow;
   const detail = warning.description ? `${warning.message}\n${warning.description}` : warning.message;
   const conversationId = useDiagnosisLinks((s) => s.links[warning.id]);
+  const { navigation } = useDockNavigation();
+  // The background run the warning's own button starts, when it starts one.
+  const { processes } = useProcessesForTarget(warning.action?.runTarget);
+  const run = useMemo(() => mostRecentProcess(processes), [processes]);
+  // One run at a time: the button is off while it is being started and while it is working.
+  const [starting, setStarting] = useState(false);
+  const actionBusy = starting || (!!run && isBusy(run));
 
   return (
     <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-warning">
@@ -318,8 +335,12 @@ function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: Warn
           {warning.action && (
             <button
               type="button"
-              onClick={onAction}
-              className={PRIMARY_BTN}
+              onClick={() => {
+                setStarting(true);
+                void Promise.resolve(onAction()).finally(() => setStarting(false));
+              }}
+              disabled={actionBusy}
+              className={`${PRIMARY_BTN} disabled:cursor-not-allowed disabled:opacity-50`}
               data-testid="warnings-popover-warning-action"
             >
               {warning.action.label}
@@ -339,6 +360,11 @@ function WarningItem({ warning, onClick, onAction, onDiagnose, onDismiss }: Warn
         {conversationId && (
           <div className="ms-10">
             <DiagnosisStatusLine conversationId={conversationId} />
+          </div>
+        )}
+        {run && (
+          <div className="ms-10 mt-2">
+            <ProcessRunLine process={run} onOpenInTerminal={() => navigation.openDock(run.terminalDockPointer)} />
           </div>
         )}
       </div>
@@ -442,24 +468,30 @@ export function WarningsPopover() {
   const setupWarning = useSetupIncompleteWarning();
   const dismissedKeys = useDismissedWarnings((s) => s.keys);
   const dismissWarnings = useDismissedWarnings((s) => s.dismiss);
+  const links = useDiagnosisLinks((s) => s.links);
+  const doneConversations = useDiagnosisLinks((s) => s.done);
+  /** Its diagnosis was marked Done in the conversation: the entry it started from is settled. */
+  const settled = useCallback((entryKey: string) => doneConversations.includes(links[entryKey] ?? ''), [links, doneConversations]);
   const warnings = useMemo(
     () =>
       [...derivedWarnings, ...(setupWarning ? [setupWarning] : [])]
-        .filter((w) => dismissedKeys.get(w.id) !== dismissKey(w))
+        .filter((w) => dismissedKeys.get(w.id) !== dismissKey(w) && !settled(w.id))
         .map((w) =>
           isHarnessUpdate(w)
             ? {
                 ...w,
                 action: {
                   label: t`Install`,
-                  onClick: () => void installHarnessUpdate(w, t`Could not start the install`),
+                  onClick: () => installHarnessUpdate(w, t`Could not start the install`),
+                  runTarget: harnessUpdateTarget(w),
                 },
               }
             : w,
         ),
-    [derivedWarnings, setupWarning, dismissedKeys, t],
+    [derivedWarnings, setupWarning, dismissedKeys, settled, t],
   );
-  const alerts = useAlertStore((s) => s.alerts);
+  const allAlerts = useAlertStore((s) => s.alerts);
+  const alerts = useMemo(() => allAlerts.filter((a) => !settled(a.id)), [allAlerts, settled]);
   const dismissAlert = useAlertStore((s) => s.dismiss);
   const dismissAllAlerts = useAlertStore((s) => s.dismissAll);
   const dismissAll = useCallback(() => {
@@ -560,8 +592,9 @@ export function WarningsPopover() {
               warning={warning}
               onClick={() => handleWarningClick(warning)}
               onAction={() => {
-                warning.action?.onClick();
-                setOpen(false);
+                // An action that starts a background run works in place: the card stays to show the run.
+                if (!warning.action?.runTarget) setOpen(false);
+                return warning.action?.onClick();
               }}
               onDiagnose={diagnose}
               onDismiss={() => dismissWarnings([warning])}

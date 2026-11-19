@@ -14,6 +14,7 @@ import {
 } from '@src/lib/mcp-app-resources';
 import { sdkConfig } from '@sdk/config/index';
 import { SANDBOX_URL } from '@src/lib/mcp-sandbox';
+import { useLingui } from '@lingui/react/macro';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import '@src/lib/mcp-host.css';
 
@@ -31,6 +32,8 @@ const HOST_CAPABILITIES: McpUiHostCapabilities = {
 interface McpAppPreviewProps {
   path: string;
   process: AgenticProcess | null;
+  /** The key this page was opened with (`PageAllowGate`): the page's SDK presents it to the local server. */
+  stateKey?: string;
   refreshKey?: number;
 }
 
@@ -123,9 +126,13 @@ async function handleCallTool(params: CallToolRequest['params']): Promise<CallTo
   };
 }
 
-export function McpAppPreview({ path, process, refreshKey }: McpAppPreviewProps) {
+export function McpAppPreview({ path, process, stateKey, refreshKey }: McpAppPreviewProps) {
+  const { t } = useLingui();
   const { computeNode } = useAgentContext();
   const [error, setError] = useState<string | null>(null);
+  // A submission the page made that reached no session: said above the page, which stays as it is so what
+  // the user typed is not lost.
+  const [undelivered, setUndelivered] = useState(false);
   const latestModelContextRef = useRef<McpUiUpdateModelContextRequest['params'] | null>(null);
 
   const resourceUri = useMemo(() => mcpAppResourceUriForPath(path), [path]);
@@ -150,7 +157,7 @@ export function McpAppPreview({ path, process, refreshKey }: McpAppPreviewProps)
       const result = await readFlowpadLocalResource(params.uri, computeNode.typeId);
       // The page gets the backend origin and the process it is shown beside
       // before its own scripts run, so it can load the SDK and reach that process.
-      const prelude = pageSdkPrelude(apiOrigin, processId);
+      const prelude = pageSdkPrelude(apiOrigin, processId, stateKey);
       return {
         ...result,
         contents: result.contents.map((content) =>
@@ -160,12 +167,16 @@ export function McpAppPreview({ path, process, refreshKey }: McpAppPreviewProps)
         ),
       };
     },
-    [computeNode?.typeId, apiOrigin, processId],
+    [computeNode?.typeId, apiOrigin, processId, stateKey],
   );
 
   const handleMessage = useCallback(
     async (params: McpUiMessageRequest['params']): Promise<McpUiMessageResult> => {
-      if (!process) return { isError: true };
+      if (!process) {
+        setUndelivered(true);
+        return { isError: true };
+      }
+      setUndelivered(false);
       const prompt = buildAgentPrompt(params, latestModelContextRef.current);
       promptWhenReady(process, prompt).catch((e) => {
         console.error('[McpAppPreview] failed to deliver Vibe agent prompt from ui/message', e);
@@ -197,6 +208,15 @@ export function McpAppPreview({ path, process, refreshKey }: McpAppPreviewProps)
 
   return (
     <div className="flowpad-app-host" data-testid="mcp-app-preview" data-refresh-key={refreshKey ?? 0}>
+      {undelivered && (
+        <div
+          role="alert"
+          className="border-b bg-amber-100 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+          data-testid="mcp-app-preview-undelivered"
+        >
+          {t`This page is not attached to a session, so what you sent reached no one. Nothing you typed was lost; open the page again from the session.`}
+        </div>
+      )}
       <AppRenderer
         key={`${resourceUri}:${refreshKey ?? 0}`}
         toolName={TOOL_NAME}

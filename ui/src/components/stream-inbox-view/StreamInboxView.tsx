@@ -12,6 +12,7 @@ import {
   Search,
   SquarePen,
   Star,
+  Tags,
   Trash2,
   X,
   Zap,
@@ -70,6 +71,7 @@ import { updateMessage, bulkUpdateMessages, searchStreamInbox, watchMessageTags 
 import { TagFilterBar } from '@src/components/assets/TagFilterBar';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { MessageTags } from '@src/components/tags/MessageTags';
+import { ClassifyDialog } from '@src/components/tags/ClassifyTable';
 import {
   type ChannelAttribution,
   SourceChip,
@@ -553,7 +555,7 @@ export const ConversationListRow = memo(function ConversationListRow({
     isHidden = !matchesColumnFilter(columnFilter, {
       senders: senderLabel,
       subjectLine: `${subject} ${snippet}`,
-      updated: conv.updated_date,
+      updated: conv.recency,
     });
   }
 
@@ -572,8 +574,8 @@ export const ConversationListRow = memo(function ConversationListRow({
 
   const count = pointers.length || conv.message_count || 0;
   const fileCount = conv.attachment_count ?? 0;
-  const time = formatGmailTime(conv.updated_date);
-  const ago = formatTimeAgo(conv.updated_date);
+  const time = formatGmailTime(conv.recency);
+  const ago = formatTimeAgo(conv.recency);
   const isUnread = facets.isUnread;
 
   const handleClick = () => {
@@ -1010,6 +1012,8 @@ export function StreamInboxView({
   // Constrained to currently-visible rows when actions run, so a stale id left
   // over from a view switch can never act on a hidden conversation.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // The ticked rows' messages, open in the dry-run classification table.
+  const [classifying, setClassifying] = useState<string[] | null>(null);
   const [selDeleteOpen, setSelDeleteOpen] = useState(false);
 
   // Text search over message bodies — server-side, via the `stream-inbox-search`
@@ -1680,6 +1684,16 @@ export function StreamInboxView({
                     <Trans>Archive</Trans>
                   </Button>
                 )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setClassifying(selectedConvs.map(latestMessageId).filter((id): id is string => !!id))}
+                  data-testid="stream-inbox-selection-classify"
+                >
+                  <Tags className="me-1 h-3.5 w-3.5" />
+                  <Trans>Classify</Trans>
+                </Button>
               </>
             )}
             <Button
@@ -2013,6 +2027,8 @@ export function StreamInboxView({
       {!agentId && (
         <ContactsDialog open={showContacts} onOpenChange={setShowContacts} excludeUserId={cloudUser?.id ?? null} />
       )}
+
+      {classifying && <ClassifyDialog messageIds={classifying} onClose={() => setClassifying(null)} />}
 
       <BulkConfirmDialog
         open={bulkDialogOpen}

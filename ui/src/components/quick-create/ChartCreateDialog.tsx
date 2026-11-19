@@ -26,6 +26,7 @@ export const ChartCreateDialog: React.FC<{
   // Built in render: `t` must run under the active locale.
   const formats: { value: ChartFormat; label: string; hint: string }[] = [
     { value: 'sequence', label: t`Sequence`, hint: t`who calls whom, step by step — with sub-flows and feedback` },
+    { value: 'flowchart', label: t`Flowchart`, hint: t`a decision flow: short questions and outcomes, with state and notes beside it` },
     { value: 'excalidraw', label: t`Whiteboard (Excalidraw)`, hint: t`a freehand board to draw on` },
     {
       value: 'architecture',

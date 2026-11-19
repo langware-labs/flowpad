@@ -13,7 +13,8 @@
  *     instead of flashing through "Loading task context…".
  *   - Writes `dataContext`:
  *       - CurrentProjectTypeId  — from task.project_id, or conv.project_id
- *                                 when there's no task; left as is when neither has one
+ *                                 when there's no task; else the project its open tab is
+ *                                 filed under; none when there is no such project
  *       - CurrentActiveEntityTypeId — to the conversation itself
  *       - workdir              — from task.project_root when known
  *
@@ -24,7 +25,17 @@
  */
 
 import { t } from '@lingui/core/macro';
-import { type Conversation, ContextEntitiesEnum, dataContext, dataManager, Project, type Task, TypeId } from '@sdk';
+import {
+  type Conversation,
+  ContextEntitiesEnum,
+  dataContext,
+  dataManager,
+  Project,
+  tabForDockKey,
+  tabManager,
+  type Task,
+  TypeId,
+} from '@sdk';
 import { Conversation as ConversationEntity } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { DockLoadError } from './dock-load-error';
@@ -82,7 +93,15 @@ export async function loadConversation(conversationId: string): Promise<Conversa
   // this fallback, refreshing a task-less conversation drops ctx.project to
   // null and the StatusBar renders the red "Select Project" pill even though
   // the conversation already knows which local Project it belongs to.
-  const projectId = task?.project_id ?? conv.project_id ?? undefined;
+  //
+  // Neither has one: the window follows the conversation's TAB (a pure store read —
+  // the row is minted before this loader runs). A tab filed under a project (a
+  // conversation an agent created from inside it) keeps the window there; any other
+  // unmapped conversation's tab is project-less, and so is the window. The strip
+  // shows only the window's project, so the two must agree or the open conversation
+  // has no tab on screen.
+  const tab = tabForDockKey(tabManager.getSnapshot(), DockPointer.forConversation(conversationId).tabHash);
+  const projectId = task?.project_id ?? conv.project_id ?? tab?.project_id ?? undefined;
   const projectRoot = task?.project_root ?? undefined;
 
   // Active entity = the conversation. Same pattern as the session view's
@@ -97,10 +116,9 @@ export async function loadConversation(conversationId: string): Promise<Conversa
     // Prefetch the Project entity into the cache so the footer label / any
     // useEntity(Project, …) read in the page is warm on first paint.
     await dataManager.getByTypeId<Project>(new TypeId(Project.type, projectId)).catch(() => null);
+  } else {
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   }
-  // No mapped project: keep the one the user is in. Clearing it here switched the
-  // whole window to the project-less workspace whenever a project's tab held an
-  // unmapped conversation (e.g. one an agent created from inside the project).
 
   if (projectRoot) {
     dataContext.setWorkdir(projectRoot);

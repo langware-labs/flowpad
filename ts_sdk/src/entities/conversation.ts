@@ -5,6 +5,7 @@ import { ChannelTransport, type IChannelSpec } from '../models/ChannelSpec';
 import { DockPointerData } from '../models/DockPointer';
 import { ConnectionManager, DataOp } from '../websocket';
 import { Callable } from '../types';
+import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
 import { ConversationEvents, FlowMessage, type IFlowMessage, type IMessageMark, type ListedFile } from './flow-message';
 
@@ -363,6 +364,18 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     const info = new ActionInfo('act', Conversation.type, this.id, 'POST');
     info.bodyParameters = { action, text };
     return dataManager.callAction<unknown, { ok: boolean; item_id?: string | null }>(info);
+  }
+
+  /** When the newest message was sent — the time a list row shows and sorts by. The hub's row names
+   *  it (`latest_message_at`); this computer's row keeps it as `updated_date`. Never the hub's
+   *  `updated_date`, which any write to the conversation moves (a read receipt, a member change). */
+  get recency(): string | Date | null {
+    return this.latest_message_at ?? this.updated_date ?? null;
+  }
+
+  /** The stored field behind `recency` — what a list orders and pages by on the backend it reads. */
+  static get recencyField(): 'latest_message_at' | 'updated_date' {
+    return isHubOnly() ? 'latest_message_at' : 'updated_date';
   }
 
   /** The newest message: the log's latest pointer, or — for a row that keeps no log (the hub's) — the

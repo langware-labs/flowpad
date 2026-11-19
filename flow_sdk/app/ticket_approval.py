@@ -34,7 +34,7 @@ async def unapproved_reason(conversation_id: str) -> str:
     own = await User.self_ids()
     for conversation in private:
         messages = sorted(
-            await FlowMessage.get_all({"conversation_id": str(conversation.id)}),
+            await FlowMessage.sent_in(conversation.id),
             key=lambda m: m.occurred_at.timestamp() if m.occurred_at else 0.0,
         )
         for message in reversed(messages):

@@ -54,9 +54,9 @@ import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { syncConversationMessages } from '@src/components/stream-inbox-view/stream-inbox-api';
-import { FlowMessageKind, markFlowMessagesReceived, DIAGNOSIS_FILE, attachmentDataString } from '@sdk/entities/flow-message';
+import { FlowMessageKind, markFlowMessagesReceived, DIAGNOSIS_FILE, HELP_REQUEST_FILE } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
-import { messageSummary } from './ChannelMessageExtras';
+import { attachmentFileName, messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
 import { SessionCard } from './SessionCard';
 import { PromptRequestAnswerContext } from './attachment-actions';
@@ -179,6 +179,14 @@ export interface ConversationEmbed {
   placeholder?: string;
 }
 
+/** The file a message carries, by name (a row a channel delivered may have lost its kind; the file still says it). */
+const carriesFile = (fm: FlowMessage, name: string) =>
+  (fm.attachment ?? []).some((f) => attachmentFileName(f) === name);
+const isHelpRequestMessage = (fm?: FlowMessage | null): boolean =>
+  !!fm && (fm.kind === FlowMessageKind.HELP_REQUEST || carriesFile(fm, HELP_REQUEST_FILE));
+const isDiagnosisMessage = (fm?: FlowMessage | null): boolean =>
+  !!fm && !isHelpRequestMessage(fm) && (fm.kind === FlowMessageKind.DIAGNOSIS || carriesFile(fm, DIAGNOSIS_FILE));
+
 export function ConversationView({
   conversationId,
   task,
@@ -255,18 +263,16 @@ export function ConversationView({
     [conversation?.message_ids, allowedMessageIds],
   );
 
-  // Local-only drafts attached to this conversation. Filtered to the local
-  // user so a counterparty's stray draft never renders here. Match is built
-  // as an explicit $AND/$EQ tree — the SDK's multi-key plain-object shorthand
-  // doesn't recursively wrap operands, which makes real-time validate() crash.
+  // The replies held for review in this conversation: drafts of a live session, each drawn as its
+  // own editable bubble. The draft typed in the composer is NOT one of them — the composer holds it —
+  // so typing never touches this query. Match is built as an explicit $AND tree — the SDK's multi-key
+  // plain-object shorthand doesn't recursively wrap operands, which makes real-time validate() crash.
   const draftsRequest = useMemo(() => {
     const eqClauses: Array<{ op: string; operands: unknown[] }> = [
       { op: '$EQ', operands: ['conversation_id', conversationId] },
-      { op: '$EQ', operands: ['is_draft', true] },
+      { op: '$EQ', operands: ['delivery_status', 'draft'] },
+      { op: '$IS_NOT_NULL', operands: ['remote_worker_session_id'] },
     ];
-    if (localUser?.id) {
-      eqClauses.push({ op: '$EQ', operands: ['sender_id', localUser.id] });
-    }
     return new QueryRequest({
       type: FlowMessage.type,
       scope: [],
@@ -275,7 +281,7 @@ export function ConversationView({
         match: { op: '$AND', operands: eqClauses } as Record<string, unknown>,
       }),
     });
-  }, [conversationId, localUser?.id]);
+  }, [conversationId]);
   const { data: draftMessages = [] } = useEntitiesQuery<FlowMessage>(draftsRequest, {
     // Drafts are local rows: only a runtime that keeps a local store has any to show.
     enabled: !!conversationId && dataContext.caps.localFiles,
@@ -501,7 +507,7 @@ export function ConversationView({
   // The message the composer answers — local composer state, not navigation (nothing is shown
   // differently; the next send quotes it).
   const [replyTo, setReplyTo] = useState<FlowMessage | null>(null);
-  useEffect(() => setReplyTo(null), [conversationId]);
+  useEffect(() => setReplyTo(null), [conversationId, threadId]);
   // What the channel lets a person do to one message — read off its spec. Reply is the `replies`
   // trait (Flowpad's own chat included); a native message is answered by its hub id, a channel's
   // by its origin.
@@ -708,6 +714,11 @@ export function ConversationView({
     if (!call) return null;
     return { call, answer: calls.answerByCall.get(call.call_id) ?? null, running: runningCalls.has(call.call_id) };
   };
+  /** The message that carries the diagnosis card: the first help request, else the first diagnosis. */
+  const diagnosisCardId = useMemo(() => {
+    const feed = orderedItems.flatMap((it) => (it.kind === ConversationItemKind.POINTER ? [messagesById.get(it.messageId)] : []));
+    return (feed.find(isHelpRequestMessage) ?? feed.find(isDiagnosisMessage))?.id ?? null;
+  }, [orderedItems, messagesById]);
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
     const feed = orderedItems.filter(
@@ -716,6 +727,8 @@ export function ConversationView({
           it.kind === ConversationItemKind.POINTER &&
           (calls.answerMessageIds.has(it.messageId) ||
             itSends.replyMessageIds.has(it.messageId) ||
+            // A diagnosis shows on the conversation's one card (DiagnosisCard), not as a message of its own.
+            (it.messageId !== diagnosisCardId && isDiagnosisMessage(getFm(it.messageId))) ||
             // The hub's "Resolved: …" line repeats what the issue's card already shows (it is updated in place).
             !!getFm(it.messageId)?.issue_reply?.follow_up)
         ),
@@ -729,7 +742,7 @@ export function ConversationView({
       ...groupThreadItems(threaded, getFm, threadCounts),
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
-  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls, itSends]);
+  }, [orderedItems, messagesById, threadId, threadCounts, flatThreadIds, sessionAnchors, calls, itSends, diagnosisCardId]);
 
   // A message right under one from the same sender, moments later, drops its avatar and name.
   const continuations = useMemo(() => {
@@ -806,15 +819,6 @@ export function ConversationView({
   // anchor) renders as a slim centered system line.
   /** ``threadTask``: the task a collapsed thread is about — shown on the message the stack shows (its newest),
    *  so a task's thread offers its chips without expanding it. */
-  const diagnosisHeadline = useMemo(() => {
-    for (const fm of messagesById.values()) {
-      // The kind, or the file every diagnosis carries (a row a channel delivered may have lost its kind).
-      const isDiagnosis =
-        fm.kind === FlowMessageKind.DIAGNOSIS || (fm.attachment ?? []).some((file) => attachmentDataString(file).split('/').pop() === DIAGNOSIS_FILE);
-      if (isDiagnosis) return (fm.text ?? '').trim().split('\n')[0] || null;
-    }
-    return null;
-  }, [messagesById]);
   const lastTicketEventId = useMemo(() => {
     for (let i = orderedItems.length - 1; i >= 0; i--) {
       const it = orderedItems[i];
@@ -896,8 +900,7 @@ export function ConversationView({
           deleteForEveryone={conversation?.remote === true}
           selfIds={selfIds}
           isHelpdesk={isHelpdeskConversation}
-          // Only a request still saying "Diagnosis: on its way" uses it (the bubble matches that line).
-          diagnosisHeadline={diagnosisHeadline}
+          diagnosisCard={id === diagnosisCardId}
           viewerCloudUserId={cloudUserId}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}
@@ -1523,6 +1526,13 @@ export function ConversationView({
         // On a phone the composer stays pinned to the bottom of the screen while the feed scrolls.
         <div className="max-md:sticky max-md:bottom-0 max-md:z-10 max-md:bg-background max-md:pb-2">
           <MessageComposer
+            // One composer per conversation and thread: each holds its own draft.
+            key={threadId ?? ''}
+            draftThread={threadId ?? null}
+            onRestoreReply={(id) => {
+              const answered = messagesById.get(id);
+              if (answered) setReplyTo(answered);
+            }}
             conversationId={conversationId}
             onSent={() => void refetch()}
             // A source-backed conversation replies into its channel, not the hub.

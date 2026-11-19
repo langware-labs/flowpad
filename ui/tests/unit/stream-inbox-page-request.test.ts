@@ -1,7 +1,9 @@
 /** A stream inbox page is answered by the backend: the view's clause, the keyset and the size ride
  *  in the query, and the same query decides which pushed rows join a live page. */
-import { describe, expect, it } from 'vitest';
-import { TypeId, User } from '@sdk';
+import { afterEach, describe, expect, it } from 'vitest';
+import { Conversation, TypeId, User } from '@sdk';
+import { setSupportedPagesForHubMode } from '@sdk/utils/hub-runtime';
+import { compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 import {
   conversationsPageRequest,
   newerBoundaryRequest,
@@ -99,10 +101,35 @@ describe('newerBoundaryRequest', () => {
 
   it('bounds the newer page just past the last row above, or is now when no full page is above', () => {
     const above = Array.from({ length: STREAM_INBOX_PAGE_SIZE }, (_, i) => ({
-      updated_date: new Date(Date.UTC(2026, 9, 11, 0, 0, i)).toISOString(),
+      recency: new Date(Date.UTC(2026, 9, 11, 0, 0, i)).toISOString(),
     }));
     expect(newerPageBefore(above, true)).toBe('2026-10-11T00:01:39.001Z');
     expect(newerPageBefore(above, false)).toBeNull();
     expect(newerPageBefore(above.slice(1), true)).toBeNull();
+  });
+});
+
+describe('a row is as recent as its newest message', () => {
+  afterEach(() => setSupportedPagesForHubMode(['desk', 'hub']));
+  const READ = '2026-11-18T08:42:37.000Z'; // the hub re-saved the conversation: its recipient read the message
+  const SENT = '2026-11-16T20:36:00.000Z';
+  const [A, B] = ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
+
+  it("the hub's row shows and sorts by latest_message_at, never its updated_date", () => {
+    const read = new Conversation({ id: A, updated_date: READ, latest_message_at: SENT });
+    const newer = new Conversation({ id: B, updated_date: SENT, latest_message_at: '2026-11-17T09:00:00.000Z' });
+    expect(read.recency).toBe(SENT);
+    expect([read, newer].sort(compareConversationsByRecency).map((c) => c.id)).toEqual([B, A]);
+    // This computer's row keeps the same time as its updated_date.
+    expect(new Conversation({ id: A, updated_date: SENT }).recency).toBe(SENT);
+  });
+
+  it('the hub page orders and pages by latest_message_at', () => {
+    setSupportedPagesForHubMode(['hub']);
+    const page = conversationsPageRequest(scope, 'all', READ).query!;
+    expect(page.order_by).toEqual([{ latest_message_at: 'desc' }, { id: 'asc' }]);
+    expect(page.validate(row({ updated_date: READ, latest_message_at: SENT }))).toBe(true);
+    expect(page.validate(row({ updated_date: SENT, latest_message_at: READ }))).toBe(false);
+    expect(newerPageBefore(Array(STREAM_INBOX_PAGE_SIZE).fill({ recency: SENT }), true)).toBe('2026-11-16T20:36:00.001Z');
   });
 });

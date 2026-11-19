@@ -5,9 +5,9 @@ import { ContextEntityChip, chipStyleFor, iconForEntity } from '@src/components/
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 
 const isSource = (type: string) => type === 'conversation' || type === 'flow_message';
-/** The callbacks this session set for later (`flow process schedule`) — linked both ways, shown here. */
-const triggersOf = (process: AgenticProcess) =>
-  (process.privateContextEntities ?? []).filter((tid) => tid.type === 'trigger');
+/** The callbacks this session set for later (`flow process schedule`) that still run — linked both ways
+ *  in shared context; an ended one leaves this list (and keeps the session on its own page). */
+const isCallback = (type: string) => type === 'trigger';
 const COUNTED = { flow_message: { label: 'messages', slug: 'messages' }, trigger: { label: 'callbacks', slug: 'triggers' } };
 
 /** The conversation and/or messages a session was started from or sent — one chip each; several messages
@@ -17,16 +17,14 @@ export function ProcessSourceChips({ process }: { process: AgenticProcess }) {
   const key = useSyncExternalStore(
     useCallback((cb) => dataManager.subscribe(process.typeId, cb, false), [process]),
     () =>
-      [
-        ...(process.sharedContextEntities ?? []).filter((tid) => isSource(tid.type)),
-        ...triggersOf(process),
-      ]
+      (process.sharedContextEntities ?? [])
+        .filter((tid) => isSource(tid.type) || isCallback(tid.type))
         .map(String)
         .join(','),
   );
-  const triggers = triggersOf(process);
   if (!key) return null;
   const context = process.sharedContextEntities ?? [];
+  const triggers = context.filter((tid) => isCallback(tid.type));
   const conversations = context.filter((tid) => tid.type === 'conversation');
   // Newest first: the context list is append-ordered.
   const messages = context.filter((tid) => tid.type === 'flow_message').reverse();

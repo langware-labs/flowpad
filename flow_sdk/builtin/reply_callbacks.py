@@ -155,7 +155,7 @@ async def reconcile(rule: Any) -> None:
     asked = await FlowMessage.get_by_id(_message_id(rule.awaits_reply))
     if asked is None:
         return
-    rows = await FlowMessage.get_all({"conversation_id": asked.conversation_id}) or []
+    rows = await FlowMessage.sent_in(asked.conversation_id)
     written = await _session_written(asked.conversation_id)
     replies = [fm for fm in rows if _answers(asked, fm, written)]
     if replies:

@@ -4,10 +4,12 @@ import { useOrgRoute } from '@src/components/organization/tabs/org-route';
 import { ContactsGroup, ConversationParticipant, normalizeEmail, Team, User } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Input } from '@src/components/ui/input';
+import { Separator } from '@src/components/ui/separator';
 import { UsersRound, X, type LucideIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { EMAIL_RE, filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
 import { filterGroups, mergeGroupMembers, useContactsGroups } from './use-contacts-groups';
+import { useRecentContacts } from './use-recent-contacts';
 import { filterTeams, useMessageableTeams, type MessageableTeam } from './use-team-suggestions';
 import { participantSubtitle, personName } from '@src/components/conversation/participant-display';
 
@@ -64,6 +66,7 @@ export function ContactPicker({
   const PersonIcon = iconForType(User.type);
 
   const { contacts } = useContacts(excludeUserId, enabled);
+  const recent = useRecentContacts(contacts, enabled);
   const { groups } = useContactsGroups(enabled && includeGroups);
   const { teams } = useMessageableTeams(enabled && includeTeams, excludeUserId);
   const TeamIcon = iconForType(Team.type);
@@ -126,7 +129,13 @@ export function ContactPicker({
   const trimmed = filterText.trim();
   const showList = !isFull && (trimmed.length > 0 || listOpen);
   const listSource = trimmed.length > 0 ? filteredContacts : contacts;
-  const visibleContacts = listOpen && !trimmed ? listSource : listSource.slice(0, 8);
+  // The open, unfiltered list starts with the people last talked to, then a line, then everyone else.
+  const recentRows = trimmed ? [] : recent;
+  const otherContacts = useMemo(
+    () => (trimmed || !recent.length ? listSource : listSource.filter((u) => !recent.includes(u))),
+    [listSource, recent, trimmed],
+  );
+  const visibleContacts = listOpen && !trimmed ? otherContacts : otherContacts.slice(0, 8);
   const groupSource = trimmed.length > 0 ? filteredGroups : groups;
   const visibleGroups = listOpen && !trimmed ? groupSource : groupSource.slice(0, 4);
   const visibleTeams = listOpen && !trimmed ? filteredTeams : filteredTeams.slice(0, 4);
@@ -135,6 +144,28 @@ export function ContactPicker({
     const key = participantKey(participant);
     onChange(value.filter((p) => participantKey(p) !== key));
   };
+
+  const contactRow = (u: User) => (
+    <div key={u.id} className="flex items-center hover:bg-muted">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2 py-1.5 text-start text-sm disabled:opacity-50"
+        onClick={() => addContact(u)}
+        disabled={alreadyAdded(participantFromContact(u)) || disabled}
+      >
+        <span className="truncate">{personName(u)}</span>
+        {participantSubtitle(u) && (
+          <span className="truncate text-xs text-muted-foreground">{participantSubtitle(u)}</span>
+        )}
+      </button>
+      <OpenButton
+        Icon={PersonIcon}
+        title={t`View contact details`}
+        onClick={() => setDetailFor(u)}
+        testId={`contact-open-${u.id}`}
+      />
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -190,7 +221,8 @@ export function ContactPicker({
         />
       )}
 
-      {showList && (visibleContacts.length > 0 || visibleGroups.length > 0 || visibleTeams.length > 0) && (
+      {showList &&
+        (recentRows.length > 0 || visibleContacts.length > 0 || visibleGroups.length > 0 || visibleTeams.length > 0) && (
         <div className="max-h-40 overflow-y-auto rounded-md border border-border">
           {/* Groups first — one click adds every member. */}
           {visibleGroups.map((g) => (
@@ -242,27 +274,11 @@ export function ContactPicker({
               />
             </div>
           ))}
-          {visibleContacts.map((u) => (
-            <div key={u.id} className="flex items-center hover:bg-muted">
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 items-center justify-between gap-2 px-2 py-1.5 text-start text-sm disabled:opacity-50"
-                onClick={() => addContact(u)}
-                disabled={alreadyAdded(participantFromContact(u)) || disabled}
-              >
-                <span className="truncate">{personName(u)}</span>
-                {participantSubtitle(u) && (
-                  <span className="truncate text-xs text-muted-foreground">{participantSubtitle(u)}</span>
-                )}
-              </button>
-              <OpenButton
-                Icon={PersonIcon}
-                title={t`View contact details`}
-                onClick={() => setDetailFor(u)}
-                testId={`contact-open-${u.id}`}
-              />
-            </div>
-          ))}
+          {recentRows.map(contactRow)}
+          {recentRows.length > 0 && visibleContacts.length > 0 && (
+            <Separator data-testid="contact-recent-divider" />
+          )}
+          {visibleContacts.map(contactRow)}
         </div>
       )}
 

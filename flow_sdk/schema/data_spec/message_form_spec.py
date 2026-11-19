@@ -2,8 +2,10 @@
 
 The sender's message carries a ``message_form-<form_id>`` TYPE_ID attachment whose
 ``prompt_preview`` holds a ``MessageForm``. The receiver fills it in and Submit posts a
-reply carrying a ``form_answers-<form_id>`` attachment holding ``FormAnswers``. Changing
-the answers posts another such reply; the latest one is the answer. Neither is an entity.
+reply carrying a ``form_answers-<form_id>`` attachment holding ``FormAnswers`` — an ordinary
+message through the standard ``add_message`` door, checked there by ``check_values``. Changing
+the answers posts another such reply; the latest one is the answer, merged on
+read. Neither is an entity.
 
 A field with a ``default`` is pre-filled; one without (and not ``optional``) must be filled.
 """
@@ -68,16 +70,28 @@ class MessageForm(DataSpec):
 
 
 class FormAnswers(DataSpec):
-    """What the receiver submitted. ``changed`` lists the fields that differ from the
-    previous answers (or, the first time, from the defaults)."""
+    """What the receiver submitted. What changed since the previous answers is derived on read
+    by whoever reads them (the UI, the CLI), not stored."""
 
     spec_kind: ClassVar[str] = "message.form_answers"
 
     form_id: str
     values: dict[str, Any]
+    #: Legacy: written by senders before answers merged on read. Read, never written.
     changed: list[str] = []
-    #: The answers message this one replaces, when the receiver changed their answers.
     supersedes: Optional[str] = None
+
+    @classmethod
+    def check_in(cls, value: "FormAnswers", find) -> list[str]:
+        """Answers must fit the form they answer, carried in the same conversation."""
+        raw = find(MESSAGE_FORM_TYPE, value.form_id)
+        if raw is None:
+            return [f"form {value.form_id}: not in this conversation"]
+        try:
+            form = MessageForm.model_validate(raw)
+        except ValueError:
+            return [f"form {value.form_id}: malformed"]
+        return check_answers(form, value.values)[1]
 
 
 def field_problem(field: FormField, value: Any) -> Optional[str]:
@@ -171,7 +185,7 @@ def form_attachment(form: MessageForm) -> dict:
 
 
 def answers_attachment(answers: FormAnswers) -> dict:
-    return _attachment(FORM_ANSWERS_TYPE, answers.form_id, answers.model_dump(mode="json", exclude_none=True))
+    return _attachment(FORM_ANSWERS_TYPE, answers.form_id, answers.model_dump(mode="json", exclude_defaults=True))
 
 
 def form_summary(form: MessageForm) -> str:
@@ -181,8 +195,10 @@ def form_summary(form: MessageForm) -> str:
     return f"{form.title} · {len(form.fields)} questions{tail}"
 
 
-def answers_line(form: Optional[MessageForm], answers: FormAnswers) -> str:
-    """``label=value; …`` in the form's order — what an agent reads."""
+def answers_line(form: Optional[MessageForm], answers: FormAnswers, changed: Optional[list[str]] = None) -> str:
+    """``label=value; …`` in the form's order — what an agent reads. ``changed`` is derived by the
+    reader from the previous answers; ``None`` falls back to a legacy stored list."""
+    changed = answers.changed if changed is None else changed
     labels = {f.id: f.label for f in form.fields} if form else {}
     order = [f.id for f in form.fields] if form else list(answers.values)
     parts = []
@@ -191,6 +207,6 @@ def answers_line(form: Optional[MessageForm], answers: FormAnswers) -> str:
             continue
         v = answers.values[fid]
         shown = ", ".join(map(str, v)) if isinstance(v, list) else ("yes" if v is True else "no" if v is False else v)
-        mark = " (changed)" if fid in answers.changed else ""
+        mark = " (changed)" if fid in changed else ""
         parts.append(f"{fid}={shown}{mark}" if not labels else f"{labels[fid]}={shown}{mark}")
     return "; ".join(parts)

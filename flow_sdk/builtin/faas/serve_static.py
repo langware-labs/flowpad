@@ -20,6 +20,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response, StreamingResponse
 
 from flow_sdk.compute.providers.compute_provider import is_e2b_public_host
+from flow_sdk.server import page_state
 
 # An ES module must be served as JavaScript or the browser refuses to import it -- registered on the
 # process-wide table (not an override here), so every static path agrees, `/sdk` included; the OS
@@ -80,6 +81,17 @@ def inject_process_id(html: str, process_id: str | None) -> str:
     if not process_id or not is_valid_uuid(process_id):
         return html
     return _inject_after_head(html, f'<script>globalThis.__FLOWPAD_PROCESS_ID__="{process_id}";</script>')
+
+
+def inject_state_key(html: str, key: str | None) -> str:
+    """Hand a page the state key it was opened with (``__FLOWPAD_STATE_KEY__``), the one its SDK sends on
+    every call. Only a well-formed key is ever written into the document, so a query string can never
+    inject script. Placed right after ``<head>`` like the API origin."""
+    from flow_sdk.server.page_state import KEY_PATTERN  # noqa: PLC0415
+
+    if not key or not KEY_PATTERN.match(key):
+        return html
+    return _inject_after_head(html, f'<script>globalThis.__FLOWPAD_STATE_KEY__="{key}";</script>')
 
 
 def inject_base_tag(html: str, base_url: str) -> str:
@@ -253,7 +265,10 @@ async def serve_app_bytes(
             html = inject_base_tag(html, base._replace(query=request.url.query).geturl())
         # The document carries the same policy as its assets; without a header a
         # browser caches it heuristically and a cross-origin iframe never refetches.
-        html = inject_process_id(inject_api_origin(html), process_id)
+        # The key this page was opened with — the one the state-key gate accepted (its own URL, or the Referer of
+        # the page beside it, so a relative link keeps it) — is handed to its SDK.
+        state_key = page_state.key_of(request) or request.query_params.get("state")
+        html = inject_state_key(inject_process_id(inject_api_origin(html), process_id), state_key)
         version = await anyio.to_thread.run_sync(content_version, root_path)
         html += f"\n<!-- flowpad-content-version: {version} -->\n"
         return HTMLResponse(content=html, headers={"Cache-Control": cache_control})
@@ -281,5 +296,6 @@ __all__ = [
     "AppNotBuilt",
     "inject_api_origin",
     "inject_process_id",
+    "inject_state_key",
     "serve_app_bytes",
 ]

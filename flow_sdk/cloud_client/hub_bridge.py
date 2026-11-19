@@ -970,7 +970,7 @@ class HubWsBridge:
                 # silently rolls back whatever another task wrote to the row in the
                 # meantime. That is not hypothetical: it un-consumed a prompt's
                 # ``prompt_auto_handled`` marker mid-turn, so the turn ran twice and
-                # the guest got two replies. ``is_read`` / ``is_archived`` / ``is_draft``
+                # the guest got two replies. ``is_read`` / ``is_archived``
                 # are per-machine state sitting behind the same race — the "don't copy
                 # the hub's value" note above only stops the hub supplying a wrong
                 # value, not this handler overwriting a local one.

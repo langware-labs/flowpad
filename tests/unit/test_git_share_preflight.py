@@ -127,6 +127,8 @@ async def test_eligible_clean_pushed_repo(tmp_path, monkeypatch):
     assert res["available"] is True
     assert res["code"] is None
     assert res["git_origin"] and res["git_origin"]["branch"] == "main"
+    # The checked path rides along: the dialog shows it under "has changes".
+    assert res["path"] == str(repo / ".claude" / "skills" / "foo")
 
 
 @pytest.mark.asyncio

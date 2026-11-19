@@ -252,6 +252,10 @@ async def record_diagnosis(
     platform: str = "",
     cause: str = "unknown",
     cause_asset: str = "",
+    local_fix: bool = False,
+    bug_package: str = "",
+    bug_version: str = "",
+    bug_suspected: str = "",
 ) -> dict:
     """Record a flow-diagnose result.
 
@@ -283,6 +287,12 @@ async def record_diagnosis(
         "status": status,
         "cause": cause if cause in _CAUSES else "unknown",
         "cause_asset": cause_asset,
+        # Flat on purpose: the runner reads this line with a pattern that takes no nested object.
+        "local_fix": bool(local_fix),
+        **{
+            f"bug_{k}": v.replace("{", "(").replace("}", ")")
+            for k, v in (("package", bug_package), ("version", bug_version), ("suspected", bug_suspected))
+        },
     }
     if status in _ISSUE_STATUSES and result["cause"] in _REPORTABLE_CAUSES:
         support = await create_support_conversation(
@@ -322,6 +332,15 @@ def _parse_args(argv: list[str] | None = None):
         help="Whose problem it is: flowpad | dependency | project | machine | unknown.",
     )
     p.add_argument("--cause-asset", default="", help="With --cause dependency: the dependency's name.")
+    p.add_argument(
+        "--local-fix",
+        default="no",
+        choices=("yes", "no"),
+        help="yes: --fix is something YOU can apply on this machine, safely and reversibly, when asked to.",
+    )
+    p.add_argument("--bug-package", default="", help="A component bug was found: the package or component.")
+    p.add_argument("--bug-version", default="", help="...its version.")
+    p.add_argument("--bug-suspected", default="", help="...the suspected bug, in one or two sentences.")
     return p.parse_args(argv)
 
 
@@ -340,6 +359,10 @@ async def _amain(argv: list[str] | None = None) -> int:
         platform=args.platform,
         cause=args.cause,
         cause_asset=args.cause_asset,
+        local_fix=args.local_fix == "yes",
+        bug_package=args.bug_package,
+        bug_version=args.bug_version,
+        bug_suspected=args.bug_suspected,
     )
     # The JSON line IS the completion signal: it flows through the agent's
     # transcript, and the `flow diagnose` runner detects the run is done (and reads

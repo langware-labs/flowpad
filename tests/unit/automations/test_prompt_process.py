@@ -57,12 +57,12 @@ async def test_callback_and_session_know_each_other_until_it_is_removed():
     trigger = await _callback(process)
 
     process = await AgenticProcess.get_by_id(process.id)
-    assert trigger.typeid in process.private_context_entities
-    assert process.typeid in (await Trigger.get_by_id(trigger.id)).private_context_entities
+    assert trigger.typeid in process.shared_context_entities
+    assert process.typeid in (await Trigger.get_by_id(trigger.id)).shared_context_entities
     assert [t.id for t in await pending_callbacks(process)] == [trigger.id]
 
     await trigger.delete()
-    assert trigger.typeid not in (await AgenticProcess.get_by_id(process.id)).private_context_entities
+    assert trigger.typeid not in (await AgenticProcess.get_by_id(process.id)).shared_context_entities
 
 
 @async_context

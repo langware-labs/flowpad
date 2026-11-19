@@ -1,7 +1,7 @@
 import { PageId, TypeId, type ShowTarget } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { editorForType } from './asset-doc-types';
-import { DockPointer } from './DockPointer';
+import { DockPointer, STATE_KEY_PARAM } from './DockPointer';
 import { folderDockPointer } from './folder-pointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { shellIdFromShowTarget } from './shell-show-target';
@@ -38,6 +38,12 @@ import { ViewType } from '@src/types/ViewType';
  * becoming its identity.
  */
 export function dockForDisplayTarget(target: ShowTarget | null | undefined): DockPointer | null {
+  const dock = openableDock(target);
+  // A page the opener minted a key for opens with it; one with none asks the user first.
+  return dock && target?.state_key ? dock.withOption(STATE_KEY_PARAM, target.state_key) : dock;
+}
+
+function openableDock(target: ShowTarget | null | undefined): DockPointer | null {
   if (!target) return null;
   if (target.kind === 'url' && target.url) return DockPointer.forWebUrl(target.url);
 

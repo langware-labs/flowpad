@@ -12,7 +12,7 @@ import {
 } from '@sdk';
 import { useEffect } from 'react';
 import { NavigationActions } from '@src/navigation/NavigationActions';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, STATE_KEY_PARAM } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { isAppType } from '@src/navigation/app-dock';
 import {
@@ -111,7 +111,8 @@ export function useUiCommandListener(): void {
         return;
       }
       const editor = editorForPath(msg.path);
-      navigateTo(AssetDocPointer.forVfs(editor, msg.path).toDockPointer());
+      const dock = AssetDocPointer.forVfs(editor, msg.path).toDockPointer();
+      navigateTo(msg.state_key ? dock.withOption(STATE_KEY_PARAM, msg.state_key) : dock);
     };
 
     // `navigate_dock`: go to a SCREEN. Unlike the two above there is nothing to

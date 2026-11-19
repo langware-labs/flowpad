@@ -48,6 +48,12 @@ export interface DiagnosisFinding {
   evidence: string;
 }
 
+export interface DiagnosisBug {
+  package: string;
+  version: string;
+  suspected: string;
+}
+
 export interface DiagnosisEnvironment {
   reported_by: string;
   occurred_at: string;
@@ -74,6 +80,10 @@ export interface DiagnosisSpec {
   symptoms: string;
   rca: string;
   fix: string;
+  /** The diagnose can apply `fix` itself on this machine: Fix is offered. */
+  local_fix: boolean;
+  /** A bug it suspects in a component; null when it found none. */
+  bug: DiagnosisBug | null;
   findings: DiagnosisFinding[];
   environment: DiagnosisEnvironment;
   logs: LogTail[];

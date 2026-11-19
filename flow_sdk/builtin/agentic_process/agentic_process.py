@@ -7058,8 +7058,10 @@ class AgenticProcess(Entity):
     @classmethod
     async def delete_by_id(cls, eid: str):
         """The HTTP delete route comes here and bypasses the instance ``delete()``."""
+        from flow_sdk.builtin.trigger import callback_ids  # noqa: PLC0415
+
         row = await cls.get_by_id(eid)
-        if row is not None and any(t.type == BuiltinEntityType.TRIGGER.value for t in row.private_context_entities_):
+        if row is not None and callback_ids(row):
             await row._drop_callbacks()
         return await super().delete_by_id(eid)
 

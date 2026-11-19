@@ -54,6 +54,13 @@ pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("usable_claude_so
 # ---------------------------------------------------------------------------
 
 
+
+def _shown_without_key(stored: dict) -> dict:
+    """A shown page is stored with the state key its opener minted; the caller's copy has none."""
+    assert stored.get("state_key"), "a shown page is stored with its state key"
+    return {k: v for k, v in stored.items() if k != "state_key"}
+
+
 @pytest.mark.asyncio
 async def test_set_visible_flips_visible_only_both_directions(bootstrapped_client, user):
     """``set-visible`` mutates ``visible`` and NEVER ``pty_mode`` — both ways."""
@@ -171,7 +178,7 @@ async def test_show_app_addresses_the_artifact_and_derives_the_runtime(bootstrap
     assert "port" not in shown
 
     row = await get_agentic_process(bootstrapped_client, pid)
-    assert row["context_data"]["last_shown"] == shown
+    assert _shown_without_key(row["context_data"]["last_shown"]) == shown
 
 
 @pytest.mark.asyncio
@@ -237,13 +244,13 @@ async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, 
     assert shown["kind"] == "app"
 
     row = await get_agentic_process(bootstrapped_client, pid)
-    assert row["context_data"]["last_shown"] == shown
+    assert _shown_without_key(row["context_data"]["last_shown"]) == shown
 
     stale.status_report = {"kind": "process_status", "status": "ready"}
     await stale.save()
 
     row = await get_agentic_process(bootstrapped_client, pid)
-    assert row["context_data"]["last_shown"] == shown
+    assert _shown_without_key(row["context_data"]["last_shown"]) == shown
     assert row["status_report"] == stale.status_report
 
 
@@ -266,7 +273,7 @@ async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user)
     assert {k: stack[0][k] for k in r1} == r1
     assert {k: stack[1][k] for k in r2} == r2
     # last_shown is the newest TARGET (no shown_at leak).
-    assert row["context_data"]["last_shown"] == r2
+    assert _shown_without_key(row["context_data"]["last_shown"]) == r2
     assert "shown_at" not in row["context_data"]["last_shown"]
     # The backend decided where it is presented (``tab.show_placement``): this
     # process has no open tab, so there is nothing to pin into or sit beside.

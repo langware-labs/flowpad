@@ -2,7 +2,10 @@
 
 `journey-bar.js` is pasted inline, last in `<body>`, in every mock. It is the reviewer's control strip:
 
-**🎯 · ⟲ Restart · ‹ Back · <step title / app trail · n of N> · Next › · ☰ screens · ▶ Execute (n) · –**
+**🎯 · ⟲ Restart · ‹ Back · Next › · <step title / app trail · n of N> · ☰ screens · ▶ Execute (n) · –**
+
+**Back and Next never move.** They sit side by side, before everything whose width changes (the title, the changes
+switch, the Execute count), and the bar is held by its left edge — so repeated clicks on Next land on Next.
 
 Every popup (☰ screens, feedback, review, save) opens with the same toolbar: **💬 Feedback · Review · 💾 Save to repo**.
 

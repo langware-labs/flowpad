@@ -9,6 +9,7 @@ import pytest
 
 from flow_sdk.diagnose import (
     DiagnosePurpose,
+    DiagnosisBug,
     DiagnosisEnvironment,
     DiagnosisFinding,
     DiagnosisSpec,
@@ -35,7 +36,7 @@ def _union(name: str) -> set[str]:
 
 @pytest.mark.parametrize(
     "model",
-    [DiagnosisSpec, FlowContextSpec, DiagnosisFinding, DiagnosisEnvironment, LogTail, SessionState, SessionTurn],
+    [DiagnosisSpec, FlowContextSpec, DiagnosisFinding, DiagnosisBug, DiagnosisEnvironment, LogTail, SessionState, SessionTurn],
     ids=lambda m: m.__name__,
 )
 def test_the_ts_interface_names_every_field(model):

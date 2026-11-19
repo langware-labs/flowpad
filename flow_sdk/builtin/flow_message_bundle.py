@@ -2385,9 +2385,8 @@ def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: s
     row is already born stamped ``now()``, and the materialize then takes its
     existing-row branch and never applies the recovered value.
 
-    Both clocks, not just ``created_date``: stream inbox recency is
-    ``max(message.updated_date)``, so leaving ``updated_date`` at ``now()``
-    drags the whole conversation to the sync instant.
+    Both clocks: stream inbox recency is the newest message's ``created_date``, so one left at
+    ``now()`` drags the whole conversation to the sync instant; ``updated_date`` is the sync clock.
 
     ``updated_date`` is NOT the send-time and must not be guessed from it.
     ``created_date`` is when the message was written; ``updated_date`` is when
@@ -2408,10 +2407,11 @@ def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: s
     if fm_data.get("created_date"):
         return
     ts = _send_time_from_pointer_index(tmp_root, fm_id)
-    if ts:
-        fm_data["created_date"] = ts
-    # Independent of ``ts``: a bundle with no pointer index still has the hub
-    # clock, and without it the row is born ``now()``.
+    # No pointer index: the hub clock is the only one left. Not the send-time, but never ``now()`` --
+    # the conversation shows its newest message's ``created_date`` -- and the next hub sync replaces
+    # it with the real one (``adopt_hub_created_date``).
+    if ts or hub_updated:
+        fm_data["created_date"] = ts or hub_updated
     if not fm_data.get("updated_date") and (hub_updated or ts):
         fm_data["updated_date"] = hub_updated or ts
 

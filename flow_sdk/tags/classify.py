@@ -8,13 +8,14 @@ each one's full name is an option, its description is what the option means — 
 classification instructions a person edits. One ``ChoiceQuestion``, one call. Never writes.
 "None of these" is always an option: the answer is then OK with an empty ``tag``.
 A decision that cannot be asked comes back NOT_YET with ``unavailable`` set, never raised.
+The verdict keeps the decision as it happened (``verdict.run``, a ``decision.run``) for whoever shows why.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from flow_sdk.schema.data_spec.decision_spec import ChoiceAnswer, ChoiceQuestion, DecisionSpec
+from flow_sdk.schema.data_spec.decision_spec import ChoiceAnswer, ChoiceQuestion, DecisionRun, DecisionSpec
 from flow_sdk.schema.data_spec.returned_value_spec import DecisionVerdict
 from flow_sdk.schema.data_spec.tag_classification_spec import TagClassification
 from flow_sdk.tags.grammar import normalize_tag, tag_is_within
@@ -55,17 +56,23 @@ async def choose(value: Any, choices: dict[str, str]) -> DecisionVerdict:
     if not choices:
         return DecisionVerdict.not_applicable("No tags to classify into yet.")
     question = ChoiceQuestion(instructions=INSTRUCTIONS, options={NONE: NONE_MEANING, **choices})
+    spec = DecisionSpec(state=_plain(value), questions={"tag": question})
     try:
-        result = await decide(DecisionSpec(state=_plain(value), questions={"tag": question}))
+        result = await decide(spec)
     except DecisionError as exc:
-        return DecisionVerdict.not_yet(f"Could not classify: {exc.message}", ran=False, unavailable=exc.reason)
+        verdict = DecisionVerdict.not_yet(f"Could not classify: {exc.message}", ran=False, unavailable=exc.reason)
+        verdict._run = DecisionRun(request=spec, wire=exc.wire)
+        return verdict
     answer = result.answers.get("tag")
     if not isinstance(answer, ChoiceAnswer) or answer.choice not in question.options:
-        return DecisionVerdict.not_yet("The decision answered outside the tag tree.")
-    tag = "" if answer.choice == NONE else answer.choice
-    return DecisionVerdict.satisfied(
-        f"Lands on {tag}." if tag else "No tag fits.",
-        value=TagClassification(tag=tag, confidence=answer.confidence),
-        met=True, confidence=answer.confidence, answers={"tag": answer.model_dump(mode="json")},
-        endpoint=getattr(result, "endpoint", ""), latency_ms=getattr(result, "latency_ms", 0.0),
-    )
+        verdict = DecisionVerdict.not_yet("The decision answered outside the tag tree.")
+    else:
+        tag = "" if answer.choice == NONE else answer.choice
+        verdict = DecisionVerdict.satisfied(
+            f"Lands on {tag}." if tag else "No tag fits.",
+            value=TagClassification(tag=tag, confidence=answer.confidence),
+            met=True, confidence=answer.confidence, answers={"tag": answer.model_dump(mode="json")},
+            endpoint=getattr(result, "endpoint", ""), latency_ms=getattr(result, "latency_ms", 0.0),
+        )
+    verdict._run = DecisionRun(request=spec, response=result, wire=result.wire)
+    return verdict
