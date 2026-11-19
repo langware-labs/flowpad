@@ -63,7 +63,9 @@ def test_deploys_an_agent_named_by_its_name(app):
         "ok": True, "agent_id": AGENT_ID, "project_id": PROJECT_ID, "activity": ACTIVITY, "deployment_id": "d-1"
     }
     assert calls[-1][1].endswith(f"/project/{PROJECT_ID}/deploy")
-    assert calls[-1][2] == {"environment": "staging", "provider": "e2b", "main_agent_id": f"agent-{AGENT_ID}"}
+    assert calls[-1][2] == {
+        "environment": "staging", "provider": "e2b", "main_agent_id": f"agent-{AGENT_ID}", "identity": "deployment"
+    }
 
 
 def test_deploys_on_the_provider_named_by_provider(app):
@@ -72,7 +74,18 @@ def test_deploys_on_the_provider_named_by_provider(app):
     result = CliRunner().invoke(flow_cli.app, ["agent", "deploy", AGENT_ID, "--provider", "gcp_vm", "--no-blocking"])
 
     assert result.exit_code == 0, result.stdout
-    assert calls[-1][2] == {"environment": None, "provider": "gcp_vm", "main_agent_id": f"agent-{AGENT_ID}"}
+    assert calls[-1][2] == {
+        "environment": None, "provider": "gcp_vm", "main_agent_id": f"agent-{AGENT_ID}", "identity": "deployment"
+    }
+
+
+def test_signs_the_machine_in_as_the_identity_named_by_identity(app):
+    calls, _ = app
+
+    result = CliRunner().invoke(flow_cli.app, ["agent", "deploy", AGENT_ID, "--identity", "agent", "--no-blocking"])
+
+    assert result.exit_code == 0, result.stdout
+    assert calls[-1][2]["identity"] == "agent"
 
 
 def test_lists_the_providers_the_hub_offers(app):
