@@ -42,6 +42,8 @@ export interface AppDockAddress {
    * current), not the app.
    */
   options: Record<string, string>;
+  /** The page key on the dock, if any — the frame's address, never part of what the app acts on. */
+  stateKey: string | null;
 }
 
 /**
@@ -73,7 +75,7 @@ export function appDockAddress(dock: DockPointer | null): AppDockAddress | null 
   const {
     [APP_RUNTIME_PARAM]: pinned,
     [APP_ROUTE_PARAM]: route,
-    [STATE_KEY_PARAM]: _stateKey,
+    [STATE_KEY_PARAM]: stateKey,
     ...passthrough
   } = withoutScopeFilterOptions(dock.options ?? {});
   const isEndpoint = target.type === 'service_endpoint';
@@ -84,5 +86,6 @@ export function appDockAddress(dock: DockPointer | null): AppDockAddress | null 
     route: isEndpoint && typeof route === 'string' ? route : null,
     runtime: pinned === 'dev' || pinned === 'served' ? pinned : null,
     options: passthrough as Record<string, string>,
+    stateKey: stateKey || null,
   };
 }

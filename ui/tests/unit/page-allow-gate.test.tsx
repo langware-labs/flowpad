@@ -1,6 +1,7 @@
 /**
- * `PageAllowGate` — a page runs only with a state key. A page its opener minted a key for opens at
- * once; one a link points at asks the user first, in its own place, before anything of it mounts.
+ * `PageAllowGate` — a page runs only on a dock carrying a key the server knows. A page its opener minted
+ * a key for opens at once; one a link points at asks the user first, in its own place, before anything
+ * of it mounts. Allow writes the app's own key into the address — the gate never mints.
  */
 import { apiClient } from '@sdk';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -16,23 +17,33 @@ const h = vi.hoisted(() => ({
   setTrusted: vi.fn(),
 }));
 
-vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({
-    currentDock: h.dock,
-    navigation: {
-      replaceDock: (dock: unknown) => {
-        h.replaced.push(dock);
-        h.dock = dock;
-      },
+vi.mock('@src/navigation/useDockNavigation', async () => {
+  const { useState } = await import('react');
+  return {
+    // Reactive like the real hook: replacing the dock re-renders whoever reads it.
+    useDockNavigation: () => {
+      const [, redraw] = useState(0);
+      return {
+        currentDock: h.dock,
+        navigation: {
+          replaceDock: (dock: unknown) => {
+            h.replaced.push(dock);
+            h.dock = dock;
+            redraw((n) => n + 1);
+          },
+        },
+      };
     },
-  }),
-}));
+  };
+});
 vi.mock('@src/hooks/use-preference', () => ({ usePreference: () => [h.trusted, h.setTrusted] }));
 
 const { PageAllowGate } = await import('@src/components/page-allow/PageAllowGate');
 
 const PAGE = 'editor/html/vfs/compute_node-@local/Users/me/page.html';
 const KEY = 'k'.repeat(32);
+/** The app's own key: the one the server wrote into the app's page at startup. */
+const APP_KEY = 'a'.repeat(32);
 const answer = (enforced: boolean, probed: { context: Record<string, string> } | null) => ({
   enforced,
   state: null,
@@ -40,7 +51,7 @@ const answer = (enforced: boolean, probed: { context: Record<string, string> } |
 });
 
 let posted: unknown[];
-/** The local server: what it asks for, which keys it knows, and the key it mints. */
+/** The local server: what it asks for and which keys it knows. A mint is recorded — the gate must make none. */
 function server(opts: { enforced: boolean; known?: Record<string, Record<string, string>> }) {
   vi.spyOn(apiClient, 'get').mockImplementation(async (_url: string, config?: { params?: { probe?: string } }) => {
     const probe = config?.params?.probe;
@@ -49,13 +60,12 @@ function server(opts: { enforced: boolean; known?: Record<string, Record<string,
   });
   vi.spyOn(apiClient, 'post').mockImplementation(async (_url: string, body: unknown) => {
     posted.push(body);
-    opts.known = { ...opts.known, minted: (body as { context: Record<string, string> }).context };
     return { key: 'minted' };
   });
 }
 
-const ui = (installed = false) => (
-  <PageAllowGate title="page.html" installed={installed}>
+const ui = () => (
+  <PageAllowGate title="page.html">
     {({ stateKey, context }) => (
       <div data-testid="page" data-key={stateKey ?? ''} data-process={context.process ?? ''} />
     )}
@@ -68,10 +78,12 @@ beforeEach(() => {
   h.trusted = [];
   h.setTrusted.mockReset();
   posted = [];
+  (globalThis as { __FLOWPAD_STATE_KEY__?: string }).__FLOWPAD_STATE_KEY__ = APP_KEY;
 });
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  delete (globalThis as { __FLOWPAD_STATE_KEY__?: string }).__FLOWPAD_STATE_KEY__;  window.sessionStorage.clear(); // the key is remembered for a reload: do not hand it to the next test file
 });
 
 describe('PageAllowGate', () => {
@@ -114,16 +126,16 @@ describe('PageAllowGate', () => {
     expect(await screen.findByTestId('page-allow-card')).toBeTruthy();
   });
 
-  it('mints a key for the session on Allow, writes it into the address, and runs the page', async () => {
-    server({ enforced: true });
+  it("writes the app's own key into the address on Allow, mints nothing, and runs the page", async () => {
+    server({ enforced: true, known: { [APP_KEY]: {} } });
     render(ui());
 
     fireEvent.click(await screen.findByTestId('page-allow-accept'));
 
     const page = await screen.findByTestId('page');
-    expect(posted).toEqual([{ title: 'page.html', context: { process: 'agentic_process-proc-1' } }]);
-    expect((h.replaced[0] as DockPointer).options?.[STATE_KEY_PARAM]).toBe('minted');
-    expect(page.getAttribute('data-key')).toBe('minted');
+    expect(posted).toEqual([]);
+    expect((h.replaced[0] as DockPointer).options?.[STATE_KEY_PARAM]).toBe(APP_KEY);
+    expect(page.getAttribute('data-key')).toBe(APP_KEY);
   });
 
   it('does not run a page the user refuses', async () => {
@@ -146,45 +158,11 @@ describe('PageAllowGate', () => {
 
     h.trusted = [`${ViewType.ASSETS}|${PAGE}`];
     h.dock = new DockPointer(ViewType.ASSETS, PAGE);
-    server({ enforced: true });
+    server({ enforced: true, known: { [APP_KEY]: {} } });
     render(ui());
 
     expect(await screen.findByTestId('page')).toBeTruthy();
     expect(screen.queryByTestId('page-allow-card')).toBeNull();
-  });
-
-  describe('an installed app (its address names an app, so nothing is asked)', () => {
-    it('mints a key silently, writes it into the address, and runs the app with it', async () => {
-      server({ enforced: true });
-      render(ui(true));
-
-      const page = await screen.findByTestId('page');
-
-      expect(screen.queryByTestId('page-allow-card')).toBeNull();
-      expect(posted).toEqual([{ title: 'page.html', context: { process: 'agentic_process-proc-1' } }]);
-      expect((h.replaced[0] as DockPointer).options?.[STATE_KEY_PARAM]).toBe('minted');
-      expect(page.getAttribute('data-key')).toBe('minted');
-    });
-
-    it('mints nothing on a server that asks for no key', async () => {
-      server({ enforced: false });
-      render(ui(true));
-
-      await screen.findByTestId('page');
-
-      expect(posted).toEqual([]);
-    });
-
-    it('loads the app without a key when the server cannot be asked or will not mint — it says why itself', async () => {
-      vi.spyOn(apiClient, 'get').mockRejectedValue(new Error('down'));
-      render(ui(true));
-      expect(await screen.findByTestId('page')).toBeTruthy();
-      cleanup();
-
-      server({ enforced: true });
-      vi.spyOn(apiClient, 'post').mockRejectedValue(new Error('refused'));
-      render(ui(true));
-      expect((await screen.findByTestId('page')).getAttribute('data-key')).toBe('');
-    });
+    expect(posted).toEqual([]);
   });
 });

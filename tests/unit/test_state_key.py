@@ -178,15 +178,24 @@ def test_keys_survive_a_restart():
     assert page_state.lookup("y" * 32) is None
 
 
-def test_only_the_app_or_a_machine_can_mint_and_a_minted_key_is_always_a_page_key():
+def test_only_a_machine_can_mint_and_a_minted_key_is_always_a_page_key():
     client = _client()
-    page, app = _key("page"), _key("app")
     body = {"context": {"process": "agentic_process-2"}, "grant": "app"}
 
-    assert client.post("/api/v1/page-state", json=body, headers={page_state.HEADER: page}).status_code == 403
-    minted = client.post("/api/v1/page-state", json=body, headers={page_state.HEADER: app}).json()["data"]["key"]
+    # The app's key now reaches every page the app shows, so it mints nothing either.
+    for held in (_key("page"), _key("app")):
+        assert client.post("/api/v1/page-state", json=body, headers={page_state.HEADER: held}).status_code == 403
+    minted = client.post("/api/v1/page-state", json=body, headers=MACHINE).json()["data"]["key"]
     assert page_state.lookup(minted).grant == "page"
-    assert client.post("/api/v1/page-state", json=body, headers=MACHINE).status_code == 200
+
+
+def test_the_same_page_state_is_handed_the_same_key():
+    shown = PageState(context={"process": "agentic_process-7"}, title="index.html")
+
+    first, again = page_state.mint(shown), page_state.mint(shown)
+    other = page_state.mint(PageState(context={"process": "agentic_process-8"}, title="index.html"))
+
+    assert first == again and other != first
 
 
 def test_a_page_reads_back_what_its_key_stands_for_and_the_app_can_ask_about_another():
@@ -216,7 +225,7 @@ def test_the_app_has_one_key_that_page_churn_cannot_evict(monkeypatch):
     monkeypatch.setattr(page_state, "_MAX_STATES", 3)
     app = page_state.app_key()
 
-    pages = [_key() for _ in range(6)]
+    pages = [page_state.mint(PageState(context={"process": f"agentic_process-{n}"})) for n in range(6)]
 
     assert page_state.app_key() == app and page_state.lookup(app).grant == "app"
     assert page_state.lookup(pages[0]) is None and page_state.lookup(pages[-1]) is not None

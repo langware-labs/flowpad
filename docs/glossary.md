@@ -529,8 +529,9 @@ is what our `SubAgent` mirrors; a Chief of Staff uses it natively for short jobs
 
 ## Page state key (2026-11-18)
 
-**Ours.** A random string the LOCAL server mints for a page it was asked to run (`flow_sdk/server/page_state.py`),
-mapped to a `PageState` value (`page.state`: `context`, `grant`). Unrelated to the OAuth `state`
+**Ours.** A random string the LOCAL server mints (`flow_sdk/server/page_state.py`), mapped to a `PageState` value
+(`page.state`: `context`, `grant`). Normally there is one — the **app's key**, minted at startup and carried by
+every navigation inside the app; an agent that opens a page may mint another to hand it a context. Unrelated to the OAuth `state`
 parameter, to `stream_inbox.message.state`, and to the cookie gate (which keeps unauthorized users off the machine;
 this keeps a link from running something in the user's own app). Written `stateKey` in a dock address,
 `X-Flowpad-State` on a call, `__FLOWPAD_STATE_KEY__` in a page. Local installs only.

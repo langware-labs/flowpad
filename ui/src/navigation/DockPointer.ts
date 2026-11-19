@@ -310,11 +310,11 @@ export const WORKSPACE_PARAM = 'workspace';
 export const WORKSPACE_ENTRY_PARAM = 'workspaceEntry';
 
 /**
- * URL query-param key carrying the STATE KEY a page was opened with (`flow_sdk/server/page_state.py`):
- * minted by whoever opened the page on this machine (`flow show`, an agent, the user saying Allow), and
- * handed by the host to the page's frame. A dock without one asks the user before it runs a page.
- * It is this dock's own — NOT sticky: carrying one page's key onto another page would hand it reach it
- * never earned. Excluded from `tabHash` like every option.
+ * URL query-param key carrying the STATE KEY a page runs with (`flow_sdk/server/page_state.py`). Normally
+ * the app's own key, minted once at startup: every navigation made inside the app carries it
+ * (`NavigationActions.openDock`), so a dock WITHOUT a known key is one a link from outside named, and it
+ * asks the user before it runs a page. An agent that opens a page may give it a key of its own, to hand
+ * it a context; that key stays on its dock and is never carried on. Excluded from `tabHash` like every option.
  */
 export const STATE_KEY_PARAM = 'stateKey';
 
