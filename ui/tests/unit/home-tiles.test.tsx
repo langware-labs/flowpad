@@ -59,6 +59,23 @@ const used: HomeTile = {
   deploymentIssues: new Map(),
 };
 
+const sharedIdle: HomeTile = {
+  key: `agent-${S1}`,
+  kind: 'agent',
+  label: 'Shared idle',
+  own: false,
+  agent: {
+    id: S1,
+    name: 'idle',
+    displayName: 'Shared idle',
+    description: 'Shared with you.',
+    typeId: typeId(`agent-${S1}`),
+  } as unknown as Agent,
+  deployments: [],
+  issueCount: 0,
+  deploymentIssues: new Map(),
+};
+
 function state(tileKey: string | null, deploymentId: string | null = null): HomeTilesState {
   return {
     agents: [own, used],
@@ -68,7 +85,15 @@ function state(tileKey: string | null, deploymentId: string | null = null): Home
     open: vi.fn(),
     manage: vi.fn(),
     busyKey: null,
+    ownIsLocal: true,
   };
+}
+
+/** The hub home: no Manage (Open already goes to the page), and what is yours is in the cloud. */
+function hubState(tileKey: string | null): HomeTilesState {
+  const agents = [own, sharedIdle];
+  const selection = resolveSelection(agents, tileKey, null);
+  return { ...state(null), agents, selection, manage: undefined, ownIsLocal: false };
 }
 
 afterEach(() => {
@@ -93,6 +118,29 @@ describe('home icons', () => {
     expect(home.open).not.toHaveBeenCalled();
     await user.dblClick(mine);
     expect(home.open).toHaveBeenCalledWith(own);
+  });
+});
+
+describe('home icon pages', () => {
+  it('shows 25 icons a page, and the arrows page back and forth', async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 30 }, (_, i) => ({ ...used, key: `agent-many-${i}`, label: `Agent ${i}` }));
+    render(<HomeTiles home={{ ...state(null), agents: many }} />);
+
+    expect(screen.getAllByTestId('project-agent-tile')).toHaveLength(25);
+    expect(screen.getByTestId('home-agents-pager')).toHaveTextContent('1–25 of 30');
+    expect(screen.getByTestId('home-agents-prev')).toBeDisabled();
+    await user.click(screen.getByTestId('home-agents-next'));
+    expect(screen.getAllByTestId('project-agent-tile')).toHaveLength(5);
+    expect(screen.getByTestId('home-agents-pager')).toHaveTextContent('26–30 of 30');
+    expect(screen.getByTestId('home-agents-next')).toBeDisabled();
+    await user.click(screen.getByTestId('home-agents-prev'));
+    expect(screen.getAllByTestId('project-agent-tile')).toHaveLength(25);
+  });
+
+  it('shows no arrows when every icon fits on one page', () => {
+    render(<HomeTiles home={state(null)} />);
+    expect(screen.queryByTestId('home-agents-pager')).toBeNull();
   });
 });
 
@@ -136,6 +184,27 @@ describe('home properties panel', () => {
     expect(screen.getAllByTestId('home-deployment-row')).toHaveLength(2);
     expect(screen.queryByTestId('home-properties-open')).toBeNull();
     expect(screen.queryByTestId('home-access')).toBeNull();
+  });
+
+  it('on the hub, shows your agent in the cloud with Open and no Manage', async () => {
+    const user = userEvent.setup();
+    const home = hubState(own.key);
+    render(<HomePropertiesPanel home={home} />);
+
+    expect(screen.getByTestId('home-properties')).toHaveAttribute('data-target', own.key);
+    expect(screen.getByTestId('home-properties')).toHaveTextContent('Cloud');
+    expect(screen.queryByTestId('home-properties-manage')).toBeNull();
+    await user.click(screen.getByTestId('home-properties-open'));
+    expect(home.open).toHaveBeenCalledWith(own, null);
+  });
+
+  it('on the hub, shows an agent shared with you that has no deployment as itself', () => {
+    render(<HomePropertiesPanel home={hubState(sharedIdle.key)} />);
+
+    expect(screen.getByTestId('home-properties')).toHaveAttribute('data-target', sharedIdle.key);
+    expect(screen.getByText('Shared with you.')).toBeInTheDocument();
+    expect(screen.getByTestId('home-properties-open')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-properties-manage')).toBeNull();
   });
 
   it('says why there is no roster when signed out, and offers no invite', () => {

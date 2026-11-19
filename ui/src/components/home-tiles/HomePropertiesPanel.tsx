@@ -15,10 +15,8 @@ import { Button } from '@src/components/ui/button';
 import { useMembers } from '@src/hooks/use-members';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
-import { TileCount, TileFace, WhereIcon, type HomeTilesState } from './HomeTiles';
-import { pageOf, type HomeTile } from './home-tiles-model';
-
-const ICON_BUTTON = 'rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground';
+import { ICON_BUTTON, PageArrows, TileCount, TileFace, WhereIcon, type HomeTilesState } from './HomeTiles';
+import { pageOf, standsForItself, type HomeTile } from './home-tiles-model';
 
 /** Who can reach the selected thing; `+` opens the invite (address, role, Send). */
 function AccessSection({ typeid, own }: { typeid: string; own: boolean }) {
@@ -114,23 +112,30 @@ function Property({ label, children }: { label: ReactNode; children: ReactNode }
 /** The deployments behind one icon. Nothing is marked in the list: a row opens that deployment as a sub view. */
 function DeploymentList({
   deployments,
+  ofProject,
   issues,
   onPick,
 }: {
   deployments: Deployment[];
+  /** An app's list: the deployments of its project, where every app of it runs. */
+  ofProject: boolean;
   /** Open issues per deployment id. */
   issues: Map<string, number>;
   onPick: (deployment: Deployment) => void;
 }) {
-  const { t, i18n } = useLingui();
+  const { i18n } = useLingui();
   const [page, setPage] = useState(0);
-  const { rows, first, pages } = pageOf(deployments, page);
+  const slice = pageOf(deployments, page);
   return (
     <section className="flex flex-col gap-1.5" data-testid="home-deployments">
       <div className="text-xs text-muted-foreground">
-        <Trans>Deployments · {deployments.length}</Trans>
+        {ofProject ? (
+          <Trans>Project deployments · {deployments.length}</Trans>
+        ) : (
+          <Trans>Deployments · {deployments.length}</Trans>
+        )}
       </div>
-      {rows.map((deployment) => {
+      {slice.rows.map((deployment) => {
         const open = issues.get(deployment.id) ?? 0;
         return (
           <button
@@ -149,34 +154,7 @@ function DeploymentList({
           </button>
         );
       })}
-      {pages > 1 && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="home-deployments-pager">
-          <span className="flex-1 tabular-nums">
-            <Trans>
-              {first}–{first + rows.length - 1} of {deployments.length}
-            </Trans>
-          </span>
-          <button
-            type="button"
-            className={cn(ICON_BUTTON, 'border border-border disabled:opacity-40')}
-            aria-label={t`Previous page`}
-            disabled={page === 0}
-            onClick={() => setPage(page - 1)}
-          >
-            <BreadcrumbChevron className="h-3.5 w-3.5 rotate-180" />
-          </button>
-          <button
-            type="button"
-            className={cn(ICON_BUTTON, 'border border-border disabled:opacity-40')}
-            aria-label={t`Next page`}
-            disabled={page >= pages - 1}
-            onClick={() => setPage(page + 1)}
-            data-testid="home-deployments-next"
-          >
-            <BreadcrumbChevron className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+      <PageArrows slice={slice} total={deployments.length} onPage={setPage} testId="home-deployments" />
     </section>
   );
 }
@@ -193,7 +171,8 @@ function updated(entity: { updated_date?: Date | string | null } | null | undefi
 function kindLine(tile: HomeTile, deployment: Deployment | null, hasTarget: boolean): ReactNode {
   if (deployment) return <Trans>Deployment</Trans>;
   if (!hasTarget) return <Trans>Pick a deployment</Trans>;
-  return tile.kind === 'agent' ? <Trans>Agent · yours</Trans> : <Trans>App · yours</Trans>;
+  if (tile.kind === 'app') return <Trans>App · yours</Trans>;
+  return tile.own ? <Trans>Agent · yours</Trans> : <Trans>Agent · shared with you</Trans>;
 }
 
 /**
@@ -202,10 +181,10 @@ function kindLine(tile: HomeTile, deployment: Deployment | null, hasTarget: bool
  */
 export function HomePropertiesPanel({ home }: { home: HomeTilesState }) {
   const { t, i18n } = useLingui();
-  const { selection, select, open, manage } = home;
+  const { selection, select, open, manage, ownIsLocal } = home;
   if (!selection) return null;
   const { tile, deployment, listed, subView } = selection;
-  const target = deployment ?? (tile.own ? (tile.agent ?? tile.app?.app) : null);
+  const target = deployment ?? (standsForItself(tile) ? (tile.agent ?? tile.app?.app) : null);
   const targetKey = target?.typeId.toString();
   const description = tile.agent?.description ?? tile.app?.app.description;
   const when = updated(target);
@@ -250,7 +229,12 @@ export function HomePropertiesPanel({ home }: { home: HomeTilesState }) {
 
       {target && description && <p className="text-sm text-muted-foreground">{description}</p>}
       {listed.length > 0 && (
-        <DeploymentList deployments={listed} issues={tile.deploymentIssues} onPick={(d) => select(tile.key, d.id)} />
+        <DeploymentList
+          deployments={listed}
+          ofProject={tile.kind === 'app'}
+          issues={tile.deploymentIssues}
+          onPick={(d) => select(tile.key, d.id)}
+        />
       )}
 
       {targetKey && (
@@ -260,7 +244,7 @@ export function HomePropertiesPanel({ home }: { home: HomeTilesState }) {
           <div>
             {(deployment || tile.kind === 'agent') && (
               <Property label={<Trans>Runs on</Trans>}>
-                <WhereLabel local={deployment ? deployment.isLocal : true} />
+                <WhereLabel local={deployment ? deployment.isLocal : tile.own && ownIsLocal} />
               </Property>
             )}
             {deployment && (
@@ -272,7 +256,7 @@ export function HomePropertiesPanel({ home }: { home: HomeTilesState }) {
             <Button size="sm" onClick={() => open(tile, deployment)} data-testid="home-properties-open">
               <Trans>Open</Trans>
             </Button>
-            {tile.own && !deployment && (
+            {manage && tile.own && !deployment && (
               <Button size="sm" variant="outline" onClick={() => manage(tile)} data-testid="home-properties-manage">
                 <Trans>Manage</Trans>
               </Button>
