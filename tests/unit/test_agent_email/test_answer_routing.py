@@ -61,6 +61,9 @@ class _Message:
     async def react_seen(self):
         return None  # a channel without reactions
 
+    async def react_received(self):
+        return None
+
 
 async def _async(value):
     return value

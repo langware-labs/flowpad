@@ -175,16 +175,6 @@ async def try_react_stage(message: Any, stage: str) -> Optional[str]:
     return emoji
 
 
-async def try_unreact_ours(message: Any) -> Optional[list[MessageReaction]]:
-    """Take back all of our reactions from a channel message. Answers its reactions after, or None when the
-    channel refused — feedback only, never a reason for the caller to fail."""
-    try:
-        return await unreact(message)
-    except Exception as exc:  # noqa: BLE001 — feedback only; the answer is out either way
-        logger.warning("our reactions stay on message %s: %s", getattr(message, "id", "?"), exc)
-        return None
-
-
 async def unreact(message: Any, emoji: str = "") -> list[MessageReaction]:
     """Take back our ``emoji`` (all of ours with ``""``) from a channel message."""
     source, driver, item = await _resolve(message)
@@ -206,6 +196,5 @@ __all__ = [
     "react",
     "source_item_of",
     "try_react_stage",
-    "try_unreact_ours",
     "unreact",
 ]

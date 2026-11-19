@@ -1,8 +1,8 @@
-"""While the agent works on a channel message, the person sees it has been seen; once the answer is out, it is gone.
+"""While the agent works on a channel message the person sees it was seen; once the answer is out, that it was received.
 
-``answer_one`` asks the message to show it is seen (``react_seen``) before the turn runs, and takes ours back
-(``unreact_seen``) after the reply — only when a reaction was put: a channel without reactions shows nothing.
-Which emoji, and whether the channel reacts at all, is the message's and its driver's (test_message_files_and_reactions).
+``answer_one`` asks the message to show it is seen (``react_seen``) before the turn runs, and received
+(``react_received``) after the reply. Which emoji, and whether the channel reacts at all, is the message's and its
+driver's (test_message_files_and_reactions): a channel without reactions shows nothing.
 """
 
 from types import SimpleNamespace
@@ -22,20 +22,20 @@ class _Driver:
 
 
 class _Message:
-    """A channel message that records, in order, what Flowpad does to it. ``seen`` is what its channel shows."""
+    """A channel message that records, in order, what Flowpad does to it."""
 
-    def __init__(self, seen: "str | None", body: str = "Hello, whats our status"):
+    def __init__(self, body: str = "Hello, whats our status"):
         self.data_source_id, self.external_id = "ds-1", "<m-1>"
         self.author_external_id, self.author_display, self.body = "tg-42", "Dana", body
-        self.seen = seen
         self.calls: list = []
 
     async def react_seen(self):
         self.calls.append("react_seen")
-        return self.seen
+        return "👀"
 
-    async def unreact_seen(self):
-        self.calls.append("unreact_seen")
+    async def react_received(self):
+        self.calls.append("react_received")
+        return "👍"
 
     async def reply_spec(self, *, body, files=()):
         return body
@@ -66,17 +66,9 @@ def engine(monkeypatch):
     return engine
 
 
-async def test_the_message_shows_seen_while_the_agent_answers_it(engine):
-    message = _Message(seen="👀")
+async def test_the_message_shows_seen_then_the_reply_then_received(engine):
+    message = _Message()
 
     assert await answer_one(engine, message, source=SOURCE) is True
 
-    assert message.calls == ["react_seen", ("reply", "re: Hello, whats our status"), "unreact_seen"]
-
-
-async def test_a_channel_without_reactions_is_answered_without_taking_any_back(engine):
-    message = _Message(seen=None)
-
-    assert await answer_one(engine, message, source=SOURCE) is True
-
-    assert message.calls == ["react_seen", ("reply", "re: Hello, whats our status")]
+    assert message.calls == ["react_seen", ("reply", "re: Hello, whats our status"), "react_received"]

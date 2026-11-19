@@ -43,7 +43,7 @@ class RecordSource(Source):
     family: ClassVar[Family] = Family.RECORD
 
 
-#: What a person sees on their message once it reached this machine, and while an agent works on it.
+#: What a person sees on their message: once it was received and answered, and while an agent works on it.
 RECEIVED_REACTION = "👍"
 SEEN_REACTION = "👀"
 

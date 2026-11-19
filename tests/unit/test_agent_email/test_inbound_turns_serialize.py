@@ -65,6 +65,9 @@ class _Message:
     async def react_seen(self):
         return None  # a channel without reactions
 
+    async def react_received(self):
+        return None
+
 
 async def test_messages_arriving_together_each_get_their_own_turn(monkeypatch):
     worker, sent = _Worker(), []

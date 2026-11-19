@@ -1038,7 +1038,7 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     who = display_name_of(getattr(message, "author_display", "") or "", author)
     outbox = reply_outbox(source, turn_key(message))
     # The person sees an agent has their message while it works on it (a channel without reactions: nothing).
-    seen = await message.react_seen()
+    await message.react_seen()
     outcome = await engine.run(
         Turn(
             session=session,
@@ -1070,8 +1070,8 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     # quote=None: the answer quotes the message only when the person wrote again meanwhile.
     await message.reply(await message.reply_spec(body=outcome.text or "", files=answer_files))
     console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
-    if seen:
-        await message.unreact_seen()
+    # The answer is out: the person sees their message was received (it replaces 👀 where one reaction is kept).
+    await message.react_received()
     return True
 
 

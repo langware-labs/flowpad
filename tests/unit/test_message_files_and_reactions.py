@@ -127,15 +127,16 @@ async def _delivered(script, src):
     return Delivered(row, position=None, row=row, source_id=str(src.id))
 
 
-async def test_a_message_shows_it_was_received_then_seen_and_the_answer_takes_ours_back():
+async def test_a_message_shows_seen_then_received_and_one_reaction_each_replaces_ours():
     with scripted_provider(PROVIDER, projected=True) as script:
         message = await _delivered(script, await _source())
 
-        assert await message.react_received() == "👍"
         assert await message.react_seen() == "👀"
-        await message.unreact_seen()
+        assert await message.react_received() == "👍"
+        stored = await SourceItem.get_one({"id": str(message._row.id)})
 
-    assert script.reacted == [("m1", "👍", False), ("m1", "👀", False), ("m1", "", True)]
+    assert script.reacted == [("m1", "👀", False), ("m1", "👍", False)]
+    assert [(r.emoji, r.ours) for r in stored.reactions] == [("👍", True)], "one per person: 👍 replaced 👀"
 
 
 async def test_a_driver_names_the_emoji_its_channel_can_show(monkeypatch):
