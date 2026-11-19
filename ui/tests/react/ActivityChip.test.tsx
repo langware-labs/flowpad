@@ -22,9 +22,10 @@ vi.mock('@sdk/activity', async () => {
   const actual = await vi.importActual<typeof import('@sdk/activity')>('@sdk/activity');
   return { ...actual, listActivities: () => Promise.resolve([]) };
 });
+const openDock = vi.hoisted(() => vi.fn());
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useCurrentDock: () => null,
-  useDockNavigation: () => ({ navigation: { openShellProcess: vi.fn(), openLens: vi.fn() } }),
+  useDockNavigation: () => ({ navigation: { openShellProcess: vi.fn(), openLens: vi.fn(), openDock } }),
 }));
 
 import { WebApp, type HostedApp } from '@sdk';
@@ -82,10 +83,10 @@ describe('footer chip — activities', () => {
   it('lists a hosted app with nothing else running, and opens it onto who has it open', async () => {
     hosted = [
       {
-        webapp_id: 'w1', title: 'GTM Studio', project_id: '', state: 'up', since: '2026-09-03T12:00:00Z', port: 8012, pid: 48211,
+        webapp_id: '5b0f3c1e-7a44-4d0b-9e21-5c6d7e8f9a02', title: 'GTM Studio', project_id: '', state: 'up', since: '2026-09-03T12:00:00Z', port: 8012, pid: 48211,
         connections: [
-          { webapp_id: 'w1', endpoint_id: 'e1', path: '/pipeline', browser: 'chrome', opened_by: '', since: '2026-09-03T12:00:00Z' },
-          { webapp_id: 'w1', endpoint_id: 'e1', path: '/leads', browser: 'agent', opened_by: 'agentic_process-3f2b8c1e-7a44-4d0b-9e21-5c6d7e8f9a01', since: '2026-09-03T12:00:00Z' },
+          { webapp_id: '5b0f3c1e-7a44-4d0b-9e21-5c6d7e8f9a02', endpoint_id: 'e1', path: '/pipeline', browser: 'chrome', opened_by: '', since: '2026-09-03T12:00:00Z' },
+          { webapp_id: '5b0f3c1e-7a44-4d0b-9e21-5c6d7e8f9a02', endpoint_id: 'e1', path: '/leads', browser: 'agent', opened_by: 'agentic_process-3f2b8c1e-7a44-4d0b-9e21-5c6d7e8f9a01', since: '2026-09-03T12:00:00Z' },
         ],
       },
     ];
@@ -99,13 +100,17 @@ describe('footer chip — activities', () => {
     expect(row.textContent).toContain('Running · :8012 · 2 connections');
     expect(screen.queryByTestId('hosted-app-details')).toBeNull();
 
-    await userEvent.click(within(row).getByRole('button'));
+    await userEvent.click(within(row).getByRole('button', { expanded: false }));
 
     expect(screen.getByTestId('hosted-app-details').textContent).toContain('localhost:8012 · pid 48211');
     expect(screen.getAllByTestId('hosted-app-connection').map((line) => line.textContent?.replace(/\d+\w ago$/, ''))).toEqual([
       'Your Chrome · you · /pipeline',
       'Agent browser · session 3f2b8c1e · /leads',
     ]);
+
+    // The button at the row's end opens the app's page in Flowpad.
+    await userEvent.click(within(row).getByTestId('hosted-app-open'));
+    expect(openDock.mock.calls[0][0].toUrl()).toContain('micro_app-5b0f3c1e-7a44-4d0b-9e21-5c6d7e8f9a02');
   });
 
   afterEach(() => {

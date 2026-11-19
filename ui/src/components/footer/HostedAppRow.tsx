@@ -5,6 +5,7 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import { agenticProcessName } from '@src/navigation/agentic-process-open';
 import { formatTimeAgo } from '@src/store/pending-actions-store';
+import { ExternalLink } from 'lucide-react';
 
 const PROCESS_PREFIX = 'agentic_process-';
 
@@ -39,10 +40,21 @@ function ConnectionLine({ page }: { page: PagePresence }) {
 }
 
 /**
- * One app this machine serves now. A click opens it in place: where it runs, then one line per live
- * connection. Read-only — the row shows what the backend reported (`WebApp.hosted()`), it starts nothing.
+ * One app this machine serves now. A click unfolds it in place: where it runs, then one line per live
+ * connection; the button at its end opens the app's page in Flowpad. The row shows what the backend
+ * reported (`WebApp.hosted()`).
  */
-export function HostedAppRow({ app, open, onToggle }: { app: HostedApp; open: boolean; onToggle: (id: string) => void }) {
+export function HostedAppRow({
+  app,
+  open,
+  onToggle,
+  onOpen,
+}: {
+  app: HostedApp;
+  open: boolean;
+  onToggle: (id: string) => void;
+  onOpen: (app: HostedApp) => void;
+}) {
   const { t } = useLingui();
   const Icon = iconForType(WebApp.type);
   const count = app.connections.length;
@@ -74,6 +86,16 @@ export function HostedAppRow({ app, open, onToggle }: { app: HostedApp; open: bo
           </div>
         </button>
         <span className="shrink-0 ps-1 text-xs tabular-nums text-muted-foreground">{age(app.since)}</span>
+        <button
+          type="button"
+          onClick={() => onOpen(app)}
+          title={t`Open the app`}
+          aria-label={t`Open the app`}
+          className="ms-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+          data-testid="hosted-app-open"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </button>
       </li>
       {open && (
         <li className="ms-4 border-s pb-1 ps-1" data-testid="hosted-app-details">

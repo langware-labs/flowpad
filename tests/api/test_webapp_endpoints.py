@@ -508,6 +508,25 @@ async def test_a_served_page_carries_the_presence_script_and_an_open_page_lists_
     assert await hosted() == [], "the page closed"
 
 
+async def test_an_app_whose_process_died_is_not_hosted(client, tmp_path):
+    """Nothing writes the record when a process dies, so "up" with a port can be days old: the list asks."""
+    from flow_sdk.core.webapp import record
+    from flow_sdk.schema.data_spec.webapp_lifecycle_spec import LifecycleState
+
+    port = _unused_port()
+    project = await _project(tmp_path)
+    folder = tmp_path / "agentic-assets" / "webapp" / "admin"
+    app = await _webapp(project, folder, name="admin", mounts=[{"serving": _served(port)}])
+    (folder / "index.html").write_text("admin")
+    await place_webapp_locally(app)
+
+    # What a reboot leaves behind: the process is gone, the record still says up on its port.
+    await record.set_state(str(app.id), LifecycleState.UP, project_id=str(project.id), ports={"": port}, pids={"": 0})
+
+    rows = (await client.get("/api/v1/graph/micro_app/hosted")).json()["data"]
+    assert [row for row in rows if row["webapp_id"] == app.id] == []
+
+
 async def test_an_unchanged_index_pass_writes_nothing(tmp_path, monkeypatch):
     project = await _project(tmp_path)
     app = await _webapp(project, tmp_path / "apps" / "shop")

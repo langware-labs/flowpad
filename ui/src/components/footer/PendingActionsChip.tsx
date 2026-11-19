@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgenticProcess, dataContext, Project, TypeId, WorkerStatus } from '@sdk';
+import { AgenticProcess, dataContext, Project, TypeId, WebApp, WorkerStatus, type HostedApp } from '@sdk';
 import type { ActivityProgressSpec } from '@sdk/activity';
 import { Pencil } from 'lucide-react';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
@@ -25,6 +25,8 @@ import { useActivities } from '@src/store/activity-store';
 import { useHostedApps } from '@src/store/hosted-apps-store';
 import { ActivityRow } from './ActivityRow';
 import { HostedAppRow } from './HostedAppRow';
+import { appDock } from '@src/components/top-nav-bar/use-project-apps';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNotificationPulse } from './useNotificationPulse';
 import { workerStatusLabel } from './worker-status-label';
@@ -223,6 +225,18 @@ export function PendingActionsChip() {
     [navigation],
   );
 
+  // A hosted app's page, in a Flowpad tab of the app's own project — the address a project's app button opens.
+  const handleOpenApp = useCallback(
+    (app: HostedApp) => {
+      setOpen(false);
+      const dock = app.project_id
+        ? appDock(app.webapp_id, app.project_id, app.project_id)
+        : DockPointer.forAppEntity(new TypeId(`${WebApp.type}-${app.webapp_id}`));
+      navigation.openDock(dock, undefined, { topLevel: true });
+    },
+    [navigation],
+  );
+
   // A wizard's own top-level activity is scoped to ITSELF when attended (see
   // `Wizard.run`: `subject_entity=None if unattended else str(self.typeid)`),
   // so its row can be picked straight back to the editor page it was
@@ -303,7 +317,7 @@ export function PendingActionsChip() {
                 </div>
               </div>
             ) : tab === 'hosted' ? (
-              hostedApps.length === 0 ? <Empty label={t`No hosted apps`} /> : <ul className="flex flex-col" data-testid="hosted-apps-list">{hostedApps.map((app) => <HostedAppRow key={app.webapp_id} app={app} open={openApp === app.webapp_id} onToggle={toggleApp} />)}</ul>
+              hostedApps.length === 0 ? <Empty label={t`No hosted apps`} /> : <ul className="flex flex-col" data-testid="hosted-apps-list">{hostedApps.map((app) => <HostedAppRow key={app.webapp_id} app={app} open={openApp === app.webapp_id} onToggle={toggleApp} onOpen={handleOpenApp} />)}</ul>
             ) : tab === 'errors' ? (
               errors.length === 0 ? <Empty label="No errors" /> : <ul className="flex flex-col">{errors.map((row) => <WorkerRow key={row.processId} row={buildWorkerRow(row)} onPick={handlePick} onRenamed={bumpNameTick} />)}</ul>
             ) : (

@@ -186,7 +186,10 @@ async def hold_for_port(websocket: WebSocket, port: int) -> None:
 
 async def hosted() -> list[HostedAppSpec]:
     """Every app this machine serves now: one with a process that is up, or one somebody has open. Files Flowpad
-    serves itself are always "up", so such an app is listed only while a page of it is open."""
+    serves itself are always "up", so such an app is listed only while a page of it is open. A record that says
+    up is not enough: nothing writes it when a process dies, so the process is asked (``readiness.serving``)."""
+    from flow_sdk.core.webapp import readiness  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.webapp_lifecycle_spec import WebappLifecycleSpec  # noqa: PLC0415
     from flow_sdk.builtin import webapp_placement  # noqa: PLC0415
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
     from flow_sdk.schema.data_spec.webapp_lifecycle_spec import SHOWABLE  # noqa: PLC0415
@@ -210,6 +213,8 @@ async def hosted() -> list[HostedAppSpec]:
         connections = of(webapp_id)
         ports, pids = record.get("ports") or {}, record.get("pids") or {}
         if not ports and not connections:
+            continue
+        if ports and not await readiness.serving(app, WebappLifecycleSpec.model_validate(record)):
             continue
         out.append(HostedAppSpec(
             webapp_id=webapp_id,
