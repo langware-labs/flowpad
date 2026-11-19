@@ -72,7 +72,7 @@ export function AppSetupTab({ app }: { app: WebApp }) {
             <>
               <Check className="size-4 text-emerald-400" />
               <span className="flex-1" data-testid="app-setup-record-state" data-state={record.state}>
-                {record.state === 'degraded' ? <Trans>Up, with problems: {record.detail}</Trans> : <Trans>Up</Trans>}
+                {record.state === 'degraded' ? <Trans>Running, with problems: {record.detail}</Trans> : <Trans>Running</Trans>}
                 {record.checked_at ? <span className="text-muted-foreground"> · {record.checked_at}</span> : null}
               </span>
             </>
@@ -80,7 +80,7 @@ export function AppSetupTab({ app }: { app: WebApp }) {
             <>
               <X className="size-4 text-destructive" />
               <span className="flex-1" data-testid="app-setup-record-state" data-state={record.state}>
-                {record.state} {record.failure?.text || record.detail ? `· ${record.failure?.text || record.detail}` : ''}
+                {record.state.replace(/_/g, ' ')} {record.detail || record.failure?.text ? `· ${record.detail || record.failure?.text}` : ''}
               </span>
             </>
           )}

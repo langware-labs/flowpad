@@ -761,7 +761,7 @@ function RequirementRow({
               data-testid={`project-setup-enable-${rowId}`}
               onClick={own(() => onDecide(true))}
             >
-              <Trans>Enable</Trans>
+              <Trans>Turn on</Trans>
             </Button>
             <Button
               variant="ghost"
@@ -770,7 +770,7 @@ function RequirementRow({
               data-testid={`project-setup-disable-${rowId}`}
               onClick={own(() => onDecide(false))}
             >
-              <Trans>Disable</Trans>
+              <Trans>Keep off</Trans>
             </Button>
           </>
         )}

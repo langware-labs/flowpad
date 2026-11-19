@@ -467,7 +467,7 @@ describe('ProjectSetupDialog — recommended automations', () => {
     vars: [],
   };
 
-  it('a recommended automation is a choice in its own section: Enable decides it here, and there is nothing to Start', async () => {
+  it('a recommended automation is a choice in its own section: Turn on decides it here, and there is nothing to Start', async () => {
     vi.spyOn(Project, 'setupRequirements').mockResolvedValue({ project_id: 'p1', ready: false, to_do: [RULE], gaps: [] });
     vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: false, tree: null });
     const decide = vi.spyOn(Project, 'decideAutomation').mockResolvedValue({ project_id: 'p1', ready: true, to_do: [], gaps: [] });
@@ -478,7 +478,7 @@ describe('ProjectSetupDialog — recommended automations', () => {
     expect(screen.queryByTestId('project-setup-requirements')).not.toBeInTheDocument();
     expect(screen.queryByTestId('project-setup-start')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('Enable'));
+    fireEvent.click(screen.getByText('Turn on'));
     await waitFor(() => expect(decide).toHaveBeenCalledWith('p1', RULE.typeid, true));
     expect(await screen.findByTestId('project-setup-ready')).toBeInTheDocument();
   });
@@ -491,7 +491,7 @@ describe('ProjectSetupDialog — a package is one step', () => {
     why_not_always: '', vars: [], satisfied: false,
   };
 
-  it('has one Enable / Disable and nothing to expand; Enable decides the whole package here', async () => {
+  it('has one Turn on / Keep off and nothing to expand; Turn on decides the whole package here', async () => {
     vi.spyOn(Project, 'setupRequirements').mockResolvedValue({ project_id: 'p1', ready: false, to_do: [STEP], gaps: [] });
     vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: false, tree: null });
     const decide = vi.spyOn(Project, 'decideAutomation').mockResolvedValue({ project_id: 'p1', ready: true, to_do: [], gaps: [] });
@@ -499,8 +499,8 @@ describe('ProjectSetupDialog — a package is one step', () => {
 
     await screen.findByTestId('project-setup-automations');
     expect(screen.queryByText(/^[0-9]+ automations?$/)).not.toBeInTheDocument();
-    expect(screen.getAllByText('Enable')).toHaveLength(1);
-    fireEvent.click(screen.getByText('Enable'));
+    expect(screen.getAllByText('Turn on')).toHaveLength(1);
+    fireEvent.click(screen.getByText('Turn on'));
     await waitFor(() => expect(decide).toHaveBeenCalledWith('p1', STEP.typeid, true));
   });
 });

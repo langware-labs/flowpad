@@ -156,7 +156,7 @@ describe('harness login — the refusal is read from the backend, not copied', (
     const reason = await screen.findByTestId('harness-status-reason');
     // Our words, not the vendor's: "Please run /login" is an instruction for a
     // terminal user and contradicts the sign-in button right below it.
-    expect(reason.textContent).toContain("isn't signed in on this machine");
+    expect(reason.textContent).toContain("isn't signed in on this computer");
     expect(reason.textContent).not.toContain('/login');
     // The harness's own sentence survives as evidence, on the title.
     expect(reason.getAttribute('title')).toBe(DENIAL);
@@ -190,7 +190,7 @@ describe('harness login — the refusal is read from the backend, not copied', (
     backendNow(denied());
     await openClaudeDetail(user);
     expect((await screen.findByTestId('harness-status-reason')).textContent).toContain(
-      "isn't signed in on this machine",
+      "isn't signed in on this computer",
     );
 
     // Re-listing capabilities is not a rare event: the Default-assistant tick and the
@@ -198,7 +198,7 @@ describe('harness login — the refusal is read from the backend, not copied', (
     // refusal, and it says so with a push.
     await capabilityManager.load(true);
     expect((await screen.findByTestId('harness-status-reason')).textContent).toContain(
-      "isn't signed in on this machine",
+      "isn't signed in on this computer",
     );
     expect(screen.queryByText("You're signed in and ready to go.")).toBeNull();
   });

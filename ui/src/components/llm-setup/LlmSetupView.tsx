@@ -135,7 +135,7 @@ export function LlmSetupView() {
               <Trans>Choose how Flowpad's AI is paid for</Trans>
             </DialogTitle>
             <DialogDescription>
-              <Trans>Pick FlowPad, an assistant you already pay for, or paste an API key.</Trans>
+              <Trans>Pick Flowpad, an assistant you already pay for, or paste an API key.</Trans>
             </DialogDescription>
             <div className="mt-1 flex gap-2">
               <Button onClick={choose} data-testid="llm-setup-reopen">

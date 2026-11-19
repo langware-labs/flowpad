@@ -772,7 +772,7 @@ def _automation_row(rule: Any) -> SetupRequirementSpec:
     return SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=str(rule.name), title=str(rule.name),
                                 typeid=str(rule.typeid), used_by=[PROJECT], satisfied=bool(rule.decided),
                                 needed_for=str(rule.description or ""),
-                                note="" if not rule.decided else ("on here" if rule.enabled else "off here"))
+                                note="" if not rule.decided else ("On for this computer" if rule.enabled else "Off for this computer"))
 
 
 async def _automation_group_row(parent_typeid: str, rules: list) -> SetupRequirementSpec:
@@ -781,7 +781,7 @@ async def _automation_group_row(parent_typeid: str, rules: list) -> SetupRequire
 
     parent = await Trigger.get_by_typeid(parent_typeid)
     decided = all(rule.decided for rule in rules)
-    note = "" if not decided else ("on here" if all(rule.enabled for rule in rules) else "off here")
+    note = "" if not decided else ("On for this computer" if all(rule.enabled for rule in rules) else "Off for this computer")
     name = str(getattr(parent, "name", "") or parent_typeid)
     return SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=name, title=name, typeid=parent_typeid,
                                 used_by=[PROJECT], satisfied=decided, note=note,

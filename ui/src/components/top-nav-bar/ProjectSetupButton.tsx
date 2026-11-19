@@ -41,7 +41,7 @@ export function ProjectSetupButton({ project }: { project?: Project | null }) {
           }
           data-testid="top-nav-project-setup"
           data-updates={updates || undefined}
-          aria-label={onlyUpdates ? t`Dependency updates available` : t`Setup required`}
+          aria-label={onlyUpdates ? t`Package updates available` : t`Setup required`}
           className={cn(
             'relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors motion-reduce:animate-none',
             onlyUpdates
@@ -77,7 +77,7 @@ export function ProjectSetupButton({ project }: { project?: Project | null }) {
         )}
         {updates > 0 && (
           <div className={cn(owesSetup ? 'mt-1' : 'font-semibold')}>
-            <Plural value={updates} one="# dependency has updates" other="# dependencies have updates" />
+            <Plural value={updates} one="# package has updates" other="# packages have updates" />
           </div>
         )}
       </TooltipContent>

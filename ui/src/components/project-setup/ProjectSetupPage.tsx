@@ -456,10 +456,10 @@ function StepRow({
             {onDecide && (
               <>
                 <StepAction icon={Play} testId={`project-setup-step-enable-${id}`} disabled={busy} onClick={() => onDecide(true)}>
-                  <Trans>Enable</Trans>
+                  <Trans>Turn on</Trans>
                 </StepAction>
                 <StepAction icon={XCircle} testId={`project-setup-step-disable-${id}`} disabled={busy} onClick={() => onDecide(false)}>
-                  <Trans>Disable</Trans>
+                  <Trans>Keep off</Trans>
                 </StepAction>
               </>
             )}
