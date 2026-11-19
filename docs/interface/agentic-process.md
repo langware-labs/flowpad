@@ -165,6 +165,15 @@ A page shown in the display can report its live state to the agent beside it
   through a head prelude plus a sandbox CSP opened to the backend origin. The page
   then does `import(api + '/sdk/flowpad-sdk.js')`, `initSdk()`, and loads its
   `AgenticProcess`.
+* **State key.** On a local install the server answers a page's calls only when they carry a key this machine
+  minted (`flow_sdk/server/page_state.py`; `flow_sdk/server/middleware/state_key_middleware.py`). Whoever opens
+  a page (`flow show`, an agent) mints one — `with_state_key` in `flow_sdk/core/navigate.py`, naming the session —
+  and the app hands it to the frame: `?state=` for a served page (the server also writes
+  `__FLOWPAD_STATE_KEY__` into it), the head prelude for an MCP page. The SDK sends it as `X-Flowpad-State`
+  (and `?state=` on the WebSocket). `sdk.htmlPage()` returns what the key stands for —
+  `{context, params, process}` — so `process` is state, not a second global. A dock with no key (a link from
+  outside) shows an Allow card before anything of the page mounts (`PageAllowGate`); a refused call says why
+  inside the page (`X-Flowpad-Gate: state=missing|unknown`). Not enforced on the hub or a hub-assigned box.
 * **Write.** `process.setDisplayContext(data)` → `set-display-context` stores
   `context_data.display_context = {target, data, version, updated_at}`. `target`
   is `last_shown` at write time; the same target bumps `version`, `data` is

@@ -56,7 +56,7 @@ async def _answered(conversation_id: str, call_id: str) -> bool:
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
     marker = f"{RETURNED_VALUE_TYPE}-{call_id}"
-    for fm in await FlowMessage.get_all({"conversation_id": conversation_id}):
+    for fm in await FlowMessage.sent_in(conversation_id):
         if any((a.data or "") == marker for a in (fm.attachment or [])):
             return True
     return False

@@ -1074,3 +1074,13 @@ async def test_what_is_stamped_survives_the_cross_link(tmp_path):
     on_disk = FSRecord.load_or_none("flowpad_diagnosis", did)
     meta = json.loads((on_disk.shadow_dir / "metadata.json").read_text())
     assert meta["user_report"] == "app is stuck" and meta["diagnosis"]["status"] == "fixed", "the file too"
+
+
+def test_the_process_name_says_what_was_reported():
+    from flow_sdk.cli.commands.diagnose_cmd import _diagnose_process_name
+
+    assert _diagnose_process_name("") == "flow diagnose · full check"
+    assert _diagnose_process_name("backend down") == "flow diagnose · backend down"
+    assert _diagnose_process_name("the app shows a blank page after the update") == (
+        "flow diagnose · the app shows a blank page…"
+    )

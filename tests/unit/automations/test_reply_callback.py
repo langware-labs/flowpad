@@ -95,6 +95,9 @@ async def test_an_unanswered_wait_is_cancelled_with_a_message():
 
     spent = await Trigger.get_by_id(rule.id)
     assert spent.ended_reason == "expired" and await pending_callbacks(await AgenticProcess.get_by_id(process.id)) == []
+    # the ended rule still says which session made it; the session no longer lists it
+    assert process.typeid in spent.shared_context_entities
+    assert spent.typeid not in (await AgenticProcess.get_by_id(process.id)).shared_context_entities
     note = await Conversation.get_one({"channel": "automations", "channel_source_id": f"trigger-{rule.id}"})
     texts = [m.text for m in await FlowMessage.get_all({"conversation_id": note.id})]
     assert any(t.startswith("Prompt handling cancelled") for t in texts)

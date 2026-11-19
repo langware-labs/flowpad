@@ -34,7 +34,7 @@ def _world(monkeypatch, messages, *, kind=ConversationKind.HELPDESK, private=Tru
 
     monkeypatch.setattr(approval.Conversation, "get_by_id", get_by_id)
     monkeypatch.setattr(approval.Conversation, "get_all", get_all)
-    monkeypatch.setattr(approval.FlowMessage, "get_all", messages_of)
+    monkeypatch.setattr(approval.FlowMessage, "sent_in", messages_of)
     monkeypatch.setattr(approval.User, "self_ids", self_ids)
 
 

@@ -28,6 +28,8 @@ export interface GitSharePreflight {
    * when there is genuinely no repo/remote to name.
    */
   origin: GitOrigin | null;
+  /** The on-disk path that was checked, when one resolved (else null). */
+  path: string | null;
   /**
    * True once the backend has answered for the current ref. IDLE and "available"
    * both carry `code: null`, so callers that branch on the code need this to
@@ -51,6 +53,7 @@ interface PreflightResponse {
   code: string | null;
   fix?: GitShareFix | null;
   git_origin: Record<string, unknown> | null;
+  path?: string | null;
 }
 
 /**
@@ -112,6 +115,7 @@ const IDLE: PreflightState = {
   code: null,
   fix: null,
   origin: null,
+  path: null,
   answered: false,
 };
 const FAILED: PreflightState = {
@@ -121,6 +125,7 @@ const FAILED: PreflightState = {
   code: 'status-failure',
   fix: null,
   origin: null,
+  path: null,
   answered: true,
 };
 
@@ -176,6 +181,7 @@ export function useGitSharePreflight(
           code: res.code ?? null,
           fix: res.fix ?? null,
           origin: toOrigin(res.git_origin),
+          path: res.path ?? null,
           answered: true,
         });
       })

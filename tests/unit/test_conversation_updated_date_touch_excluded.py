@@ -1,13 +1,14 @@
-"""Conversation recency excludes hub *touches*.
+"""Conversation recency is the newest message's send time — never a hub re-save of a message.
 
-Contract (the stream inbox "Xm ago" clock):
+Contract (the stream inbox "Xm ago" clock and sort key):
 
-    ``Conversation.updated_date`` is the last message's ``updated_date`` — i.e.
-    the moment of the last *real* change to a message object (a new message, or
-    a genuine edit to its content/state). A bare **touch** of a message — the
-    hub re-materializing / re-downloading the body, re-emitting an unchanged
-    row, bumping its ``updated_date``/``fetched_at`` with no real field change —
-    must NOT advance it.
+    ``Conversation.updated_date`` is when the newest message was sent
+    (``FlowMessage.occurred_at``; for a hub message the hub's own
+    ``latest_message_at``). Nothing the hub does to a message afterwards moves
+    it: not a bare **touch** (re-materializing / re-downloading the body,
+    re-emitting an unchanged row), and not a real state change either — a
+    delivery or read receipt re-saves the message with a new ``updated_date``,
+    and nobody sent anything.
 
 This pins the prod incident: its only message was born
 12:41 yet the stream inbox showed it as "57m ago" because a 16:27 body re-download
@@ -21,8 +22,9 @@ The contract splits into composing switches, one test layer each:
    (every hub-owned field identical, only ``updated_date`` newer) is NOT stale;
    a real edit IS. This is the upstream switch proven in the RCA.
 2. ``project_pointers_to_entity`` — conversation recency is derived from the
-   last message's ``updated_date`` (the real-change clock), not its
-   ``created_date`` / pointer ts.
+   newest message's send time, whatever its ``updated_date`` says. (Prod,
+   2026-11-18: a message sent two days earlier read "1h ago" because its
+   recipient had just opened it; 108 of 817 conversations were off that way.)
 3. ``_upsert_hub_conversation_metadata`` — a touched hub *parent* clock must not
    drag local recency past the last real message change.
 
@@ -42,6 +44,7 @@ from flow_sdk.fs_store.operations.conversation import (
     default_jsonl_path,
     from_jsonl,
     project_pointers_to_entity,
+    prune_message_pointer,
 )
 
 _FM_ID = "d3b466e3-786a-4e2a-808f-c3c4ab99232c"
@@ -116,7 +119,7 @@ def test_pure_touch_is_not_stale():  # CAPTURES BUG
 
 
 # --------------------------------------------------------------------------
-# Layer 2 — recency is derived from the last message's updated_date
+# Layer 2 — recency is derived from the newest message's send time
 #           (real Conversation + FlowMessage rows + on-disk pointers)
 # --------------------------------------------------------------------------
 
@@ -154,12 +157,9 @@ async def test_recency_equals_message_time_when_unedited():
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_recency_follows_message_updated_date_on_real_edit():  # CAPTURES BUG
-    """A message born at _BORN but really edited at _TOUCH (created stays _BORN,
-    updated_date advances) must drive conversation recency to _TOUCH.
-
-    Current ``project_pointers_to_entity`` uses the pointer ts (the message's
-    created_date), so recency stays at _BORN and a real edit never surfaces."""
+async def test_a_read_receipt_does_not_move_recency():
+    """A message sent at _BORN whose hub row was re-saved at _TOUCH — its recipient read it, so
+    ``delivery_status`` changed and ``updated_date`` advanced — leaves recency at _BORN."""
     conv_id = "1a1a0002-1111-4111-8111-000000000002"
     msg_id = "1a1a0002-2222-4222-8222-000000000002"
     await _conv_with_message(conv_id, msg_id, created=_BORN, updated=_TOUCH)
@@ -167,7 +167,31 @@ async def test_recency_follows_message_updated_date_on_real_edit():  # CAPTURES 
     await project_pointers_to_entity(rec, notify=False)
 
     conv = await Conversation.get_one({"id": conv_id})
-    assert _dt(conv.updated_date) == _dt(_TOUCH)
+    assert _dt(conv.updated_date) == _dt(_BORN)
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_recency_follows_the_newest_message_and_returns_when_it_is_removed():
+    conv_id = "1a1a0003-1111-4111-8111-000000000003"
+    first, reply = "1a1a0003-2222-4222-8222-000000000003", "1a1a0003-3333-4333-8333-000000000003"
+    await _conv_with_message(conv_id, first, created=_BORN, updated=_BORN)
+    rec = from_jsonl(default_jsonl_path(conv_id), parent_id="", record_id=conv_id)
+    await project_pointers_to_entity(rec, notify=False)
+
+    await _local_fm(id=reply, conversation_id=conv_id, created_date=_TOUCH, updated_date=_TOUCH).save()
+    append_message_pointer(rec, reply, _TOUCH)
+    await project_pointers_to_entity(rec, notify=False)
+    assert _dt((await Conversation.get_one({"id": conv_id})).updated_date) == _dt(_TOUCH)
+
+    await (await FlowMessage.get_one({"id": reply})).delete()
+    await prune_message_pointer(rec, reply, notify=False)
+    assert _dt((await Conversation.get_one({"id": conv_id})).updated_date) == _dt(_BORN)
+
+    # An ordinary update of the conversation (a rename, a session attached to it) is not a message.
+    renamed = await Conversation.update_by_id(conv_id, {"title": "renamed"})
+    assert renamed.title == "renamed"
+    assert _dt((await Conversation.get_one({"id": conv_id})).updated_date) == _dt(_BORN)
 
 
 # --------------------------------------------------------------------------

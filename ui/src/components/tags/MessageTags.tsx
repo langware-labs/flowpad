@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useAutomations } from '@src/hooks/automations/useAutomations';
 import { EntityChip, iconForEntity } from '@src/components/conversation/EntityChip';
+import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -296,23 +297,42 @@ function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => vo
       ),
     [definitions, root],
   );
+  /** The tag tree editor, opened on this message so its Try pane is about it. */
+  const manageTags = (extra: Record<string, string> = {}) =>
+    DockPointer.forTagGraph(null, {
+      carry: { ...messageTagContext(message), origin_tag: tags[0] ?? '', manage: 'stream_inbox', ...extra },
+    });
+  // The add field suggests this tree's tags, not every tag in use anywhere.
+  const names = useMemo(() => rows.map((row) => row.name), [rows]);
   return (
     <>
-      <div className="mb-2 flex min-h-6 flex-wrap items-center gap-1" data-testid="message-picker-tags">
-        {tags.length ? (
-          tags.map((name) => (
-            <AssignedTag key={name} message={message} name={name} onRemove={() => void mutate(name, true)} />
-          ))
-        ) : (
-          <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-            <TagOffIcon className="size-3 text-foreground" />
-            <Trans>No tags yet — tick one below</Trans>
-          </span>
-        )}
+      <div className="mb-2 flex items-start gap-2">
+        <div className="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-1" data-testid="message-picker-tags">
+          {tags.length ? (
+            tags.map((name) => (
+              <AssignedTag key={name} message={message} name={name} onRemove={() => void mutate(name, true)} />
+            ))
+          ) : (
+            <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <TagOffIcon className="size-3 text-foreground" />
+              <Trans>No tags yet — tick one below</Trans>
+            </span>
+          )}
+        </div>
+        {/* Opens the tag tree's Try pane on this message and runs it at once (`run=1`). */}
+        <Button
+          size="sm"
+          className="h-6 shrink-0 px-2"
+          data-testid="message-tags-classify"
+          onClick={() => navigation.openDock(manageTags({ run: '1' }))}
+        >
+          <Trans>Classify</Trans>
+        </Button>
       </div>
       <TagInput
         tags={tags}
         hideTags
+        suggestions={names}
         onAdd={(name) => void mutate(name, false)}
         onRemove={(name) => void mutate(name, true)}
       />
@@ -377,13 +397,7 @@ function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => vo
           type="button"
           className="text-xs underline"
           data-testid="message-tags-manage"
-          onClick={() =>
-            navigation.openDock(
-              DockPointer.forTagGraph(null, {
-                carry: { ...messageTagContext(message), origin_tag: tags[0] ?? '', manage: 'stream_inbox' },
-              }),
-            )
-          }
+          onClick={() => navigation.openDock(manageTags())}
         >
           <Trans>Edit tags…</Trans>
         </button>

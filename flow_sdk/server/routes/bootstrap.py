@@ -72,6 +72,7 @@ from flow_sdk.fs_store.indexer.auto_index import (
     PREF_AUTO_INDEX_TYPE,
 )
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
+from flow_sdk.models.bootstrap_models import RuntimeKind
 from flow_sdk.models.responses import ApiResponseStatus, ApiSuccessResponse
 from flow_sdk.preferences import (
     DEFAULT_SHARE_MESSAGE_STATUS,
@@ -2262,8 +2263,17 @@ async def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessRespon
     different hat.
     """
     from flow_sdk.instance_settings.runtime import resolve_runtime  # noqa: PLC0415
+    from flow_sdk.instance_settings.sentry_info import get_sentry_info  # noqa: PLC0415
 
-    update: dict = {"runtime": resolve_runtime(electron=electron)}
+    runtime = resolve_runtime(electron=electron)
+    # ``sentry_info`` is stamped here rather than built into the cached payload so a value the hub
+    # just pushed (or one that just went stale) is never served from the 30s cache. Only a
+    # SANDBOX reports; a desktop, a local browser and an agent box always get an explicit null --
+    # set explicitly so ``response_model_exclude_unset`` still sends the key.
+    update: dict = {
+        "runtime": runtime,
+        "sentry_info": get_sentry_info() if runtime.kind == RuntimeKind.SANDBOX else None,
+    }
     # Two sources, in priority order, and the order is the whole point: a box the
     # hub has just set up opens on the project it was BUILT for, and every load
     # after that opens where the user actually left off. Both are per-caller for

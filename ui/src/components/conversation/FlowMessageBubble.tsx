@@ -43,7 +43,6 @@ import {
   AttachmentType,
   BodyStatus,
   FlowMessageKind,
-  DIAGNOSIS_FILE,
   HELP_REQUEST_FILE,
   forwardMessage,
   isAttachmentMissing,
@@ -64,8 +63,7 @@ import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { AutomationMessageActions } from './AutomationMessageActions';
-import { DiagnosisMessageActions } from './DiagnosisMessageActions';
-import { HelpRequestLine } from './HelpRequestLine';
+import { DiagnosisCard } from './DiagnosisCard';
 import { IssueReplyLine } from './IssueReplyLine';
 import { ItReplyLine } from './ItReplyLine';
 import { ItSendTable } from './ItSendTable';
@@ -243,9 +241,8 @@ interface FlowMessageBubbleProps {
    *  responder's `sender_id` is intentionally absent from the guest's roster,
    *  so we suppress the unresolved-sender alert and its telemetry. */
   isHelpdesk?: boolean;
-  /** The diagnosis this help request was waiting for, once it arrived: its bottom line replaces the request's
-   *  "Diagnosis: on its way". */
-  diagnosisHeadline?: string | null;
+  /** This message carries the conversation's diagnosis card (DiagnosisCard) in place of its text. */
+  diagnosisCard?: boolean;
   /** The viewer's hub user id. A hub-mirrored row names its sender by hub
    *  id while a locally written row names the local user, so "this is me"
    *  has to accept both — otherwise my own replies wear two names. */
@@ -316,8 +313,8 @@ export function FlowMessageBubble({
   participants,
   rosterReady = false,
   isHelpdesk = false,
+  diagnosisCard = false,
   viewerCloudUserId = null,
-  diagnosisHeadline = null,
   attachmentProjectId,
   messageAttachments,
   messageTask = null,
@@ -581,11 +578,8 @@ export function FlowMessageBubble({
   const message: ConversationMessage = {
     role,
     content:
-      isConvIdPointer || issueCard
-        ? ''
-        : diagnosisHeadline
-          ? (fm.text ?? '').replace(/Diagnosis: on its way\s*$/, `Diagnosis: ${diagnosisHeadline}`)
-          : (fm.text ?? ''),
+      // A help request and a diagnosis are their card (DiagnosisCard), which says the text in a line.
+      isConvIdPointer || issueCard || diagnosisCard ? '' : (fm.text ?? ''),
     sender_id: fm.sender_id ?? '',
     timestamp,
   };
@@ -655,15 +649,6 @@ export function FlowMessageBubble({
     !!i.localPath && editorForPath(i.localPath) === AssetEditor.VALUE;
   const senderLocalValueItems = senderLocalItems.filter(isLocalValue);
   const senderLocalFileItems = senderLocalItems.filter((i) => !isLocalValue(i));
-  // Ask for help: the message names itself, and -- while its context waits on this computer -- says so. The
-  // carrier counts too: a desk ticket's echo from the hub can come back without ``kind`` on a path that does
-  // not re-derive it.
-  const isHelpRequest =
-    fm.kind === FlowMessageKind.HELP_REQUEST || attachmentItems.some((i) => i.filename === HELP_REQUEST_FILE);
-  // Its diagnosis, posted when the background run ends: the text is the bottom line, the details fold away.
-  const isDiagnosis =
-    !isHelpRequest &&
-    (fm.kind === FlowMessageKind.DIAGNOSIS || attachmentItems.some((i) => i.filename === DIAGNOSIS_FILE));
   // The "Download N" button must not re-count what's already surfaced without a
   // download: images shown inline above, and prompt entities (previewed in the
   // prompt row, materialized on Approve & Execute).
@@ -866,8 +851,7 @@ export function FlowMessageBubble({
       )}
       {issueCard && <IssueReplyLine reply={issueCard} />}
       {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
-      {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
-      {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
+      {diagnosisCard && <DiagnosisCard conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {fm.kind === FlowMessageKind.AUTOMATION_RESULT && (
         <AutomationMessageActions conversationId={fm.conversation_id ?? ''} entities={entities} />
       )}

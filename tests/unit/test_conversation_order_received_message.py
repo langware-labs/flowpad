@@ -4,7 +4,7 @@ Prod incident: Alice's question, sent 07:58Z, rendered
 BELOW a reply written locally at 13:36Z, and its bubble read 13:39 — the moment
 the delivery receipt was processed. ``project_pointers_to_entity`` documents
 the two-clock rule this pins; the short version is that feed ORDER must read
-``FlowMessage.occurred_at`` (the event clock) and never ``event_time``, whose
+``FlowMessage.occurred_at`` (the event clock) and never the ``updated_date`` fallback, whose
 ``updated_date`` fallback is a processing clock.
 
 Why the receipt moves ``updated_date`` at all is the part worth stating here,

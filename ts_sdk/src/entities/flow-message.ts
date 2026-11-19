@@ -1,4 +1,5 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import type { DecisionRun } from '../decision/types';
 import type { InvitationState } from './invitation';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
@@ -193,12 +194,23 @@ export function isAttachmentMissing(
 
 /** Delivery receipt. Mirrors the hub-side schema. Monotonic transitions only:
  *  created → sent → delivered → received.
+ *  - draft:     written here and not sent yet — a whole message only this machine holds
  *  - pending_send: composed while signed out; held locally until a login sends it (🕐 Pending)
  *  - created:   local only, hub has not accepted it (🕐 Pending)
  *  - sent:      accepted/stored on the hub (✓)
  *  - delivered: recipient's client pulled it (✓✓)
  *  - received:  recipient read it (✓✓ blue) */
-export type DeliveryStatus = 'pending_send' | 'created' | 'sent' | 'delivered' | 'received';
+export type DeliveryStatus = 'draft' | 'pending_send' | 'created' | 'sent' | 'delivered' | 'received';
+
+/** What a draft remembers beyond the message itself: its composer's thread and its send choices. */
+export interface MessageDraftOptions {
+  thread_id?: string | null;
+  call?: boolean;
+  /** The prompt of that call, typed in its own box. Absent on a draft stored before the prompt
+   *  had a box: there the draft's text is the prompt. */
+  call_prompt?: string | null;
+  task?: boolean;
+}
 
 /** Named event types emitted by ``Conversation`` and ``FlowMessage``. Use
  *  these instead of bare strings so call sites are typo-proof:
@@ -262,6 +274,8 @@ export interface MessageClassification {
   value?: { tag: string; confidence: number } | null;
   /** The decision API's closed reason when it could not be asked (`no_endpoint`, …). */
   unavailable?: string | null;
+  /** The decision as it happened (`decision.run`): what was asked, every tag's probability, the wire. */
+  run?: DecisionRun | null;
 }
 
 export interface IFlowMessage extends IEntity {
@@ -293,13 +307,13 @@ export interface IFlowMessage extends IEntity {
   /** EVENT time — when the human sent this on its original channel. Written
    *  only by the backend stream inbox projection (from SourceItem.occurred_at);
    *  None for authored and hub-synced messages, whose event time is their
-   *  own created/updated clock. Read through `eventTime`, never directly. */
+   *  own `created_date`. Read through `occurredAt`, never directly. */
   sent_at?: string | null;
   // NOTE: ``context`` (string[]) was renamed and consolidated into the
   // unified ``context_entities`` on IEntity. Read via
   // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
-  /** Local-only draft message: not appended to conversation.jsonl, not pushed to hub. Flips to false on send-draft. */
-  is_draft?: boolean;
+  /** A draft's composer thread and send choices; null once sent. */
+  draft_options?: MessageDraftOptions | null;
   /** Special-message discriminator. USER (default) is a normal message;
    *  INVITATION marks a local-only placeholder representing a pending hub
    *  Invitation as the first row of a conversation. The invitation TypeId
@@ -460,7 +474,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Set by the hub while the recipient agent works on an answer: the sender's "working…". */
   handling_at?: string | null;
   sent_at?: string | null;
-  is_draft?: boolean;
+  draft_options?: MessageDraftOptions | null;
   kind?: FlowMessageKind;
   invite?: IMessageInvite | null;
   body_status?: BodyStatus;
@@ -496,9 +510,22 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
 
   /** Classify this message under the configured root. A dry run: nothing on the message changes. */
   async classify(): Promise<MessageClassification> {
-    const action = new ActionInfo('classify', FlowMessage.type, this.id ?? null, 'POST');
+    return FlowMessage.classifyById(this.id!);
+  }
+
+  /** `classify()` by id, for a caller that holds many ids and no entities (the classification table). */
+  static async classifyById(id: string): Promise<MessageClassification> {
+    const action = new ActionInfo('classify', FlowMessage.type, id, 'POST');
     action.bodyParameters = {};
     return (await dataManager.callAction<unknown, MessageClassification>(action))!;
+  }
+
+  /** Make a dry run's answer the message's classification: `tag` replaces the tag the classifier gave
+   *  before; tags a person added stay. No automation starts. */
+  static async applyClassification(id: string, tag: string): Promise<void> {
+    const action = new ActionInfo('apply-classification', FlowMessage.type, id, 'POST');
+    action.bodyParameters = { tag };
+    await dataManager.callAction(action);
   }
 
   async setTags(tags: string[]): Promise<void> {
@@ -550,7 +577,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.received_at = entity.received_at ?? null;
     this.handling_at = entity.handling_at ?? null;
     this.sent_at = entity.sent_at ?? null;
-    this.is_draft = entity.is_draft ?? false;
+    this.draft_options = entity.draft_options ?? null;
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.invite = entity.invite ?? null;
     this.body_status = entity.body_status ?? BodyStatus.NA;
@@ -592,12 +619,26 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     return this.reactions;
   }
 
-  /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
-  async sendDraft(): Promise<{ flow_message_id: string; conversation_id: string; message_count: number }> {
+  /** Written here and not sent yet — the first state of `delivery_status`. */
+  get is_draft(): boolean {
+    return this.delivery_status === 'draft';
+  }
+
+  /** Send this draft: the same message, through the send every message takes. `replyToId` names
+   *  what it answers now and `threadRootId` the native thread it is written in; `call` says whether its
+   *  prompt goes with it as a prompt call (default: as it was drafted). */
+  async sendDraft(
+    opts: { replyToId?: string | null; threadRootId?: string | null; call?: boolean } = {},
+  ): Promise<{ id: string; flow_message_id: string; conversation_id: string; message_count: number }> {
     const action = new ActionInfo('send-draft', 'flow_message', this.id ?? null, 'POST');
+    action.bodyParameters = {
+      ...(opts.replyToId ? { reply_to_id: opts.replyToId } : {}),
+      ...(opts.threadRootId ? { thread_root_id: opts.threadRootId } : {}),
+      ...(opts.call === undefined ? {} : { call: opts.call }),
+    };
     const res = await dataManager.callAction<
       unknown,
-      { flow_message_id: string; conversation_id: string; message_count: number }
+      { id: string; flow_message_id: string; conversation_id: string; message_count: number }
     >(action);
     return res!;
   }
@@ -622,16 +663,6 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
    *  replies already written. Render THIS, never created_date/updated_date. */
   get occurredAt(): string | null {
     const pick = this.sent_at ?? this.created_date ?? null;
-    // Base-entity clocks are string|Date on the wire type; normalize to ISO.
-    return pick instanceof Date ? pick.toISOString() : pick;
-  }
-
-  /** WHEN THIS MESSAGE LAST CHANGED — mirrors FlowMessage.event_time on the
-   *  backend: the recency/activity clock behind the stream inbox's "Xm ago". Includes
-   *  `updated_date` because a genuine edit IS new activity. For a message's
-   *  place in the feed read `occurredAt` instead. */
-  get eventTime(): string | null {
-    const pick = this.sent_at ?? this.updated_date ?? this.created_date ?? null;
     // Base-entity clocks are string|Date on the wire type; normalize to ISO.
     return pick instanceof Date ? pick.toISOString() : pick;
   }

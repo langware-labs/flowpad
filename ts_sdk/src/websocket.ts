@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import config from './config'; // Import the 'config' module
 import { TypeId } from './models/TypeId';
+import { withStateKey } from './page-state';
 import {
   ConnectionSlot,
   HubConnectionStatus,
@@ -161,6 +162,8 @@ export interface UiCommandMessage extends BaseMessage {
   id?: string;
   /** For `navigate_vfs`: the absolute file path to open in the asset editor. */
   path?: string;
+  /** For `navigate_vfs`: the state key its opener minted for a page (`flow_sdk/server/page_state.py`). */
+  state_key?: string | null;
   /** For `navigate_dock`: the dock address — a SCREEN. Already validated
    *  server-side against the dock-address table, so the UI constructs rather
    *  than resolves. */
@@ -479,7 +482,8 @@ export class ConnectionManager extends EventEmitter {
     this._openPromise = connected_promise;
     this.setConnectionStatus('connecting');
     try {
-      const ws_url = `${config.WS_URL}/${this.id}`;
+      // A browser WebSocket sends no custom header, so the page's key rides the query.
+      const ws_url = withStateKey(`${config.WS_URL}/${this.id}`);
       const ws = new WebSocket(ws_url);
       this.socket = ws;
       ws.binaryType = 'arraybuffer';

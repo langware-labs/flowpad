@@ -311,10 +311,15 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         _FIRING.discard(trigger_id)
 
 
+def callback_ids(process: Any) -> list[str]:
+    """Ids of the rules linked to ``process`` — the callbacks it set that still run."""
+    return [tid.id for tid in getattr(process, "shared_context_entities", None) or []
+            if tid.type == BuiltinEntityType.TRIGGER.value]
+
+
 async def pending_callbacks(process: Any) -> list["Trigger"]:
     """The callbacks ``process`` set that have not fired yet — found through its context links."""
-    ids = [tid.id for tid in getattr(process, "private_context_entities_", None) or []
-           if tid.type == BuiltinEntityType.TRIGGER.value]
+    ids = callback_ids(process)
     if not ids:
         return []
     from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
@@ -738,18 +743,26 @@ class Trigger(ProjectedFields, Entity):
         """Every delete leaves nothing behind: no link on the session it calls back, no live subscription."""
         from flow_sdk.builtin.trigger_arming import disarm_trigger  # noqa: PLC0415
 
-        await self.link_process(on=False)
+        await self.leave_process()
         if self.id:
             await disarm_trigger(str(self.id))
         return await super().delete()
 
-    async def link_process(self, *, on: bool = True) -> None:
-        """Link this rule and the session it calls back into each other's context (or undo it)."""
-        from flow_sdk.core.entity.cross_link import cross_link_entities, uncross_link_entities  # noqa: PLC0415
+    async def link_process(self) -> None:
+        """Put this rule and the session it calls back in each other's shared context. The rule's side
+        is what its page shows as "Created through"."""
+        from flow_sdk.core.entity.cross_link import cross_link_entities  # noqa: PLC0415
 
         process = await self.target_process()
-        if process is not None:
-            await (cross_link_entities if on else uncross_link_entities)(self, process)
+        if process is not None and await cross_link_entities(self, process, shared=True):
+            await process.notify_updated()
+
+    async def leave_process(self) -> None:
+        """An ended rule leaves its session's context — the session's chip shows only rules that still
+        run — and keeps the session in its own: where it came from stays true."""
+        process = await self.target_process()
+        if process is not None and process.remove_shared_context_entities(self.typeid):
+            await process.save()
             await process.notify_updated()
 
     # ── Hook trigger logic ────────────────────────────────────────────────────

@@ -47,6 +47,7 @@ import {
 } from '@src/navigation/asset-doc-types';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
+import { PageAllowGate } from '@src/components/page-allow/PageAllowGate';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
 import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { DocxViewer } from '@src/components/docx-viewer/DocxViewer';
@@ -59,7 +60,7 @@ import { gitConnectionRequired, needsGitConnection } from './git-connection';
 import { errorStatus } from '@src/lib/error-message';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { MarkdownEditor, type WikiLinkTarget } from './markdown/MarkdownEditor';
-import { detectLanguage } from '@sdk';
+import { type AgenticProcess, detectLanguage } from '@sdk';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
@@ -130,6 +131,31 @@ const READ_ONLY_OCCURRENCE_EDITORS: ReadonlySet<AssetEditor> = new Set([
   AssetEditor.MCP,
   AssetEditor.DECK,
 ]);
+
+/** The file's own name, for what a prompt calls the page. */
+function fileNameOf(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+/**
+ * An MCP page with the session it was opened beside: the one in the address (a Vibe display host), else the
+ * one its state key names — which is what lets a page shown outside Vibe still reach the session.
+ */
+function McpAppWithSession({
+  path,
+  flow,
+  stateKey,
+  sessionId,
+}: {
+  path: string;
+  flow: AgenticProcess | null | undefined;
+  stateKey: string | undefined;
+  sessionId: string | undefined;
+}) {
+  const named = useMemo(() => (!flow && sessionId ? new TypeId(sessionId) : null), [flow, sessionId]);
+  const { data: namedProcess } = useEntity<AgenticProcess>(named);
+  return <McpAppPreview path={path} process={flow ?? namedProcess ?? null} stateKey={stateKey} />;
+}
 
 function useIsNested(): boolean {
   return useNestedHost() !== null;
@@ -302,12 +328,22 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
   // compute node themselves), so normalize the pointer value here — the ONE
   // vpath→machine-path point for these viewers. MediaViewer parses both forms.
   if (ptr.editor === AssetEditor.HTML) {
-    return <HtmlPreview path={machinePathOf(ptr.value)} />;
+    const path = machinePathOf(ptr.value);
+    return (
+      <PageAllowGate title={fileNameOf(path)}>
+        {({ stateKey }) => <HtmlPreview path={path} stateKey={stateKey} />}
+      </PageAllowGate>
+    );
   }
   if (ptr.editor === AssetEditor.MCP_APP) {
+    const path = machinePathOf(ptr.value);
     return (
       <Suspense fallback={<ConnectingFallback />}>
-        <McpAppPreview path={machinePathOf(ptr.value)} process={flow ?? null} />
+        <PageAllowGate title={fileNameOf(path)}>
+          {({ stateKey, context }) => (
+            <McpAppWithSession path={path} flow={flow} stateKey={stateKey} sessionId={context.process} />
+          )}
+        </PageAllowGate>
       </Suspense>
     );
   }

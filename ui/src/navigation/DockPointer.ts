@@ -310,6 +310,15 @@ export const WORKSPACE_PARAM = 'workspace';
 export const WORKSPACE_ENTRY_PARAM = 'workspaceEntry';
 
 /**
+ * URL query-param key carrying the STATE KEY a page was opened with (`flow_sdk/server/page_state.py`):
+ * minted by whoever opened the page on this machine (`flow show`, an agent, the user saying Allow), and
+ * handed by the host to the page's frame. A dock without one asks the user before it runs a page.
+ * It is this dock's own — NOT sticky: carrying one page's key onto another page would hand it reach it
+ * never earned. Excluded from `tabHash` like every option.
+ */
+export const STATE_KEY_PARAM = 'stateKey';
+
+/**
  * URL query-param key naming the capability the user was reaching for when they
  * were routed to the Capabilities view — e.g. clicking "Start Codex" on an
  * opener whose harness looks unavailable lands here with

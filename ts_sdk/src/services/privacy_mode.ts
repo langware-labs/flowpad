@@ -31,11 +31,27 @@ class PrivacyManager extends EventEmitter {
     return this._mode === 'local';
   }
 
+  /** Whether `seedBootstrap` has run. Before it, `mode` is only the default, not what the backend said. */
+  get initialized(): boolean {
+    return this._initialized;
+  }
+
   /** Seed initial state from bootstrapInfo.privacy_mode. Called once from main.ts. */
   seedBootstrap(seedMode: PrivacyMode | string | null | undefined) {
     if (this._initialized) return;
     this._initialized = true;
     this._apply(seedMode === 'local' ? 'local' : 'connected');
+  }
+
+  /**
+   * A FRESH bootstrap (a sign-in refresh) is the backend's current word on the mode, so it is adopted
+   * even after the first seed. Without it a page that missed a live `privacy_mode_msg` keeps a mode the
+   * backend no longer holds -- and with reporting following this manager, that is the one place a
+   * stale Connected could keep sending.
+   */
+  adoptBootstrap(mode: PrivacyMode | string | null | undefined) {
+    this._initialized = true;
+    this._apply(mode === 'local' ? 'local' : 'connected');
   }
 
   startSubscriptions(): Promise<void> {

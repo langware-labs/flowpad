@@ -45,8 +45,8 @@ export function StreamInboxPager({
 }) {
   const { navigation, currentDock } = useDockNavigation();
   const before = currentDock?.pageBefore ?? null;
-  const newest = isoOf(rows[0]?.updated_date);
-  const oldest = isoOf(rows[rows.length - 1]?.updated_date);
+  const newest = isoOf(rows[0]?.recency);
+  const oldest = isoOf(rows[rows.length - 1]?.recency);
 
   const newerRequest = useMemo(
     () => (before && newest ? newerBoundaryRequest(scope, view, newest, starredIds) : null),

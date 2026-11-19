@@ -42,7 +42,7 @@ export function streamInboxConversationsRequest(owner: TypeId): QueryRequest {
   return conversationsPageRequest({ owner }, 'all', null);
 }
 
-/** The conversations matching `clauses`, newest first (`updated_date`), at most `limit` — a list that
+/** The conversations matching `clauses`, newest first, at most `limit` — a list that
  *  shows only its most recent rows asks the server for just those. */
 export function recentConversationsRequest(clauses: ExpressionNode[], limit?: number, name?: string): QueryRequest {
   return new QueryRequest({
@@ -50,7 +50,7 @@ export function recentConversationsRequest(clauses: ExpressionNode[], limit?: nu
     name,
     query: new QueryFilter({
       match: allOf(clauses) ?? new ExpressionNode(EVERY_ROW),
-      order_by: [{ updated_date: 'desc' }, { id: 'asc' }],
+      order_by: [{ [Conversation.recencyField]: 'desc' }, { id: 'asc' }],
       ...(limit ? { limit } : {}),
     }),
   });
@@ -186,14 +186,14 @@ function pageQuery(
       // An owner still reads a conversation they deleted on the hub (kept there for audit, `deleted_at`
       // set); it is gone from the Stream Inbox. A row kept here never carries the field.
       match: allOf([...scopeClauses(scope), notDeleted(), ...clauses]),
-      order_by: [{ updated_date: direction }, { id: 'asc' }],
+      order_by: [{ [Conversation.recencyField]: direction }, { id: 'asc' }],
       ...page,
     }),
   });
 }
 
 /** One page of a stream inbox, newest first: `before` null is now — the latest page — else the rows
- *  whose `updated_date` is older than it (a keyset, so new arrivals never shift an older page). */
+ *  whose newest message is older than it (a keyset, so new arrivals never shift an older page). */
 export function conversationsPageRequest(
   scope: ConversationScope,
   view: StreamInboxViewMode,
@@ -202,7 +202,7 @@ export function conversationsPageRequest(
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
   const clauses = viewClauses(view, starredIds);
-  if (before) clauses.push(new ExpressionNode({ op: '$LT', operands: ['updated_date', before] }));
+  if (before) clauses.push(new ExpressionNode({ op: '$LT', operands: [Conversation.recencyField, before] }));
   return pageQuery(scope, clauses, 'desc', { limit: size });
 }
 
@@ -215,7 +215,7 @@ export function conversationsByIdsRequest(scope: ConversationScope, ids: string[
 }
 
 /** The rows of the page just NEWER than one whose newest row is at `newest`: the `size` rows above it,
- *  oldest first — a keyset (`updated_date > newest`), never an offset, so a row arriving meanwhile
+ *  oldest first — a keyset (newer than `newest`), never an offset, so a row arriving meanwhile
  *  cannot shift the bound. The last of them bounds the newer page (see `newerPageBefore`); fewer than
  *  a page — or no more past them — means the newer page is now. */
 export function newerBoundaryRequest(
@@ -227,7 +227,7 @@ export function newerBoundaryRequest(
 ): QueryRequest {
   return pageQuery(
     scope,
-    [...viewClauses(view, starredIds), new ExpressionNode({ op: '$GT', operands: ['updated_date', newest] })],
+    [...viewClauses(view, starredIds), new ExpressionNode({ op: '$GT', operands: [Conversation.recencyField, newest] })],
     'asc',
     { limit: size },
   );
@@ -237,12 +237,12 @@ export function newerBoundaryRequest(
  *  unless they are a full page with more past them; else just past the last of them, so the newer page
  *  — rows older than its bound, newest first — is exactly those rows. */
 export function newerPageBefore(
-  above: { updated_date?: string | Date | null }[],
+  above: { recency?: string | Date | null }[],
   hasMore: boolean,
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): string | null {
   if (!hasMore || above.length < size) return null;
-  const last = above[above.length - 1]?.updated_date;
+  const last = above[above.length - 1]?.recency;
   if (!last) return null;
   const at = new Date(last).getTime();
   return Number.isNaN(at) ? null : new Date(at + 1).toISOString();

@@ -31,7 +31,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
         ({"outbound": True, "delivery_status": "sent", "body_status": "uploading"}, True),  # the body is owed
         ({"outbound": True, "delivery_status": "delivered", "body_status": "failed"}, True),
         ({"outbound": False}, False),  # a message someone sent me
-        ({"outbound": True, "is_draft": True}, False),
+        ({"delivery_status": "draft"}, False),
         ({"outbound": True, "kind": FlowMessageKind.INVITATION.value}, False),
     ],
 )

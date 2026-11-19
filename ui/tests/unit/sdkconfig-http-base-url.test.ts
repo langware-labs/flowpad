@@ -16,8 +16,6 @@ function makeConfig(overrides: Partial<ISDKConfig> = {}): SDKConfig {
     auth_provider: 'custom',
     flowpad_app_host: 'flowpad.app',
     flowpad_app_port: undefined,
-    sentry_dsn: '',
-    sentry_project: '',
     check_refresh_token: false,
   };
   return new SDKConfig({ ...base, ...overrides });

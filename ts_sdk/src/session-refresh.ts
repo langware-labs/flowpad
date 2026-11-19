@@ -21,6 +21,7 @@ import { capabilityManager } from './capabilities';
 import { User, Workspace } from './entities';
 import type { BootstrapInfo } from './models/BootstrapInfo';
 import { cloudManager } from './services/cloud_login';
+import { privacyManager } from './services/privacy_mode';
 
 /** Apply the user-dependent part of a bootstrap payload to the SDK context. */
 export async function applyBootstrapUser(info: BootstrapInfo): Promise<User | null> {
@@ -82,6 +83,7 @@ export async function refreshSession(): Promise<boolean> {
     // is what `main-loader` reads to decide whether a dock load is signed in:
     // left anonymous, the user's next in-app navigation would bounce to login.
     dataContext.bootstrapInfo = merged;
+    privacyManager.adoptBootstrap(merged.privacy_mode);
     await applyBootstrapUser(merged);
     // The anonymous visitor is the hub's to migrate (bootstrap did, server-side,
     // just now); the client just stops pointing at it.

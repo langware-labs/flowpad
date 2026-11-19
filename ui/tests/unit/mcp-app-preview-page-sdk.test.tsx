@@ -9,7 +9,7 @@
  * jsdom cannot run the sandbox, so AppRenderer is captured and its props checked;
  * the real browser path is `ui/tests/e2e/page-sdk-bridge`.
  */
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const API = 'http://localhost:6007';
@@ -78,7 +78,40 @@ describe('McpAppPreview gives the page the SDK', () => {
   });
 });
 
+describe('McpAppPreview hands the page its state key, and says when a submission reached no one', () => {
+  afterEach(() => {
+    mocks.props.length = 0;
+    cleanup();
+  });
+
+  it("sets the key the page was opened with before the page's own scripts", async () => {
+    render(<McpAppPreview path="/tmp/probe.mcp.html" process={{ id: PID } as any} stateKey={'k'.repeat(32)} />);
+
+    const result = await last().onReadResource({ uri: 'ui://flowpad-local/tmp/probe.mcp.html' });
+
+    expect(result.contents[0].text.split('<script>page()')[0]).toContain(`__FLOWPAD_STATE_KEY__="${'k'.repeat(32)}"`);
+  });
+
+  it('refuses a submission that has no session, says so above the page, and keeps the page', async () => {
+    render(<McpAppPreview path="/tmp/probe.mcp.html" process={null} />);
+
+    let answer: unknown;
+    await act(async () => {
+      answer = await last().onMessage({ role: 'user', content: [{ type: 'text', text: 'MCP_UI_SUBMISSION {}' }] });
+    });
+
+    expect(answer).toEqual({ isError: true });
+    expect(screen.getByTestId('mcp-app-preview-undelivered').textContent).toContain('reached no one');
+    expect(screen.getByTestId('mcp-app-preview')).toBeTruthy();
+  });
+});
+
 describe('page SDK prelude', () => {
+  it('writes the state key when there is one, and nothing when there is none', () => {
+    expect(pageSdkPrelude(API, PID, 'k'.repeat(32))).toContain(`__FLOWPAD_STATE_KEY__="${'k'.repeat(32)}"`);
+    expect(pageSdkPrelude(API, PID)).not.toContain('__FLOWPAD_STATE_KEY__');
+  });
+
   it('omits the process id when there is none', () => {
     expect(pageSdkPrelude(API, null)).not.toContain('__FLOWPAD_PROCESS_ID__');
   });

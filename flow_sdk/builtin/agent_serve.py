@@ -1242,7 +1242,7 @@ async def _answered_before(message, source, agent) -> bool:
     conversation = await conversation_of(message, source)
     if not conversation:
         return False
-    rows = await FlowMessage.get_all({"conversation_id": conversation})
+    rows = await FlowMessage.sent_in(conversation)
     own = own_sender_ids(str(agent.id), set(await User.self_ids()))
     return spoke_before([getattr(row, "sender_id", "") for row in rows], own)
 
