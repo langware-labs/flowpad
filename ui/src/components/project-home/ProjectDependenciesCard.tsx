@@ -77,8 +77,8 @@ export const ProjectDependenciesCard: React.FC<ProjectDependenciesCardProps> = (
         <p className="mb-3 text-xs text-muted-foreground" data-testid="dependencies-not-installed">
           <Plural
             value={notInstalled}
-            one="# optional dependency not installed"
-            other="# optional dependencies not installed"
+            one="# optional package not installed"
+            other="# optional packages not installed"
           />
         </p>
       )}

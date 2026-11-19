@@ -23,7 +23,7 @@ def _shared_depth(a: str, b: str) -> int:
 async def by_name_preferring_this_install(cls: Any, name: str, *, near: str = "") -> Optional[Any]:
     """The ``cls`` row called *name*; this install's copy when several share the name, else the
     copy closest to *near* (the folder of the asset that names it — a project's setup runs its
-    own ``waha-setup``, not a same-named wizard another project ships).
+    own ``bridge-setup``, not a same-named wizard another project ships).
 
     Raises ``ValueError`` — as ``get_one`` does — only when several match and no copy is more
     right than another.

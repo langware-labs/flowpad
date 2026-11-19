@@ -6,33 +6,26 @@ import { useContext } from '@src/hooks/useContext';
 import { useFavorites } from '@src/hooks/use-favorites';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
-import { useLingui } from '@lingui/react/macro';
-import { FolderPlus, PackagePlus, Plus, Star } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { FolderPlus, PackagePlus, Star } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 /**
- * The "add here" row that leads each level of the bookmarks tree menu that can
- * take a row — so you build the tree while browsing it. Everything it creates
- * files into `parentId` ('' = root), the level it sits under.
+ * The "add here" row that leads a level of the bookmarks menu that can take a
+ * row — so you build the tree while browsing it. Everything it creates files
+ * into `parentId` ('' = the open project's own level).
  *
- * Leads with a green "+" marker (not a button) so the row reads as a create
- * toolbar rather than a mystery cluster of icons. Three actions:
+ *  - Bookmark this page — the labeled, primary action: bookmarks whatever is
+ *    open. An entity-backed view by its typeid, anything else (web app, shell,
+ *    lens) by its dock pointer (restored with openDock). Only disabled on a
+ *    full-bleed surface (Home) with no tab.
  *  - Folder — a nested favorite folder (the only path to one; moveToFolder
  *    refuses folders). Named INLINE, not in a modal — the menu is a fast
  *    surface; a full dialog is too heavy for a one-word name.
  *  - Asset — any registered asset, via the same picker used elsewhere. Files
  *    that are assets (markdown, charts, decks…) are reachable here.
- *  - Current — bookmarks whatever is open: an entity-backed view by its typeid,
- *    anything else (web app, shell, lens) by its dock pointer (restored with
- *    openDock). Only disabled on a full-bleed surface (Home) with no tab.
- *
- * `mirrored` must match the hosting tree's: BrowseableTree puts a mirrored
- * level's indent on the TRAILING edge, so a row whose own content is still
- * laid out leading-first ignores it and draws at the same x on every level —
- * which is how three nested add-rows once read as three identical mystery
- * rows. Reversing the axis here is what makes the indent visible.
  */
-export function FavoritesAddRow({ parentId, mirrored }: { parentId: string; mirrored?: boolean }) {
+export function FavoritesAddRow({ parentId }: { parentId: string }) {
   const { t } = useLingui();
   const { createFolder, addFavorite } = useFavorites();
   const { activeEntity, activeEntityTypeId } = useContext();
@@ -77,16 +70,7 @@ export function FavoritesAddRow({ parentId, mirrored }: { parentId: string; mirr
   };
 
   return (
-    <div
-      className={`flex items-center gap-0.5 rounded-md px-1.5 py-1 text-muted-foreground ${
-        mirrored ? 'flex-row-reverse' : ''
-      }`}
-    >
-      {/* A green "+" marks the row as a create toolbar. Not a button — no
-          hover, default cursor. `text-green-500` is the app's cross-theme green
-          (reads on both light and dark). */}
-      <Plus className="mx-1 h-4 w-4 shrink-0 cursor-default select-none text-green-500" aria-hidden />
-
+    <div className="flex items-center gap-0.5 rounded-md px-1.5 py-1 text-muted-foreground">
       {folderName !== null ? (
         <input
           autoFocus
@@ -111,6 +95,19 @@ export function FavoritesAddRow({ parentId, mirrored }: { parentId: string; mirr
         />
       ) : (
         <>
+          <button
+            type="button"
+            onClick={addCurrent}
+            disabled={!hasCurrent}
+            title={hasCurrent ? undefined : t`Nothing open to bookmark`}
+            className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Star className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="truncate">
+              <Trans>Bookmark this page</Trans>
+            </span>
+          </button>
+
           <AddButton
             icon={<FolderPlus className="h-3.5 w-3.5" />}
             label={t`New folder`}
@@ -119,7 +116,7 @@ export function FavoritesAddRow({ parentId, mirrored }: { parentId: string; mirr
 
           {/* The visible button is standalone; the picker opens as a centered
               modal from the controlled `open` state — which is also what lets it
-              escape the enclosing bookmarks-tree menu. */}
+              escape the enclosing bookmarks menu. */}
           <AddButton
             icon={<PackagePlus className="h-3.5 w-3.5" />}
             label={t`Bookmark an asset`}
@@ -132,13 +129,6 @@ export function FavoritesAddRow({ parentId, mirrored }: { parentId: string; mirr
             onPick={addAsset}
             searchPlaceholder={t`Search assets…`}
           />
-
-          <AddButton
-            icon={<Star className="h-3.5 w-3.5" />}
-            label={hasCurrent ? t`Bookmark what's open` : t`Nothing open to bookmark`}
-            onClick={addCurrent}
-            disabled={!hasCurrent}
-          />
         </>
       )}
     </div>
@@ -149,12 +139,10 @@ function AddButton({
   icon,
   label,
   onClick,
-  disabled,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
-  disabled?: boolean;
 }) {
   return (
     <Tooltip>
@@ -163,8 +151,7 @@ function AddButton({
           type="button"
           aria-label={label}
           onClick={onClick}
-          disabled={disabled}
-          className="flex h-6 w-6 items-center justify-center rounded-sm transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          className="flex h-6 w-6 items-center justify-center rounded-sm transition-colors hover:bg-accent hover:text-foreground"
         >
           {icon}
         </button>

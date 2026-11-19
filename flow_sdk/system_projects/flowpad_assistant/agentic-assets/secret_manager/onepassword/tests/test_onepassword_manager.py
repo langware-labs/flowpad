@@ -40,7 +40,10 @@ def test_the_manager_is_listed_with_its_commands_per_os():
     assert cli_command("onepassword", "install", "darwin") == "brew install 1password-cli"
     assert cli_command("onepassword", "install", "win32") == "winget install AgileBits.1Password.CLI"
     assert "apt-get install -y 1password-cli" in cli_command("onepassword", "install", "linux")
-    assert cli_command("onepassword", "login", "linux") == "op signin"
+    # Open is the vault read itself: it raises the app's approval for the default account, where a bare
+    # ``op signin`` with no terminal refuses a person who has several accounts ("multiple accounts found").
+    assert cli_command("onepassword", "login", "linux", vault="team") == "op vault get team --format json"
+    assert (cli_command("onepassword", "status"), cli_command("onepassword", "close")) == ("op whoami", "op signout")
     assert cli_command("onepassword", "check", vault="team") == "op vault get team --format json"
     assert cli_command("onepassword", "grant", vault="V", email="b@x.io") == (
         "op vault user grant --vault V --user b@x.io --permissions allow_viewing")

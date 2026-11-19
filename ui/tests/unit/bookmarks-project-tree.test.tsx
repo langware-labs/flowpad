@@ -1,20 +1,18 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Bookmark, BookmarkType } from '@sdk';
 
 /**
- * The bookmarks menu is ONE GLOBAL tree grouped by project — no scope filter.
- * The current project is expanded on open; every other project holding
- * favorites is a sibling row you hover into.
+ * The bookmarks menu shows ONE LEVEL of the favorites tree at a time, named by
+ * a breadcrumb. It opens at the open project; a project or folder is entered by
+ * click, and the star crumb is the list of projects.
  *
  * The shape below is the real one read out of the `prod` instance
  * (2026-09-09, project 2a1e40da), folders renamed: `Work → Docs →
- * {agent-deployment, README}`. That tree is also what produced the bug this file pins: with the
- * level footer rendered LAST, three open levels stacked three identical
- * unlabelled "add" rows at the bottom of the panel, which read as three empty
- * bookmarks.
+ * {agent-deployment, README}`.
  */
 const PROJ = {
   current: '2a1e40da-9221-4ea4-82f3-18a0928a4654',
@@ -78,21 +76,20 @@ vi.mock('@src/hooks/use-project-bookmarks', () => ({
   useProjectBookmarks: () => ({ data: h.bookmarks, refetch: vi.fn() }),
 }));
 vi.mock('@sdk/react/hooks', () => ({
-  // The adapter reads dataContext (synchronous, seeds defaultExpandedIds on the
-  // first render); `use-favorites` fetches the entity to stamp new rows.
+  // The adapter reads dataContext (synchronous, so the first level is the open
+  // project's); `use-favorites` fetches the entity to stamp new rows.
   useContext: () => ({ project: { id: h.currentProjectId } }),
   useProject: () => ({ project: { id: h.currentProjectId, displayName: 'flowpad-oss' } }),
 }));
-vi.mock('@src/hooks/entity-hooks', () => ({
-  useEntitiesQuery: () => ({
-    data: [
-      { id: PROJ.current, displayName: 'flowpad-oss' },
-      { id: PROJ.other, displayName: 'test-project' },
-    ],
-  }),
-}));
+// Stable across renders, as the real hooks' results are.
+const PROJECTS = [
+  { id: PROJ.current, displayName: 'flowpad-oss' },
+  { id: PROJ.other, displayName: 'test-project' },
+];
+const NO_SUMMARIES = {};
+vi.mock('@src/hooks/entity-hooks', () => ({ useEntitiesQuery: () => ({ data: PROJECTS }) }));
 vi.mock('@src/hooks/use-favorite-summaries', () => ({
-  useFavoriteSummaries: () => ({}),
+  useFavoriteSummaries: () => NO_SUMMARIES,
   summaryForBookmark: () => undefined,
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -113,10 +110,20 @@ vi.mock('@src/tabs/use-tab-manager', () => ({ useOpenTabHashes: () => new Set<st
 
 const { FavoritesTreeMenu } = await import('@src/components/favorites/FavoritesTreeMenu');
 
-const bucket = (projectId: string) => `favproject:${projectId}`;
-const addRows = () => screen.queryAllByLabelText('New folder').map((b) => b.closest('div') as HTMLElement);
+/** The menu with the header slot its breadcrumb is drawn into, as the panel hosts it. */
+function Panel() {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <div ref={setSlot} data-testid="header" />
+      <FavoritesTreeMenu breadcrumbSlot={slot} />
+    </>
+  );
+}
 
-/** Row labels + "ADD" markers in visual order — the panel as the user reads it.
+const header = () => screen.getByTestId('header').textContent;
+
+/** Row labels + "ADD" markers in visual order — the level as the user reads it.
  *  The label is the truncating span (never the badge that follows it). */
 function panelOrder(): string[] {
   const nodes = document.querySelectorAll('[data-browseable-id], [aria-label="New folder"]');
@@ -130,140 +137,50 @@ function panelOrder(): string[] {
 beforeEach(() => { h.currentProjectId = PROJ.current; });
 afterEach(cleanup);
 
-describe('bookmarks tree — global, grouped by project', () => {
-  it('opens on the current project and offers the others as siblings', async () => {
-    render(<FavoritesTreeMenu mirrored />);
-
-    // The current project is expanded already: its Work folder is on screen
-    // without a single click.
-    await waitFor(() => expect(screen.getByText('flowpad-oss')).toBeTruthy());
-    await waitFor(() => expect(screen.getByText('Work')).toBeTruthy());
-
-    // The other project and the unscoped desk are rows, not a filter mode.
-    expect(screen.getByText('test-project')).toBeTruthy();
-    expect(screen.getByText('Personal')).toBeTruthy();
-    // ...and the current project leads.
-    const buckets = Array.from(document.querySelectorAll('[data-browseable-id^="favproject:"]')).map((e) =>
-      e.getAttribute('data-browseable-id'),
-    );
-    expect(buckets[0]).toBe(bucket(PROJ.current));
-    expect(buckets).toContain(bucket(PROJ.other));
-
-    // Hovering another project enters it the same way — same folder chevron,
-    // same tree beneath it, all the way down to its leaves.
-    const user = userEvent.setup();
-    await user.click(screen.getByTestId(`browseable-chevron-${bucket(PROJ.other)}`));
-    await waitFor(() => expect(screen.getByTestId(`browseable-chevron-${ID.otherWork}`)).toBeTruthy());
-    await user.click(screen.getByTestId(`browseable-chevron-${ID.otherWork}`));
-    await waitFor(() => expect(screen.getByText('sources-and-sinks')).toBeTruthy());
+describe('bookmarks menu — one level at a time, under a breadcrumb', () => {
+  it('opens at the open project: its rows and its add row, the other projects out of the way', async () => {
+    render(<Panel />);
+    await waitFor(() => expect(panelOrder()).toEqual(['ADD', 'Work']));
+    expect(header()).toBe('flowpad-oss');
+    expect(screen.queryByText('test-project')).toBeNull();
   });
 
-  it('never stacks add rows: one per level, leading the level it files into', async () => {
+  it('enters a folder on click, and a crumb goes back up', async () => {
     const user = userEvent.setup();
-    render(<FavoritesTreeMenu mirrored />);
-    await waitFor(() => expect(screen.getByText('Work')).toBeTruthy());
+    render(<Panel />);
+    await user.click(await screen.findByText('Work'));
+    await waitFor(() => expect(panelOrder()).toEqual(['ADD', 'Docs']));
+    await user.click(screen.getByText('Docs'));
+    // Each level carries its own add row — it files into the folder shown.
+    await waitFor(() => expect(panelOrder()).toEqual(['ADD', 'agent-deployment', 'README']));
+    expect(header()).toBe('flowpad-ossWorkDocs');
 
-    // Current project open: exactly ONE add row, directly under its bucket.
-    expect(addRows()).toHaveLength(1);
-    expect(panelOrder().slice(0, 3)).toEqual(['flowpad-oss', 'ADD', 'Work']);
-
-    // Open both nested folders — the exact prod state that produced the three
-    // anonymous rows. Each new level adds its own footer, and each sits at the
-    // HEAD of its level, so no two are ever adjacent.
-    await user.click(screen.getByTestId(`browseable-chevron-${ID.work}`));
-    await waitFor(() => expect(screen.getByText('Docs')).toBeTruthy());
-    await user.click(screen.getByTestId(`browseable-chevron-${ID.documents}`));
-    await waitFor(() => expect(screen.getByText('README')).toBeTruthy());
-
-    expect(panelOrder()).toEqual([
-      'flowpad-oss',
-      'ADD',
-      'Work',
-      'ADD',
-      'Docs',
-      'ADD',
-      'agent-deployment',
-      'README',
-      'test-project',
-      'Personal',
-    ]);
+    await user.click(within(screen.getByTestId('header')).getByText('Work'));
+    await waitFor(() => expect(panelOrder()).toEqual(['ADD', 'Docs']));
   });
 
-  it('offers no add row on the project list, nor directly under a foreign project', async () => {
+  it('lists the projects under the star crumb; only a level that can take a row offers one', async () => {
     const user = userEvent.setup();
-    render(<FavoritesTreeMenu mirrored />);
-    await waitFor(() => expect(screen.getByText('test-project')).toBeTruthy());
+    render(<Panel />);
+    await user.click(await screen.findByLabelText('All bookmarks'));
+    // The project list owns no bookmarks, so nothing can be filed into it.
+    await waitFor(() => expect(panelOrder()).toEqual(['flowpad-oss', 'test-project', 'Personal']));
+    expect(header()).toBe('Bookmarks');
 
-    // The tree root is the project LIST — it owns no bookmarks, so nothing can
-    // be filed into it.
-    expect(panelOrder()[0]).not.toBe('ADD');
+    // A new row is stamped with the OPEN project, so one added directly on
+    // another project's level would file into this one and vanish from view.
+    await user.click(screen.getByText('test-project'));
+    await waitFor(() => expect(panelOrder()).toEqual(['Work']));
 
-    // A bucket's own level maps to the real root parent (''), and a new row is
-    // stamped with the CURRENT project — so an add row hanging directly off
-    // someone else's desk would file into this one and disappear from view.
-    await user.click(screen.getByTestId(`browseable-chevron-${bucket(PROJ.other)}`));
-    await waitFor(() => expect(screen.getByTestId(`browseable-chevron-${ID.otherWork}`)).toBeTruthy());
-    expect(panelOrder()).toEqual(['flowpad-oss', 'ADD', 'Work', 'test-project', 'Work', 'Personal']);
-
-    // A FOLDER inside it does offer one: it files into that folder by id, and
-    // bucketing follows the top-level ancestor, so the new row lands exactly
-    // where it was added.
-    await user.click(screen.getByTestId(`browseable-chevron-${ID.otherWork}`));
-    await waitFor(() => expect(screen.getByText('sources-and-sinks')).toBeTruthy());
-    expect(panelOrder()).toEqual([
-      'flowpad-oss',
-      'ADD',
-      'Work',
-      'test-project',
-      'Work',
-      'ADD',
-      'sources-and-sinks',
-      'Personal',
-    ]);
+    // A FOLDER inside it does offer one: it files into that folder by id.
+    await user.click(screen.getByText('Work'));
+    await waitFor(() => expect(panelOrder()).toEqual(['ADD', 'sources-and-sinks']));
   });
 
-  it('shows no empty desk for a project with no favorites — the add row leads the tree instead', async () => {
+  it('an open project with no bookmarks opens on its own empty level, ready for its first row', async () => {
     h.currentProjectId = 'a-project-with-nothing-in-it';
-    render(<FavoritesTreeMenu mirrored />);
-
-    // No synthesized bucket: an empty project desk read as an empty folder. The
-    // first bookmark files from the tree-root add row (stamped with the current
-    // project, so it opens that project's bucket once it exists).
-    await waitFor(() => expect(addRows()).toHaveLength(1));
-    expect(panelOrder().slice(0, 2)).toEqual(['ADD', 'flowpad-oss']);
-    expect(screen.queryByText('Other project')).toBeNull();
-    expect(screen.getByText('test-project')).toBeTruthy();
-  });
-
-  it('with nothing bookmarked anywhere, the empty tree still offers the add row', async () => {
-    const all = h.bookmarks;
-    h.bookmarks = [];
-    try {
-      render(<FavoritesTreeMenu mirrored />);
-      await waitFor(() => expect(screen.getByText('No bookmarks yet')).toBeTruthy());
-      expect(addRows()).toHaveLength(1);
-    } finally {
-      h.bookmarks = all;
-    }
-  });
-
-  it('a project bucket is a section, not a folder', async () => {
-    render(<FavoritesTreeMenu mirrored />);
-    await waitFor(() => expect(screen.getByText('flowpad-oss')).toBeTruthy());
-    const row = document.querySelector(`[data-browseable-id="${bucket(PROJ.current)}"] [role="treeitem"]`)!;
-    expect(row.className).toContain('font-medium');
-    expect(row.className).toContain('text-muted-foreground');
-  });
-
-  it('lays the add row out on the tree axis so its level indent is visible', async () => {
-    render(<FavoritesTreeMenu mirrored />);
-    await waitFor(() => expect(screen.getByText('Work')).toBeTruthy());
-    const [row] = addRows();
-    // Mirrored: the row reverses with the tree, otherwise BrowseableTree's
-    // trailing-edge indent lands on a leading-first row and every level draws
-    // at the same x — which is how nested add rows became indistinguishable.
-    expect(row.className).toContain('flex-row-reverse');
-    expect((row.parentElement as HTMLElement).style.marginInlineEnd).not.toBe('');
-    expect((row.parentElement as HTMLElement).style.marginInlineStart).toBe('');
+    render(<Panel />);
+    await waitFor(() => expect(screen.getByText('No bookmarks yet')).toBeTruthy());
+    expect(panelOrder()).toEqual(['ADD']);
   });
 });

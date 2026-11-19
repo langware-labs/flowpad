@@ -380,6 +380,26 @@ def test_tail_status_post_turn_system_lines_do_not_hide_end_turn(tmp_path: Path)
     assert _tail_status(f) == WorkerStatus.COMPLETE
 
 
+def test_tail_status_away_summary_does_not_hide_end_turn(tmp_path: Path):
+    """Claude writes an ``away_summary`` recap after a finished turn while the user
+    is away. It is about the turn, not a worker state: read as the last meaningful entry
+    it stopped the tail from widening to the ``end_turn`` beyond the 4 KB window."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user", "content": "go"}},
+            {
+                "type": "assistant",
+                "message": {"role": "assistant", "stop_reason": "end_turn", "content": [{"type": "text", "text": "x" * 8000}]},
+            },
+            {"type": "system", "subtype": "turn_duration", "durationMs": 2100},
+            {"type": "system", "subtype": "away_summary", "content": "recap"},
+        ],
+    )
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
 def test_tail_status_stop_sequence_is_error(tmp_path: Path):
     """Assistant stop_reason=stop_sequence → ERROR."""
     f = tmp_path / "session.jsonl"

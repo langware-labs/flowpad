@@ -46,7 +46,7 @@ export function DependencyUpdatesStrip({ projectId }: { projectId: string }) {
     >
       <div className="flex items-center gap-2 text-sm">
         <span className="flex-1 font-medium text-blue-600 dark:text-blue-400">
-          <Plural value={rows.length} one="# dependency is behind" other="# dependencies are behind" />
+          <Plural value={rows.length} one="# package is behind" other="# packages are behind" />
         </span>
         <Button
           size="sm"
@@ -56,7 +56,7 @@ export function DependencyUpdatesStrip({ projectId }: { projectId: string }) {
           data-testid="project-setup-pull-dependencies"
         >
           {pulling && <Loader2 className="animate-spin" />}
-          {pulling ? <Trans>Pulling…</Trans> : <Trans>Pull dependencies to latest</Trans>}
+          {pulling ? <Trans>Pulling…</Trans> : <Trans>Update packages</Trans>}
         </Button>
       </div>
       <ul className="flex flex-col gap-1">

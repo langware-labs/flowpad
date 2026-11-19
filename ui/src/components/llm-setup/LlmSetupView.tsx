@@ -132,10 +132,10 @@ export function LlmSetupView() {
           <div className="flex flex-col items-center gap-3 text-center">
             <Sparkles className="h-8 w-8 text-muted-foreground/60" />
             <DialogTitle className="text-lg font-semibold">
-              <Trans>What should issue your LLM calls?</Trans>
+              <Trans>Choose how Flowpad's AI is paid for</Trans>
             </DialogTitle>
             <DialogDescription>
-              <Trans>Pick FlowPad, an assistant you already pay for, or paste an API key.</Trans>
+              <Trans>Pick Flowpad, an assistant you already pay for, or paste an API key.</Trans>
             </DialogDescription>
             <div className="mt-1 flex gap-2">
               <Button onClick={choose} data-testid="llm-setup-reopen">

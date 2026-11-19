@@ -124,6 +124,10 @@ def test_a_browsers_own_reads_pass_but_a_page_cannot_use_them_to_act():
 
     assert client.get("/api/v1/thing", headers=navigate).status_code == 200  # a page in a frame, a login redirect
     assert client.get("/api/v1/thing", headers=passive).status_code == 200  # an <img>, a classic <script>
+    module = {"sec-fetch-mode": "cors", "sec-fetch-dest": "script", "sec-fetch-site": "same-origin"}
+    assert client.get("/api/v1/thing", headers=module).status_code == 200  # an app's own `import './repo.js'`
+    assert client.get("/api/v1/thing", headers={**module, "sec-fetch-site": "cross-site"}).status_code == 403
+    assert client.post("/api/v1/thing", headers=module).status_code == 403
     assert client.post("/api/v1/thing", headers=navigate).status_code == 403  # a form a page submits
     assert client.get("/api/v1/thing", headers={"sec-fetch-mode": "cors"}).status_code == 403  # fetch / XHR
 
@@ -211,14 +215,19 @@ def test_a_page_reads_back_what_its_key_stands_for_and_the_app_can_ask_about_ano
     assert unknown.status_code == 200 and unknown.json()["data"]["probed"] is None
 
 
-def test_the_app_key_goes_only_to_a_page_the_user_opened_themselves():
+def test_the_app_key_goes_to_the_app_opened_from_outside_but_never_to_a_page_of_its_own():
     client = _client()
+    load = {"sec-fetch-mode": "navigate", "sec-fetch-dest": "document"}
 
     opened = client.get("/", headers=DIRECT_OPEN)
-    fetched = client.get("/", headers={"sec-fetch-site": "same-origin", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document"})
+    linked = client.get("/", headers={**load, "sec-fetch-site": "cross-site"})  # a link in another app, an extension tab
+    own_open = client.get("/", headers={**load, "sec-fetch-site": "same-origin"})  # a page's window.open('/')
+    own_fetch = client.get("/", headers={"sec-fetch-site": "same-origin", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty"})
+    framed = client.get("/", headers={**load, "sec-fetch-site": "cross-site", "sec-fetch-dest": "iframe"})
 
     assert "__FLOWPAD_STATE_KEY__" in opened.text and opened.headers["cache-control"] == "no-store"
-    assert "__FLOWPAD_STATE_KEY__" not in fetched.text
+    assert "__FLOWPAD_STATE_KEY__" in linked.text
+    assert not any("__FLOWPAD_STATE_KEY__" in r.text for r in (own_open, own_fetch, framed))
 
 
 def test_the_app_has_one_key_that_page_churn_cannot_evict(monkeypatch):

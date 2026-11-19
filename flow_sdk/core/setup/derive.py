@@ -16,7 +16,7 @@ places that answered these questions one at a time cannot disagree:
 
 A declared ``asset_setup`` attaches to the node it is for: its ``subject`` (a node id, or
 ``data_driver:<name>`` for every source of that driver), else the asset whose folder holds it — so a
-connector ships the setup of what it needs (WAHA's container) inside its own folder.
+connector ships the setup of what it needs (a bridge's container) inside its own folder.
 """
 
 from __future__ import annotations
@@ -281,11 +281,11 @@ class ProjectTree:
         # and still ``new`` does not hold the project up.
         verify = None
         if not before:
-            op = _op(f"{node_id}:verify", "Check the sign-in", "verify", kind="source_step")
+            op = _op(f"{node_id}:verify", "Check the connection", "verify", kind="source_step")
             self.ops[op.name] = op
             verify = WizardSpec.model_validate({
-                "name": op.name, "label": "Check the sign-in",
-                "steps": [{"id": "verify", "label": "Check the sign-in", "kind": "compute", "ref": op.name}],
+                "name": op.name, "label": "Check the connection",
+                "steps": [{"id": "verify", "label": "Check the connection", "kind": "compute", "ref": op.name}],
             })
         label = str(source.name or source.provider)
         hosted = len(await source.datasets())
@@ -411,7 +411,7 @@ class ProjectTree:
 def skip_detail(mark) -> str:
     """What a node skipped here says (``mark``: its ``SetupSkipSpec``)."""
     note = str(getattr(mark, "note", "") or "").strip()
-    return f"skipped on this machine — {note}" if note else "skipped on this machine"
+    return f"skipped on this computer — {note}" if note else "skipped on this computer"
 
 
 def requirement_node_id(req) -> str:

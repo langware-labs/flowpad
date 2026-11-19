@@ -1107,7 +1107,7 @@ async def missing_granted(
 
 def grant_gap(missing: "list[str] | tuple[str, ...]") -> str:
     """The one sentence for a sign-in that lacks scopes a use needs."""
-    return f"Connected without {', '.join(missing)} — connect again to grant it"
+    return f"Missing permissions ({', '.join(missing)}) — connect again"
 
 
 async def token_for(

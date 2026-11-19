@@ -181,15 +181,14 @@ describe('row layout', () => {
     const { result } = renderHook(() => useFavoritesRoots());
     render(
       <TooltipProvider>
-        <BrowseableTree roots={[{ ...result.current.roots[0], kind: 'root', ownsPointer: () => false, pathFor: () => Promise.resolve([]) }]} onNavigate={() => {}} mirrored />
+        <BrowseableTree roots={[{ ...result.current.roots[0], kind: 'root', ownsPointer: () => false, pathFor: () => Promise.resolve([]) }]} onNavigate={() => {}} />
       </TooltipProvider>,
     );
 
     const row = (await screen.findByTestId(`browseable-chevron-${f.id}`)).closest('[role="treeitem"]') as HTMLElement;
     const toolbar = screen.getByTestId(`browseable-row-toolbar-${f.id}`);
-    // The row's last flex child — reversed with the row, so opposite the chevron.
+    // The row's last flex child, so opposite the chevron.
     expect(row.lastElementChild).toBe(toolbar);
-    expect(row.className).toContain('flex-row-reverse');
     expect(toolbar.contains(screen.getByTestId(`browseable-chevron-${f.id}`))).toBe(false);
     // No hover padding on the content side: that is what slid the chevron
     // into the trash button's spot.

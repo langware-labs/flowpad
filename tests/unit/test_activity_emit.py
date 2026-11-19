@@ -370,7 +370,7 @@ def two_clients():
 
 
 async def test_a_tab_that_saw_a_scoped_root_hears_its_end_after_it_stops_watching(emitter, two_clients):
-    """The WAHA-admin ghost: a project setup's "done" went only to the project's watchers, so a tab
+    """The admin-page ghost: a project setup's "done" went only to the project's watchers, so a tab
     that had moved to another page kept the setup "running" forever and Terminate could not clear it."""
     from flow_sdk.app.actions.watch_registry import add_watch, remove_watch
 

@@ -869,6 +869,10 @@ def _store_refusal(e: Exception) -> Optional[CredentialError]:
 
     if isinstance(e, StoreToolMissing):
         return CredentialError(f"the secret manager is not installed here: {e}", code="manager_missing")
+    from flow_sdk.secrets.active import VaultSealed  # noqa: PLC0415
+
+    if isinstance(e, VaultSealed):
+        return CredentialError(str(e), code=VaultSealed.code)
     if isinstance(e, StoreNeedsConnection):
         return CredentialError(f"the secret manager needs a sign-in: {e}", code="needs_connection")
     if isinstance(e, StoreAccessDenied):
@@ -1110,10 +1114,62 @@ async def active_vault(project_id: str = "", target: str = "") -> dict[str, Any]
     return {"active": used.model_dump(mode="json"), "instructions": instructions}
 
 
-async def vault_open(project_id: str, vault: str) -> dict[str, Any]:
+async def vault_read(project_id: str, names: list[str]) -> dict[str, Any]:
+    """``names`` from the project's active vault: ``{values: {NAME: value}}``. THE ONE verb that answers
+    values — for `flow secrets run` alone, which hands them to one command's environment and saves nothing.
+    It is asked of the backend so that every read uses the backend's own access to the manager: 1Password
+    grants its command line a sign-in per process session, and each agent command is a session of its own."""
+    from flow_sdk.secrets.active import read_from_vault  # noqa: PLC0415
+    from flow_sdk.secrets.errors import SecretStoreError  # noqa: PLC0415
+
+    try:
+        with store_errors():
+            held = await read_from_vault(names, await get_project(project_id))
+    except SecretStoreError as e:
+        raise CredentialError(str(e), code=e.code) from e
+    return {"values": {name: value.get_secret_value() for name, value in held.items()}}
+
+
+async def _scoped_vault(project_id: str, vault: str, scope: str) -> tuple[str, Any]:
+    """``(name, vault)`` for a vault named by where it was declared: this instance's for ``global``, the
+    project's ``vault``, or — no name — the one in use for the project."""
+    from flow_sdk.secrets import active  # noqa: PLC0415
+
+    try:
+        where = active.SecretScope(scope) if scope else active.SecretScope.PROJECT
+    except ValueError:
+        raise CredentialError(f"unknown scope {scope!r}; one of {', '.join(active.SecretScope)}") from None
+    if where == active.SecretScope.GLOBAL or not vault:
+        used = active.global_vault() if where == active.SecretScope.GLOBAL else await active.active_vault_of(await get_project(project_id))
+        if used is None:
+            raise CredentialError("no secret vault is set here or on this instance", code="no_vault")
+        return used.name, used.vault
+    return vault, _vault_spec(_vault_specs(await _project_of(project_id)), vault)
+
+
+async def vault_link(project_id: str, vault: str, scope: str = "") -> dict[str, Any]:
     """Where ``vault`` opens in its manager's own screen: ``{vault, url}`` ("" when the manager has none)."""
+    from flow_sdk.secrets import managers  # noqa: PLC0415
+
+    name, spec = await _scoped_vault(project_id, vault, scope)
     with store_errors():
-        return {"vault": vault, "url": await _vault_store(_vault_specs(await _project_of(project_id)), vault).open_url()}
+        return {"vault": name, "url": await managers.store_for(spec).open_url()}
+
+
+async def vault_access(project_id: str, vault: str = "", scope: str = "", change: str = "") -> dict[str, Any]:
+    """Is ``vault`` (default: the one in use) open on this computer — after ``change`` (``open`` / ``close``)
+    when one is asked: ``{vault, state, can_open, can_close, detail}`` (``VaultAccessSpec``). A status runs
+    nothing that prompts; an open may ask the person in the manager's own app or browser."""
+    from flow_sdk.secrets import managers  # noqa: PLC0415
+
+    name, spec = await _scoped_vault(project_id, vault, scope)
+    try:
+        asked = managers.AccessChange(change) if change else None
+    except ValueError:
+        raise CredentialError(f"unknown access change {change!r}; open or close") from None
+    with store_errors():
+        access = await (managers.change_access(spec, asked) if asked else managers.access_of(spec))
+    return {"vault": name, **access.model_dump(mode="json")}
 
 
 async def set_vault(project_id: str, name: str, vault: Optional[Mapping[str, Any]]) -> dict[str, Any]:

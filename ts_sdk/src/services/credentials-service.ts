@@ -217,6 +217,30 @@ export interface ActiveVault {
   is_default: boolean;
 }
 
+/** Whether this computer can read a vault right now (`VaultAccess`, `flow_sdk/secrets/managers.py`). */
+export enum VaultAccess {
+  OPEN = 'open',
+  SEALED = 'sealed',
+  NOT_INSTALLED = 'not_installed',
+  /** The manager has no status of its own: only a read tells. */
+  UNKNOWN = 'unknown',
+}
+
+/** A vault's access on this computer and what can be done about it (`VaultAccessSpec`). */
+export interface VaultAccessState {
+  state: VaultAccess;
+  can_open: boolean;
+  can_close: boolean;
+  /** Why an open or a close did not work. */
+  detail: string;
+}
+
+/** A vault by where it was declared: a project's by name, or this instance's (`SecretScope.GLOBAL`). */
+export interface VaultRef {
+  name: string;
+  scope: SecretScope;
+}
+
 /** The project's vaults as the server lists them. */
 export interface SecretVaultList {
   vaults: Record<string, SecretVault>;
@@ -279,11 +303,6 @@ export interface SecretFetchResult {
 export type CredentialTestState = CredentialTestResult['state'];
 
 /** Whether a vault is reachable from this computer. */
-export interface SecretVaultCheck {
-  vault: string;
-  ready: boolean;
-  reason: string;
-}
 
 /** What "use mine" copied into a deployment's store, and what this computer does not hold. Names only. */
 export interface UseMineResult {
@@ -470,11 +489,20 @@ export class CredentialsService {
     return this.asVaultList(await dataManager.callAction<unknown, Partial<SecretVaultList>>(action));
   }
 
-  /** Where `vault` opens in its manager's own screen; "" when that manager has none. */
-  async vaultOpenUrl(projectId: string, vault: string): Promise<string> {
-    const action = this.action('vault-open', 'POST');
-    action.bodyParameters = { project_id: projectId, vault };
+  /** Where the vault opens in its manager's own screen; "" when that manager has none. */
+  async vaultLink(projectId: string, vault: VaultRef): Promise<string> {
+    const action = this.action('vault-link', 'POST');
+    action.bodyParameters = { project_id: projectId, vault: vault.name, scope: vault.scope };
     return (await dataManager.callAction<unknown, { url?: string }>(action))?.url ?? '';
+  }
+
+  /** The vault's access on this computer: as it is (asks nothing of the person), or after `change` — `open`
+   *  runs the manager's sign-in, which may ask the person in its own app or browser; `close` seals it. */
+  async vaultAccess(projectId: string, vault: VaultRef, change: '' | 'open' | 'close' = ''): Promise<VaultAccessState> {
+    const action = this.action('vault-access', 'POST');
+    action.bodyParameters = { project_id: projectId, vault: vault.name, scope: vault.scope, change };
+    const res = await dataManager.callAction<unknown, Partial<VaultAccessState>>(action);
+    return { state: res?.state ?? VaultAccess.UNKNOWN, can_open: !!res?.can_open, can_close: !!res?.can_close, detail: res?.detail ?? '' };
   }
 
   /** Add or replace the project's vault `name`; answers every vault. */
@@ -492,14 +520,6 @@ export class CredentialsService {
     action.bodyParameters = body;
     const res = await dataManager.callAction<unknown, { vaults?: Record<string, SecretVault> }>(action);
     return res?.vaults ?? {};
-  }
-
-  /** Is `vault` reachable from this computer (manager installed, signed in)? */
-  async checkVault(projectId: string, vault: string): Promise<SecretVaultCheck> {
-    const action = this.action('vault-check', 'POST');
-    action.bodyParameters = { project_id: projectId, vault };
-    const res = await dataManager.callAction<unknown, Partial<SecretVaultCheck>>(action);
-    return { vault, ready: res?.ready ?? false, reason: res?.reason ?? '' };
   }
 
   /** Copy this computer's values of credential `name` into `vault`, recording each variable's

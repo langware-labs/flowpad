@@ -592,7 +592,7 @@ class WhatsAppSource(MessageSource):
         """This number as an account claim on the hub's ``webhook/@whatsapp`` chain (the generic
         ``public-webhook`` step asks): the hub proves the token reads this number, keeps the app secret and
         verify token write-only, checks Meta's signature at its edge and hands each message to this channel.
-        A number on a server of one's own (``base_url``: a WAHA service speaking Meta's API) is proven THERE.
+        A number on a server of one's own (``base_url``: a bridge service speaking Meta's API) is proven THERE.
         ``None`` until the number, its token and its app secret are known.
 
         A group source is a group claim UNDER that account claim (``under``): the hub routes the group's
@@ -793,7 +793,7 @@ class WhatsAppSource(MessageSource):
 
     async def add_participants(self, group_id: str, wa_ids: list[str]) -> dict:
         """Add people directly. NOT a Meta call — Meta adds people only through the invite link; a service
-        speaking Meta's API over WhatsApp Web (waha-service) extends it with this. Refused, it says so."""
+        speaking Meta's API over WhatsApp Web extends it with this. Refused, it says so."""
         try:
             return await self._graph("POST", f"{_group_id(group_id)}/participants", json=_participants(wa_ids))
         except (Rejected, NotFound) as exc:

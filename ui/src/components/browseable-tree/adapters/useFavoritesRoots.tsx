@@ -25,7 +25,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { refreshNode } from '../refresh-store';
 import type { Browseable, BrowseableDragData, BrowseableRoot } from '../types';
 
@@ -109,6 +109,9 @@ export function useFavoritesRoots(opts?: {
   navigableIds: ReadonlySet<string>;
   /** `useFavorites().subtreeOf`, passed through for the same reason. */
   subtreeOf: (folderId: string) => { leaves: Bookmark[]; folders: Bookmark[] };
+  /** A folder's visible rows, synchronously — what its `listChildren` resolves
+   *  to, for a caller that renders one level at a time instead of expanding. */
+  folderRows: (folderId: string) => Browseable[];
   /** Drop on the surface background = un-file back to root. */
   onDropToBackground: (drag: BrowseableDragData) => void;
   /** Edge-drop reorder within the root container (folders + unfiled tiles). */
@@ -257,10 +260,11 @@ export function useFavoritesRoots(opts?: {
     // the same walk the folder's delete removes (`subtreeOf`).
     const leavesUnder = (folderId: string): Bookmark[] => subtreeOf(folderId).leaves.filter(isVisible);
 
+    const asNode = (b: Bookmark): Browseable =>
+      b.bookmark_type === BookmarkType.FAVORITE_FOLDER ? asFolder(b) : asLeaf(b);
     const asFolder = (folder: Bookmark): Browseable => {
       const title = folder.name || folder.title || folder.displayName;
-      const allChildren = folder.id ? childrenOf(folder.id) : [];
-      const children = allChildren.filter(isVisible);
+      const children = folder.id ? childrenOf(folder.id).filter(isVisible) : [];
       // The badge counts only what's NEVER been opened, so an all-opened folder
       // carries no badge (like a fully-read stream inbox); the tooltip still reports
       // full membership.
@@ -275,10 +279,7 @@ export function useFavoritesRoots(opts?: {
         badge: unopenedBadge(unopened),
         hasChildren: children.length > 0 ? true : 'unknown',
         // Render nested subfolders as folders (recursive) and leaves as tiles.
-        listChildren: () =>
-          Promise.resolve(
-            children.map((c) => (c.bookmark_type === BookmarkType.FAVORITE_FOLDER ? asFolder(c) : asLeaf(c))),
-          ),
+        listChildren: () => Promise.resolve(children.map(asNode)),
         pointer: null,
         selectionKey: folder.id,
         onRename: (next) => renameFavorite(folder, next),
@@ -356,13 +357,12 @@ export function useFavoritesRoots(opts?: {
       // One root container, OS-style: folders and unfiled favorites share the
       // manual order — sort the combined sibling set with the same container
       // comparator the backend uses, then render each by its shape.
-      roots: sortContainer([...visibleFolders, ...visibleRootFavorites]).map((b) =>
-        b.bookmark_type === BookmarkType.FAVORITE_FOLDER ? asFolder(b) : asLeaf(b),
-      ),
+      roots: sortContainer([...visibleFolders, ...visibleRootFavorites]).map(asNode),
       favorites,
       folders,
       navigableIds,
       subtreeOf,
+      folderRows: (folderId: string) => childrenOf(folderId).filter(isVisible).map(asNode),
       onDropToBackground,
       onReorderRoot,
     };
@@ -398,16 +398,17 @@ function favoritesBucketId(projectId: string): string {
   return projectId ? `${FAVORITES_BUCKET_PREFIX}${projectId}` : FAVORITES_PERSONAL_BUCKET;
 }
 
+const NO_PROJECTS: Project[] = [];
+
 /**
  * The favorites tree as it is actually stored: ONE GLOBAL desk, grouped by the
  * project each top-level row belongs to.
  *
  * This replaces the scope-filter header the bookmarks menu used to carry. A
  * filter answers "which project am I looking at?" with a mode you first have to
- * set; the tree answers it with structure — the current project's bucket is
- * expanded on open (`currentBucketId`, fed to the tree's `defaultExpandedIds`),
- * and every other project with favorites is one row away, entered by hovering
- * it exactly like any other folder. Nothing is hidden and nothing is chosen.
+ * set; the tree answers it with structure — the menu opens on the current
+ * project's bucket (`currentBucketId`), and every other project with favorites
+ * is a row in the project list above it. Nothing is hidden and nothing is chosen.
  *
  * Grouping is by the TOP-LEVEL row's own `project_id`; children follow their
  * parent, so a folder's contents never scatter across buckets. Unscoped rows
@@ -419,6 +420,11 @@ export function useFavoritesProjectRoots(): {
   roots: BrowseableRoot[];
   /** The bucket to open on mount: always the current project's. */
   currentBucketId: string;
+  /** Its name — the bucket itself is not a row until the project holds a bookmark. */
+  currentBucketLabel: string;
+  /** The rows under a bucket or a folder, synchronously — for a caller that
+   *  shows one level at a time instead of expanding rows in place. */
+  rowsUnder: (nodeId: string) => Browseable[];
   /**
    * Where a level's "add here" toolbar files, or null when the level cannot
    * receive one — the whole bucket-vs-bookmark question, answered here rather
@@ -426,30 +432,28 @@ export function useFavoritesProjectRoots(): {
    *
    * A bucket's level IS the real root parent (''), and a new row is stamped
    * with the CURRENT project, so only the current bucket can take one; another
-   * project's desk would quietly file into this one, out of view. The tree root
-   * is the project LIST and owns no bookmarks — unless the current project has
-   * no bucket yet, when it is where that project's first row is added.
+   * project's desk would quietly file into this one, out of view.
    * Ordinary folders file into themselves by id, in every bucket — bucketing
-   * follows a row's
-   * TOP-LEVEL ancestor, so a favorite added inside another project's folder
+   * follows a row's TOP-LEVEL ancestor, so a favorite added inside another project's folder
    * stays exactly where it was added.
    */
   addParentFor: (levelId: string) => string | null;
 } {
-  const { roots, favorites, folders, navigableIds, subtreeOf } = useFavoritesRoots({
+  const { roots, favorites, folders, navigableIds, subtreeOf, folderRows } = useFavoritesRoots({
     iconClassName: 'h-4 w-4',
     hideEmptyFolders: true,
   });
-  // dataContext, NOT `useProject()`: the tree's `defaultExpandedIds` is read
-  // ONCE, when `useBrowseableTree` seeds its state on mount. `useProject`
-  // resolves the project entity through a fetch, so it is still null on that
-  // first render — the seed then lands on the empty id, i.e. the Personal
-  // bucket, and the current project opens closed. dataContext already holds
-  // the active project synchronously.
+  // dataContext, NOT `useProject()`: the menu reads `currentBucketId` ONCE, as
+  // the level it opens on. `useProject` resolves the project entity through a
+  // fetch, so it is still null on that first render — the menu would then open
+  // on the empty id, i.e. the Personal bucket. dataContext already holds the
+  // active project synchronously.
   const { project } = useDataContext();
   const currentProjectId = project?.id ?? '';
   const projectsQuery = useMemo(() => new QueryRequest({ type: Project.type }), []);
-  const { data: allProjects = [] } = useEntitiesQuery<Project>(projectsQuery);
+  // A stable empty list: `= []` here would be a new array on every render until
+  // the query lands, rebuilding `roots` each time for whoever keys on them.
+  const allProjects = useEntitiesQuery<Project>(projectsQuery).data ?? NO_PROJECTS;
   const { t } = useLingui();
 
   const built = useMemo(() => {
@@ -530,43 +534,19 @@ export function useFavoritesProjectRoots(): {
 
     // Only buckets that HOLD something are rows — an empty project desk read
     // as an empty folder. `currentBucketId` is still always the current
-    // project's, existing or not: the tree seeds its expansion ONCE, before any
-    // row has loaded, and expanding an id not on screen yet is harmless.
+    // project's, existing or not: the menu opens on it either way.
     return {
       roots: ordered.map(([k, children]) => asBucket(k, children)),
       currentBucketId: currentBucket,
+      currentBucketLabel: labelFor(currentBucket),
+      rowsUnder: (nodeId: string) => buckets.get(nodeId) ?? folderRows(nodeId),
       addParentFor: (levelId: string): string | null => {
         if (levelId === currentBucket) return '';
-        if (levelId === '') return buckets.has(currentBucket) ? null : '';
         if (levelId.startsWith(FAVORITES_BUCKET_PREFIX)) return null;
         return levelId;
       },
-      // Child-id signature per bucket — the input to the reload below.
-      signatures: new Map(ordered.map(([k, children]) => [k, children.map((n) => n.id).join('|')])),
     };
-  }, [roots, favorites, folders, navigableIds, subtreeOf, allProjects, currentProjectId, t]);
+  }, [roots, favorites, folders, navigableIds, subtreeOf, folderRows, allProjects, currentProjectId, t]);
 
-  // A bucket is expanded on mount (that is the whole point of
-  // `currentBucketId`), and the tree CACHES an expanded node's children the
-  // first time it asks for them. On a cold load it asks before the bookmark
-  // query has landed, caches the empty list, and the project's desk then reads
-  // as empty however many rows arrive a moment later — the roots prop only
-  // refreshes rows at the TOP level. Tell the tree to reload a bucket whenever
-  // its membership actually changes; `refreshNode` is the seam the folder rows
-  // already use for exactly this.
-  const lastSignatures = useRef(new Map<string, string>());
-  useEffect(() => {
-    for (const [id, signature] of built.signatures) {
-      if (lastSignatures.current.get(id) === signature) continue;
-      const first = !lastSignatures.current.has(id);
-      lastSignatures.current.set(id, signature);
-      // A bucket seen for the first time has nothing cached to invalidate.
-      if (!first) refreshNode(id);
-    }
-  }, [built.signatures]);
-
-  return useMemo(
-    () => ({ roots: built.roots, currentBucketId: built.currentBucketId, addParentFor: built.addParentFor }),
-    [built],
-  );
+  return built;
 }

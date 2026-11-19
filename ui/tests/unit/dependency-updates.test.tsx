@@ -66,7 +66,7 @@ describe('ProjectSetupButton — updates', () => {
     const button = screen.getByTestId('top-nav-project-setup');
     expect(button).toHaveClass('animate-updates-glow');
     expect(button).not.toHaveClass('animate-setup-glow');
-    expect(button).toHaveAttribute('aria-label', 'Dependency updates available');
+    expect(button).toHaveAttribute('aria-label', 'Package updates available');
     expect(screen.queryByTestId('top-nav-project-updates-dot')).toBeNull();
   });
 
@@ -92,7 +92,7 @@ describe('DependencyUpdatesStrip', () => {
     h.resolve.mockReturnValue(new Promise<void>((r) => (finish = r)));
     render(<DependencyUpdatesStrip projectId="p1" />);
 
-    expect(screen.getByText('2 dependencies are behind')).toBeInTheDocument();
+    expect(screen.getByText('2 packages are behind')).toBeInTheDocument();
     expect(screen.getByTestId('project-setup-dependency-update-assistant')).toHaveTextContent('3 commits behind');
     expect(screen.queryByTestId('project-setup-dependency-update-fine')).toBeNull();
 

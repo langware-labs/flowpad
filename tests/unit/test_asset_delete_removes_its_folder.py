@@ -1,6 +1,6 @@
 """Deleting a file-backed asset must leave nothing for the Assets menu to count.
 
-Seen on the live instance: project `waha` showed `Agents 1` over an "Empty"
+Seen on the live instance: project `bridge` showed `Agents 1` over an "Empty"
 list. The badge is the project menu (`build_asset_menu`, a walk of the files on
 disk); the list is the index. The Assets row's trash button calls
 `DELETE /api/v1/graph/agent/<id>`:
@@ -63,9 +63,9 @@ async def _agent_count(project: Project) -> int:
 
 @pytest.mark.asyncio
 async def test_deleting_an_agent_removes_its_folder_and_its_menu_count(tmp_path: Path):
-    root = tmp_path / "waha"
+    root = tmp_path / "bridge"
     root.mkdir()
-    project = Project(id=str(uuid.uuid4()), name=unique_project_name("waha"), fs_storage_mount_path=str(root))
+    project = Project(id=str(uuid.uuid4()), name=unique_project_name("bridge"), fs_storage_mount_path=str(root))
     await project.save()
 
     # POST /api/v1/graph/project/<id>/agent  — the Assets "+" button.

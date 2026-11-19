@@ -1,7 +1,7 @@
 """The active secret vault — the ONE a target (an entity, a project, this instance) reads a missing secret from.
 
-    active = await active_vault_of(target)                    # None: no vault anywhere
-    values = await read_secrets(["STRIPE_API_KEY"], target)   # the environment first, else that vault; never writes
+    active = await active_vault_of(target)                      # None: no vault anywhere
+    values = await read_from_vault(["STRIPE_API_KEY"], target)  # from that vault; never writes
 
 The most specific scope wins (:class:`SecretScope`):
 
@@ -11,12 +11,11 @@ The most specific scope wins (:class:`SecretScope`):
 ``global``  this instance's vault (``preferences.json``, :data:`PREF_GLOBAL_VAULT`)
 ==========  ======================================================================================
 
-Only :func:`read_secrets` runs a manager's command line, and a caller asks for it by name: describing a
+Only :func:`read_from_vault` runs a manager's command line, and a caller asks for it by name: describing a
 vault never raises an unlock prompt.
 """
 from __future__ import annotations
 
-import os
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, ClassVar, Iterable, Optional
@@ -60,6 +59,13 @@ class NoActiveVault(SecretStoreError, LookupError):
     """Nothing names a vault here: not the target, not its project, not this instance."""
 
     code = "no_vault"
+
+
+class VaultSealed(SecretStoreError):
+    """The vault's access is sealed on this machine: someone opens it (``flow secrets open``) before a read.
+    Refused here, before the manager is asked — asked while sealed, a manager raises its own prompt."""
+
+    code = "sealed"
 
 
 def describe(scope: SecretScope, name: str, vault: SecretVaultSpec, *, is_default: bool = False) -> ActiveVaultSpec:
@@ -127,28 +133,28 @@ async def active_vault_of(target: Any = None) -> Optional[ActiveVaultSpec]:
     return active_among(project_vaults(project), own() if callable(own) else None, entity_name=str(getattr(target, "name", "") or ""))
 
 
-async def read_secrets(names: Iterable[str], target: Any = None) -> dict[str, SecretStr]:
-    """Every one of ``names``: from this process's environment when it is there, else from ``target``'s active
-    vault. Never writes. Raises :class:`NoActiveVault`, ``MissingSecrets`` (the vault lacks some) or the store's
-    own error (not installed, sign-in needed, denied)."""
+async def read_from_vault(names: Iterable[str], target: Any = None) -> dict[str, SecretStr]:
+    """Every one of ``names`` from ``target``'s active vault. Never writes. Raises :class:`NoActiveVault`,
+    ``MissingSecrets`` (the vault lacks some) or the store's own error (not installed, sealed, denied).
+
+    Call it in the process that holds the manager's access — an instance's backend: a manager that grants its
+    command line a sign-in per process session (1Password) asks again in every other one."""
     from flow_sdk.secrets import managers  # noqa: PLC0415
 
-    names = list(dict.fromkeys(names))
-    held = {name: SecretStr(os.environ[name]) for name in names if os.environ.get(name)}
-    wanted = [name for name in names if name not in held]
-    if not wanted:
-        return held
+    wanted = list(dict.fromkeys(names))
     active = await active_vault_of(target)
     if active is None:
         raise NoActiveVault(f"{', '.join(wanted)} not in the environment, and no secret vault is set here or on this instance")
+    if (await managers.access_of(active.vault)).state == managers.VaultAccess.SEALED:
+        raise VaultSealed(f"vault {active.name} ({active.manager_title}) is sealed on this computer")
     found = await managers.store_for(active.vault).load(wanted)
     missing = [name for name in wanted if name not in found]
     if missing:
         raise MissingSecrets(missing, store=f"{active.name} vault")
-    return {**held, **found}
+    return found
 
 
 __all__ = [
-    "PREF_GLOBAL_VAULT", "ActiveVaultSpec", "NoActiveVault", "SecretScope", "active_among", "active_vault_of",
-    "describe", "global_vault", "project_vaults", "read_secrets", "set_global_vault",
+    "PREF_GLOBAL_VAULT", "ActiveVaultSpec", "NoActiveVault", "SecretScope", "VaultSealed", "active_among", "active_vault_of",
+    "describe", "global_vault", "project_vaults", "read_from_vault", "set_global_vault",
 ]
