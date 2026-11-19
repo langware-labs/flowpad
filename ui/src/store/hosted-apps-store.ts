@@ -5,7 +5,7 @@
  * use, on every socket (re)connect, and whenever the backend says the list changed (`hosted_apps`). It never
  * polls and nothing here writes a row.
  */
-import { HOSTED_APPS_ELEMENT, isHubOnly, WebApp, type HostedApp } from '@sdk';
+import { dataContext, HOSTED_APPS_ELEMENT, WebApp, type HostedApp } from '@sdk';
 import { connectionManager } from '@sdk/websocket';
 import { useSyncExternalStore } from 'react';
 
@@ -18,7 +18,7 @@ let reads = 0;
 
 /** Read the list from the backend. The hub serves no local apps, so it stays empty there. */
 export async function refreshHostedApps(): Promise<void> {
-  if (isHubOnly()) return;
+  if (!dataContext.caps.localFiles) return;
   const mine = ++reads;
   const rows = await WebApp.hosted();
   if (mine !== reads) return;

@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgenticProcess, isHubOnly, Project, TypeId, WorkerStatus } from '@sdk';
+import { AgenticProcess, dataContext, Project, TypeId, WorkerStatus } from '@sdk';
 import type { ActivityProgressSpec } from '@sdk/activity';
 import { Pencil } from 'lucide-react';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
@@ -282,7 +282,7 @@ export function PendingActionsChip() {
           data-testid="pending-actions-popover"
         >
           <div className="flex border-b px-1" role="tablist" aria-label="Activity panel views">
-            {(isHubOnly() ? ACTIVITY_TABS : DESK_TABS).map((item) => (
+            {(dataContext.caps.localFiles ? DESK_TABS : ACTIVITY_TABS).map((item) => (
               <button key={item} type="button" role="tab" aria-selected={tab === item} onClick={() => setTab(item)} className={cn('px-2 py-1.5 text-xs font-medium', item !== 'hosted' && 'capitalize', tab === item ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground')}>
                 {item === 'hosted' ? t`Hosted apps` : item === 'errors' ? `Errors${counts.error ? ` (${counts.error})` : ''}` : item}
               </button>
