@@ -30,25 +30,30 @@ export const canSwitch = (a: Pick<AutomationSummary, 'read_only' | 'switchable'>
 
 export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy, project }: AutomationRowProps) {
   const { t } = useLingui();
-  const sentence = sentenceOf(useAutomationWords(), a.when, a.then);
+  const sentence = sentenceOf(useAutomationWords(), a.when, a.then, a.classifier);
   return (
     <LineShell
       testId={`automation-row-${a.id}`}
       id={a.id}
+      classifier={a.classifier}
       title={a.description || a.name}
       on={a.enabled}
       onOpen={onOpen}
       toggle={
-        <Switch
-          checked={a.enabled}
-          disabled={busy || !canSwitch(a)}
-          onCheckedChange={onToggle}
-          aria-label={a.enabled ? t`Turn ${a.name} off` : t`Turn ${a.name} on`}
-          data-testid={`automation-toggle-${a.id}`}
-        />
+        // An ended rule cannot run again: a switch there would say it might.
+        ended(a) ? null : (
+          <Switch
+            checked={a.enabled}
+            disabled={busy || !canSwitch(a)}
+            onCheckedChange={onToggle}
+            aria-label={a.enabled ? t`Turn ${a.name} off` : t`Turn ${a.name} on`}
+            data-testid={`automation-toggle-${a.id}`}
+          />
+        )
       }
       action={
-        <RunNow
+        // The classifier runs on a message arriving; there is nothing to run now.
+        a.classifier ? null : <RunNow
           busy={busy}
           onClick={onRunOnce}
           testId={`automation-run-once-${a.id}`}
@@ -64,6 +69,9 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
   );
 }
 
+const ended = (a: Pick<AutomationSummary, 'status'>) =>
+  a.status === 'done' || a.status === 'expired' || a.status === 'cancelled';
+
 /** Where the rule stands in its own life: "ran 2 of 4 · until 08:39" while it runs, "Done · ran 4" once it ended. */
 function Life({ automation: a }: { automation: AutomationSummary }) {
   const { t, i18n } = useLingui();
@@ -76,12 +84,11 @@ function Life({ automation: a }: { automation: AutomationSummary }) {
   else if (a.max_runs) text = until ? t`ran ${runs} of ${a.max_runs} · until ${until}` : t`ran ${runs} of ${a.max_runs}`;
   else if (until) text = t`ran ${runs} · until ${until}`;
   if (!text) return null;
-  const ended = a.status === 'done' || a.status === 'expired' || a.status === 'cancelled';
   return (
     <span
       data-testid={`automation-life-${a.id}`}
       data-status={a.status}
-      className={`shrink-0 whitespace-nowrap text-xs tabular-nums ${ended ? 'text-muted-foreground' : 'text-foreground/80'}`}
+      className={`shrink-0 whitespace-nowrap text-xs tabular-nums ${ended(a) ? 'text-muted-foreground' : 'text-foreground/80'}`}
     >
       {text}
     </span>
@@ -105,6 +112,7 @@ function Problem({ automation: a }: { automation: AutomationSummary }) {
 export function LineShell({
   testId,
   id,
+  classifier,
   title,
   on,
   onOpen,
@@ -114,6 +122,7 @@ export function LineShell({
 }: {
   testId: string;
   id?: string;
+  classifier?: boolean;
   title?: string;
   on: boolean;
   onOpen?: () => void;
@@ -128,6 +137,7 @@ export function LineShell({
       tabIndex={onOpen ? 0 : undefined}
       data-testid={testId}
       data-automation-id={id}
+      data-classifier={classifier ? 'true' : undefined}
       title={title}
       onClick={onOpen}
       onKeyDown={(e) => {

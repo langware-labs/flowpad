@@ -1,6 +1,7 @@
 import { t } from '@lingui/core/macro';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { ActionInfo, dataManager, TypeId, type AnyEntity } from '@sdk';
+import { withStateKey } from '@sdk/page-state';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { GitShareFrame } from '@src/components/assets/editor/GitShareBar';
 import { ContentEpochContext } from '@src/contexts/content-epoch-context';
@@ -70,7 +71,7 @@ import { localHtmlRef, OpenInBrowserButton } from '@src/lib/open-in-browser';
  */
 const PREVIEW_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads';
 
-export function HtmlPreview({ path }: { path: string }) {
+export function HtmlPreview({ path, stateKey }: { path: string; stateKey?: string }) {
   const { computeNode, flowId } = useAgentContext();
   const fs = useFS(computeNode?.typeId);
 
@@ -84,7 +85,8 @@ export function HtmlPreview({ path }: { path: string }) {
   // (`setDisplayContext`, `enqueue`). The id, not the loaded process: it is in
   // the URL from the first render, so the frame loads once, already bound.
   const processQuery = flowId ? `?process=${encodeURIComponent(flowId)}` : '';
-  const src = computeNode?.typeId && fs ? `${fs.getServeUrl(path)}${processQuery}` : null;
+  // The key this page was opened with rides the same address: the server answers a page's calls only for it.
+  const src = computeNode?.typeId && fs ? withStateKey(`${fs.getServeUrl(path)}${processQuery}`, stateKey) : null;
   const frameRef = useRef<PersistentIframeHandle>(null);
   const htmlRef = localHtmlRef(path, computeNode?.typeId);
   const contentEpoch = useContext(ContentEpochContext);

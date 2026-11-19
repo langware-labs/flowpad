@@ -3,7 +3,7 @@ import type { AppRuntime } from '@src/hooks/flow-hooks';
 // Re-exported, not re-declared: the runtime vocabulary has one owner
 // (`useAppDisplay`), and consumers of the dock grammar get it from here.
 export type { AppRuntime };
-import type { DockPointer } from './DockPointer';
+import { STATE_KEY_PARAM, type DockPointer } from './DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { withoutScopeFilterOptions } from '@src/lib/scope-filter';
 
@@ -73,6 +73,7 @@ export function appDockAddress(dock: DockPointer | null): AppDockAddress | null 
   const {
     [APP_RUNTIME_PARAM]: pinned,
     [APP_ROUTE_PARAM]: route,
+    [STATE_KEY_PARAM]: _stateKey,
     ...passthrough
   } = withoutScopeFilterOptions(dock.options ?? {});
   const isEndpoint = target.type === 'service_endpoint';

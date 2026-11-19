@@ -29,8 +29,11 @@ When you send someone a question (a message, a `--form`) and the work needs thei
 
 ## Handing work over — `flow show`
 
-`flow show` (webapp / url / file / entity / snippet) is how anything you hand over
-becomes visible in the app. Exit 0 = shown, done — do not verify, do not re-run.
+`flow show` (webapp / url / file / entity / snippet) is how a thing the user wants to
+LOOK AT becomes visible in the app: something they asked to see, or the deliverable they
+asked you to build (an app, a page, a deck, a doc). Otherwise don't show: a file saved
+for them (a download, an export, a copy to disk) is reported by its path.
+Exit 0 = shown, done — do not verify, do not re-run.
 (`2` bad args, `4` entity not found, `5` server down.) Do NOT emit `<flow-result>`
 XML tags — `flow show` supersedes them.
 

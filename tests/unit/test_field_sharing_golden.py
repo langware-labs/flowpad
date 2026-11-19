@@ -334,6 +334,8 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "steer",
                 # `message_processing`: this machine's classification, tag provenance and automation queue.
                 "message_processing",
+                # `draft_options`: an unsent draft's composer thread and send choices.
+                "draft_options",
             ],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
@@ -342,7 +344,6 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "body_status",
                 "fetched_at",
                 "is_archived",
-                "is_draft",
                 "is_read",
                 "prompt_auto_handled",
                 "received_at",
@@ -358,10 +359,12 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
             # `invite` is a nested MessageInvite, None on every message but an invite.
             # `message_processing` is a nested MessageProcessing, None until the message is enrolled.
             # `guest_message` / `steer` are a nested GuestMessageRef / SteerRef, None but on those two kinds.
+            # `draft_options` is a nested MessageDraftOptions, None on every message but a draft.
             [
                 "attachment",
                 "body_status",
                 "delivery_failure",
+                "draft_options",
                 "env_vars",
                 "expand",
                 "fs_storage_provider",
@@ -545,7 +548,7 @@ def test_flow_message_stale_ignore_is_derived_not_listed():
 
     assert not hasattr(FlowMessage, "_STALE_IGNORE_FIELDS")
     blocked = FlowMessage.fields_not_accepted_from_hub()
-    assert {"is_read", "body_status", "is_draft", "prompt_auto_handled"} <= blocked
+    assert {"is_read", "body_status", "draft_options", "prompt_auto_handled"} <= blocked
 
 
 def test_folder_no_longer_needs_an_override_to_hide_its_local_path():

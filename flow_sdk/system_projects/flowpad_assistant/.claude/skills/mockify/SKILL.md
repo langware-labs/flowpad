@@ -314,7 +314,18 @@ DM ds-rows <mock project>/agentic-assets/dataset/mock-feedback \
 Each row: `step`, `text`, `decision` (a D-id it answers), `screenshot` (an image — it is on disk as
 `<row folder>/input/screenshot.<ext>`; open it), `created`, and — when the reviewer pointed at an element —
 `anchor` (`selector` to find it in the screen's HTML, `label`, its `html`, its position) and `element_shot`
-(`input/element_shot.png`: the element as it looked). Change THAT element; the selector is where to look. Then:
+(`input/element_shot.png`: the element as it looked). Change THAT element; the selector is where to look.
+
+**Every sentence of a comment lands on a screen.** A comment often carries more than its anchor: a rule
+("an added channel with no messages does not show here"), a second state, a list to narrow. Split it into its
+instructions and draw each one where it would be seen — on the screen it names, or on a NEW screen (or a
+`branch`) when no existing screen is in the state that shows it. The trap is answering a part in the reply
+instead ("needs data the product doesn't have yet — shall I?"): the reviewer looks at the mock, not the
+reply, so an instruction that is not on a screen reads as ignored. Hard to build in code is not a reason
+to leave it off the mock — draw it (`source: built: <why>`) and name the gap in the reply. Before re-showing,
+list each instruction next to the step and element that now shows it; one with no place is not done.
+
+Then:
 
 1. Answer per step and per decision, in the mock's journey order — say what you will change and what
    you will not, and why.

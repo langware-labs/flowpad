@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@sdk/entities/notifications', () => ({ sendReply: vi.fn(), sendToChannel: vi.fn() }));
@@ -44,6 +44,38 @@ describe('MessageComposer session toggle', () => {
     expect((screen.getByTestId('composer-prompt-call') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByPlaceholderText('Reply to sender…'), { target: { value: 'hi' } });
     fireEvent.keyDown(screen.getByPlaceholderText('Reply to sender…'), { key: 'Enter' });
+    await waitFor(() => expect(sendReply).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(sendReply).mock.calls[0][1]).toBe('hi');
+    expect(vi.mocked(sendReply).mock.calls[0][3]).toBeUndefined();
+  });
+
+  it('Prompt opens a second box: the message and its prompt are sent together', async () => {
+    render(<MessageComposer conversationId={CONV} sessionHost={host} onStartLiveSession={vi.fn()} />);
+    expect(screen.queryByTestId('composer-prompt-box')).toBeNull();
+    fireEvent.click(screen.getByTestId('composer-prompt-call'));
+    const prompt = screen.getByPlaceholderText("Prompt to run on Sam's machine…");
+    await waitFor(() => expect(document.activeElement).toBe(prompt));
+    fireEvent.change(screen.getByPlaceholderText('Message to Sam…'), { target: { value: 'try this' } });
+    fireEvent.change(prompt, { target: { value: 'run npm ci' } });
+    fireEvent.keyDown(prompt, { key: 'Enter' });
+    await waitFor(() => expect(sendReply).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(sendReply).mock.calls[0][1]).toBe('try this');
+    expect(vi.mocked(sendReply).mock.calls[0][3]).toEqual({ callPrompt: 'run npm ci' });
+    // Sent: the box is one again.
+    await waitFor(() => expect(screen.queryByTestId('composer-prompt-box')).toBeNull());
+  });
+
+  it('a removed or empty prompt box sends a plain message', async () => {
+    render(<MessageComposer conversationId={CONV} sessionHost={host} onStartLiveSession={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('composer-prompt-call'));
+    fireEvent.change(screen.getByTestId('composer-prompt-input'), { target: { value: 'run npm ci' } });
+    fireEvent.click(within(screen.getByTestId('composer-prompt-box')).getByTitle('Remove prompt'));
+    expect(screen.queryByTestId('composer-prompt-box')).toBeNull();
+    // Opened again it is empty, and left empty nothing rides the message.
+    fireEvent.click(screen.getByTestId('composer-prompt-call'));
+    expect((screen.getByTestId('composer-prompt-input') as HTMLTextAreaElement).value).toBe('');
+    fireEvent.change(screen.getByPlaceholderText('Message to Sam…'), { target: { value: 'hi' } });
+    fireEvent.keyDown(screen.getByPlaceholderText('Message to Sam…'), { key: 'Enter' });
     await waitFor(() => expect(sendReply).toHaveBeenCalledTimes(1));
     expect(vi.mocked(sendReply).mock.calls[0][1]).toBe('hi');
     expect(vi.mocked(sendReply).mock.calls[0][3]).toBeUndefined();

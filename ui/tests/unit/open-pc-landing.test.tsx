@@ -81,6 +81,17 @@ describe('OpenPcLanding', () => {
     expect(post.mock.calls[0][2]).toMatchObject({ adapter: 'fetch', withCredentials: false });
   });
 
+  it('an invite link shows the code box with its code filled in and sends nothing before Open', async () => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, hash: '#code=ZN4T-JZR8', assign },
+    });
+    const post = vi.spyOn(apiClient, 'post').mockRejectedValue(hubError(403, 'caller has no role on this entity'));
+    renderPage();
+    expect(await screen.findByTestId('open-pc-code')).toHaveValue('ZN4T-JZR8');
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it.each([
     [404, "this code doesn't work", undefined, "This code doesn't work. Check it, or ask whoever gave it to you."],
     [409, 'all sandboxes for this agent are in use', 'full', 'All sandboxes for this agent are in use right now.'],

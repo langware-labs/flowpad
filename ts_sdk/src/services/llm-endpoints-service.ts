@@ -9,6 +9,7 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import type { HttpMethod } from '../models/ApiUrl';
+import { hubAction } from './hub-action';
 import {
   LLMEndpoint,
   type LLMEndpointFilters,
@@ -191,14 +192,7 @@ export interface LLMAllowanceHistoryRow {
   spent_tokens: number;
 }
 
-export function hubAction(name: string, type: string, id: string | null, method: HttpMethod, subpath?: string) {
-  const info = new ActionInfo(name, type, id, method);
-  if (subpath) info.subpath = subpath;
-  // Hub-owned — the local server forwards it to the hub verbatim, with or without an id
-  // (`catalog`, `token_plan/me` included).
-  info.hubReflect = true;
-  return info;
-}
+export { hubAction };
 
 function action(name: string, id: string, method: HttpMethod, subpath?: string): ActionInfo {
   return hubAction(name, TYPE, id, method, subpath);

@@ -12,7 +12,7 @@ description: Builds a Flowpad agent together with the user — "make me an agent
   NOT for a Claude Code subagent in `.claude/agents/` (building-deliverables), other
   records (flowpad-assistance), or opening an agent that exists (flowpad-navigation).
 tags: ''
-version: 2
+version: 3
 ---
 # agent-builder
 
@@ -41,7 +41,6 @@ steps; you write the files, open the right screen and test it with them.
 > user ran (`references/validation-loop.md`), not when its files exist.
 > **5. Deploying, credentials, email and phone reach real people.** Do them only on
 > the user's explicit go, after saying who will be reachable.
-
 
 ## FlowCall blocks
 

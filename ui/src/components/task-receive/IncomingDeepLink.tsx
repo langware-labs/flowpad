@@ -2,14 +2,16 @@ import { canSetUpProjects, dataContext, isCompleteGitOrigin, Project } from '@sd
 import { isGitOrigin, type ProjectOrigin, projectOriginOf } from '@sdk/models/FSOrigin';
 import { t } from '@lingui/core/macro';
 import { useAuth } from '@sdk/react/hooks';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, STATE_KEY_PARAM } from '@src/navigation/DockPointer';
 import { consumeInboundParams, DeepLinkAction, inboundParams } from '@src/navigation/inbound-link';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { isSetupDeclined, useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { LinkAllowDialog } from '@src/components/page-allow/LinkAllowDialog';
+import { linkDoes, linkVouchedFor } from '@src/components/page-allow/link-consent';
 import { IncomingProjectDialog } from './IncomingProjectDialog';
 import { IncomingTaskDialog } from './IncomingTaskDialog';
 import { LaunchDialog } from './LaunchDialog';
@@ -49,6 +51,7 @@ const DEEP_LINK_PARAMS = [
   'title',
   'sender_name',
   'git_origin',
+  STATE_KEY_PARAM,
 ] as const;
 
 /** True the first time this tab sees `projectId`'s set-up link, so the hop
@@ -118,8 +121,10 @@ export function IncomingDeepLink() {
   useAnnounceNewCloudProjects();
   useOfferSharedProjectSetUpOnOpen();
 
-  useEffect(() => {
-    const params = inboundParams();
+  // A link that would start something, from outside Flowpad, waits here for the user's yes.
+  const [asked, setAsked] = useState<{ params: URLSearchParams; does: 'launch' | 'clone' } | null>(null);
+
+  const handleLink = (params: URLSearchParams) => {
     // A launch link (`/launch` on the hub → this machine): its SETUP stage, one handler for
     // the desktop and a cloud box alike. A malformed one is scrubbed and dropped.
     if (params.get('action') === LAUNCH_ACTION) {
@@ -222,12 +227,47 @@ export function IncomingDeepLink() {
     if (taskId) {
       navigation.openDock(DockPointer.fromUrl('tasks', taskId));
     }
+  };
+
+  useEffect(() => {
+    const params = inboundParams();
+    const does = linkDoes(params);
+    if (!does) {
+      handleLink(params);
+      return;
+    }
+    // Something would start: only a link the local server vouches for (it carries a key it minted) runs;
+    // one from outside asks first.
+    let live = true;
+    void linkVouchedFor(params).then((vouched) => {
+      if (!live) return;
+      if (vouched) handleLink(params);
+      else setAsked({ params, does });
+    });
+    return () => {
+      live = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <>
       {launchPlan && <LaunchDialog plan={launchPlan} onClose={closeLaunch} />}
+
+      {asked && (
+        <LinkAllowDialog
+          does={asked.does}
+          onAllow={() => {
+            const { params } = asked;
+            setAsked(null);
+            handleLink(params);
+          }}
+          onDeny={() => {
+            setAsked(null);
+            consumeInboundParams([...DEEP_LINK_PARAMS, ...LAUNCH_PARAMS]);
+          }}
+        />
+      )}
 
       {/* Incoming task dialog — pull/clone flow for shared tasks */}
       {pendingTask && (

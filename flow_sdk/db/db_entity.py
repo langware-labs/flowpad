@@ -507,8 +507,14 @@ class DBEntity(DBBaseRecord):
         emit_entity_tag(op_message)
         await handle_entity_op(op_message)
 
+    #: A type whose ``updated_date`` is derived from something else (a conversation's is its newest
+    #: message's send time) keeps it through an ordinary update: only its own writer moves it.
+    updated_date_is_derived: ClassVar[bool] = False
+
     async def update(self: DBEntityType) -> DBEntityType:
+        derived = self.updated_date if self.updated_date_is_derived else None
         self._db.reset_update_fields(self)
+        self.updated_date = derived
         return await self.save(None)
 
     async def delete(self):

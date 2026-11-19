@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { FlowMessage } from '@sdk';
-import { indexForms, initialValues, leftToFill, type MessageForm } from '@src/components/conversation/message-form';
+
+const sendReply = vi.fn(async () => ({ id: 'r1' }));
+vi.mock('@sdk/entities/notifications', () => ({ sendReply }));
+
+const { indexForms, initialValues, leftToFill, submitFormAnswers } = await import(
+  '@src/components/conversation/message-form'
+);
+type MessageForm = import('@src/components/conversation/message-form').MessageForm;
 
 const FORM: MessageForm = {
   form_id: 'f1',
@@ -31,6 +38,28 @@ describe('message forms', () => {
     expect(idx.formByMessage.get('m1')?.title).toBe('Switch');
     expect(idx.answersByForm.get('f1')?.map((e) => e.messageId)).toEqual(['a1', 'a2']);
     expect(idx.answersByMessage.get('a2')?.previous?.values).toEqual({ tenant: 'a' });
+    // what changed is derived on read, never stored
+    expect(idx.answersByMessage.get('a1')?.changed).toEqual([]);
+    expect(idx.answersByMessage.get('a2')?.changed).toEqual(['tenant']);
+    const dropped = indexForms([
+      fm('a1', '2026-11-05T10:01:00Z', [carrier('form_answers', 'f1', { form_id: 'f1', values: { tenant: 'a', note: 'x' } })]),
+      fm('a2', '2026-11-05T10:02:00Z', [carrier('form_answers', 'f1', { form_id: 'f1', values: { tenant: 'a' } })]),
+    ]);
+    expect(dropped.answersByMessage.get('a2')?.changed).toEqual(['note']); // a cleared answer is a change
+  });
+
+  it('answers with an ordinary reply carrying the answers as a typed value', async () => {
+    await submitFormAnswers('c1', 'm1', 'f1', { tenant: 'b' }, []);
+    expect(sendReply).toHaveBeenCalledWith({ conversationId: 'c1' }, '', [], {
+      replyToId: 'm1',
+      attachment: [
+        {
+          attachment_type: 'type_id',
+          data: 'form_answers-f1',
+          prompt_preview: JSON.stringify({ form_id: 'f1', values: { tenant: 'b' } }),
+        },
+      ],
+    });
   });
 
   it('opens with defaults, and only the required empty fields are left to fill', () => {

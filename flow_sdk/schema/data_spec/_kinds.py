@@ -105,6 +105,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.message_sender_spec  # noqa: F401  — registers ``message.sender``
     import flow_sdk.schema.data_spec.message_state_spec  # noqa: F401  — registers ``stream_inbox.message.state``
     import flow_sdk.schema.data_spec.navigator_spec  # noqa: F401  — registers ``navigator.route`` / ``navigator.target``
+    import flow_sdk.schema.data_spec.page_state_spec  # noqa: F401  — registers ``page.state``
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
     import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
     import flow_sdk.schema.data_spec.process_call_spec  # noqa: F401  — registers ``process.call``
@@ -126,6 +127,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.setup_stage_spec  # noqa: F401  — registers ``setup.stage`` / ``setup.stage_state``
     import flow_sdk.schema.data_spec.source_item_spec  # noqa: F401  — registers ``ingest.source_item``
     import flow_sdk.schema.data_spec.status_spec  # noqa: F401  — registers ``status`` / ``status.harness`` / ``status.key`` / ``status.hub`` / ``status.account``
+    import flow_sdk.schema.data_spec.tag_classification_spec  # noqa: F401  — registers ``tags.classification`` / ``stream_inbox.message.context``
     import flow_sdk.schema.data_spec.token_allocation_spec  # noqa: F401
     import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action`` / ``trigger.then``
     import flow_sdk.schema.data_spec.usage_report_spec  # noqa: F401  — registers ``usage.summary`` / ``usage.summary.session``

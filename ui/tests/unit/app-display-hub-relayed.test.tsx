@@ -4,7 +4,7 @@
  * the frame looped back to the hub. Every other app is framed as before. FLOWPAD-2266.
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -63,21 +63,21 @@ afterEach(() => {
   opened.mockClear();
 });
 
-it('offers an app the hub relays in a tab of its own, opened by the click only', () => {
+it('offers an app the hub relays in a tab of its own, opened by the click only', async () => {
   const view = show(RELAYED);
 
-  expect(view.getByTestId('app-opens-in-tab')).toHaveTextContent('This app is served externally via Flowpad');
+  expect(await view.findByTestId('app-opens-in-tab')).toHaveTextContent('This app is served externally via Flowpad');
   expect(frameOf(RELAYED)).toBeNull();
   expect(opened).not.toHaveBeenCalled();
   fireEvent.click(view.getByRole('button', { name: 'Open in new tab' }));
   expect(opened).toHaveBeenCalledWith(RELAYED);
 });
 
-it('frames a box door (E2B) as before: no tab offered', () => {
+it('frames a box door (E2B) as before: no tab offered', async () => {
   const view = show(E2B_DOOR);
 
+  await waitFor(() => expect(frameOf(E2B_DOOR)).not.toBeNull());
   expect(view.queryByTestId('app-opens-in-tab')).toBeNull();
-  expect(frameOf(E2B_DOOR)).not.toBeNull();
 });
 
 it('an admin host and a prod host are hub-relayed too', () => {

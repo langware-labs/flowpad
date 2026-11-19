@@ -7,13 +7,16 @@ import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { type AppRuntime } from '@src/navigation/app-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { PageAllowGate } from '@src/components/page-allow/PageAllowGate';
+import { withStateKey } from '@sdk/page-state';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { isTypeId, TypeId, WebApp } from '@sdk';
+import { Agent, isTypeId, TypeId, WebApp } from '@sdk';
 import { Loader2 } from 'lucide-react';
-import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
+import { externalUrl, OPEN_AGENT_MESSAGE, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
+import { agentDockById } from '@src/components/agents/use-agent-launcher';
 import { openExternal } from '@src/lib/open-external';
 import { isHubRelayed } from '@src/lib/hub-relayed';
 import { Button } from '@src/components/ui/button';
@@ -106,6 +109,14 @@ export function guestNavigation(data: unknown, projectId?: string | null): DockP
   return tryParseDock(message.address);
 }
 
+/** The agent a guest app asks the host to open the chat of (`{type: 'flowpad:open-agent', agent}`), or null. */
+export function guestAgent(data: unknown): TypeId | null {
+  const message = data as { type?: unknown; agent?: unknown } | null;
+  if (message?.type !== OPEN_AGENT_MESSAGE || typeof message.agent !== 'string' || !isTypeId(message.agent)) return null;
+  const typeId = new TypeId(message.agent);
+  return typeId.type === Agent.type ? typeId : null;
+}
+
 /**
  * The outside page a guest app asks the host to open (`{type: 'flowpad:open-external', url}`, the
  * SDK's `openExternal`), or null. Only an absolute http(s) address: a guest never gets a
@@ -116,7 +127,19 @@ export function guestExternalUrl(data: unknown): string | null {
   return message?.type === OPEN_EXTERNAL_MESSAGE ? externalUrl(message.url) : null;
 }
 
-export function AppDisplayViewer({
+/**
+ * An installed app, shown. It runs with a state key (`PageAllowGate`, `installed`: the address names an app, so
+ * nothing is asked): the one `flow show` minted, or one minted here and written into the address.
+ */
+export function AppDisplayViewer(props: AppDisplayViewerProps) {
+  return (
+    <PageAllowGate title="App" installed>
+      {({ stateKey }) => <AppDisplayViewerBody {...props} stateKey={stateKey} />}
+    </PageAllowGate>
+  );
+}
+
+function AppDisplayViewerBody({
   artifactId,
   microAppId = null,
   endpointId = null,
@@ -126,7 +149,8 @@ export function AppDisplayViewer({
   reloadKey,
   active = true,
   onFrameSrc,
-}: AppDisplayViewerProps) {
+  stateKey,
+}: AppDisplayViewerProps & { stateKey: string | undefined }) {
   const { currentDock, navigation } = useDockNavigation();
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
@@ -141,6 +165,10 @@ export function AppDisplayViewer({
     runtime ?? null,
   );
 
+  // The key the page was opened with (`flow show`, an agent) rides the frame's address, so the app's SDK holds
+  // it from the first call. No key leaves the address as the app serves it.
+  const src = withStateKey(appDisplay.src, stateKey);
+
   // The webapp asset behind what is shown — named by the address, or by the route serving it. Its lifecycle
   // record decides whether the frame is on screen; opening it asks the backend to make it work, once.
   const webappId = microAppId ?? appDisplay.endpoint?.webapp_id ?? appDisplay.idleDev?.webapp_id ?? null;
@@ -153,19 +181,19 @@ export function AppDisplayViewer({
   const definition = microAppId ? lifecycle.app : null;
 
   useEffect(() => {
-    reloadOnNewEpoch(appDisplay.src, reloadKey, () => frameRef.current?.refresh());
-  }, [appDisplay.src, reloadKey]);
+    reloadOnNewEpoch(src, reloadKey, () => frameRef.current?.refresh());
+  }, [src, reloadKey]);
 
   useEffect(() => {
-    if (active) void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
-  }, [appDisplay.src, active]);
+    if (active) void reloadIfAppChanged(src, () => frameRef.current?.refresh());
+  }, [src, active]);
 
   useEffect(() => {
-    if (appDisplay.src) onFrameSrc?.(appDisplay.src);
-  }, [appDisplay.src, onFrameSrc]);
+    if (src) onFrameSrc?.(src);
+  }, [src, onFrameSrc]);
 
   // An app the hub relays cannot run in this frame (`hub-relayed.ts`): it is offered in a tab of its own.
-  const relayed = isHubRelayed(appDisplay.src);
+  const relayed = isHubRelayed(src);
 
   // The theme is baked into the guest URL for its first paint, so a later change
   // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
@@ -198,17 +226,24 @@ export function AppDisplayViewer({
       const dock = guestNavigation(event.data, project?.id);
       if (dock) return navigation.openDock(dock);
       const outside = guestExternalUrl(event.data);
-      if (outside) openExternal(outside);
+      if (outside) return openExternal(outside);
+      const agent = guestAgent(event.data);
+      const projectId = project?.id;
+      if (agent && projectId) {
+        void agentDockById(agent.toString(), projectId)
+          .then((dock) => dock && navigation.openDock(dock))
+          .catch((e) => console.warn('[app-display] open agent failed', e));
+      }
     };
     window.addEventListener('message', onGuest);
     return () => window.removeEventListener('message', onGuest);
-  }, [pushSkin, appDisplay.src, navigation, project?.id]);
+  }, [pushSkin, src, navigation, project?.id]);
 
   // Nothing is known until the endpoints serving the app answered: an app not looked up yet is not down.
   if (appDisplay.loading) return null;
   // The app itself is not on this machine (removed, or a link from another one): there is nothing to
   // bring up or wait for, and saying "opening" forever would be a lie.
-  if (microAppId && lifecycle.notFound && !appDisplay.src) {
+  if (microAppId && lifecycle.notFound && !src) {
     return (
       <div
         role="alert"
@@ -219,7 +254,7 @@ export function AppDisplayViewer({
       </div>
     );
   }
-  if (!appDisplay.src && webappId) {
+  if (!src && webappId) {
     // Not served yet: the record says what the backend is doing; up but not re-read yet, a moment's status.
     return lifecycle.showable ? (
       <div className="flex h-full items-center justify-center" data-testid="app-opening">
@@ -230,7 +265,7 @@ export function AppDisplayViewer({
     );
   }
 
-  if (!appDisplay.src) {
+  if (!src) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
         <Trans>This app has no running dev server and no built output yet.</Trans>
@@ -242,17 +277,17 @@ export function AppDisplayViewer({
     <div className="flex h-full flex-col">
       {/* The app's address and what is known about it, then the button to edit it. */}
       <div className="flex items-center gap-2 border-b px-3 py-1" data-testid="webapp-header">
-        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" data-testid="webapp-address" title={appDisplay.src}>
-          {appDisplay.src}
+        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" data-testid="webapp-address" title={src}>
+          {src}
         </span>
-        <CopyButton value={appDisplay.src} testId="webapp-address-copy" />
+        <CopyButton value={src} testId="webapp-address-copy" />
         <Button
           size="icon"
           variant="ghost"
           className="size-7 shrink-0"
           data-testid="webapp-open-browser"
           title={t`Open in browser`}
-          onClick={() => openExternal(appDisplay.src)}
+          onClick={() => openExternal(src)}
         >
           <ExternalLink className="size-4" />
         </Button>
@@ -289,7 +324,7 @@ export function AppDisplayViewer({
           <p className="text-lg font-medium">
             <Trans>This app is served externally via Flowpad. Open it in a new tab.</Trans>
           </p>
-          <Button onClick={() => openExternal(appDisplay.src)}>
+          <Button onClick={() => openExternal(src)}>
             <Trans>Open in new tab</Trans>
           </Button>
         </div>
@@ -300,11 +335,11 @@ export function AppDisplayViewer({
             // place leaves both the outgoing and incoming frames parked at opacity-0:
             // the iframe registry activates a container on mount, and an in-place src
             // change retires the old one without ever activating the new one.
-            key={appDisplay.src}
+            key={src}
             ref={frameRef}
             endpoint={appDisplay.endpoint}
             testId="vibe-app-frame"
-            src={appDisplay.src}
+            src={src}
             lifecycle={webappId && !servedFiles ? lifecycle : null}
           />
         </div>

@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional
 
 from flow_sdk.core.flow_command import flow_command
 from flow_sdk.request_context.detached import add_detached_done_callback, create_detached_task
-from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+from flow_sdk.schema.data_spec.compute_op_spec import AskOriginSpec, ComputeOpSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, ways
 from flow_sdk.schema.data_spec.project_setup_spec import (
@@ -235,7 +235,7 @@ def _setup_var(env_var: str, var: Any, *, login: str, present: bool = False) -> 
     return SetupVarSpec(
         env_var=env_var, label=var.label, hint=var.hint, help_url=var.help_url, placeholder=var.placeholder,
         pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE, present=present,
-        required=var.required, kind=var.kind, login=login, provider=var.provider, scopes=list(var.scopes), way=var.way,
+        required=var.required, kind=var.kind, login=login, provider=var.provider, scopes=list(var.scopes), group=var.group, way=var.way,
     )
 
 
@@ -262,11 +262,30 @@ def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Pr
         typeid=row.typeid, kind=REQUIREMENT_PACK, name=row.name, title=row.title, setup=row.setup,
         help_url=row.help_url, setup_timeout_seconds=row.setup_timeout_seconds, **_why(row),
         vars=[_setup_var(v.env_var, v, login=v.login, present=v.present) for v in (must or row.vars)],
-        setup_choice=row.setup_choice, ways=dict(row.ways),
+        setup_choice=row.setup_choice, ways=dict(row.ways), origin=_origin(row, project),
         satisfied=row.state == "connected", used_by=_names(roots), required=bool(must),
         note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
         skipped=row.setup_skipped, has_test=row.has_test, test_result=row.test_result, **always,
     )
+
+
+def _origin(row: "CredentialStatusRowSpec", project: "Project") -> AskOriginSpec:
+    """Where the credential ``row`` is declared: this project (its name), another project, or the user's own."""
+    pid = str(row.project_id or "")
+    if not pid:
+        return AskOriginSpec(label="Your credentials")
+    name = project.name if pid == str(project.id) else ""
+    return AskOriginSpec(label=name or "Project", project_id=pid, credential=row.typeid)
+
+
+def _refused(req: SetupRequirementSpec, roots: list[RootRef], refused: dict[str, str]) -> SetupRequirementSpec:
+    """A value credential a root source's login was refused with: every value asked again, the presence check off
+    (``rejected``) — else "Set up again" finds them present, asks nothing and retries the same refused values."""
+    why = next((refused[r.typeid] for r in roots if r.typeid in refused), "")
+    if not why or req.is_oauth:
+        return req
+    vars = [v.model_copy(update={"present": False}) for v in req.vars]
+    return req.model_copy(update={"vars": vars, "satisfied": False, "rejected": why})
 
 
 def _project_skip_key(req: SetupRequirementSpec) -> str:
@@ -290,7 +309,7 @@ def _from_template(template: "Credential", roots: list[RootRef], project: "Proje
             _setup_var(name, var, login=var.login_command)
             for name, var in (template.vars or {}).items() if name in required
         ],
-        ways=dict(getattr(template, "ways", None) or {}),
+        ways=dict(getattr(template, "ways", None) or {}), origin=AskOriginSpec(label="Flowpad"),
         note="" if setup.strip() else "no setup instructions: AI Assist unavailable",
         **skip_always_of(project, roots),
     )
@@ -388,11 +407,14 @@ async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[Se
             narrow[held.name] = wider
 
     out = await _undeclared_connections(project, undeclared, templates, skips)
+    # A source whose provider refused its login: the values it read with are wrong, not merely present.
+    refused = {str(s.typeid): str(s.error_detail or "the login was refused")
+               for s in needs.sources if getattr(s, "error_code", None) == "access_denied"}
     for name, roots in packs.items():
         if gap := _undeclared_for_agents(name, roots, rows):
             out.append(gap)
         if name in rows:
-            req = _from_row(rows[name], roots, project)
+            req = _refused(_from_row(rows[name], roots, project), roots, refused)
             if wider := narrow.get(name):  # the setup step widens the row (``requirement_step``) before connecting
                 req = req.model_copy(update={"scopes": [*req.scopes, *wider], "satisfied": False,
                                              "note": f"needs {', '.join(wider)} too: connect again to grant them"})
@@ -463,7 +485,7 @@ def _ask_prompt(req: SetupRequirementSpec, var: SetupVarSpec) -> str:
 def _var_choice(var: SetupVarSpec) -> dict[str, Any]:
     return {"value": var.env_var, "label": var.label or var.env_var, "hint": var.hint, "help_url": var.help_url,
             "placeholder": var.placeholder, "secret": var.secret, "file": var.file, "command": var.login, "provider": var.provider,
-            "scopes": list(var.scopes)}
+            "scopes": list(var.scopes), "group": var.group}
 
 
 def _way_choice(way: str, members: list[SetupVarSpec], offer: Optional[CredentialWaySpec] = None) -> dict[str, Any]:
@@ -526,6 +548,8 @@ def compile_setup(
             # answers the question — the person's other way to give the value, not a step of its own.
             assist = AI_AGENT if ai and req.setup.strip() else ""
             check = _cli("credentials", "check", req.name, "--project", project_id, *target)
+            # Refused values are present: their presence check would skip every question below.
+            asked = None if req.rejected else check
             # The ONE_OF ways, asked FIRST as one choice; a way of several values is one choice with a field each.
             if vaults and not deployment_id and any(v.kind is not CredentialVarKind.CLI for v in req.missing):
                 # The team's copy first: a full fetch satisfies the check, so every question below skips.
@@ -553,9 +577,10 @@ def compile_setup(
                         "prompt": f"How should Flowpad sign in to {req.title or req.name}?", "detail": req.needed_for,
                         "secret": True, "auto_continue": any(v.login for vs in offered.values() for v in vs),
                         "choices": [_way_choice(way, members, req.ways.get(way)) for way, members in offered.items()],
+                        "origin": req.origin,
                     },
                     "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
-                    "completion_check": check,
+                    "completion_check": asked,
                 }, bind=input_name(req.name, ONE_OF_INPUT))
             for var in req.missing:
                 if var.is_one_of:
@@ -569,13 +594,13 @@ def compile_setup(
                     # value where they are asked for it.
                     "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
                     # The goal's own check: a re-run (resume) asks nobody once the values are stored.
-                    "completion_check": check,
+                    "completion_check": asked,
                 }, bind=input_name(req.name, var.env_var))
             add({
                 "name": f"store-{req.name}", "label": f"Store {req.title or req.name}",
                 "description": f"{req.name} has every value it needs in {where}.",
                 "subkind": "cli", "exe_data": _cli("credentials", "set", req.name, "--project", project_id, *target, "--from-inputs"),
-                "completion_check": check,
+                "completion_check": asked,
             })
     wizard = WizardSpec.model_validate({
         "name": "project-setup", "description": "Set up this project's connections and credentials.",

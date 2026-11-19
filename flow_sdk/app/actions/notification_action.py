@@ -90,7 +90,6 @@ def _fm_response_fields(fm: "FlowMessage", conv: "Conversation") -> dict:
         "thread_root_id": dumped.get("thread_root_id"),
         "thread_id": dumped.get("thread_id"),
         "mentions": dumped.get("mentions") or [],
-        "is_draft": bool(dumped.get("is_draft")),
         "conversation_id": conv.id,
         "message_count": conv.message_count,
         "flow_message_id": fm.id,
@@ -113,6 +112,54 @@ def _mentions_of(raw) -> list[str]:
         if isinstance(item, str) and item.strip() and item.strip() not in ids:
             ids.append(item.strip())
     return ids[:_MAX_MENTIONS]
+
+
+def _promote_draft(
+    draft: "FlowMessage",
+    *,
+    message: str,
+    sender_id: Optional[str],
+    sender_name: str,
+    shared_context_entities: Optional[list[str]],
+    reply_to_id: Optional[str],
+    thread_root_id: Optional[str],
+    mentions: Optional[list[str]] = None,
+) -> "FlowMessage":
+    """A draft row as the message it is now sent as (not saved): the same id, files and attachments,
+    stamped the way ``_build_reply_flow_message`` stamps a fresh one, at the time it is sent."""
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
+
+    draft.text = message
+    draft.sender_id = sender_id
+    draft.sender_name = sender_name
+    draft.reply_to_id = reply_to_id
+    draft.thread_root_id = thread_root_id
+    draft.mentions = list(mentions or [])
+    draft.delivery_status = DeliveryStatus.CREATED.value
+    draft.outbound = True
+    draft.is_read = True
+    draft.draft_options = None
+    draft.created_date = datetime.now(timezone.utc)
+    draft.add_shared_context_entities(*_typeids(shared_context_entities))
+    return draft
+
+
+def _typeids(raws: Optional[list[str]]) -> list[TypeId]:
+    """The typeids among ``raws``; a blank or unreadable one is skipped."""
+    found = []
+    for raw in raws or []:
+        try:
+            found.append(TypeId((raw or "").strip()))
+        except ValueError:
+            continue
+    return found
+
+
+def _as_list(value) -> list:
+    """A body field that may arrive as one value or several."""
+    return value if isinstance(value, list) else [value]
 
 
 def _build_reply_flow_message(
@@ -139,7 +186,7 @@ def _build_reply_flow_message(
     caller appends (the hub drops unknown header fields until its schema
     mirrors these).
     """
-    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, DeliveryStatus, FlowMessage
 
     context: list = [TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id)]
     if shared_context_entities:
@@ -162,7 +209,8 @@ def _build_reply_flow_message(
             "sender_id": sender_id,
             "sender_name": sender_name,
             "conversation_id": conv_id,
-            "is_draft": is_draft,
+            # A draft is not sent from here yet: it becomes the outbox's "mine" when it is sent.
+            **({"delivery_status": DeliveryStatus.DRAFT.value} if is_draft else {"outbound": True}),
             **({"remote_worker_session_id": remote_worker_session_id} if remote_worker_session_id else {}),
             **({"kind": kind} if kind else {}),
             **({"reply_to_id": reply_to_id} if reply_to_id else {}),
@@ -173,8 +221,6 @@ def _build_reply_flow_message(
             # stream inbox row's unread facet (``!latestMessage.is_read``, which does NOT
             # exclude own messages) shows the conversation as unread on send.
             "is_read": True,
-            # Composed here to be sent from here: the outbox's "mine".
-            "outbound": True,
         }
     )
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
@@ -302,17 +348,23 @@ def _parse_asset_references(raw: Any) -> list:
     return []
 
 
+def _json_field(raw: Any, default: Any) -> Any:
+    """A body field as its value: a multipart send carries a list or dict as JSON text, a JSON body
+    as the value itself. Unreadable text reads as ``default``."""
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    if not isinstance(raw, str):
+        return raw
+    try:
+        return _json.loads(raw)
+    except ValueError:
+        return default
+
+
 def _parse_share_config(body: dict) -> dict:
     """Decode the share_config carrier (JSON or multipart) into a dict. Both
     share opt-ins (transfer_mode, create_bookmark) read their own key off this."""
-    raw = body.get("share_config") or body.get("shareConfig") or {}
-    if isinstance(raw, (bytes, bytearray)):
-        raw = raw.decode("utf-8", errors="replace")
-    if isinstance(raw, str):
-        try:
-            raw = _json.loads(raw)
-        except Exception:
-            raw = {}
+    raw = _json_field(body.get("share_config") or body.get("shareConfig") or {}, {})
     return raw if isinstance(raw, dict) else {}
 
 
@@ -958,6 +1010,8 @@ async def handle_add_message(
     someone_typeid: str,
     *,
     pending_send: bool = False,
+    origin_process: Optional[str] = None,
+    draft: Optional["FlowMessage"] = None,
 ) -> ApiResponse:
     """Append a message to a Conversation — the single message-send handler.
 
@@ -973,6 +1027,10 @@ async def handle_add_message(
     conversation.jsonl outbox until ``Conversation.deliver_pending_messages``
     pushes it, from ``share()`` or from the hub-session transition in
     ``flow_sdk.stream_inbox.catchup`` (see that module's docstring).
+
+    ``draft``: send THIS row instead of building one (``handle_send_draft``). Its files, assets and
+    session carrier are already on it; the body restates its text, quote and thread, so the send
+    runs every step a fresh one does and the message keeps the draft's id.
     """
     conversation_id = (body.get("conversation_id") or "").strip()
     # ``text`` is the field the SDK's ``Conversation.addMessage(text)`` sends;
@@ -1076,6 +1134,7 @@ async def handle_add_message(
         # A message that is only a value — a prompt call, or its answer — is a message too.
         and not (body.get("call_prompt") or "").strip()
         and not body.get("attachment")
+        and draft is None
     ):
         return ApiFailResponse(message="message, prompt, files, or asset_references required")
     # An attachment-only send keeps an empty text: each surface names what it carries.
@@ -1155,7 +1214,8 @@ async def handle_add_message(
 
         if refused := await refuse_gitignored(_parse_context_typeids(conv, asset_references, [])):
             return refused
-    await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
+    if not is_draft:  # a draft changes nothing outside itself until it is sent
+        await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
 
     sender_participant = await User.current_sender_participant(body.get("sender_name"))
     sender_id = sender_participant.get("user_id") or None
@@ -1165,19 +1225,35 @@ async def handle_add_message(
     # If a WebSocket reply is lost after the hub commits, the HTTP fallback
     # must reuse this id: the hub's unique entity id then makes both delivery
     # attempts one write instead of two indistinguishable messages.
-    reply_fm = _build_reply_flow_message(
-        conv_id=conv.id,
-        message=message,
-        sender_id=sender_id,
-        sender_name=sender_name,
-        is_draft=is_draft,
-        shared_context_entities=shared_context_entities,
-        remote_worker_session_id=remote_worker_session_id,
-        kind=message_kind,
-        reply_to_id=reply_to_id,
-        thread_root_id=thread_root_id,
-        mentions=mentions,
-    )
+    if draft is not None:
+        reply_fm = _promote_draft(
+            draft,
+            message=message,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            shared_context_entities=shared_context_entities,
+            reply_to_id=reply_to_id,
+            thread_root_id=thread_root_id,
+            mentions=mentions,
+        )
+    else:
+        reply_fm = _build_reply_flow_message(
+            conv_id=conv.id,
+            message=message,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            is_draft=is_draft,
+            shared_context_entities=shared_context_entities,
+            remote_worker_session_id=remote_worker_session_id,
+            kind=message_kind,
+            reply_to_id=reply_to_id,
+            thread_root_id=thread_root_id,
+            mentions=mentions,
+        )
+    if origin_process:
+        # Link the writing session BEFORE the message is announced: a session's `--on-reply` wait
+        # tells its own sends from replies by this link, and the check runs on the save's event.
+        await link_origin_session(conv.id, reply_fm.id, origin_process, someone_typeid)
 
     if start_settings is not None:
         # Guest-side row for the session this prompt opens. The host adopts the
@@ -1217,7 +1293,7 @@ async def handle_add_message(
     # These must ride the HTTP slow path (conv.add_message forwards them; the
     # WS bridge body is text-only), so the hub sees the body and stamps
     # body_status=UPLOADING instead of NA.
-    raw_attachments = body.get("attachment") or []
+    raw_attachments = _json_field(body.get("attachment") or [], [])
     if not isinstance(raw_attachments, list):
         raw_attachments = [raw_attachments]
     # ``call_prompt``: a one-shot prompt for the receiver to approve and run (``process_call_spec``).
@@ -1228,12 +1304,20 @@ async def handle_add_message(
         from flow_sdk.schema.data_spec.process_call_spec import call_attachment  # noqa: PLC0415
 
         raw_attachments = [*raw_attachments, call_attachment(prompt_call(call_prompt))]
+    if raw_attachments:
+        from flow_sdk.builtin.flow_message import FlowMessage, check_sent_values  # noqa: PLC0415
+
+        problems = await check_sent_values(raw_attachments, lambda: FlowMessage.sent_in(conv.id))
+        if problems:
+            return ApiFailResponse(message="; ".join(problems), status_code=400, data={"problems": problems})
 
     # Text-only WS fast path. The hub handles fan-out + delivery receipts, then
     # we materialize the hub-confirmed FM locally for the sender's UI. Skipped
     # for a pending_send (no cloud login → never touch the hub; save local).
     if (
         not is_draft
+        # A draft's row is already here: the fast path would write a second copy of it from the hub's.
+        and draft is None
         and not pending_send
         and not uploaded_files
         and not prompt_text
@@ -1282,7 +1366,7 @@ async def handle_add_message(
     if uploaded_files:
         await _attach_uploaded_files(reply_fm, uploaded_files)
 
-    if asset_references:
+    if asset_references and draft is None:  # a draft carries its assets already
         await _attach_asset_references(reply_fm, asset_references)
 
     if prompt_text or prompt_files:
@@ -1339,8 +1423,8 @@ async def handle_add_message(
 
     if is_draft:
         # Local-only draft: skip jsonl append and hub push.
-        # The UI surfaces the draft via an entity query on (conversation_id, is_draft=true).
-        return ApiSuccessResponse(data={**_fm_response_fields(reply_fm, conv), "is_draft": True})
+        # The UI surfaces the draft via an entity query on (conversation_id, delivery_status=draft).
+        return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))
 
     conv = await _finalize_message_dispatch(
         conv,

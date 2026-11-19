@@ -1,0 +1,122 @@
+{
+ "title": "Where a help request goes",
+ "nodes": [
+  {
+   "id": "start",
+   "kind": "start",
+   "label": "User clicks Ask for help"
+  },
+  {
+   "id": "who",
+   "kind": "question",
+   "label": "Sent to whom?",
+   "state": "The Send to checkboxes in the dialog",
+   "note": "The dialog pre-checks the nearest desk; the user can change it. A desk and people make two conversations, and each extra desk checked gets its own ticket"
+  },
+  {
+   "id": "project",
+   "kind": "question",
+   "label": "Project help desk configured?",
+   "state": "helpdesk.json in the project root or a dependency, or the project is itself a desk portal"
+  },
+  {
+   "id": "own",
+   "kind": "question",
+   "label": "User added a help desk?",
+   "state": "The user's own desk list on the hub"
+  },
+  {
+   "id": "support",
+   "kind": "question",
+   "label": "Hub has Flowpad support?",
+   "state": "Hub /version helpdesk_project_id = 4f9f1fd1-39b6-5465-9c20-cb4c59b08318",
+   "note": "Offline, the last one seen is used"
+  },
+  {
+   "id": "private",
+   "kind": "outcome",
+   "label": "Stays private",
+   "note": "Report it later turns a private request into a ticket"
+  },
+  {
+   "id": "person",
+   "kind": "outcome",
+   "label": "Task and conversation to the person"
+  },
+  {
+   "id": "d-project",
+   "kind": "outcome",
+   "label": "Ticket to the project's help desk"
+  },
+  {
+   "id": "d-own",
+   "kind": "outcome",
+   "label": "Ticket to the user's help desk"
+  },
+  {
+   "id": "d-support",
+   "kind": "outcome",
+   "label": "Ticket to Flowpad support"
+  },
+  {
+   "id": "none",
+   "kind": "outcome",
+   "label": "Not sent: ask a person"
+  }
+ ],
+ "edges": [
+  {
+   "from": "start",
+   "to": "who"
+  },
+  {
+   "from": "who",
+   "to": "private",
+   "label": "nobody"
+  },
+  {
+   "from": "who",
+   "to": "person",
+   "label": "person"
+  },
+  {
+   "from": "who",
+   "to": "project",
+   "label": "help desk"
+  },
+  {
+   "from": "project",
+   "to": "d-project",
+   "label": "yes"
+  },
+  {
+   "from": "project",
+   "to": "own",
+   "label": "no"
+  },
+  {
+   "from": "own",
+   "to": "d-own",
+   "label": "yes"
+  },
+  {
+   "from": "own",
+   "to": "support",
+   "label": "no"
+  },
+  {
+   "from": "support",
+   "to": "d-support",
+   "label": "yes"
+  },
+  {
+   "from": "support",
+   "to": "none",
+   "label": "no"
+  }
+ ],
+ "notes": [
+  "Every request is saved on this computer first. Signed out or offline, it is sent on sign-in or reconnect",
+  "The diagnosis runs in the background and arrives as its own message"
+ ]
+}

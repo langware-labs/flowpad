@@ -82,6 +82,7 @@
     "app",
     "llm-endpoints",
     "token-plan",
+    "notifications",
     "llm-sources",
     "llm-setup",
     "assistant",
@@ -687,6 +688,14 @@
       "folds_sub_pointer": false,
       "chrome": "workspace"
     },
+    "notifications": {
+      "addressable": true,
+      "pointer": "optional",
+      "folds_pointer": true,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "workspace"
+    },
     "llm-sources": {
       "addressable": true,
       "pointer": "optional",
@@ -872,6 +881,13 @@
       "tab_hash": "hub|token-plan|"
     },
     {
+      "name": "notifications folds the rule key into one chip",
+      "view_type": "notifications",
+      "page": "hub",
+      "pointer": "notification.email.issue.budget_exhausted.deployment.id.550e8400-e29b-41d4-a716-446655440000",
+      "tab_hash": "hub|notifications|"
+    },
+    {
       "name": "every llm-sources selection is one tab",
       "view_type": "llm-sources",
       "pointer": "claude",
@@ -902,6 +918,13 @@
       "view_type": "data-sources",
       "pointer": "5b112f8f-06d9-46ff-9ff0-d09748a4d512/events",
       "url": "/dock/data-sources/5b112f8f-06d9-46ff-9ff0-d09748a4d512/events"
+    },
+    {
+      "name": "a page's state key rides the address as an option",
+      "view_type": "data-sources",
+      "pointer": "5b112f8f-06d9-46ff-9ff0-d09748a4d512",
+      "options": { "stateKey": "k1_-Abc9" },
+      "url": "/dock/data-sources/5b112f8f-06d9-46ff-9ff0-d09748a4d512?stateKey=k1_-Abc9"
     },
     {
       "name": "pointerless singleton",
@@ -1259,6 +1282,13 @@
         "runtime": "served"
       },
       "url": "/dock/app/artifact-6ba7b810-9dad-41d1-80b4-00c04fd430c8?runtime=served"
+    },
+    {
+      "name": "hub notifications, a mute link's narrowest key",
+      "view_type": "notifications",
+      "page": "hub",
+      "pointer": "notification.email.issue.budget_exhausted.deployment.id.550e8400-e29b-41d4-a716-446655440000",
+      "url": "/dock/hub/notifications/notification.email.issue.budget_exhausted.deployment.id.550e8400-e29b-41d4-a716-446655440000"
     },
     {
       "name": "hub llm endpoints list",

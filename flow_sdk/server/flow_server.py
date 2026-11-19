@@ -59,6 +59,8 @@ class FlowServer:
             "allow_credentials": True,
             "allow_methods": ["*"],
             "allow_headers": ["*"],
+            # The reason a page was refused (`state=missing|unknown`): the SDK reads it to say why.
+            "expose_headers": ["X-Flowpad-Gate"],
         }
 
     # ── Phase 1: Setup ───────────────────────────────────────────────────
@@ -106,11 +108,15 @@ class FlowServer:
         from .middleware.http_timing_middleware import HttpTimingMiddleware
         from .middleware.json_body_relabel_middleware import JsonBodyRelabelMiddleware
         from .middleware.request_transaction_middleware import RequestTransactionMiddleware
+        from .middleware.state_key_middleware import StateKeyMiddleware
 
         app.add_middleware(CatchAllExceptionMiddleware)
         # Who made a request, for the "Made by" line of a hub error's details.
         app.add_middleware(CallerMiddleware)
         app.add_middleware(RequestTransactionMiddleware)
+        # Inside CORS (so its refusal carries the CORS headers a cross-origin page needs to read the
+        # reason) and outside the transaction: a page this machine did not open gets no API.
+        app.add_middleware(StateKeyMiddleware)
         app.add_middleware(CORSMiddleware, **self._cors_config)
         # Outside RequestTransactionMiddleware, which parses the body into RequestInfo: the
         # relabel must happen before ANY reader, or it waits on a body that is already consumed.
@@ -140,6 +146,9 @@ class FlowServer:
         app.include_router(health_router, prefix="/api/v1/health")
         app.include_router(health_router, prefix="/health")
         app.include_router(wiki_router)
+        from .routes.page_state import router as page_state_router
+
+        app.include_router(page_state_router)
 
         # 6. User routers (in order added)
         for router, kwargs in self._routers:

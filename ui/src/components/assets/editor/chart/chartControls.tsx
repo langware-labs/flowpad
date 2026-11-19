@@ -69,13 +69,27 @@ export function ChartChangeBox({
   const { t } = useLingui();
   const [text, setText] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => ref.current?.focus(), []);
+  // A press anywhere else closes it. A chart element is left to its own click: it picks, or unpicks.
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      if (!target || boxRef.current?.contains(target) || target.closest?.('[data-target]')) return;
+      close.current();
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, []);
   const send = (runNow: boolean) => {
     if (!text.trim()) return;
     onSubmit(text.trim(), runNow);
   };
   return (
     <div
+      ref={boxRef}
       className="fixed z-20 w-[320px] rounded-xl border p-3 shadow-xl"
       style={{
         left: Math.max(8, Math.min(at.x, window.innerWidth - 336)),
@@ -226,9 +240,9 @@ export function ViewToggle({ view, onChange }: { view: 'chart' | 'table'; onChan
 }
 
 /** Props for a clickable pill or chip inside a pickable chart element: it acts, it never picks. */
-export function chartAct(fn: () => void, role: 'link' | 'button' = 'link') {
+export function chartAct(fn: () => void, role: 'link' | 'button' = 'link', className = 'act') {
   return {
-    className: 'act',
+    className,
     tabIndex: 0,
     role,
     onClick: (e: React.MouseEvent) => {

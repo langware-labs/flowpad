@@ -37,6 +37,8 @@ export interface ShowTarget {
   id?: string;
   /** entity (when shown by path) | vfs: the resolved absolute path. */
   path?: string;
+  /** vfs: the path is a folder — it opens in the folder browser, not as a file. */
+  is_dir?: boolean;
   /** url: an ordinary HTTP(S) page, independent of a process runtime. */
   url?: string;
   /** Source location carried through to the existing file/asset editors. */
@@ -59,6 +61,9 @@ export interface ShowTarget {
   /** Display label the backend resolved for the target (artifact/app/entity
    *  name, falling back to its title). */
   name?: string;
+  /** The state key the opener minted for a page this target runs (`with_state_key`): it rides the dock as
+   *  `stateKey`, so the app opens the page without asking. */
+  state_key?: string;
   /** dock: a SCREEN — the frontend's own dock-address fields, so the client
    *  builds its DockPointer without re-parsing a URL. */
   view_type?: string;

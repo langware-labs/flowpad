@@ -225,16 +225,16 @@ describe('the navigation bar', () => {
     expect(screen.getByTestId('top-nav-home')).toBeTruthy();
   });
 
-  describe('Home always goes to the Flowpad home page', () => {
+  describe("Home asks for the active project's home page", () => {
     it.each([{ tabHash: 'h1' }, { viewType: 'home', tabHash: null }, { viewType: 'project', pointer: PROJECT_ID }])(
-      'goes to the Flowpad home page from %j',
+      'asks for the home page from %j',
       async (current) => {
         dock.current = current;
         renderBar();
 
         expect(screen.queryByTestId('top-nav-tabs')).toBeNull();
         await userEvent.click(screen.getByTestId('top-nav-home'));
-        expect(goHome).toHaveBeenCalledWith();
+        expect(goHome).toHaveBeenCalledWith({ homePage: true });
       },
     );
   });

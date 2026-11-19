@@ -437,8 +437,7 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       expect(displayChildren(tabs, fixture.processId).some((t) => (t.pointer ?? '').includes(secondLeaf))).toBe(true);
       expect(tabs.filter((t) => (t.pointer ?? '').includes('workspaceActive|'))).toHaveLength(0);
 
-      // VW-23: agent shows REPLACE, so Back returns to the first show (the one that
-      // pushed), not through every show the agent made.
+      // VW-23: Back returns to the first show and Forward to the second (Back-safe).
       await page.goBack();
       await expect(page).toHaveURL(firstUrl);
       await page.goForward();

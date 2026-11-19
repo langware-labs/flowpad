@@ -221,12 +221,12 @@ def _vault_whys(project: Optional["Project"]):
     return why
 
 
-def _grant_key(provider: str, scopes) -> tuple[str, tuple[str, ...]]:
-    return str(provider or "").lower(), tuple(scopes or ())
+def _grant_key(provider: str, scopes, group: str = "") -> tuple[str, tuple[str, ...], str]:
+    return str(provider or "").lower(), tuple(scopes or ()), str(group or "")
 
 
-async def oauth_states(specs: list["Credential"]) -> dict[tuple[str, tuple[str, ...]], tuple[str, list[str]]]:
-    """``{(provider, scopes): (state, missing scopes)}`` for every grant ``specs`` ask for — an oauth credential's,
+async def oauth_states(specs: list["Credential"]) -> dict[tuple[str, tuple[str, ...], str], tuple[str, list[str]]]:
+    """``{(provider, scopes, group): (state, missing scopes)}`` for every grant ``specs`` ask for — an oauth credential's,
     and an ``oauth`` way of an env credential's ONE_OF group — read from the ONE truth about grants (the
     connection list, ``core/connections/specs``), and the SDK's own scope check for what a held grant covers,
     checked on the grant already in hand. Never a store read: a grant is no variable."""
@@ -236,7 +236,7 @@ async def oauth_states(specs: list["Credential"]) -> dict[tuple[str, tuple[str, 
 
     wanted = list(dict.fromkeys(
         [_grant_key(spec.provider, spec.scopes) for spec in specs if spec.is_oauth]
-        + [_grant_key(var.provider, var.scopes) for spec in specs if not spec.is_oauth
+        + [_grant_key(var.provider, var.scopes, var.group) for spec in specs if not spec.is_oauth
            for var in (spec.vars or {}).values() if var.is_oauth]
     ))
     if not wanted:
@@ -245,9 +245,12 @@ async def oauth_states(specs: list["Credential"]) -> dict[tuple[str, tuple[str, 
         grants = await _list_connection_specs_local()
     except Exception:  # noqa: BLE001 — no answer about grants reads as not connected, never an error page
         grants = []
-    out: dict[tuple[str, tuple[str, ...]], tuple[str, list[str]]] = {}
+    out: dict[tuple[str, tuple[str, ...], str], tuple[str, list[str]]] = {}
     for key in wanted:
-        provider, scopes = key
+        provider, scopes, group = key
+        if group:
+            out[key] = await _group_state(provider, list(scopes), group)
+            continue
         grant = match_provider(grants, provider)
         if grant is None or grant.state is ConnectionState.DISCONNECTED:
             out[key] = ("missing", [])
@@ -260,6 +263,20 @@ async def oauth_states(specs: list["Credential"]) -> dict[tuple[str, tuple[str, 
             except MissingScopes as e:
                 out[key] = ("partial", list(e.missing))
     return out
+
+
+async def _group_state(provider: str, scopes: list[str], group: str) -> tuple[str, list[str]]:
+    """A scope group's grant (Gmail beside Drive) has its own token: held, and what it lacks of ``scopes``."""
+    from flow_sdk.core.oauth.provider_registry import group_credentials, missing_granted, token_for  # noqa: PLC0415
+
+    try:
+        name = await group_credentials(provider, group)
+        if not name or not await token_for(provider, name=name):
+            return "missing", []
+        missing = await missing_granted(provider, scopes, name=name)
+    except Exception:  # noqa: BLE001 — no answer about a grant reads as not connected, never an error page
+        return "missing", []
+    return ("partial", missing) if missing else ("connected", [])
 
 
 def _requirement(var, must_here: bool) -> CredentialRequirement:
@@ -346,10 +363,10 @@ async def credentials_status(
                 continue
             if var.is_oauth:
                 # A way that is a sign-in through Flowpad: held when the provider's grant covers its scopes.
-                held = grants.get(_grant_key(var.provider, var.scopes), ("missing", []))[0] == "connected"
+                held = grants.get(_grant_key(var.provider, var.scopes, var.group), ("missing", []))[0] == "connected"
                 var_rows.append(CredentialVarStatusSpec(
                     **shown, secret=False, store="connection", present=held, warning=None if held else "missing",
-                    provider=var.provider, scopes=list(var.scopes),
+                    provider=var.provider, scopes=list(var.scopes), group=var.group,
                 ))
                 continue
             ref = refs[(str(spec.id), env_var)]

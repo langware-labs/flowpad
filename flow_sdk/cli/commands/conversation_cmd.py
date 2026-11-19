@@ -7,7 +7,7 @@ hits — no business logic lives here (mirrors ``flow record``). Commands:
     flow conversation summary <id>               — one line per message
     flow conversation show <id> [--last N] [--thread T] — full messages, oldest-first
     flow conversation message <msg-id>           — one message in full
-    flow conversation send <id> <message>        — add a text message
+    flow conversation send <id> <message>        — add a message (--file / --prompt / --form)
     flow conversation live-session <id>          — start (or show) the live session on the other's machine
     flow conversation new <who> <message>        — start one with an email / contact (`flow contacts find`)
     flow conversation attach <id> <target> <msg> — add a message + attachment
@@ -87,18 +87,38 @@ def _post_json(
     *,
     timeout: int = 30,
     not_found_hint: Optional[str] = None,
+    files: Optional[list] = None,
 ) -> dict:
-    """POST JSON to a graph endpoint and return its ``data`` envelope.
+    """POST JSON to a graph endpoint and return its ``data`` envelope. With ``files`` the
+    same payload goes multipart instead, a list or dict field (a form attachment) as its JSON text.
 
     Transport / parse / non-SUCCESS responses route through ``_fail`` (which
     exits). A 404 maps to ``EXIT_NOT_FOUND`` with ``not_found_hint`` when given.
     """
+    if files:
+        data = {k: json.dumps(v) if isinstance(v, (list, dict)) else str(v) for k, v in (payload or {}).items()}
+        request = {"data": data, "files": files, "timeout": max(timeout, 60)}
+    else:
+        request = {"json": payload or {}, "timeout": timeout}
     try:
-        resp = _local_post(url, json=payload or {}, timeout=timeout)
+        resp = _local_post(url, **request)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         raise  # unreachable
     return _envelope(resp, not_found_hint=not_found_hint)
+
+
+def _read_files(paths: list[str]) -> list[tuple[str, tuple[str, bytes]]]:
+    """``paths`` as multipart ``files`` parts; a missing or unreadable file stops before anything is sent."""
+    parts = []
+    for raw in paths:
+        path = os.path.expanduser(raw)
+        try:
+            with open(path, "rb") as fh:
+                parts.append(("files", (os.path.basename(path), fh.read())))
+        except OSError as e:
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Cannot read file {raw}: {e.strerror or e}")
+    return parts
 
 
 def _envelope(resp: "requests.Response", *, not_found_hint: Optional[str] = None) -> dict:
@@ -209,8 +229,10 @@ def summary_conversation(
     _ok({"conversation_id": cid, "summary": data.get("summary") or ""})
 
 
-def _form_attachment_line(a: dict) -> Optional[str]:
-    """A form or its answers, as an agent reads them — ``None`` for any other attachment."""
+def _form_attachment_line(a: dict, previous: Optional[dict] = None) -> Optional[str]:
+    """A form or its answers, as an agent reads them — ``None`` for any other attachment.
+    ``previous`` maps a form id to its earlier answers in this conversation (oldest first), so an
+    answer's changed fields are derived here, not read from the message."""
     from flow_sdk.schema.data_spec.message_form_spec import (  # noqa: PLC0415
         answers_in,
         answers_line,
@@ -228,11 +250,17 @@ def _form_attachment_line(a: dict) -> Optional[str]:
         return f"  📋 form {form.form_id}: {form_summary(form)} — {asks}"
     answers = answers_in(raw)
     if answers is not None:
-        return f"  ✅ answers to form {answers.form_id}: {answers_line(None, answers)}"
+        changed = None
+        if previous is not None:
+            before = previous.get(answers.form_id)
+            keys = [*answers.values, *(k for k in before or {} if k not in answers.values)]
+            changed = [k for k in keys if before is not None and before.get(k) != answers.values.get(k)]
+            previous[answers.form_id] = answers.values
+        return f"  ✅ answers to form {answers.form_id}: {answers_line(None, answers, changed)}"
     return None
 
 
-def _render_message(m: dict) -> str:
+def _render_message(m: dict, previous: Optional[dict] = None) -> str:
     """One message as an agent reads it: a header line, the full text, then
     one line per attachment saying where its bytes are — or that they are not
     on this machine yet."""
@@ -249,7 +277,7 @@ def _render_message(m: dict) -> str:
     lines.append(text if text else "(no text)")
     for a in m.get("attachments") or []:
         where = a.get("local_path") or ("(not on this machine — body not downloaded)" if not a.get("available") else "")
-        form_line = _form_attachment_line(a)
+        form_line = _form_attachment_line(a, previous)
         if form_line:
             lines.append(form_line)
             continue
@@ -277,7 +305,8 @@ def _render_transcript(data: dict) -> str:
         )
     scope = "in this thread" if data.get("thread_id") else "oldest first"
     lines += [f"Messages: showing {shown} of {total}, {scope}", ""]
-    lines.extend(_render_message(m) + "\n" for m in data.get("messages") or [])
+    previous: dict = {}
+    lines.extend(_render_message(m, previous) + "\n" for m in data.get("messages") or [])
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -432,7 +461,10 @@ def _form_attachment(arg: str) -> dict:
 
 @conversation_app.command(
     "send",
-    help="Add a text message to a conversation.",
+    help=(
+        "Add a message to a conversation: text, and optionally files (--file, repeatable), "
+        "a runnable prompt (--prompt), or a form (--form)."
+    ),
 )
 def send_message(
     conversation_id: Annotated[str, typer.Argument(help=_CONV_ID_HELP)],
@@ -462,6 +494,10 @@ def send_message(
         ),
     ] = None,
     form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
+    file: Annotated[
+        Optional[list[str]],
+        typer.Option("--file", help="A file to attach and upload; repeat for several (e.g. a git bundle, a report)."),
+    ] = None,
     on_reply: Annotated[Optional[str], typer.Option("--on-reply", help=_ON_REPLY_HELP)] = None,
     wait: Annotated[
         Optional[str], typer.Option("--wait", help="How long to wait for the reply: 30m, 2h, 3d (default 3d).")
@@ -488,6 +524,7 @@ def send_message(
         _add_message_url(port, cid),
         body,
         not_found_hint=f"Conversation not found: {cid}",
+        files=_read_files(file or []),
     )
     _emit_send_result(cid, data)
 
@@ -809,34 +846,12 @@ def attach_message(
         return
 
     # File path — validate on disk, then multipart-upload under the "files" field.
-    path = os.path.expanduser(tgt)
-    if not os.path.isfile(path):
-        _fail(
-            EXIT_INVALID_ARG,
-            "INVALID_ARG",
-            f"Not a TypeId and not an existing file: {tgt}",
-        )
-    filename = os.path.basename(path)
-    try:
-        with open(path, "rb") as fh:
-            content = fh.read()
-    except OSError as e:
-        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Cannot read file {tgt}: {e}")
-        return
+    if not os.path.isfile(os.path.expanduser(tgt)):
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Not a TypeId and not an existing file: {tgt}")
     form_fields = {"text": message, **_origin_session()}
     if session:
         form_fields["remote_worker_session_id"] = session.strip()
-    try:
-        resp = _local_post(
-            url,
-            data=form_fields,
-            files={"files": (filename, content)},
-            timeout=60,
-        )
-    except requests.exceptions.RequestException as e:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
-        return
-    data = _envelope(resp, not_found_hint=f"Conversation not found: {cid}")
+    data = _post_json(url, form_fields, files=_read_files([tgt]), not_found_hint=f"Conversation not found: {cid}")
     _emit_send_result(cid, data)
 
 

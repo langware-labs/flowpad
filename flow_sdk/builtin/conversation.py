@@ -317,8 +317,10 @@ class Conversation(ProjectedFields, Entity):
     plan_sessions_indexed_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     # Local recency (``project_pointers_to_entity``, from the messages' own clocks): the hub
     # re-stamps its ``updated_date`` on bare touches, so it is never adopted as this — the hub
-    # clock is ``hub_updated_date``.
+    # clock is ``hub_updated_date``. Derived: renaming the conversation or attaching a session to it is
+    # not a message, so an ordinary update keeps it (``updated_date_is_derived``).
     updated_date: Optional[datetime] = APIField(None, sharing=Sharing.PRIVATE)
+    updated_date_is_derived: ClassVar[bool] = True
     # The staffers who picked a helpdesk ticket up (user ids); the hub computes it.
     picked_up_by: List[str] = APIField(default_factory=list, sharing=Sharing.HUB_READ)
     # Whether anyone picked it up -- all a requester learns: their ``picked_up_by`` stays empty.
@@ -329,8 +331,10 @@ class Conversation(ProjectedFields, Entity):
         project its shared entity lives in (the hub carries no local ``project_id``)."""
         if not created:
             return False
-        if hub_row.get("updated_date") is not None:
-            self.updated_date = self._as_datetime(hub_row["updated_date"])
+        # The hub's newest-message time, as is; its ``updated_date`` (any write) only on a hub without it.
+        born_at = hub_row.get("latest_message_at") or hub_row.get("updated_date")
+        if born_at is not None:
+            self.updated_date = self._as_datetime(born_at)
         project_id = await Conversation.resolve_project_id(self.shared_context_entities)
         if project_id:
             self.project_id = project_id
@@ -474,6 +478,13 @@ class Conversation(ProjectedFields, Entity):
         out.sort(key=_event_key)
         return out
 
+    @classmethod
+    def recency(cls, messages: list) -> Optional[datetime]:
+        """When the newest of ``messages`` was sent (``occurred_at``) — the conversation's ``updated_date``,
+        the hub's ``latest_message_at`` — or None. Never a message's ``updated_date``: a read receipt
+        re-saves the message on the hub, and nobody sent anything."""
+        return max(filter(None, (cls._as_datetime(m.occurred_at) for m in messages)), default=None)
+
     @staticmethod
     def count_listed_files(messages: list) -> int:
         """How many files these messages list (``Attachment.is_listed_file``) — ``attachment_count``."""
@@ -490,13 +501,13 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
         from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
-        match: dict = {"conversation_id": str(self.id)}
+        match: dict = {}
         if thread is not None:
             resolved = thread if isinstance(thread, MessageThread) else await self.resolve_thread(thread)
             if resolved is None:
                 return []
             match["thread_id"] = resolved.id
-        rows = await FlowMessage.get_all({"match": match})
+        rows = await FlowMessage.sent_in(self.id, **match)
         # Event time first (a backfill lands in message time), then arrival.
         return sorted(rows, key=lambda m: str(m.sent_at or m.created_date or ""))
 
@@ -1062,7 +1073,7 @@ class Conversation(ProjectedFields, Entity):
         except Exception:  # noqa: BLE001
             pass
         try:
-            for fm in await FlowMessage.get_all({"conversation_id": self.id}):
+            for fm in await FlowMessage.sent_in(self.id):  # a draft has no edge until it is sent
                 if fm.id:
                     candidate_ids.add(fm.id)
         except Exception:  # noqa: BLE001

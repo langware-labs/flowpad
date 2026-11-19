@@ -54,6 +54,14 @@ class DisplayTargetNotFound(LookupError):
     """A well-formed typeid that resolves to no entity."""
 
 
+def runs_a_page(target: dict) -> bool:
+    """Whether showing *target* runs a page's script — an app, or an HTML file. Such a target is opened with a
+    state key (`navigate.with_state_key`); anything else (a doc, an entity, a screen) is not."""
+    path = str(target.get("path") or "").lower()
+    kind = target.get("kind")
+    return kind == DisplayTargetKind.APP or (kind == DisplayTargetKind.VFS and path.endswith((".html", ".htm")))
+
+
 async def resolve_display_target(
     typeid: str | None = None,
     path: str | None = None,
@@ -143,7 +151,10 @@ async def resolve_display_target(
             if rec is not None and getattr(rec, "id", None):
                 name = getattr(rec, "name", None) or getattr(rec, "title", None) or None
                 return {**entity_target(str(rec.type), str(rec.id), name=name), "path": resolved}
-        return {"kind": DisplayTargetKind.VFS, "path": resolved}
+        target = {"kind": DisplayTargetKind.VFS, "path": resolved}
+        if os.path.isdir(resolved):
+            target["is_dir"] = True  # else it opens as an empty file with its PARENT listed
+        return target
 
     if artifact_id:
         return await _app_payload(str(artifact_id))

@@ -1,0 +1,29 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique id; edges name it in from / to."
+    },
+    "kind": {
+      "shape": "enum:start|question|outcome|step",
+      "description": "start (where the flow begins), question (a decision, drawn as a numbered diamond), outcome (where it ends), step (something done on the way)."
+    },
+    "label": {
+      "shape": "string",
+      "description": "The text in the node: one short question or outcome. No ids, file names or endpoints."
+    },
+    "state": {
+      "shape": "?string",
+      "description": "A question's answer source \u2014 the stored fact that decides it (a file, a setting, a field, an id). Shown in the State panel under the question's number."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "A detail a reader needs but the flow does not turn on. Shown on hover and in the Notes panel."
+    },
+    "ref": {
+      "shape": "?string",
+      "description": "Another chart (by name, any format): drawn as Open \u2197 on the node."
+    }
+  }
+}

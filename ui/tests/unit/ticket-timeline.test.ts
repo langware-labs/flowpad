@@ -44,4 +44,14 @@ describe('ticketTimeline — a ticket and its team conversation on one timeline'
     expect(t.rowOf.size).toBe(1);
     expect(t.teamRuns).toEqual([]);
   });
+
+  it('places nothing until both sides have answered, then both at once', () => {
+    const ticket = { items: [at('ask', 10), at('answer', 40)], hasOlder: false, loaded: true };
+    const early = ticketTimeline(ticket, { items: [], hasOlder: false, loaded: false });
+    expect(early.ready).toBe(false);
+    expect(early.rowOf.size).toBe(0);
+    const both = ticketTimeline(ticket, { items: [at('note', 20)], hasOlder: false, loaded: true });
+    expect(both.ready).toBe(true);
+    expect(both.rowOf.get(timelineKey('customer', 'answer'))).toBe(3);
+  });
 });

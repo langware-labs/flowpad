@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.schema.data_spec.sentry_info_spec import SentryInfo
 
 
 class AppPaths(BaseModel):
@@ -199,6 +200,10 @@ class BootstrapInfo(BaseModel):
     # the frontend privacy manager so the footer control + guards paint without
     # a second round-trip; live changes arrive over WS.
     privacy_mode: str = "connected"
+    # Browser error reporting (flow_sdk/schema/data_spec/sentry_info_spec.py). Set per request in
+    # ``_with_runtime``: the value the hub pushed on a sandbox, ``null`` everywhere else -- a desktop
+    # never reports. Live changes arrive as the ``sentry_info.changed`` tag.
+    sentry_info: Optional[SentryInfo] = None
     # One-time, UI-facing notice surfaced as a toast on startup (e.g. the
     # secrets file was reset after the keychain key was lost). None normally.
     notice: Optional[Dict[str, Any]] = None

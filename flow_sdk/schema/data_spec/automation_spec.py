@@ -91,6 +91,8 @@ class EventWhen(DataSpec):
     title: str = ""
     description: str = ""
     target: Optional[str] = None
+    #: A message rule's tags: it runs when a message is given any of them (or a tag under one).
+    message_tags: list[str] = []
 
 
 class FileWhen(DataSpec):
@@ -125,7 +127,7 @@ class WhenPart(DataSpec):
 
 #: What a step does, in plain words.
 ThenKind = Literal["run_agent", "run_process", "run_script", "open_wizard", "builtin_step", "notify", "workflow",
-                   "nothing"]
+                   "mark_read", "nothing"]
 
 
 class ThenPart(DataSpec):
@@ -256,6 +258,8 @@ class AutomationSummary(DataSpec):
     read_only: bool = False
     #: A person may turn it on or off here -- read-only rules too, when Flowpad ships them off.
     switchable: bool = True
+    #: The message classifier: the automation that gives each arriving message its tag.
+    classifier: bool = False
     #: The rule is a file asset; edits write its trigger.json.
     asset_ref: Optional[str] = None
     place: AutomationPlace = LOCAL_PLACE

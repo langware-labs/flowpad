@@ -45,7 +45,18 @@ async def _source(source_id: str):
 async def _group_of(source) -> str:
     from flow_sdk.builtin.readiness import auth_of  # noqa: PLC0415
 
-    return str(getattr(await auth_of(source), "group", "") or "")
+    auth = await auth_of(source)
+    if group := str(getattr(auth, "group", "") or ""):
+        return group
+    # A driver reading through a credential (Gmail): the group its sign-in way names.
+    if name := str(getattr(auth, "credential", "") or ""):
+        from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+        from flow_sdk.ingest.credentials import owner_project  # noqa: PLC0415
+
+        for spec, _ in await credentials_in_scope(await owner_project(source)):
+            if spec.name == name:
+                return next((v.group for v in (spec.vars or {}).values() if v.is_oauth and v.group), "")
+    return ""
 
 
 async def _scopes_of(provider: str, source) -> list[str]:

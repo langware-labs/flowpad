@@ -161,9 +161,9 @@ ordinary `date` schedule made through `POST /graph/trigger` with one `prompt_pro
 (`ActionType.PROMPT_PROCESS`: `target_type_id` is the session, `prompt` what it is asked). Row-only — a
 session id is one machine's, so no `trigger.json` can say it.
 
-- **Linked both ways.** `Trigger.link_process` cross-links the rule and the session with the generic
-  `cross_link_entities`; the session's toolbar shows the rule as a chip, and `pending_callbacks(process)`
-  reads the waiting ones back through that link. The screen says it as "run process <name> with prompt"
+- **Linked both ways, in shared context.** `Trigger.link_process` puts the rule and the session in each
+  other's shared context; the session's toolbar shows the rule as a chip, the rule's page shows the session
+  as "Created through", and `pending_callbacks(process)` reads the waiting ones back through that link. The screen says it as "run process <name> with prompt"
   (`ThenPart` kind `run_process`): the name is the session's chip, "prompt" opens the text. At most `MAX_PENDING_CALLBACKS` wait per session.
 - **The fire** (`PromptProcessActionHandler` → `AgenticProcess.deliver_when_idle`): the session's closed
   tab comes back (unselected), the prompt goes on its prompt queue — injected at the next idle edge —
@@ -174,7 +174,7 @@ session id is one machine's, so no `trigger.json` can say it.
   10m — it repeats by itself; do not schedule it again". A repeat without an end is refused.
 - **Runs, end and status — every kind** (`automations/lifecycle.py`). `max_runs` (`fire_once` = 1, a `date`
   one-shot = 1) and `expires_at` bound a rule's life; `lifecycle.end(rule, reason)` is the one way it ends
-  (`ended_at`, `ended_reason` max\_runs | expired | cancelled): disarmed, unlinked from the session's chip,
+  (`ended_at`, `ended_reason` max\_runs | expired | cancelled): disarmed, taken off the session's chip (the rule keeps its session — `Trigger.leave_process`),
   `trigger.ended` emitted, a reply wait's "cancelled" message posted. `enabled` stays the person's switch.
   `status` (active · off · done · expired · cancelled), `max_runs`, `runs_left`, `until` ride on every
   `AutomationSummary`; `POST trigger/<id>/cancel` (`flow process unschedule`) ends one now.

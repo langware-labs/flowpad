@@ -971,11 +971,15 @@ class AgenticProcess(Entity):
         """Only the naming transaction may change an initialized naming state, and
         only the client's own ``update`` may change ``last_mode`` — a server save
         holds an instance loaded before the user switched modes (``switch-mode`` →
-        ``exit()`` wrote the old mode back)."""
+        ``exit()`` wrote the old mode back). ``last_active_at`` is written only by
+        ``activate`` (``stamp_last_active_at``): a turn's own save holds the process
+        loaded before the chat was opened, and wiped the stamp, so ``lastChat`` never
+        found the chat and every open started a new one."""
         naming = ("name", "naming_state", "auto_rename") if current_data.get("naming_state") is not None else ()
+        stamped = ("last_active_at",) if current_data.get("last_active_at") is not None else ()
         info = get_current_request_info()
         client_update = info is not None and info.action == "update"
-        return naming if client_update else (*naming, "last_mode")
+        return (*naming, *stamped) if client_update else (*naming, *stamped, "last_mode")
 
     auto_rename: bool = APIField(
         default=True,
@@ -4079,7 +4083,9 @@ class AgenticProcess(Entity):
             return turn_task is not None and turn_task.done() and not prompt_worker_active(self.id)
 
         def _unfinished_turn() -> RuntimeError:
-            return RuntimeError(getattr(self, "start_failure", None) or "the worker exited without finishing its turn")
+            # The worker's own error line (a refusal, a 429) is the reason every caller needs.
+            said = getattr(self, "start_failure", None) or self._worker_status_detail(_WS.ERROR)
+            return RuntimeError(getattr(said, "text", said) or "the worker exited without finishing its turn")
 
         transcript_path: Path | None = None
         while transcript_path is None:
@@ -7052,8 +7058,10 @@ class AgenticProcess(Entity):
     @classmethod
     async def delete_by_id(cls, eid: str):
         """The HTTP delete route comes here and bypasses the instance ``delete()``."""
+        from flow_sdk.builtin.trigger import callback_ids  # noqa: PLC0415
+
         row = await cls.get_by_id(eid)
-        if row is not None and any(t.type == BuiltinEntityType.TRIGGER.value for t in row.private_context_entities_):
+        if row is not None and callback_ids(row):
             await row._drop_callbacks()
         return await super().delete_by_id(eid)
 

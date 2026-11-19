@@ -157,6 +157,10 @@ msgstr "…"
 msgid "…or a repository URL"
 msgstr "…أو عنوان URL لمستودع"
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "./open-ticket.sh"
+msgstr ""
+
 #: src/components/credentials/EnvLocalBlockedNotice.tsx
 msgid ".env.local is not ignored by git here, so a value written there would be committable. Add it to .gitignore first, or keep this credential in the encrypted vault."
 msgstr "ملف .env.local غير مستثنى من Git في هذا المستودع، لذا يمكن إيداع أي قيمة تُكتب فيه. يلزم إضافته إلى .gitignore أولاً، أو الاحتفاظ ببيانات الاعتماد هذه في الخزنة المشفّرة."
@@ -311,7 +315,7 @@ msgid "(overridden)"
 msgstr "(مُتجاوَز)"
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
-#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
+#: src/components/conversation/PromptToRunDialog.tsx
 msgid "(prompt content unavailable)"
 msgstr "(محتوى الطلب غير متاح)"
 
@@ -1033,6 +1037,8 @@ msgstr "{0} سر{1}"
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/StreamInboxTags.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "{0} selected"
@@ -1171,6 +1177,12 @@ msgstr "{0}: {1} مشاركين، {2} رسائل"
 msgid "{0}: {partCount} parts, {1} links"
 msgstr "{0}: {partCount} مكوّنات، {1} روابط"
 
+#. placeholder {0}: value.title || t`Flowchart`
+#. placeholder {1}: value.nodes.length
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "{0}: {questions} questions, {1} steps"
+msgstr ""
+
 #. placeholder {0}: m[1]
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "{0}: agent, again"
@@ -1205,6 +1217,10 @@ msgstr ""
 
 #: src/components/conversation/FormAnswersCard.tsx
 msgid "{answererName}'s answers — updated"
+msgstr ""
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "{applied} applied · no automation started"
 msgstr ""
 
 #: src/components/conversation/conversation-category.ts
@@ -1311,6 +1327,15 @@ msgstr "فشل الاتصال بـ {displayName}"
 #: src/components/rag/RagView.tsx
 msgid "{documentCount} docs · {chunkCount} chunks"
 msgstr "{documentCount} مستندات · {chunkCount} مقاطع"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "{done} classified · {wouldChange} would change · {failed} failed"
+msgstr ""
+
+#. placeholder {0}: ids.length
+#: src/components/tags/ClassifyTable.tsx
+msgid "{done} of {0} classified"
+msgstr ""
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "{done} of {total} set up"
@@ -1580,6 +1605,10 @@ msgstr "تم تخطي {n}: غير متاحة."
 msgid "{name} avatar"
 msgstr "الصورة الرمزية لـ {name}"
 
+#: src/components/tags/MessageTags.tsx
+msgid "{name} failed"
+msgstr ""
+
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "{name} has no account to sign into — it runs on an LLM key or endpoint."
 msgstr "لا يملك {name} حسابًا لتسجيل الدخول إليه، فهو يعمل بمفتاح LLM أو بنقطة نهاية."
@@ -1727,6 +1756,11 @@ msgstr "اتصال {provider}"
 #: src/components/connections-manager.tsx
 msgid "{provider} is used by {0} project(s): {list}. Deleting removes access for all of them, and you'll have to sign in again."
 msgstr "{provider} مستخدم في {0} مشروع(ات): {list}. سيؤدي حذفه إلى إلغاء الوصول عنها جميعًا، وستحتاجون إلى تسجيل الدخول من جديد."
+
+#. placeholder {0}: value.nodes.length
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "{questions} questions · {0} steps"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "{registeredCount, plural, one {# watcher active.} other {# watchers active.}}"
@@ -2010,6 +2044,7 @@ msgid "/run reclaimable "
 msgstr "‏/run قابل للاسترجاع "
 
 #: src/components/assets/editor/chart/C4ChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "#"
 msgstr "#"
@@ -2463,6 +2498,10 @@ msgstr "يستخدم أي استدعاء هنا"
 msgid "A capped sub-budget of yours, for an agent or app."
 msgstr ""
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "a command in the project folder"
+msgstr ""
+
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "a credential"
 msgstr ""
@@ -2470,6 +2509,10 @@ msgstr ""
 #: src/components/automations/AutomationPage.tsx
 msgid "A cron expression has five parts."
 msgstr "تتكوّن صيغة cron من خمسة أجزاء."
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "a decision flow: short questions and outcomes, with state and notes beside it"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "A deploy uploads this project to Flowpad cloud."
@@ -2494,6 +2537,10 @@ msgstr "مثيل سطح مكتب أو جهاز، ومعرّف قناة عليه"
 #: src/components/automations/KindGallery.tsx
 msgid "A document is saved, a folder gets a new file."
 msgstr "يُحفظ مستند، ويُضاف ملف جديد إلى مجلد."
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "A dry run: nothing is tagged until you apply, and no automation starts."
+msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "A few words about what went wrong help us look in the right place."
@@ -2543,6 +2590,14 @@ msgstr "يوجد لدى Harness جلسات هنا، أو تم فتح المشر�
 msgid "a key the hub holds (the chain could not be read from here)"
 msgstr "مفتاح يحتفظ به الـ Hub (تعذّرت قراءة السلسلة من هنا)"
 
+#: src/components/page-allow/LinkAllowDialog.tsx
+msgid "A link opened outside Flowpad wants to download a project or task onto this computer. Allow it only if you expected this."
+msgstr ""
+
+#: src/components/page-allow/LinkAllowDialog.tsx
+msgid "A link opened outside Flowpad wants to start an agent on a project on this computer. Allow it only if you expected this."
+msgstr ""
+
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A machine"
 msgstr "جهاز"
@@ -2552,6 +2607,14 @@ msgstr "جهاز"
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "A member"
+msgstr ""
+
+#: src/components/automations/automation-words.ts
+msgid "a message arrives"
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "a message is tagged"
 msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
@@ -2683,6 +2746,10 @@ msgstr "منذ مدة"
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "a wizard name"
 msgstr "اسم معالج"
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "a worker runs it"
+msgstr ""
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "A workspace is a folder of related projects. It starts empty."
@@ -2863,6 +2930,7 @@ msgstr "نشط"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/locale/LocalePicker.tsx
@@ -2921,6 +2989,7 @@ msgstr "النشاط"
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/VibeAgentsCard.tsx
+#: src/components/tags/StreamInboxTags.tsx
 #: src/hooks/use-add-dependency.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Add"
@@ -2963,6 +3032,10 @@ msgstr "إضافة مستودع Git يعتمد عليه هذا المشروع."
 msgid "Add a machine"
 msgstr "إضافة جهاز"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Add a message channel"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a message to send without it."
 msgstr "يلزم إضافة رسالة لإرساله بدونه."
@@ -2994,6 +3067,14 @@ msgstr "إضافة مصدر"
 
 #: src/components/helpdesk/HelpDeskPage.tsx
 msgid "Add a staff member by email"
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Add a step."
+msgstr ""
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Add a tag under {nodeName}"
 msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
@@ -3046,6 +3127,10 @@ msgstr "يجب إدخال عنوان بريد إلكتروني واحد على �
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Add at least one variable"
 msgstr "يلزم متغير واحد على الأقل"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Add automation"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Add Bookmark"
@@ -3258,6 +3343,7 @@ msgid "Add source"
 msgstr "إضافة مصدر"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Add step"
 msgstr "إضافة خطوة"
 
@@ -3850,9 +3936,15 @@ msgstr ""
 msgid "Allocation saved"
 msgstr "تم حفظ التخصيص"
 
+#: src/components/page-allow/LinkAllowDialog.tsx
+#: src/components/page-allow/PageAllowGate.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "السماح"
+
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "Allow “{title}” to run in Flowpad?"
+msgstr ""
 
 #. placeholder {0}: entries.join(', ')
 #: src/components/organization/budgets/EndpointControls.tsx
@@ -3890,6 +3982,10 @@ msgstr "السماح بتسجيل الدخول — الجهات المخوّلة
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Allow public deployments"
 msgstr "السماح بالنشر العام"
+
+#: src/components/page-allow/LinkAllowDialog.tsx
+msgid "Allow this link?"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Unix Sockets"
@@ -3997,6 +4093,10 @@ msgstr "حذف مجلد المشروع من جهازي أيضًا"
 msgid "Also deliver to…"
 msgstr "التسليم أيضاً إلى…"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Also noticed"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Also open sidecar OS Terminal"
 msgstr "افتحوا أيضًا نافذة طرفية مرافقة لنظام التشغيل"
@@ -4013,6 +4113,10 @@ msgstr "أيضاً إلى"
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Always"
 msgstr "دائمًا"
+
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "Always allow this page"
+msgstr ""
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Always on"
@@ -4173,6 +4277,10 @@ msgstr "نطاق وقت التثبيت"
 #: src/components/conversation/PromptRunSummaryDialog.tsx
 msgid "and {more} more"
 msgstr "و{more} أخرى"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "and only if"
+msgstr ""
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Annotate image"
@@ -4522,6 +4630,10 @@ msgstr ""
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "تمت إضافته إلى قائمة انتظار أوامر العامل الحالي، ووُسم بهذه الرسالة."
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "applied"
+msgstr ""
+
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Applied to each member's own default endpoint; a member's budget can only be narrower."
 msgstr "تُطبَّق على نقطة النهاية الافتراضية لكل عضو، ولا يمكن أن تكون ميزانية العضو إلا أضيق منها."
@@ -4534,8 +4646,14 @@ msgstr "ينطبق على"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
+#: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "Apply"
 msgstr "تطبيق"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Apply to message"
+msgstr ""
 
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Applying a known fix"
@@ -4565,8 +4683,8 @@ msgid "Approve now"
 msgstr "وافقوا الآن"
 
 #: src/components/conversation/PromptCallCard.tsx
-msgid "Approve once"
-msgstr "موافقة لمرة واحدة"
+#~ msgid "Approve once"
+#~ msgstr "موافقة لمرة واحدة"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Approve this live session only"
@@ -4744,11 +4862,12 @@ msgid "Ask Flowpad Assistant to change {displayName}"
 msgstr "اطلبوا من Flowpad Assistant تغيير {displayName}"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "ask for a refund or dispute a charge"
-msgstr "تطلب استرداد مبلغ أو تعترض على رسوم"
+#~ msgid "ask for a refund or dispute a charge"
+#~ msgstr "تطلب استرداد مبلغ أو تعترض على رسوم"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/helpdesk/HelpdeskAsk.tsx
@@ -5222,6 +5341,7 @@ msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/BusView.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/conversation/channel-attribution.tsx
@@ -5357,11 +5477,10 @@ msgid "Back to stream inbox"
 msgstr "العودة إلى صندوق التدفق الوارد"
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Back to tag"
-msgstr ""
+#~ msgid "Back to tag"
+#~ msgstr ""
 
 #: src/components/graph-view/TagGraphView.tsx
-#: src/components/tags/StreamInboxTags.tsx
 msgid "Back to tags"
 msgstr ""
 
@@ -6049,6 +6168,7 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/tags/StreamInboxTags.tsx
+#: src/components/tags/StreamInboxTags.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -6083,6 +6203,7 @@ msgstr "إلغاء"
 msgid "Cancel reply"
 msgstr "إلغاء الرد"
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "Cancel request"
 msgstr "إلغاء الطلب"
@@ -6091,6 +6212,10 @@ msgstr "إلغاء الطلب"
 #: src/components/footer/activity-words.ts
 msgid "cancelled"
 msgstr "أُلغي"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "Cancelled"
+msgstr ""
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Cancelled · ran {runs}"
@@ -6207,17 +6332,16 @@ msgid "Catalog unavailable. Enter a model ID explicitly."
 msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "Catch"
-msgstr "التقاط"
+#~ msgid "Catch"
+#~ msgstr "التقاط"
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Caught by"
 msgstr "اعتُرضت بواسطة"
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-#: src/components/conversation/IssueReplyLine.tsx
-msgid "Cause"
-msgstr ""
+#~ msgid "Cause"
+#~ msgstr ""
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "chain"
@@ -6311,6 +6435,7 @@ msgstr ""
 msgid "Change your answers"
 msgstr ""
 
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "changed"
 msgstr "معدّل"
@@ -6356,8 +6481,8 @@ msgid "Changes queued on this doc"
 msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Changes saved"
-msgstr ""
+#~ msgid "Changes saved"
+#~ msgstr ""
 
 #: src/components/asset-counters/channel-project-counters.tsx
 #: src/components/data-sources/MessageChannelsList.tsx
@@ -6780,8 +6905,35 @@ msgstr ""
 msgid "classification.json"
 msgstr "classification.json"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/MessageTags.tsx
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Classify"
+msgstr ""
+
+#. placeholder {0}: ids.length
+#: src/components/tags/ClassifyTable.tsx
+msgid "Classify {0} messages"
+msgstr ""
+
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Classify arriving messages"
+msgstr ""
+
+#: src/components/automations/automation-words.ts
+msgid "classify it"
+msgstr ""
+
+#: src/components/automations/automation-words.ts
+msgid "classify it under {root}"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Classify now"
+msgstr ""
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Classifying…"
 msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
@@ -6995,6 +7147,7 @@ msgstr "مسح فهرس البحث؟"
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Clear selection"
 msgstr "مسح التحديد"
@@ -7185,6 +7338,7 @@ msgstr "جارِ الاستنساخ…"
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/tabs/TabStrip.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/LaunchDialog.tsx
@@ -7299,8 +7453,8 @@ msgid "Close tab"
 msgstr "إغلاق علامة التبويب"
 
 #: src/components/tags/MessageTags.tsx
-msgid "Close tags"
-msgstr ""
+#~ msgid "Close tags"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Close terminal"
@@ -7816,7 +7970,7 @@ msgstr "تأكيد"
 msgid "Confirm deletion"
 msgstr "تأكيد الحذف"
 
-#: src/components/automations/MessageRulePage.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "confirm which charge is in question, explain the refund path, and draft the reply. Don’t send it."
 msgstr "تحقّق من الرسوم محل النزاع، واشرح مسار الاسترداد، وأعدّ مسودة الرد. لا ترسله."
 
@@ -8044,6 +8198,7 @@ msgid "Content"
 msgstr "المحتوى"
 
 #: src/components/conversation/ConversationPanel.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/entity-actions/ContextMenuButton.tsx
@@ -8080,8 +8235,8 @@ msgid "Context list actions"
 msgstr "إجراءات قائمة السياق"
 
 #: src/components/conversation/HelpRequestLine.tsx
-msgid "Context not shared"
-msgstr "السياق غير مشارَك"
+#~ msgid "Context not shared"
+#~ msgstr "السياق غير مشارَك"
 
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Context of {title}"
@@ -8144,6 +8299,7 @@ msgstr "التحكم في مستوى جهد الاستدلال"
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
 msgid "Conversation"
@@ -8403,6 +8559,7 @@ msgid "Copy name"
 msgstr "نسخ الاسم"
 
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 msgid "Copy path"
@@ -8539,12 +8696,20 @@ msgstr "تعذّر تفعيل المؤسسة"
 msgid "Could not add codes"
 msgstr "تعذّرت إضافة الرموز"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Could not add tag"
+msgstr ""
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Could not add the help desk."
 msgstr "تعذّرت إضافة مكتب المساعدة."
 
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "Could not allocate"
+msgstr ""
+
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "Could not allow this page."
 msgstr ""
 
 #: src/pages/flow-page/display-chrome.tsx
@@ -8556,6 +8721,11 @@ msgstr "تعذر تعليق العرض"
 msgid "Could not answer the prompt"
 msgstr "تعذّر الرد على الموجّه"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Could not apply"
+msgstr ""
+
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Could not ask for help"
 msgstr "تعذّر طلب المساعدة"
@@ -8594,6 +8764,7 @@ msgid "Could not change enabled state"
 msgstr "تعذّر تغيير حالة التفعيل"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Could not change it"
 msgstr "تعذّر التغيير"
@@ -8613,7 +8784,7 @@ msgid "Could not change role"
 msgstr "تعذّر تغيير الدور"
 
 #: src/components/tags/MessageTags.tsx
-#: src/components/tags/MessageTags.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Could not change tags"
 msgstr ""
 
@@ -8632,6 +8803,11 @@ msgstr "تعذّر تغيير مكان تشغيل المشروع"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not check sign-in"
 msgstr "تعذر التحقق من تسجيل الدخول"
+
+#: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Could not classify"
+msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Could not collect the context"
@@ -8865,8 +9041,8 @@ msgid "Could not grant access."
 msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Could not inspect tag usage"
-msgstr ""
+#~ msgid "Could not inspect tag usage"
+#~ msgstr ""
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Could not install the package"
@@ -8981,6 +9157,10 @@ msgstr "تعذّر تحميل هذه المهمة. يُرجى المحاولة �
 msgid "Could not load usage."
 msgstr "تعذّر تحميل بيانات الاستخدام."
 
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Could not load your email rules."
+msgstr ""
+
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Could not load your token plan."
 msgstr "تعذّر تحميل خطة الرموز."
@@ -8988,6 +9168,10 @@ msgstr "تعذّر تحميل خطة الرموز."
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Could not make the agent public"
 msgstr "تعذّر جعل الوكيل عامًا"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Could not mark it done"
+msgstr ""
 
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Could not move the project"
@@ -9010,6 +9194,7 @@ msgstr ""
 msgid "Could not open {0}"
 msgstr "تعذر فتح {0}"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Could not open in Finder"
 msgstr "تعذّر الفتح في Finder"
@@ -9060,6 +9245,11 @@ msgstr "تعذّر فتح التدفق الفرعي"
 msgid "Could not open the workspace folder"
 msgstr "تعذّر فتح مجلد مساحة العمل"
 
+#. placeholder {0}: error ?? path
+#: src/components/docx-viewer/DocxViewer.tsx
+msgid "Could not open this document: {0}"
+msgstr ""
+
 #: src/components/assets/editor/document-file/DocumentFileViewer.tsx
 msgid "Could not open this document: {error}"
 msgstr "تعذّر فتح هذا المستند: {error}"
@@ -9102,8 +9292,8 @@ msgid "Could not read {what}: {message}"
 msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Could not read classification settings"
-msgstr ""
+#~ msgid "Could not read classification settings"
+#~ msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
@@ -9239,8 +9429,8 @@ msgid "Could not replay {0}."
 msgstr "تعذر إعادة تشغيل {0}."
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-msgid "Could not report it"
-msgstr ""
+#~ msgid "Could not report it"
+#~ msgstr ""
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Could not request access"
@@ -9292,6 +9482,10 @@ msgstr "تعذّر تشغيل {0}"
 msgid "Could not run it"
 msgstr "تعذّر التشغيل"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Could not run it again"
+msgstr ""
+
 #: src/components/conversation/use-it-reply-actions.ts
 msgid "Could not run it there"
 msgstr "تعذّر تشغيله هناك"
@@ -9326,7 +9520,6 @@ msgstr "تعذّر الحفظ"
 msgid "Could not save allowed senders"
 msgstr "تعذّر حفظ المرسلين المسموح لهم"
 
-#: src/components/tags/StreamInboxTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Could not save classification settings"
 msgstr ""
@@ -9390,6 +9583,10 @@ msgstr "تعذّر حفظ المفتاح"
 #: src/components/agents/MailboxListsEditor.tsx
 msgid "Could not save the mailbox lists"
 msgstr "تعذّر حفظ قوائم صندوق البريد"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Could not save the message. Try again."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Could not save the override"
@@ -9462,7 +9659,7 @@ msgstr "تعذر إعداد Git"
 msgid "Could not set up vault {vault}"
 msgstr ""
 
-#: src/components/conversation/HelpRequestLine.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 msgid "Could not share"
 msgstr "تعذّرت المشاركة"
 
@@ -9538,6 +9735,10 @@ msgstr "تعذّر بدء تسجيل الدخول إلى {0}."
 
 #: src/notifications/diagnose/diagnose-and-fix.ts
 msgid "Could not start the diagnosis"
+msgstr ""
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Could not start the fix"
 msgstr ""
 
 #: src/components/warnings-popover/warnings-popover.tsx
@@ -9821,6 +10022,10 @@ msgstr "تعذّر تحديد أوامر التشغيل لهذا المجلد"
 msgid "Couldn’t resolve this process."
 msgstr "تعذر تحديد هذه العملية."
 
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Couldn't save. Try again."
+msgstr ""
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Couldn't set up the project"
 msgstr "تعذر إعداد المشروع"
@@ -10053,6 +10258,10 @@ msgstr "تم الإنشاء"
 msgid "Created"
 msgstr "تاريخ الإنشاء"
 
+#: src/components/automations/AutomationPage.tsx
+msgid "Created through"
+msgstr "أُنشئ عبر"
+
 #. placeholder {0}: formatDate(task.created_date)
 #: src/components/assistance-viewer/TaskDetail.tsx
 msgid "Created: {0}"
@@ -10144,6 +10353,7 @@ msgstr "روابط متبادلة"
 msgid "current"
 msgstr "الحالي"
 
+#: src/components/tags/StreamInboxTags.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Current"
@@ -10186,6 +10396,10 @@ msgstr "الصف الحالي المُحدَّد من المخزن المؤقت 
 msgid "Current resolved buffer row (may differ from stored line if terminal scrolled)"
 msgstr "صف المخزن المؤقت المحدد حاليًا (قد يختلف عن السطر المخزّن إذا تم تمرير الطرفية)"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Current tags"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Current Time"
 msgstr "الوقت الحالي"
@@ -10213,6 +10427,10 @@ msgstr "وكلاء مخصصة"
 #: src/components/settings-view/settings-utils.ts
 msgid "Custom API base URL for Anthropic"
 msgstr "عنوان URL الأساسي المخصص لـ Anthropic"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Custom colour"
+msgstr ""
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Custom credentials"
@@ -11179,7 +11397,6 @@ msgstr "وصف التطبيق المنطقي أو الخدمة أو المورد
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/project-home/EditDependencyDialog.tsx
-#: src/components/tags/StreamInboxTags.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "Description"
 msgstr "الوصف"
@@ -11234,7 +11451,7 @@ msgstr "التفاصيل"
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/conversation/ContactDialog.tsx
-#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
@@ -11313,9 +11530,13 @@ msgstr "تشخيص هذا التحذير"
 msgid "Diagnosed: {0}"
 msgstr "تم التشخيص: {0}"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Diagnosing"
+msgstr ""
+
 #: src/components/conversation/HelpRequestLine.tsx
-msgid "Diagnosing privately… you can leave, the answer lands here."
-msgstr "يجري التشخيص بشكل خاص… يمكنك المغادرة، وستصل الإجابة هنا."
+#~ msgid "Diagnosing privately… you can leave, the answer lands here."
+#~ msgstr "يجري التشخيص بشكل خاص… يمكنك المغادرة، وستصل الإجابة هنا."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Diagnosing…"
@@ -11686,6 +11907,11 @@ msgstr "هل يعمل هذا المصدر فعلًا؟"
 msgid "Domains accessible from sandbox"
 msgstr "النطاقات التي يمكن الوصول إليها من البيئة المعزولة"
 
+#: src/components/page-allow/LinkAllowDialog.tsx
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "Don’t allow"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 #: src/i18n/pref-labels.ts
 msgid "Don't ask"
@@ -11725,9 +11951,12 @@ msgstr "تم"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/conversation/ContactDialog.tsx
+#: src/components/conversation/DiagnosisCard.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/footer/BrowserChip.tsx
@@ -11736,6 +11965,7 @@ msgstr "تم"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
+#: src/components/tags/MessageTags.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
@@ -12091,6 +12321,10 @@ msgstr ""
 msgid "Each machine is shut down and removed. This cannot be undone."
 msgstr "سيتم إيقاف تشغيل كل جهاز وإزالته. لا يمكن التراجع عن هذا الإجراء."
 
+#: src/components/automations/ClassifierPage.tsx
+msgid "Each new incoming message gets one tag from your tag tree, or none when nothing fits. A tag can start automations."
+msgstr ""
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
 msgstr "يحصل كل شخص على ميزانية خاصة به تُسحب من هذا الفريق. يُترك المبلغ فارغًا لعدم تحديد حد. من هو في الفريق بالفعل يُحدَّث مبلغه بدلًا من إضافته مرتين."
@@ -12134,7 +12368,6 @@ msgstr "الحواف حسب النوع"
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
-#: src/components/tags/StreamInboxTags.tsx
 msgid "Edit"
 msgstr "تعديل"
 
@@ -12239,7 +12472,15 @@ msgid "Edit SubAgent Hook"
 msgstr "تعديل خطاف SubAgent"
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Edit tag"
+#~ msgid "Edit tag"
+#~ msgstr ""
+
+#: src/components/automations/ClassifierPage.tsx
+msgid "Edit tags"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "Edit tags…"
 msgstr ""
 
 #: src/components/automations/AutomationPage.tsx
@@ -12305,6 +12546,10 @@ msgstr "البريد › صندوق بريد Flowpad"
 msgid "Email {0}"
 msgstr "البريد {0}"
 
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Email notifications"
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Email or name"
 msgstr "البريد الإلكتروني أو الاسم"
@@ -12312,6 +12557,10 @@ msgstr "البريد الإلكتروني أو الاسم"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Email or name to invite"
 msgstr "البريد الإلكتروني أو الاسم للدعوة"
+
+#: src/i18n/pref-labels.ts
+msgid "Email rules"
+msgstr ""
 
 #: src/hooks/use-allocate-agent-mailbox.ts
 msgid "Email settings could not be saved."
@@ -12426,6 +12675,7 @@ msgid "Enable/Disable hook"
 msgstr "تفعيل/تعطيل الخطاف"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
@@ -12629,6 +12879,7 @@ msgid "Env:"
 msgstr "البيئة:"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Environment"
 msgstr "البيئة"
@@ -13142,6 +13393,10 @@ msgstr "مساعدة الخبراء"
 msgid "Expert details"
 msgstr "التفاصيل التقنية"
 
+#: src/components/automations/AutomationsList.tsx
+msgid "Expired"
+msgstr ""
+
 #. placeholder {0}: card.sender_name || t`the sender`
 #: src/components/conversation/SealedValuesPanel.tsx
 msgid "Expired — ask {0} to share again."
@@ -13227,6 +13482,7 @@ msgstr "جارٍ الاستخراج…"
 #: src/components/inbound/RouteCheck.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
+#: src/components/tags/MessageTags.tsx
 msgid "failed"
 msgstr "فشل"
 
@@ -13869,8 +14125,8 @@ msgid "Filter by entity type"
 msgstr "تصفية حسب نوع الكيان"
 
 #: src/components/automations/AutomationsList.tsx
-msgid "Filter by kind"
-msgstr "تصفية حسب النوع"
+#~ msgid "Filter by kind"
+#~ msgstr "تصفية حسب النوع"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Filter by label, pattern, or matched line…"
@@ -13887,6 +14143,10 @@ msgstr "تصفية حسب المرسل"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Filter by session"
 msgstr "تصفية حسب الجلسة"
+
+#: src/components/automations/AutomationsList.tsx
+msgid "Filter by status"
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Filter by subject"
@@ -14105,6 +14365,7 @@ msgid "Fit Atlas"
 msgstr "ملاءمة الأطلس"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Fix"
@@ -14132,6 +14393,10 @@ msgstr "أصلحوا الإعداد — بيانات الاعتماد أو ال�
 msgid "Fix…"
 msgstr "إصلاح…"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Fixed"
+msgstr ""
+
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
 msgstr "ثابت بعد الإنشاء، ويجب أن تكونوا قادرين على إدارتها — تستهلك نقطة النهاية هذه ميزانيتها."
@@ -14140,6 +14405,10 @@ msgstr "ثابت بعد الإنشاء، ويجب أن تكونوا قادرين
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Fixed: {0}"
 msgstr "تم الإصلاح: {0}"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Fixing"
+msgstr ""
 
 #: src/components/project-setup/SetupFailureActions.tsx
 msgid "Fixing the setup…"
@@ -14176,6 +14445,11 @@ msgstr "رسالة Flow"
 #: src/components/graph-workflows/GraphWorkflowsNavigator.tsx
 msgid "flow name…"
 msgstr "اسم الـ Flow…"
+
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Flowchart"
+msgstr ""
 
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/token-plan/FundingChain.tsx
@@ -14347,6 +14621,10 @@ msgstr "علامة تبويب Flowpad"
 #: src/components/version-popover/version-chip.tsx
 msgid "Flowpad version"
 msgstr "إصدار Flowpad"
+
+#: src/components/agent-layout/error-screen/error-screen.tsx
+msgid "Flowpad was updated"
+msgstr ""
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Flowpad will propose the install on <0>{INSTALL_REVIEW_BRANCH}</0>. Your default branch is not changed and no pull request is opened automatically."
@@ -14531,12 +14809,16 @@ msgstr "من"
 msgid "From"
 msgstr "من"
 
+#. placeholder {0}: from.split('.').at(-1)
 #. placeholder {0}: item.sourceProjectName
+#: src/components/tags/StreamInboxTags.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "from {0}"
 msgstr "من {0}"
 
+#. placeholder {0}: origin.label
 #. placeholder {0}: row.task.reporter ?? ''
+#: src/components/ask/AskOrigin.tsx
 #: src/components/help/AskForHelpButton.tsx
 msgid "From {0}"
 msgstr ""
@@ -14609,6 +14891,10 @@ msgstr ""
 #: src/components/settings-view/settings-utils.ts
 msgid "Full environment variable dictionary"
 msgstr "قاموس متغيرات البيئة الكامل"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Full name"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Full path to the plan .md file written by the agent"
@@ -14780,6 +15066,10 @@ msgstr "استقبلوا رسائل {label} هنا، وأجيبوا عنها م�
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Get your messages here"
 msgstr "استقبلوا رسائلكم هنا"
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "gets the message, can reply"
+msgstr ""
 
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
@@ -15163,6 +15453,11 @@ msgstr "قيد المعالجة"
 msgid "Handlings — webapp_handlings.json"
 msgstr ""
 
+#. placeholder {0}: reply.count
+#: src/components/conversation/IssueReplyLine.tsx
+msgid "Happened {0} times"
+msgstr ""
+
 #: src/components/items/IssueView.tsx
 msgid "Happened again"
 msgstr "تكرر الحدوث"
@@ -15291,8 +15586,12 @@ msgid "Help desks or skills repos to load alongside it."
 msgstr "مستودعات المساعدة أو المهارات المراد تحميلها معه."
 
 #: src/components/conversation/HelpRequestLine.tsx
-msgid "Help request"
-msgstr "طلب مساعدة"
+#~ msgid "Help request"
+#~ msgstr "طلب مساعدة"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Help requested"
+msgstr ""
 
 #: src/components/credentials/VariableDetails.tsx
 msgid "Help URL"
@@ -15638,6 +15937,10 @@ msgstr "كيف يُحكم بأنه اكتمل"
 msgid "How it runs"
 msgstr ""
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "How it was decided"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "How many hook-sniffer events to retain in the buffer."
 msgstr "عدد أحداث متتبّع الخطافات التي يُحتفظ بها في المخزن المؤقت."
@@ -15813,6 +16116,7 @@ msgstr "خامل"
 
 #: src/components/automations/IfThenGraphic.tsx
 #: src/components/automations/IfThenLine.tsx
+#: src/components/automations/MessageRulePage.tsx
 msgid "If"
 msgstr "إذا"
 
@@ -16048,7 +16352,11 @@ msgid "Included through this source's packages. Changes apply to new sessions."
 msgstr "مُضمَّن عبر حزم هذا المصدر. تُطبَّق التغييرات على الجلسات الجديدة."
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+#~ msgid "Includes descendant tags. Runs once per message, in FIFO order. The sentence above is optional."
+#~ msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Includes the tags under it. Runs once per message."
 msgstr ""
 
 #: src/components/entity-actions/ContextMenuButton.tsx
@@ -16624,6 +16932,7 @@ msgid "Is it usable?"
 msgstr ""
 
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/items/IssueView.tsx
 msgid "Issue"
 msgstr ""
@@ -16667,11 +16976,11 @@ msgid "It answered without using any tool."
 msgstr "أُجيب عنه دون استخدام أي أداة."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-#~ msgid "It answers customers while nobody on the team has picked the ticket up."
-#~ msgstr "يرد على العملاء ما دام لم يستلم أحد من الفريق التذكرة."
-
-#: src/components/helpdesk/HelpDeskAgentDialog.tsx
 msgid "It answers customers while nobody on the team has picked the ticket up. It runs in the cloud, not on this computer."
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "it asks for a refund or disputes a charge"
 msgstr ""
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -16682,6 +16991,7 @@ msgstr "يمكنه قراءة قنوات Slack الخاصة بكم."
 msgid "It cannot be removed from the project"
 msgstr ""
 
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "It did not work"
@@ -16747,6 +17057,10 @@ msgstr "تحصل على مسارات الملفات المتغيّرة في بي
 #: src/components/automations/AutomationPage.tsx
 msgid "It has not run yet. Use Run once now on the Setup tab to try it."
 msgstr "لم تُشغَّل بعد. لتجربتها، يُرجى استخدام «تشغيل مرة واحدة الآن» في علامة تبويب الإعداد."
+
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "It has not run. A page can read and change what Flowpad holds, so run only pages you trust."
+msgstr ""
 
 #: src/components/conversation/it-reply.ts
 msgid "IT is disabled on this machine"
@@ -17125,6 +17439,18 @@ msgstr "التسمية"
 msgid "label / pattern"
 msgstr "التسمية / النمط"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "lands here"
+msgstr ""
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Lands on"
+msgstr ""
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Lands on (stale — instructions changed)"
+msgstr ""
+
 #: src/components/project-home/ProjectLanguageCard.tsx
 #: src/components/settings-view/settings-utils.ts
 #: src/i18n/pref-labels.ts
@@ -17384,6 +17710,10 @@ msgstr "جارٍ التشغيل…"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Layers"
 msgstr "الطبقات"
+
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "Leads to"
+msgstr ""
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Learn about duplicates"
@@ -17930,10 +18260,9 @@ msgstr "جارٍ تحميل القدرات…"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
-#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+#: src/components/assets/editor/chart/chartBase.tsx
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/assets/editor/chart/MermaidChartView.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Loading chart…"
 msgstr "جارٍ تحميل المخطط…"
 
@@ -18073,6 +18402,7 @@ msgid "Loading people…"
 msgstr "جارٍ تحميل الأشخاص…"
 
 #: src/components/html-preview/HtmlPreview.tsx
+#: src/components/page-allow/PageAllowGate.tsx
 msgid "Loading preview…"
 msgstr "جارٍ تحميل المعاينة…"
 
@@ -18197,6 +18527,7 @@ msgstr "جاري التحميل..."
 #: src/components/conversation/ContactDialog.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/data-sources/ChoiceField.tsx
+#: src/components/docx-viewer/DocxViewer.tsx
 #: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -18387,6 +18718,10 @@ msgstr "السجلات"
 msgid "Looking for recent events…"
 msgstr "جارٍ البحث عن الأحداث الأخيرة…"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Looking into it…"
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Looking up project…"
 msgstr "جاري البحث عن المشروع…"
@@ -18402,7 +18737,6 @@ msgstr "الجهاز"
 
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/ItSendTable.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
@@ -18501,6 +18835,10 @@ msgstr "أنشئوا وكيلًا في 60 ثانية — أين ستتحدثون
 msgid "Make me an agent"
 msgstr ""
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Make the new tags the messages' tags. No automation runs."
+msgstr ""
+
 #: src/components/data-sources/source-attention.ts
 msgid "Make the two the same — edit either one — then Pull, or wait for the next sync."
 msgstr "اجعلوا النسختين متطابقتين — عدّلوا أيًّا منهما — ثم اضغطوا «جلب»، أو انتظروا المزامنة التالية."
@@ -18508,6 +18846,10 @@ msgstr "اجعلوا النسختين متطابقتين — عدّلوا أيً
 #: src/components/harness-login/StatusRow.tsx
 msgid "Make this the default assistant"
 msgstr "تعيين هذا كمساعد افتراضي"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Make this the message's tag. No automation runs."
+msgstr ""
 
 #: src/components/search-index/index-copy.ts
 msgid "Make your records searchable"
@@ -18559,12 +18901,20 @@ msgstr "يجب ربط هذه المحادثة بمشروع محلي أولاً."
 msgid "Mark all read"
 msgstr "تحديد الكل كمقروء"
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Mark as read"
+msgstr ""
+
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark Done"
 msgstr "وضع علامة كمكتمل"
 
 #: src/components/conversation/IssueReplyLine.tsx
 msgid "Mark in progress"
+msgstr ""
+
+#: src/components/automations/automation-words.ts
+msgid "mark it as read"
 msgstr ""
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
@@ -18935,8 +19285,8 @@ msgid "Message Suggest"
 msgstr "اقتراح الرسالة"
 
 #: src/components/tags/MessageTags.tsx
-msgid "Message tags"
-msgstr ""
+#~ msgid "Message tags"
+#~ msgstr ""
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Message the agent"
@@ -18959,6 +19309,10 @@ msgstr "رسالة إلى هذا الوكيل المنشور…"
 msgid "Message Thread"
 msgstr "سلسلة الرسائل"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Message to {hostName}…"
+msgstr "رسالة إلى {hostName}…"
+
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/entity-card/entity-card-rows.ts
@@ -18972,8 +19326,8 @@ msgid "Messages list, events and settings"
 msgstr "قائمة الرسائل والأحداث والإعدادات"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "messages on"
-msgstr "رسائل عبر"
+#~ msgid "messages on"
+#~ msgstr "رسائل عبر"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Meta app › App settings › Basic. Checks every delivery came from Meta. Stored write-only."
@@ -19327,6 +19681,14 @@ msgstr "ربط مساعد Flowpad"
 msgid "Move {0} to {1}?"
 msgstr "هل يُنقل {0} إلى {1}؟"
 
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Move step {number} down"
+msgstr ""
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Move step {number} up"
+msgstr ""
+
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "Move the folder to the Trash and remove the project"
 msgstr "نقل المجلد إلى سلة المهملات وإزالة المشروع"
@@ -19343,6 +19705,19 @@ msgstr "رسائل"
 #: src/components/organization/budgets/MoneyBox.tsx
 msgid "Must be a number, or blank for no limit."
 msgstr "يجب إدخال رقم، أو ترك الحقل فارغاً لعدم وجود حد."
+
+#: src/components/notifications-view/NotificationsView.tsx
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Mute"
+msgstr ""
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "muted"
+msgstr ""
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "Muted:"
+msgstr ""
 
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
 msgid "My assets only"
@@ -19796,8 +20171,8 @@ msgid "New help desk"
 msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "New incoming messages use your ontology. Existing messages are not reclassified."
-msgstr ""
+#~ msgid "New incoming messages use your ontology. Existing messages are not reclassified."
+#~ msgstr ""
 
 #: src/components/rag/RagView.tsx
 msgid "New index"
@@ -19878,7 +20253,11 @@ msgstr "تبويب جديد"
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
-msgid "New tag"
+#~ msgid "New tag"
+#~ msgstr ""
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "New tags"
 msgstr ""
 
 #: src/components/organization/org-detail-panel.tsx
@@ -20401,6 +20780,10 @@ msgstr "لا توجد حواف"
 msgid "No editor for: {editorName}"
 msgstr "لا يوجد محرر لـ: {editorName}"
 
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "No email rules. Every notification email is on."
+msgstr ""
+
 #: src/components/conversation/EmojiPicker.tsx
 msgid "No emoji found"
 msgstr "لم يتم العثور على رموز تعبيرية"
@@ -20752,8 +21135,8 @@ msgid "No matching sessions"
 msgstr "لا توجد جلسات مطابقة"
 
 #: src/components/tags/MessageTags.tsx
-msgid "No matching tags"
-msgstr ""
+#~ msgid "No matching tags"
+#~ msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "No MCP servers found"
@@ -20893,6 +21276,10 @@ msgstr "ليس له وجهة خاصة: ينتقل إلى «كل ما عدا ذل
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No plugins installed"
 msgstr "لا توجد ملحقات مثبتة"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "No problem found"
+msgstr ""
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "No process ID specified"
@@ -21249,6 +21636,10 @@ msgstr "لا توجد مصادر بعد. اربطوا تغذية أو صندوق
 msgid "No spec specified."
 msgstr "لم يتم تحديد المواصفات."
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "No starred conversations"
+msgstr "لا توجد محادثات مميّزة بنجمة"
+
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No stored filters."
 msgstr ""
@@ -21279,6 +21670,28 @@ msgstr "لا توجد نتائج موثّقة لتطبيقها على هذه ا�
 
 #: src/components/automations/blocks/TimeZonePicker.tsx
 msgid "No such time zone."
+msgstr ""
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "no tag"
+msgstr ""
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "no tag fits"
+msgstr ""
+
+#: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/MessageTags.tsx
+#: src/components/tags/StreamInboxTags.tsx
+msgid "No tags"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "No tags — add one"
+msgstr ""
+
+#: src/components/tags/MessageTags.tsx
+msgid "No tags yet — tick one below"
 msgstr ""
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
@@ -21845,6 +22258,10 @@ msgstr "غير مُعد للنشر"
 msgid "Not set up yet. Add your own provider key to start spending."
 msgstr ""
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Not shared"
+msgstr ""
+
 #: src/components/credentials-view/CredentialView.tsx
 msgid "not signed in"
 msgstr "غير مسجّل الدخول"
@@ -21916,6 +22333,7 @@ msgid "Not yet published"
 msgstr "لم يُنشر بعد"
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 msgid "Note"
 msgstr "ملاحظة"
 
@@ -21931,6 +22349,10 @@ msgstr ""
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Note: File is missing"
 msgstr "ملاحظة: الملف مفقود"
+
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "Notes"
+msgstr ""
 
 #. placeholder {0}: notes.length
 #. placeholder {0}: target.name
@@ -22015,6 +22437,10 @@ msgstr "لا شيء هنا بعد — يمكن استخدام + أدناه لإ�
 msgid "Nothing here yet."
 msgstr "لا شيء هنا بعد."
 
+#: src/components/automations/AutomationsList.tsx
+msgid "Nothing here."
+msgstr ""
+
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Nothing in private context yet."
 msgstr "لا شيء في السياق الخاص حتى الآن."
@@ -22069,8 +22495,8 @@ msgid "Nothing of the kinds switched on."
 msgstr "لا يوجد شيء من الأنواع المفعّلة."
 
 #: src/components/automations/AutomationsList.tsx
-msgid "Nothing of this kind yet."
-msgstr "لا يوجد شيء من هذا النوع بعد."
+#~ msgid "Nothing of this kind yet."
+#~ msgstr "لا يوجد شيء من هذا النوع بعد."
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "Nothing open to bookmark"
@@ -22173,6 +22599,10 @@ msgstr "لم يتم تشغيل أي شيء. يمكن إغلاق هذه التب�
 msgid "Nothing would arrive for this, so it was not sent:"
 msgstr "لن يصل أي شيء لهذا، فلم يُرسَل:"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Nothing yet."
+msgstr ""
+
 #: src/components/automations/BusStream.tsx
 msgid "Nothing yet. Only some event families reach the app; the counts above cover every event."
 msgstr "لا شيء بعد. لا تصل إلى التطبيق إلا بعض فئات الأحداث، وتشمل الأعداد أعلاه كل الأحداث."
@@ -22190,6 +22620,7 @@ msgstr "إشعار"
 
 #: src/i18n/pref-labels.ts
 #: src/notifications/feed/NotificationFeed.tsx
+#: src/types/ViewType.ts
 msgid "Notifications"
 msgstr "الإشعارات"
 
@@ -22265,6 +22696,7 @@ msgid "off"
 msgstr "إيقاف"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
+#: src/components/automations/AutomationsList.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Off"
 msgstr "متوقف"
@@ -22315,6 +22747,7 @@ msgstr "أقدم ملف على القرص"
 msgid "oldest in Git history"
 msgstr "الأقدم في سجل Git"
 
+#: src/components/automations/MessageRulePage.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "on"
 msgstr "تشغيل"
@@ -22604,7 +23037,8 @@ msgstr "عذرًا! الصفحة غير موجودة"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
-#: src/components/conversation/HelpRequestLine.tsx
+#: src/components/conversation/DiagnosisCard.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/conversation/InviteCard.tsx
 #: src/components/conversation/IssueReplyLine.tsx
 #: src/components/conversation/SealedTypedCard.tsx
@@ -22612,6 +23046,7 @@ msgstr "عذرًا! الصفحة غير موجودة"
 #: src/components/conversation/task-it.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/footer/ActivityDetailsModal.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
 #: src/components/items/item-state.ts
@@ -22640,6 +23075,7 @@ msgstr "فتح"
 #. placeholder {0}: file.path
 #. placeholder {0}: item.label
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
@@ -22703,6 +23139,7 @@ msgstr "فتح طرفية {workerName}"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Open ↗"
@@ -22810,6 +23247,7 @@ msgid "Open authorization page"
 msgstr "فتح صفحة التفويض"
 
 #: src/components/conversation/AutomationMessageActions.tsx
+#: src/components/footer/ActivityDetailsModal.tsx
 msgid "Open automation"
 msgstr ""
 
@@ -23248,6 +23686,10 @@ msgstr "علامات التبويب المفتوحة"
 msgid "Open task"
 msgstr "فتح المهمة"
 
+#: src/components/contact-picker/ContactPicker.tsx
+msgid "Open team"
+msgstr ""
+
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -23312,8 +23754,7 @@ msgstr "فتح النسخة"
 msgid "Open the data source"
 msgstr "فتح مصدر البيانات"
 
-#: src/components/conversation/DiagnosisMessageActions.tsx
-#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 msgid "Open the diagnosis worker"
 msgstr ""
 
@@ -23607,6 +24048,11 @@ msgstr "OpenRouter"
 msgid "OpenRouter hosts to avoid (one per line)"
 msgstr "مضيفو OpenRouter المطلوب تجنبهم (واحد في كل سطر)"
 
+#. placeholder {0}: state.desk
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Opens a support conversation with {0}"
+msgstr ""
+
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Opens in"
@@ -23626,6 +24072,7 @@ msgstr "فشلت العملية"
 
 #: src/components/assets/DependencyChips.tsx
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
+#: src/components/automations/MessageRulePage.tsx
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "optional"
@@ -23675,6 +24122,10 @@ msgstr "رسالة اختيارية للأعضاء…"
 #: src/components/assets/editor/task/OwnerButton.tsx
 msgid "Optional message to the owner…"
 msgstr "رسالة إلى المالك (اختياري)…"
+
+#: src/components/automations/automation-words.ts
+msgid "or"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Or copy an invite link"
@@ -23831,6 +24282,10 @@ msgstr "مشاريع أخرى"
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Other sessions"
 msgstr "جلسات أخرى"
+
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "Outcome"
+msgstr ""
 
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Outgoing"
@@ -24371,6 +24826,10 @@ msgstr "اختر تدفقًا من القائمة اليسرى، أو أنشئ �
 msgid "Pick a group in any conversation to add all its members at once."
 msgstr "يمكن اختيار مجموعة في أي محادثة لإضافة جميع أعضائها دفعة واحدة."
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Pick a message"
+msgstr ""
+
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick a project"
 msgstr "اختيار مشروع"
@@ -24395,8 +24854,12 @@ msgstr "يمكن اختيار تشغيل لمعرفة سبب تشغيله وما
 msgid "Pick a size to see the price"
 msgstr "اختر حجماً لعرض السعر"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Pick a tag to say when a message belongs there."
+msgstr ""
+
 #: src/components/automations/blocks/ThenBlock.tsx
-#: src/components/automations/MessageRulePage.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Pick an agent…"
 msgstr "اختيار وكيل…"
 
@@ -25239,6 +25702,7 @@ msgid "prompt"
 msgstr "موجّه"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 #: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/PromptRunSummaryDialog.tsx
@@ -25326,7 +25790,7 @@ msgstr "التعليمات المُرسلة إلى العملية الذكية �
 msgid "Prompt text"
 msgstr "نص الموجه"
 
-#: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
+#: src/components/conversation/PromptToRunDialog.tsx
 msgid "Prompt to run"
 msgstr "الطلب المراد تشغيله"
 
@@ -25678,6 +26142,10 @@ msgstr "Python (flow SDK)"
 msgid "question"
 msgstr "سؤال"
 
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+msgid "Question"
+msgstr ""
+
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 msgid "Questions"
 msgstr ""
@@ -25807,6 +26275,10 @@ msgstr "للقراءة فقط"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Read only"
 msgstr "للقراءة فقط"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "Read the full prompt"
+msgstr "اقرأ الموجّه كاملاً"
 
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
@@ -26359,6 +26831,7 @@ msgstr ""
 msgid "Release notes version"
 msgstr ""
 
+#: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -26442,8 +26915,8 @@ msgid "Remove access"
 msgstr "إزالة الوصول"
 
 #: src/components/tags/MessageTags.tsx
-msgid "Remove all"
-msgstr ""
+#~ msgid "Remove all"
+#~ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove attachment"
@@ -26563,6 +27036,9 @@ msgstr "إزالة المشروع"
 msgid "Remove Project & Delete Files"
 msgstr "إزالة المشروع وحذف الملفات"
 
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Remove prompt"
 msgstr ""
@@ -26583,6 +27059,10 @@ msgstr "إزالة القاعدة"
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Remove service"
+msgstr ""
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "Remove step {number}"
 msgstr ""
 
 #: src/components/tags/MessageTags.tsx
@@ -26618,11 +27098,9 @@ msgstr "إزالة هذا الرقم وقواعده ({0})؟ يتوقف المر�
 msgid "Remove this row from the manifest"
 msgstr "إزالة هذا الصف من ملف البيان"
 
-#. placeholder {0}: impact.messages
-#. placeholder {1}: impact.automations
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Remove this tag from {0} messages and disable {1} automations. Messages are kept."
-msgstr ""
+#~ msgid "Remove this tag from {0} messages and disable {1} automations. Messages are kept."
+#~ msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Remove this tag's assignments and disable matching automations. Messages are kept."
@@ -26896,17 +27374,16 @@ msgid "Report"
 msgstr "التقرير"
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-msgid "Report it"
-msgstr ""
+#~ msgid "Report it"
+#~ msgstr ""
 
 #: src/components/conversation/DiagnosisMessageActions.tsx
-msgid "Report it for me"
-msgstr ""
+#~ msgid "Report it for me"
+#~ msgstr ""
 
-#. placeholder {0}: state.desk
 #: src/components/conversation/DiagnosisMessageActions.tsx
-msgid "Report it to {0}"
-msgstr ""
+#~ msgid "Report it to {0}"
+#~ msgstr ""
 
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Report page errors"
@@ -26936,6 +27413,7 @@ msgstr "عنوان المستودع"
 
 #: src/components/account/network-errors.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/notifications/error-detail.ts
 msgid "Request"
 msgstr "الطلب"
@@ -27028,6 +27506,7 @@ msgid "Requires a git repository with at least one commit"
 msgstr "يتطلب مستودع Git يحتوي على التزام واحد على الأقل"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Rerun"
 msgstr "إعادة التشغيل"
 
@@ -27386,6 +27865,8 @@ msgid "Reveal in Finder"
 msgstr "إظهار في Finder"
 
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Reveal in Finder/Explorer"
 msgstr "إظهار في Finder/Explorer"
@@ -27426,6 +27907,7 @@ msgstr "إظهار الرسالة التي اشتُقت منها هذه المه
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Review"
@@ -27556,7 +28038,8 @@ msgid "Root"
 msgstr "جذر"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
-#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisCard.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 msgid "Root cause"
 msgstr "السبب الجذري"
@@ -27619,6 +28102,7 @@ msgid "Rule: {0}"
 msgstr ""
 
 #: src/components/asset-counters/channel-project-counters.tsx
+#: src/components/notifications-view/NotificationsView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
@@ -27633,11 +28117,13 @@ msgstr "القواعد"
 #: src/components/code-block-run-button.tsx
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Run"
 msgstr "تشغيل"
 
@@ -27693,11 +28179,13 @@ msgid "run a script"
 msgstr "تشغيل نص برمجي"
 
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Run a script"
 msgstr "تشغيل نص برمجي"
 
 #: src/components/conversation/SessionCard.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/tags/MessageTags.tsx
 msgid "Run again"
 msgstr "تشغيل مرة أخرى"
 
@@ -27710,6 +28198,7 @@ msgid "run an agent"
 msgstr "تشغيل وكيل"
 
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/automations/ThenStepsEditor.tsx
 msgid "Run an agent"
 msgstr "تشغيل وكيل"
 
@@ -28010,6 +28499,7 @@ msgstr "تشغيلات"
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/footer/ActivityDetailsModal.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/types/ViewType.ts
 msgid "Runs"
@@ -28232,8 +28722,8 @@ msgid "Save failed"
 msgstr "فشل الحفظ"
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Save preferences"
-msgstr ""
+#~ msgid "Save preferences"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
@@ -28341,6 +28831,10 @@ msgstr "اذكروا ما يجب أن يفعلوه"
 #: src/components/automations/MessageRulePage.tsx
 msgid "Say what to catch."
 msgstr "اذكروا ما يجب التقاطه"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Say which command to run."
+msgstr ""
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "says:"
@@ -28475,6 +28969,7 @@ msgstr "الجدولة · {0}"
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
+#: src/components/notifications-view/NotificationsView.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Scope"
@@ -28675,6 +29170,7 @@ msgstr "البحث عن اللغات…"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Search messages"
 msgstr "البحث في الرسائل"
 
@@ -28955,6 +29451,7 @@ msgstr "يُرجى اختيار الإصدار المراد تثبيته:"
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "Select all"
 msgstr "تحديد الكل"
 
@@ -28991,12 +29488,18 @@ msgid "Select Chrome profile"
 msgstr "اختيار ملف تعريف Chrome"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Select conversation"
 msgstr "تحديد المحادثة"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Select every project"
 msgstr "تحديد جميع المشاريع"
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Select message"
+msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Select parent folder"
@@ -29773,7 +30276,7 @@ msgstr "عدة تطابقات"
 #: src/components/artifacts/artifact-card.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
-#: src/components/conversation/HelpRequestLine.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -29996,7 +30499,7 @@ msgstr "خيارات المشاركة"
 msgid "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
 msgstr "ترسل عملية المشاركة الملفات عبر Git كي يتمكن المستقبل من سحبها. لم يُعدّ {folderName} بعد مع Git."
 
-#: src/components/conversation/HelpRequestLine.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Sharing…"
@@ -30057,8 +30560,8 @@ msgid "Short-lived key for Open-in-FlowPad deep link"
 msgstr "مفتاح قصير الأجل لرابط Open-in-FlowPad العميق"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "should"
-msgstr "ينبغي أن"
+#~ msgid "should"
+#~ msgstr "ينبغي أن"
 
 #. placeholder {0}: '{permissionDecision: allow or deny}'
 #: src/components/hooks-view/HookEditor.tsx
@@ -31196,6 +31699,7 @@ msgid "Standard mode"
 msgstr "الوضع القياسي"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/conversation/conversation-category.ts
 msgid "Star"
 msgstr "إضافة نجمة"
 
@@ -31203,8 +31707,13 @@ msgstr "إضافة نجمة"
 msgid "Star chat"
 msgstr "إضافة نجمة للمحادثة"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Starred"
+msgstr "المميّزة بنجمة"
+
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 #: src/components/assets/editor/task/ParentTaskBlock.tsx
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -31430,10 +31939,16 @@ msgstr "يبدأ…"
 msgid "Starting…"
 msgstr "جاري البدء…"
 
+#: src/components/tags/MessageTags.tsx
+msgid "Starts an automation"
+msgstr ""
+
 #: src/components/automations/PackageRow.tsx
 msgid "Starts when any of these happens"
 msgstr ""
 
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "State"
 msgstr "الحالة"
@@ -31455,7 +31970,7 @@ msgstr "الحالة"
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
-#: src/components/conversation/IssueReplyLine.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/conversation/ItSendTable.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
@@ -31506,6 +32021,8 @@ msgid "status: {0}"
 msgstr "الحالة: {0}"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
+#: src/components/assets/editor/chart/FlowchartChartView.tsx
 msgid "Step"
 msgstr "خطوة"
 
@@ -31528,6 +32045,10 @@ msgstr "الخطوة {0} من {1}"
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Steps"
 msgstr "الخطوات"
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "Steps run in order. An agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "Steps taken"
@@ -31670,7 +32191,6 @@ msgid "Stream Inbox Manager"
 msgstr "مدير صندوق التدفق الوارد"
 
 #: src/components/graph-view/TagGraphView.tsx
-#: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Stream Inbox tags"
 msgstr ""
@@ -31796,6 +32316,10 @@ msgstr "«عملية فرعية» يشغّل مسح الملفات في عملي
 msgid "Succeeded"
 msgstr "نجح"
 
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Suggested fix"
+msgstr ""
+
 #. placeholder {0}: redirects.map(([from]) => from).join(', ')
 #. placeholder {1}: redirects.map(([, to]) => to).join(', ')
 #: src/components/organization/budgets/PayingProviderSetup.tsx
@@ -31868,6 +32392,10 @@ msgstr "بيانات الاستبيان:"
 #: src/components/survey/SurveyView.tsx
 msgid "Survey Error"
 msgstr "خطأ في الاستبيان"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Suspected bug"
+msgstr ""
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Sweep {scopeTotal} ({actionWord})"
@@ -32024,12 +32552,12 @@ msgid "Tag"
 msgstr "وسم"
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Tag created"
-msgstr ""
+#~ msgid "Tag created"
+#~ msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
-msgid "Tag deleted"
-msgstr ""
+#~ msgid "Tag deleted"
+#~ msgstr ""
 
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 #: src/components/tags/StreamInboxTags.tsx
@@ -32363,8 +32891,8 @@ msgid "Thank you — sent."
 msgstr "شكرًا — تم الإرسال."
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "that"
-msgstr "التي"
+#~ msgid "that"
+#~ msgstr "التي"
 
 #: src/navigation/agentic-process-open.ts
 #: src/navigation/agentic-process-open.ts
@@ -32438,8 +32966,8 @@ msgid "The Agent bundle is not available."
 msgstr "حزمة الوكيل غير متاحة."
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "The agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
-msgstr "يتلقّى الوكيل الرسالة ويمكنه الرد داخل المحادثة. لا يُعرض إلا الوكلاء القادرون على العمل على هذا الكمبيوتر."
+#~ msgid "The agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered."
+#~ msgstr "يتلقّى الوكيل الرسالة ويمكنه الرد داخل المحادثة. لا يُعرض إلا الوكلاء القادرون على العمل على هذا الكمبيوتر."
 
 #: src/components/terminal/interactive-terminal/PlanInteractionBar.tsx
 msgid "The agent has asked a question — answer it in the terminal."
@@ -32557,6 +33085,10 @@ msgstr ""
 msgid "The check did not run."
 msgstr "لم يتم تنفيذ الفحص."
 
+#: src/components/tags/MessageTags.tsx
+msgid "The classifier was off when this arrived."
+msgstr ""
+
 #: src/notifications/ingest.ts
 msgid "The cloud service returned an error. Please try again in a moment."
 msgstr "حدث خطأ في الخدمة السحابية. يرجى المحاولة مرة أخرى بعد قليل"
@@ -32628,6 +33160,10 @@ msgstr "عاد التشخيص. افتحوه في FlowPad لقراءة كل تش�
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "The diagnosis could not run — you can report it from the conversation"
 msgstr "تعذّر تشغيل التشخيص — يمكنك الإبلاغ عنه من المحادثة"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "The diagnosis could not run."
+msgstr ""
 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "The document could not be put on the hub the last time it was published."
@@ -32880,6 +33416,10 @@ msgstr "لم يتغير البيان."
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
 msgstr "تم إنشاء مهام الأعضاء؛ {messageFailures} رسالة إشعار لم تصل."
+
+#: src/components/automations/ThenStepsEditor.tsx
+msgid "the message stops showing as new"
+msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "The message you came from — or paste any message"
@@ -33210,6 +33750,10 @@ msgstr "خرج العامل فور تشغيله، لذا أُوقفت إعادة
 msgid "Then"
 msgstr "ثم"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Then — when a message lands here"
+msgstr ""
+
 #: src/pages/entry/DesktopDownload.tsx
 msgid "Then install it:"
 msgstr "ثم ثبّتوه:"
@@ -33430,6 +33974,15 @@ msgstr "هذه الميزانية غير متاحة لهذا الحساب"
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This can take up to a minute if it was asleep."
 msgstr "قد يستغرق هذا حتى دقيقة واحدة إذا كانت في وضع السكون."
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "This channel is already added"
+msgstr ""
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "This channel is already added but empty"
+msgstr ""
 
 #: src/components/inbound/InboundView.tsx
 msgid "This channel is not yours, or it is gone."
@@ -33719,8 +34272,8 @@ msgid "This link has nothing to launch."
 msgstr "لا يحتوي هذا الرابط على شيء لتشغيله."
 
 #: src/pages/entry/OpenPcLanding.tsx
-msgid "This link is for visitors. Open it in a private window."
-msgstr "هذا الرابط مخصص للزوار. يُرجى فتحه في نافذة تصفح خاصة."
+#~ msgid "This link is for visitors. Open it in a private window."
+#~ msgstr "هذا الرابط مخصص للزوار. يُرجى فتحه في نافذة تصفح خاصة."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
@@ -33765,8 +34318,12 @@ msgid "This message carries no assets."
 msgstr "هذه الرسالة لا تحمل أي أصول."
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
-msgstr "هذه الرسالة موجّه — يوافق عليه {hostName}، ويُنفَّذ مرة واحدة على جهازه، وتصلك حالته"
+#~ msgid "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
+#~ msgstr "هذه الرسالة موجّه — يوافق عليه {hostName}، ويُنفَّذ مرة واحدة على جهازه، وتصلك حالته"
+
+#: src/components/tags/MessageTags.tsx
+msgid "This message was not classified."
+msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "This message will also become a task"
@@ -33785,6 +34342,10 @@ msgstr "هذا الشهر"
 #: src/components/token-plan/MembersTable.tsx
 msgid "This month"
 msgstr "هذا الشهر"
+
+#: src/components/notifications-view/NotificationsView.tsx
+msgid "This notification can't be found."
+msgstr ""
 
 #: src/components/ask/AskItems.tsx
 msgid "This one is required. Without it, setup will end unfinished."
@@ -33816,6 +34377,18 @@ msgstr "تُنفق هذه المؤسسة من مفتاح المزوّد الخا
 
 #: src/components/organization/tabs/OrgView.tsx
 msgid "This organization's budgets could not be read."
+msgstr ""
+
+#: src/components/agent-layout/error-screen/error-screen.tsx
+msgid "This page is from the previous version. Reload to continue."
+msgstr ""
+
+#: src/components/mcp-app-preview/McpAppPreview.tsx
+msgid "This page is not attached to a session, so what you sent reached no one. Nothing you typed was lost; open the page again from the session."
+msgstr ""
+
+#: src/components/page-allow/PageAllowGate.tsx
+msgid "This page was opened by a link, not by Flowpad. Once it runs it can read and change what Flowpad holds, so allow it only if you trust where it came from."
 msgstr ""
 
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
@@ -34344,7 +34917,6 @@ msgstr "عدد مرات وقوع هذا الحدث منذ بدء تشغيل Flow
 #: src/components/account/system-diagnoses.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-#: src/components/tags/StreamInboxTags.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Title"
 msgstr "العنوان"
@@ -34741,6 +35313,10 @@ msgstr "تم التشغيل"
 msgid "Triggers"
 msgstr "المشغّلات"
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "Try"
+msgstr ""
+
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/tabs/OrgView.tsx
@@ -34813,11 +35389,13 @@ msgid "Turn failed"
 msgstr "فشل الدور"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Turn off"
 msgstr "إيقاف"
 
 #: src/components/automations/AutomationPage.tsx
+#: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Turn on"
 msgstr "تفعيل"
@@ -34933,6 +35511,7 @@ msgstr "ضمن OAuth & Permissions أضيفوا نطاقات البوت channels
 
 #: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/notifications-view/NotificationsView.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Undo"
 msgstr "تراجع"
@@ -35100,6 +35679,7 @@ msgid "Unstage"
 msgstr "إلغاء الضم"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/conversation/conversation-category.ts
 msgid "Unstar"
 msgstr "إزالة نجمة"
 
@@ -35191,7 +35771,7 @@ msgstr "قناة التحديث للتحديثات التلقائية"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/C4ChartView.tsx
-#: src/components/assets/editor/chart/SequenceChartView.tsx
+#: src/components/assets/editor/chart/chartBase.tsx
 msgid "Update CHART.md"
 msgstr "تحديث CHART.md"
 
@@ -35848,6 +36428,7 @@ msgstr "عرض صورة {title}"
 msgid "View Claude Code settings across user, project, and local scopes"
 msgstr "عرض إعدادات Claude Code على مستويات المستخدم والمشروع والنطاق المحلي"
 
+#: src/components/contact-picker/ContactPicker.tsx
 #: src/components/contact-picker/ContactRows.tsx
 msgid "View contact details"
 msgstr "عرض تفاصيل جهة الاتصال"
@@ -36118,6 +36699,10 @@ msgstr "تحذير: {warning}"
 msgid "Warnings"
 msgstr ""
 
+#: src/components/tags/StreamInboxTags.tsx
+msgid "was {previous}"
+msgstr ""
+
 #: src/components/ask/AskAssist.tsx
 msgid "Watch the agent"
 msgstr "مشاهدة الوكيل"
@@ -36203,7 +36788,6 @@ msgstr "إشارة الترحيب المرجعية ومدخل الخلاصة، �
 msgid "Welcome! Tell the user what this agent can do and how to start…"
 msgstr "مرحباً! بيّنوا للمستخدم ما يستطيع هذا الوكيل فعله وكيف يبدأ…"
 
-#: src/components/conversation/IssueReplyLine.tsx
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "What"
 msgstr "الإجراء"
@@ -36238,7 +36822,7 @@ msgstr "ما الذي يمكنكم العمل عليه؟"
 msgid "What Flowpad found when it checked this project's Git setup."
 msgstr "ما الذي عثرت عليه Flowpad عند التحقق من إعداد Git لهذا المشروع."
 
-#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 #: src/components/items/IssueView.tsx
 msgid "What happened"
 msgstr ""
@@ -36379,7 +36963,7 @@ msgstr "ما يضعه هذا المصدر في المشروع يُضاف إلى 
 msgid "What to look at"
 msgstr "ما ينبغي الانتباه إليه"
 
-#: src/components/conversation/DiagnosisMessageActions.tsx
+#: src/components/conversation/DiagnosisCard.tsx
 msgid "What was done"
 msgstr ""
 
@@ -36447,6 +37031,10 @@ msgstr "عند تغيّر ملف"
 msgid "When a message arrives"
 msgstr "عند وصول رسالة"
 
+#: src/components/automations/automation-words.ts
+msgid "When a message is tagged {tags}"
+msgstr ""
+
 #: src/components/automations/KindGallery.tsx
 msgid "When a task changes"
 msgstr "عند تغيّر مهمة"
@@ -36463,7 +37051,11 @@ msgid "When an agent reports {events}"
 msgstr "عندما يُبلغ وكيل عن {events}"
 
 #: src/components/automations/MessageRulePage.tsx
-msgid "When any of these message tags is assigned"
+#~ msgid "When any of these message tags is assigned"
+#~ msgstr ""
+
+#: src/components/tags/StreamInboxTags.tsx
+msgid "When does a message belong here?"
 msgstr ""
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
@@ -36635,6 +37227,14 @@ msgstr "يمكن لمن يدير الـ hub تفعيله. في هذه الأثن
 #: src/components/explorer-view/ExplorerNavigator.tsx
 msgid "Whole computer"
 msgstr "الكمبيوتر بأكمله"
+
+#: src/components/conversation/DiagnosisCard.tsx
+msgid "Whose it is"
+msgstr ""
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Why"
+msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Why is this needed?"

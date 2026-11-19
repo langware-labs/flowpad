@@ -6,18 +6,12 @@ import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { isAppType } from '@src/navigation/app-dock';
 import { projectScope } from '@src/lib/scope-filter';
 import { ambientLoadProjectId, registerLoadRedirect } from '@src/routes/loaders/load-redirects';
-import { agentSessionDock } from '@src/components/agents/use-agent-launcher';
+import { agentDockById } from '@src/components/agents/use-agent-launcher';
 import { PROVIDER_PROJECT_PARAM, HOME_AGENT_PARAM } from './dependency-home';
 import { HOME_PAGE_OPEN, HOME_PAGE_PARAM } from './home-page-state';
 
 /** Registration IS the switch: `false` takes the resolver out of the chain entirely. */
 export const PROJECT_HOME_PAGE_ENABLED = true;
-
-/** An AGENT home page lands where opening the agent does (`agentSessionDock`); null when the agent is gone. */
-async function agentHomePageDock(agentTypeId: string, projectId: string): Promise<DockPointer | null> {
-  const agent = await Agent.getById<Agent>(new TypeId(agentTypeId).id);
-  return agent ? agentSessionDock(agent, projectId) : null;
-}
 
 /**
  * Where a resolved home page lives: an agent's chat in Vibe; a web app RUNNING
@@ -38,7 +32,7 @@ export async function homePageDock(data: ProjectHomePage, projectId: string): Pr
           .withOption(HOME_AGENT_PARAM, data.asset) ?? null
       );
     }
-    return agentHomePageDock(data.asset, projectId);
+    return agentDockById(data.asset, projectId);
   }
   if (isAppType(data.type)) {
     return DockPointer.forAppEntity(new TypeId(data.asset))
@@ -56,8 +50,8 @@ export async function homePageDock(data: ProjectHomePage, projectId: string): Pr
  * the first. Two kinds of navigation ask:
  *  - LAUNCHING a project: opening a folder or clone, picking a project,
  *    setting up a shared one, switching to one.
- *  - Closing a project's LAST tab, and finishing a wizard
- *    (`goHome({ homePage: true })`). The Home button does NOT — it is Flowpad's home.
+ *  - The Home button, closing a project's LAST tab, and finishing a wizard
+ *    (`goHome({ homePage: true })`). With no home page declared, Home is Flowpad's home.
  * Everything else that lands on the project page — its own "Open project home"
  * button, its tab — does not ask, so the project page (where the home page is
  * configured) stays reachable. Safe to

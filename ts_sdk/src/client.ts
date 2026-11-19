@@ -3,6 +3,7 @@ import { ApiFailResponse, ApiWarning } from './ApiResponse';
 import { alert } from './alert';
 import { APIStats } from './apiStats';
 import config from './config';
+import { STATE_HEADER, showPageStateError, stateKey, stateRefusal } from './page-state';
 import { API_PREFIX } from './config/SDKConfig';
 
 //@ts-ignore
@@ -177,6 +178,13 @@ function initApiClient(client: ApiAxiosInstance) {
         request.headers['X-Flow-Caller'] = window.location.pathname.slice(0, 200);
       }
 
+      // The key this window or page was opened with: the local server answers nothing without one.
+      const key = stateKey();
+      if (key && !request.headers?.[STATE_HEADER]) {
+        request.headers = request.headers || {};
+        request.headers[STATE_HEADER] = key;
+      }
+
       return request;
     },
     function (error) {
@@ -226,6 +234,10 @@ function initApiClient(client: ApiAxiosInstance) {
           return sleep(delay).then(() => client.request(cfg));
         }
       }
+
+      // The local server refused the page's key: say why inside the page (the reason rides a header).
+      const refusal = stateRefusal(error.response?.headers);
+      if (refusal) showPageStateError(refusal);
 
       // Check for network errors (backend unavailable)
       if (error.code === 'ERR_NETWORK' || error.code === 'ERR_CONNECTION_REFUSED' || !error.response) {
@@ -417,7 +429,7 @@ window['client'] = apiClient;
  * (`AgenticProcess.prompt`) classify off ONE string set instead of drifting apart.
  */
 export function isNetworkErrorMessage(message: string | undefined): boolean {
-  if (!message) return false;
+  if (!message || isStaleBuildMessage(message)) return false;
   const m = message.toLowerCase();
   return (
     m.includes('failed to fetch') ||
@@ -425,6 +437,26 @@ export function isNetworkErrorMessage(message: string | undefined): boolean {
     m.includes('network error') ||
     m.includes('load failed')
   );
+}
+
+/**
+ * Did a lazy `import()` of one of the app's own code chunks fail?
+ *
+ * Chunk files are named by content hash, so an upgrade removes the ones an
+ * already-open page still points at. The browser words that as Chrome "Failed
+ * to fetch dynamically imported module", Firefox "error loading dynamically
+ * imported module", Safari "Importing a module script failed" — the Chrome one
+ * contains "failed to fetch", which is how it used to read as an outage while
+ * the backend was answering. The page is stale, not the server: reload it.
+ */
+function isStaleBuildMessage(message: string | undefined): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return m.includes('dynamically imported module') || m.includes('importing a module script failed');
+}
+
+export function isStaleBuildError(error: unknown): boolean {
+  return isStaleBuildMessage((error as { message?: string } | null | undefined)?.message);
 }
 
 export function isBackendUnreachable(error: unknown): boolean {

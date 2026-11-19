@@ -126,7 +126,7 @@ class FlowConversationSource(MessageSource, CollectionSource):
         since = getattr(query, "since", None)
         entries: list[tuple[str, Any]] = []
         for conversation in await self._team_conversations():
-            for fm in await FlowMessage.get_all({"conversation_id": str(conversation.id)}) or []:
+            for fm in await FlowMessage.sent_in(str(conversation.id)):
                 call = self._call_of(fm, me)
                 if call is None or not _in_window(fm, since):
                     continue

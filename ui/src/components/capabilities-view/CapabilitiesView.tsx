@@ -1,27 +1,23 @@
 import { LazyAsset } from '@sdk/lazy';
 import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
-import { AgenticProcess, capabilityManager, isWorkerTerminal, ProcessStatus, TypeId } from '@sdk';
-import type { CapabilitiesSummary, CapabilityAccess, CapabilityDependency, CapabilityIntent, WorkerStatus } from '@sdk';
+import { AgenticProcess, capabilityManager, TypeId } from '@sdk';
+import type { CapabilitiesSummary, CapabilityAccess, CapabilityDependency, CapabilityIntent } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ProcessStatusLine } from '@src/components/agentic-progress/shared/process-status-line';
-import { processStatusConfig, workerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
-import { getOneLiner } from '@src/components/hooks/event-utils';
+import { ProcessRunLineById } from '@src/components/agentic-progress/shared/process-run-line';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { useFlowDataTrace } from '@src/hooks/use-flow-data-trace';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { SETUP_GITHUB_JOURNEY, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import { GitRequiredStrip } from '@src/components/git/GitRequiredStrip';
 import { useProject } from '@sdk/react/hooks';
-import type { TraceEvent } from '@src/types/trace-event';
 import {
   BadgeCheck,
   ChevronDown,
@@ -171,66 +167,6 @@ function ReferenceTargetSelect({
   );
 }
 
-function capabilityProcessStatusLabel(process: AgenticProcess): string {
-  const status = (process.status as ProcessStatus | undefined) ?? ProcessStatus.NEW;
-  const procConfig = processStatusConfig[status] ?? processStatusConfig[ProcessStatus.NEW];
-  const worker = (process.workerStatus ?? process.worker_status) as WorkerStatus | undefined;
-  const workerConfig = worker ? workerStatusConfig[worker] : undefined;
-  return worker && workerConfig && isWorkerTerminal(worker) ? workerConfig.label : procConfig.label;
-}
-
-function capabilityProcessOneLiner(process: AgenticProcess, events: TraceEvent[]): string {
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const line = getOneLiner(events[i]).trim();
-    if (line) return line;
-  }
-  const installPrompt = process.context_data?.install_prompt;
-  if (typeof installPrompt === 'string' && installPrompt.trim()) {
-    return installPrompt.trim();
-  }
-  return process.name || 'Process started';
-}
-
-function CapabilityProcessRun({
-  process,
-  onOpenInTerminal,
-}: {
-  process: AgenticProcess;
-  onOpenInTerminal: () => void;
-}) {
-  const { events } = useFlowDataTrace(process);
-  const statusLabel = capabilityProcessStatusLabel(process);
-  const oneLiner = useMemo(() => capabilityProcessOneLiner(process, events), [events, process]);
-  return (
-    <div className="min-w-0 space-y-0.5">
-      <ProcessStatusLine process={process} size="sm" onOpenInTerminal={onOpenInTerminal} className="min-w-0" />
-      <div
-        className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground"
-        data-testid="capability-process-one-liner"
-      >
-        <span className="font-medium text-foreground/80">{statusLabel}:</span> <span>{oneLiner}</span>
-      </div>
-    </div>
-  );
-}
-
-/** Lazily tail a capability's last/active install process by id. */
-export function RowProcess({ processId }: { processId: string }) {
-  const { navigation } = useDockNavigation();
-  const typeId = useMemo(() => {
-    try {
-      return new TypeId(AgenticProcess.type, processId);
-    } catch {
-      return null;
-    }
-  }, [processId]);
-  const { data: process } = useEntity<AgenticProcess>(typeId, { enabled: !!typeId, watch: true });
-  if (!process) return null;
-  return (
-    <CapabilityProcessRun process={process} onOpenInTerminal={() => navigation.openDock(process.terminalDockPointer)} />
-  );
-}
-
 function CapabilityAccessRow({
   access,
   siblings,
@@ -334,7 +270,7 @@ function CapabilityAccessRow({
 
       <div className="col-span-2 min-w-0">
         {access.last_process_id ? (
-          <RowProcess processId={access.last_process_id} />
+          <ProcessRunLineById processId={access.last_process_id} />
         ) : (
           <div className="truncate text-xs text-muted-foreground/70" title={access.message}>
             {access.message || <Trans>No run</Trans>}

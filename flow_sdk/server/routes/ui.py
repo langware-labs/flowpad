@@ -46,7 +46,7 @@ def _find_static_file(filename: str, *, prefer_public: bool = False) -> Path | N
     return None
 
 
-def serve_index_html(html: str) -> HTMLResponse:
+def serve_index_html(html: str, request: Request | None = None) -> HTMLResponse:
     """Return ``index.html`` with the runtime API origin injected — the single
     entry point for both ``/`` and the SPA deep-link fallback.
 
@@ -67,8 +67,17 @@ def serve_index_html(html: str) -> HTMLResponse:
     get the identical treatment from the identical string — the console and an
     app it built should not be able to drift on how they find their backend.
     """
-    from flow_sdk.builtin.faas.serve_static import inject_api_origin  # noqa: PLC0415
+    from flow_sdk.builtin.faas.serve_static import inject_api_origin, inject_state_key  # noqa: PLC0415
+    from flow_sdk.server import page_state  # noqa: PLC0415
+    from flow_sdk.server.middleware.local_cookiegate_middleware import _is_direct_open  # noqa: PLC0415
 
+    # The app's own key, handed over ONLY to a page the user opened themselves (typed, bookmarked, the
+    # OS launch, the reload button): `Sec-Fetch-Site: none`. A page's `fetch('/')` or `window.open('/')`
+    # is same-origin and gets none, so no page can take the app's reach.
+    if request is not None and page_state.enforced() and _is_direct_open(request.scope, request):
+        return HTMLResponse(
+            content=inject_state_key(inject_api_origin(html), page_state.app_key()), headers={"Cache-Control": "no-store"}
+        )
     return HTMLResponse(content=inject_api_origin(html))
 
 
@@ -90,7 +99,7 @@ def _get_index_candidates() -> list[Path]:
 
 
 @router.get("/", response_class=HTMLResponse)
-async def serve_ui():
+async def serve_ui(request: Request):
     """Serve the main UI.
 
     Looks for index.html in priority order:
@@ -100,7 +109,7 @@ async def serve_ui():
     for candidate in _get_index_candidates():
         if candidate.exists():
             # encoding= on purpose: the shell is UTF-8, the host codepage is not.
-            return serve_index_html(candidate.read_text(encoding="utf-8"))
+            return serve_index_html(candidate.read_text(encoding="utf-8"), request)
     return HTMLResponse(
         content="<h1>Flow UI not built. Run: python build_ui.py</h1>",
         status_code=404,

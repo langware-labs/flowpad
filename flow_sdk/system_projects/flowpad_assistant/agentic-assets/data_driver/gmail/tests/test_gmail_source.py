@@ -24,6 +24,7 @@ from flow_sdk.ingest.testing import position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
+from flow_sdk.sources.errors import NotFound
 from flow_sdk.sources.files import local_file
 from flow_sdk.sources.testing import Subject, checks_for
 from flow_sdk.sources.values.items import FileKind, MessageData
@@ -65,6 +66,14 @@ class _Gmail:
 
     def __init__(self, validity="44"):
         self.validity, self.boxes, self.next_uid, self.sent, self.calls = validity, {"INBOX": [], ALL_MAIL: []}, 1, [], []
+        #: The UIDs read (``\\Seen``), the mailbox's change counter (0: no CONDSTORE) and when each UID last changed.
+        self.seen, self.modseq, self.changed = set(), 0, {}
+
+    def flag(self, uid: int, seen: bool) -> None:
+        """What reading (or unreading) a message in Gmail does to the mailbox."""
+        (self.seen.add if seen else self.seen.discard)(uid)
+        self.modseq += 1
+        self.changed[uid] = self.modseq
 
     def deliver(self, raw: bytes, thread: str, *, uid=None, sent=False) -> int:
         uid = uid or self.next_uid
@@ -98,10 +107,12 @@ class _Imap:
         # Gmail's own parser: a mailbox name with a space must arrive quoted.
         if " " in box and not (box.startswith('"') and box.endswith('"')):
             return "BAD", [b"Could not parse command"]
-        self.box = box.strip('"')
+        self.box, self.readonly = box.strip('"'), readonly
         return "OK", []
 
     def response(self, name):
+        if name == "HIGHESTMODSEQ":
+            return name, [str(self.g.modseq).encode()] if self.g.modseq else [None]
         return name, [self.g.validity.encode()]
 
     def uid(self, command, *args):
@@ -123,12 +134,23 @@ class _Imap:
             else:
                 uids = [e[0] for e in entries if f"Message-ID: {criteria[2]}".encode() in e[2]]
             return "OK", [" ".join(map(str, uids)).encode()]
-        wanted, query = {int(u) for u in args[0].split(",")}, args[1]
+        if command == "STORE":
+            if self.readonly:
+                return "NO", [b"mailbox selected read-only"]
+            self.g.flag(int(args[0]), args[1] == "+FLAGS")
+            return "OK", []
+        query = args[1]
+        wanted = {e[0] for e in entries} if args[0] == "1:*" else {int(u) for u in args[0].split(",")}
+        if "CHANGEDSINCE" in query:
+            since = int(query.rsplit("CHANGEDSINCE", 1)[1].strip(" )"))
+            wanted = {uid for uid in wanted if self.g.changed.get(uid, 0) > since}
         parts = []
         for uid, thread, raw in entries:
             if uid in wanted:
                 body = raw if "RFC822" in query else raw.split(b"\n\n", 1)[0] + b"\r\n\r\n"
                 parts.append((f"{uid} (UID {uid} X-GM-THRID {thread} BODY {{{len(body)}}}".encode(), body))
+                # After the literal, the way a server may answer: the flags close the response.
+                parts.append((b" FLAGS (\\Seen))" if uid in self.g.seen else b" FLAGS ())") if "FLAGS" in query else b")")
         return "OK", parts
 
     def logout(self):
@@ -302,7 +324,7 @@ def test_imap_page_is_fetched_in_one_round_trip():
 
     client = Client()
     messages = gmail_source._fetch_messages(client, [8, 9])
-    assert client.calls == [("FETCH", "8,9", "(UID X-GM-THRID RFC822)")]
+    assert client.calls == [("FETCH", "8,9", "(UID X-GM-THRID FLAGS RFC822)")]
     assert [(m.uid, m.thread_id) for m in messages] == [(8, "22"), (9, "23")]
 
 
@@ -348,7 +370,7 @@ async def test_reply_lookup_fetches_only_the_newest_matching_header(monkeypatch)
     assert client.calls == [
         ("SEARCH", None, "ALL"),
         ("FETCH", "7,8", "(UID X-GM-THRID BODY.PEEK[HEADER.FIELDS (IN-REPLY-TO)])"),
-        ("FETCH", "8", "(UID X-GM-THRID RFC822)"),
+        ("FETCH", "8", "(UID X-GM-THRID FLAGS RFC822)"),
     ]
 
 
@@ -543,3 +565,42 @@ async def test_mail_in_a_charset_python_does_not_know_still_syncs(gmail):
     gmail.deliver(hebrew, "2", uid=8)
     result = await DataDriver.loaded("gmail").traverse(_row(), _view(cursor=GmailSource.resume_at("44", 6)))
     assert sorted(item.body.strip() for item in result.items) == ["The treasure is under the mast.", "שלום"]
+
+
+# ── read state ──────────────────────────────────────────────────────────────
+
+
+async def test_mail_arrives_as_read_as_gmail_has_it_and_a_later_change_is_a_report(gmail):
+    gmail.deliver(_raw(message_id="<read@x>"), "1", uid=7)
+    gmail.deliver(_raw(message_id="<unread@x>"), "2", uid=8)
+    gmail.flag(7, True)
+    driver = DataDriver.loaded("gmail")
+
+    # A cursor written before flags were followed: the counter is recorded, nothing is backfilled.
+    first = await driver.traverse(_row(), _view(cursor=GmailSource.resume_at("44", 6)))
+    assert {item.external_id: item.data.read for item in first.items} == {"<read@x>": True, "<unread@x>": False}
+    assert first.reads == [] and first.cursor == GmailSource.resume_at("44", 8, 1)
+
+    gmail.flag(8, True)  # read in Gmail
+    second = await driver.traverse(_row(), _view(cursor=first.cursor))
+    assert second.items == [] and second.cursor == GmailSource.resume_at("44", 8, 2)
+    assert [(r.data.target.key, r.data.read) for r in second.reads] == [("<unread@x>", True)]
+
+    # Nothing changed since: the mailbox is not asked for flags at all.
+    gmail.calls.clear()
+    third = await driver.traverse(_row(), _view(cursor=second.cursor))
+    assert third.reads == [] and not [c for c in gmail.calls if c[0] == "FETCH"]
+
+
+async def test_a_read_made_here_is_stored_in_gmail_only_when_the_source_says_so(gmail):
+    uid = gmail.deliver(_raw(message_id="<mark@x>"), "1")
+    driver, target = DataDriver.loaded("gmail"), GmailSource(_binding()).origin("<mark@x>")
+
+    assert await driver.mark_read(_row(), target, True) is False
+    assert uid not in gmail.seen and not [c for c in gmail.calls if c[0] == "STORE"]
+
+    row = _row(mark_read_in_gmail=True)
+    assert await driver.mark_read(row, target, True) is True and uid in gmail.seen
+    assert await driver.mark_read(row, target, False) is True and uid not in gmail.seen
+    with pytest.raises(NotFound):
+        await driver.mark_read(row, GmailSource(_binding()).origin("<gone@x>"), True)

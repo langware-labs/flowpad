@@ -35,7 +35,7 @@ const redirectedTo = async (search: string): Promise<string | null> => {
 // flowpad:endcapsule tag
 describe('hub root redirect', () => {
   it.each(['?signup', '?login'])('keeps the login callback marker %s', async (search) => {
-    await expect(redirectedTo(search)).resolves.toBe(`/dock/hub/home${search}`);
+    await expect(redirectedTo(search)).resolves.toBe(`/dock/hub/stream_inbox${search}`);
   });
 
   // GA4 receives the hub home's URL, and Auth0's verification link can carry the visitor's address.
@@ -45,10 +45,10 @@ describe('hub root redirect', () => {
     ['?success=true&message=Your%20email%20was%20verified&email=a%40b.test', ''],
     ['?action=open&setup_git=1', ''],
   ])('drops everything else from %s', async (search, kept) => {
-    await expect(redirectedTo(search)).resolves.toBe(`/dock/hub/home${kept}`);
+    await expect(redirectedTo(search)).resolves.toBe(`/dock/hub/stream_inbox${kept}`);
   });
 
   it('adds nothing when the request has no query', async () => {
-    await expect(redirectedTo('')).resolves.toBe('/dock/hub/home');
+    await expect(redirectedTo('')).resolves.toBe('/dock/hub/stream_inbox');
   });
 });

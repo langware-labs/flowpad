@@ -5,6 +5,7 @@ no ``source.py``, two classes, a class that names another source, an import erro
 import of a helper module beside the source, the reload of a changed folder, and a folder that
 claims a shipped source's name.
 """
+
 from __future__ import annotations
 
 import json
@@ -17,7 +18,7 @@ from flow_sdk.ingest.driver_registry import DriverLoadError, content_hash, load_
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
-SOURCE = '''
+SOURCE = """
 from flow_sdk.sources.families import RecordSource
 from .helper import GREETING
 
@@ -25,7 +26,7 @@ from .helper import GREETING
 class WikiSource(RecordSource):
     provider = "{name}"
     greeting = GREETING
-'''
+"""
 
 
 def _folder(root: Path, name: str = "wiki", source: str | None = SOURCE, helper: str = 'GREETING = "hi"\n') -> Path:
@@ -33,9 +34,9 @@ def _folder(root: Path, name: str = "wiki", source: str | None = SOURCE, helper:
     folder.mkdir(parents=True)
     # `ns`: this folder is not under SHIPPED_ROOT, so it is an EXTERNAL driver and
     # must name the ontology its kinds belong to. See the refusal test below.
-    (folder / "data_driver.json").write_text(json.dumps(
-        {"schema": 1, "name": name, "title": "Wiki", "kind": "datasource.wiki", "ns": "acme"}
-    ))
+    (folder / "data_driver.json").write_text(
+        json.dumps({"schema": 1, "name": name, "title": "Wiki", "kind": "datasource.wiki", "ns": "acme"})
+    )
     if source is not None:
         (folder / "source.py").write_text(source.format(name=name))
     (folder / "helper.py").write_text(helper)
@@ -86,7 +87,9 @@ def test_the_class_names_the_manifests_source(tmp_path):
 def test_a_driver_extends_one_family(tmp_path):
     """``Source`` alone is no family: the author picks files, records or messages — and a message source
     that cannot answer is refused, so "sends" is the family and nothing else."""
-    bare = SOURCE.replace("from flow_sdk.sources.families import RecordSource", "from flow_sdk.sources.base import Source")
+    bare = SOURCE.replace(
+        "from flow_sdk.sources.families import RecordSource", "from flow_sdk.sources.base import Source"
+    )
     with pytest.raises(DriverLoadError, match="extends Source directly"):
         load_driver(_folder(tmp_path, source=bare.replace("(RecordSource)", "(Source)")))
     mute = SOURCE.replace("RecordSource", "MessageSource")
@@ -116,7 +119,9 @@ def test_every_shipped_driver_has_the_family_its_items_are():
             families.setdefault(load_driver(folder).cls.family.value, []).append(folder.name)
     assert families["object"] == ["flow_storage", "folder", "gcs", "gdrive", "gdrive_mount", "git", "s3"]
     assert families["record"] == ["hackernews", "jira", "rss"]
-    assert len(families["message"]) == 18 and {"slack", "flow_whatsapp", "flow_telegram", "flow_slack"} <= set(families["message"])
+    assert len(families["message"]) == 19 and {"slack", "flow_whatsapp", "flow_telegram", "flow_slack"} <= set(
+        families["message"]
+    )
 
 
 def test_an_import_error_is_a_load_error_naming_the_file(tmp_path):

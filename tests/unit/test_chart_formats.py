@@ -45,3 +45,8 @@ def test_an_unknown_format_is_kept_as_declared_for_the_editor_to_name():
 def test_architecture_is_a_known_format():
     assert chart_format({"format": "architecture"}) == "architecture"
     assert CHART_SOURCES["architecture"][0] == "architecture.json"
+
+
+def test_flowchart_is_a_known_format():
+    assert chart_format({"format": "flowchart"}) == "flowchart"
+    assert CHART_SOURCES["flowchart"][0] == "flowchart.json"

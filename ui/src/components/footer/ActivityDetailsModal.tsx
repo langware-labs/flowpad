@@ -21,8 +21,63 @@ import {
 import { useActivityDetailsStore } from '@src/store/use-activity-details-store';
 import { useElapsedMs } from '@src/hooks/useActivity';
 import { humanizeSeconds } from '@src/utils/duration';
+import { TypeId } from '@sdk/models/TypeId';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { buildDockPointer } from '@src/navigation/entity-pointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ActivityRow } from './ActivityRow';
 import { activityOneLiner } from './activity-one-liner';
+
+/** Where a job's subject opens: the entity itself, and for an automation its runs. Null for a subject with no page. */
+function subjectLinks(subject: string): { type: string; open: DockPointer; runs: DockPointer | null } | null {
+  let typeId: TypeId;
+  try {
+    typeId = new TypeId(subject);
+  } catch {
+    return null;
+  }
+  const open = buildDockPointer({ type: typeId.type, id: typeId.id }, undefined);
+  if (!open) return null;
+  const runs = typeId.type === 'trigger' ? DockPointer.forAutomations({ place: 'runs', trigger: typeId.id }) : null;
+  return { type: typeId.type, open, runs };
+}
+
+/** The links from a job to what it is about. Its own component: only a job with a subject needs the router. */
+function ActivitySubjectLinks({ subject, onOpen }: { subject: string; onOpen: () => void }) {
+  const { navigation } = useDockNavigation();
+  const { t } = useLingui();
+  const links = subjectLinks(subject);
+  if (!links) return null;
+  const Icon = iconForType(links.type);
+  const go = (pointer: DockPointer) => {
+    onOpen();
+    navigation.openDock(pointer);
+  };
+  return (
+    <div className="flex items-center gap-3 text-xs" data-testid="activity-details-links">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 text-primary hover:underline"
+        data-testid="activity-details-open-subject"
+        onClick={() => go(links.open)}
+      >
+        <Icon className="size-3.5" />
+        {links.runs ? t`Open automation` : t`Open`}
+      </button>
+      {links.runs && (
+        <button
+          type="button"
+          className="text-primary hover:underline"
+          data-testid="activity-details-open-runs"
+          onClick={() => go(links.runs as DockPointer)}
+        >
+          {t`Runs`}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function ActivityDetailsModalRoot() {
   const open = useActivityDetailsStore((s) => s.open);
@@ -73,6 +128,9 @@ export function ActivityDetailsModalRoot() {
             >
               {spec.message}
             </p>
+          )}
+          {spec?.subject_entity && (
+            <ActivitySubjectLinks subject={spec.subject_entity} onOpen={() => setOpen(false)} />
           )}
         </DialogHeader>
         <div className="max-h-[70vh] overflow-y-auto pe-1">

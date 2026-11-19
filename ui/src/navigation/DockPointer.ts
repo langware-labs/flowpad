@@ -254,6 +254,9 @@ export const PAGE_BEFORE_PARAM = 'before';
  * `withStreamInboxFilters()`.
  */
 export const STREAM_INBOX_VIEW_PARAM = 'view';
+/** The stream inbox's views — the ONE list: the pills, the URL's `view` and the page query read it. */
+export const STREAM_INBOX_VIEWS = ['all', 'unread', 'starred', 'archived', 'invites'] as const;
+export type StreamInboxViewMode = (typeof STREAM_INBOX_VIEWS)[number];
 export const STREAM_INBOX_SEARCH_PARAM = 'q';
 /** The stream inbox's picked channel marks — the same `channel` key `forAgentStreamInbox` writes. */
 export const STREAM_INBOX_CHANNEL_PARAM = 'channel';
@@ -305,6 +308,15 @@ export const JOURNEY_STEP_PARAM = 'journeyStep';
  */
 export const WORKSPACE_PARAM = 'workspace';
 export const WORKSPACE_ENTRY_PARAM = 'workspaceEntry';
+
+/**
+ * URL query-param key carrying the STATE KEY a page was opened with (`flow_sdk/server/page_state.py`):
+ * minted by whoever opened the page on this machine (`flow show`, an agent, the user saying Allow), and
+ * handed by the host to the page's frame. A dock without one asks the user before it runs a page.
+ * It is this dock's own — NOT sticky: carrying one page's key onto another page would hand it reach it
+ * never earned. Excluded from `tabHash` like every option.
+ */
+export const STATE_KEY_PARAM = 'stateKey';
 
 /**
  * URL query-param key naming the capability the user was reaching for when they
@@ -693,9 +705,9 @@ export class DockPointer implements IDockPointer {
   }
 
   /** The stream inbox's view pill, or 'all' when the URL names none (or an unknown one). */
-  get streamInboxView(): 'all' | 'unread' | 'archived' | 'invites' {
+  get streamInboxView(): StreamInboxViewMode {
     const v = this.options?.[STREAM_INBOX_VIEW_PARAM];
-    return v === 'unread' || v === 'archived' || v === 'invites' ? v : 'all';
+    return STREAM_INBOX_VIEWS.find((view) => view === v) ?? 'all';
   }
 
   /** The stream inbox's picked channel marks (`?channel=a,b`): null when the URL names none (the view's
@@ -720,7 +732,7 @@ export class DockPointer implements IDockPointer {
 
   /** Clone with the given stream inbox filters set ('all' / '' clear them). A page is a page of ONE filter
    *  set, so any change also goes back to now. */
-  withStreamInboxFilters(f: { view?: 'all' | 'unread' | 'archived' | 'invites'; search?: string }): DockPointer {
+  withStreamInboxFilters(f: { view?: StreamInboxViewMode; search?: string }): DockPointer {
     let next = this.withPageBefore(null);
     if (f.view !== undefined) next = next.withOption(STREAM_INBOX_VIEW_PARAM, f.view === 'all' ? null : f.view);
     if (f.search !== undefined) next = next.withOption(STREAM_INBOX_SEARCH_PARAM, f.search || null);

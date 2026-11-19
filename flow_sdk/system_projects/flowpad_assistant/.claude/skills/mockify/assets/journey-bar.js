@@ -138,7 +138,7 @@
     const id = J[cur].id;
     if (open.startsWith('change:')) { open = ''; panel.hidden = true; }   // a change belongs to its screen
     if (typeof hoverEl !== 'undefined' && mini) { mini = null; hoverEl.hidden = true; }
-    if (record && location.hash.slice(1) !== id) history.pushState(null, '', '#' + id);
+    if (record && location.hash.slice(1) !== id) history.pushState(null, '', location.href.split('#')[0] + '#' + id);   // absolute: a <base> on another origin makes a bare '#id' cross-origin, and pushState throws
     show(id);
     if (typeof nextIx !== 'undefined') nextIx = 0;
     if (allMode) changesOf(J[cur]).forEach((c) => { if (!isRev(J[cur], c)) setRev(J[cur], c, true); });
@@ -166,6 +166,7 @@
     * { box-sizing: border-box; font: 13px/1.3 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
     .bar { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 6px 0 4px; color: var(--mk-fg); background: var(--mk-bg);
       border: 1.5px solid var(--mk-edge); border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.25); max-width: calc(100vw - 16px); }
+    .bar > button, .grip { flex: none; }   /* a tight bar squeezes the title, never what is before Next */
     .grip { cursor: grab; padding: 0 4px; color: var(--mk-muted); user-select: none; touch-action: none; font-size: 14px; }
     .grip:active { cursor: grabbing; }
     .scope { color: var(--mk-accent); }
@@ -185,7 +186,7 @@
     @media (prefers-reduced-motion: reduce) { .next.hint { animation: none; } }
     .ico { height: 32px; min-width: 32px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: var(--mk-fg); }
     .ico:hover { background: var(--mk-soft); }
-    .where { display: flex; flex-direction: column; box-sizing: border-box; flex: 0 0 272px; width: 272px; min-width: 0; padding: 0 6px; }
+    .where { display: flex; flex-direction: column; box-sizing: border-box; flex: 0 1 272px; width: 272px; min-width: 0; padding: 0 6px; }
     .stag { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 5px; font: 800 10px/16px system-ui, sans-serif; letter-spacing: .05em; color: #fff; vertical-align: 1px; }
     .stag.ex { background: #57606a; } .stag.new { background: #1a7f37; }
     .who { display: inline-block; max-width: 190px; vertical-align: bottom; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; margin-right: 4px; border-radius: 9px; background: var(--mk-soft); font-size: 10px; line-height: 15px; white-space: nowrap; transition: background .3s, color .3s; }
@@ -253,8 +254,8 @@
     <span class="grip hide-min" title="Drag">⋮⋮</span><button class="ico scope" title="Point at an element to comment on it (Esc cancels)" aria-label="Comment on an element"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.034 12.681a.498.498 0 0 1 .647-.647l9 3.5a.5.5 0 0 1-.033.943l-3.444 1.068a1 1 0 0 0-.66.66l-1.067 3.443a.5.5 0 0 1-.943.033z"/><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h2"/><path d="M14 3h1"/><path d="M3 9v1"/><path d="M21 9v2"/><path d="M3 14v1"/></svg></button>
     <button class="ico restart hide-min" title="Restart the mock from the first screen" aria-label="Restart">⟲<span class="restart-label">Restart</span></button>
     <button class="nav back hide-min" title="Previous screen (←)" aria-label="Back">‹ <span class="lbl">Back</span></button>
-    <div class="where"><span class="step"></span><span class="n"></span></div>
     <button class="nav next hide-min" title="Next screen (→)" aria-label="Next"><span class="lbl">Next</span> ›</button>
+    <div class="where"><span class="step"></span><span class="n"></span></div>
     <span class="chg hide-min" hidden><button class="cnt" title="Go to the next change on this screen"></button><span class="sw"><button class="sw-d on" title="Today (red) and the suggestion (green), side by side">Diff</button><button class="sw-t" title="The screen as it is today">Today</button><button class="sw-a" title="Only the suggestion">After</button></span></span>
     <span class="sep hide-min"></span>
     <button class="ico steps hide-min" title="All screens" aria-label="All screens">☰</button>
@@ -1013,7 +1014,7 @@
   if (store.get('min')) bar.classList.add('min');
   minLabel();
   $('.min-btn').onclick = () => {
-    bar.classList.toggle('min'); setPanel(''); store.set('min', bar.classList.contains('min')); minLabel();
+    bar.classList.toggle('min'); setPanel(''); store.set('min', bar.classList.contains('min')); minLabel(); pin();
     reclamp();
   };
   panel.addEventListener('click', (e) => {
@@ -1092,8 +1093,17 @@
       const b = host.getBoundingClientRect(); store.set('pos', { x: b.left, y: b.top }); contrast();
     }, { once: true });
   });
+  // Back and Next never move: they sit before everything whose width changes, and the bar is held by its LEFT edge
+  // (measured at its widest, so it still fits) — a centred or right-held bar would shift them with every screen.
+  const pin = () => {
+    if (bar.classList.contains('min')) return;
+    const chg = $('.chg'), was = chg.hidden;
+    chg.hidden = false;
+    const r = host.getBoundingClientRect(); place(r.left, r.top);
+    chg.hidden = was;
+  };
   const pos = store.get('pos');
-  if (pos) requestAnimationFrame(() => place(pos.x, pos.y));
+  requestAnimationFrame(() => { if (pos) place(pos.x, pos.y); pin(); });
   addEventListener('resize', () => { reclamp(); contrast(); drawPins(); });
 
   addEventListener('keydown', (e) => {

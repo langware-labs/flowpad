@@ -218,18 +218,18 @@ flow navigate file <tmp>/git-setup-report.html
 
 ## Modes `existing` and `new` — register and add
 
-1. Register the repo as its own Flowpad project (same shape git-created
-   projects use). Discover the server port from
-   `~/.flow/instances/${FLOW_INSTANCE:-prod}/server.json` (fallback
-   `~/.flow/server.json` or `LOCAL_SERVER_PORT`), then POST:
+1. Register the repo as its own Flowpad project:
 
-```json
-{"name":"<dir>","fs_storage_mount_path":"<dir>"}
+```bash
+flow project register <dir>
 ```
 
-to `/api/v1/graph/project`. Keep the returned `data.id` as `newProjectId`.
-If a project for that exact path already exists, reuse it instead of
-creating a duplicate.
+   Keep the printed `project_id` as `newProjectId`. A refusal because the
+   folder (a reused checkout) is already a project is fine: carry on without
+   `newProjectId`. Any other refusal: show the message and stop. Never call the Flowpad
+   API yourself (`curl`, `requests`, a port read from `server.json`): the
+   local server refuses a request without the instance's gate secret (HTTP
+   403), and only the `flow` CLI sends it.
 
 2. Add the repo to the TARGET project as a dependency (in its `flow.json`, or on this device only when `local` is true) — the folder
    is recorded as its repository (`git+<url>#<branch>`) and this checkout is the
@@ -265,6 +265,9 @@ flow dep add <dir> --project <projectId>            # add --optional when option
 ```bash
 flow wizard <wizard-process-id> close '{"status":"done","data":{"path":"<dir>","newProjectId":"<new-project-id>"}}'
 ```
+
+   Without a `newProjectId` (the folder was already a project), leave the key
+   out: `{"status":"done","data":{"path":"<dir>"}}`.
 
    If the user is not satisfied, keep helping (rename, change remote,
    re-add) and post the one-line notification again when done.

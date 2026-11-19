@@ -40,6 +40,16 @@ export interface SendReplyExtras {
   /** Hub user ids of the people tagged with `@name` in the text; the hub keeps those who may read the
    *  conversation and tells them (an email, and a notification on their Flowpad). */
   mentions?: string[];
+  /** Typed values the message carries (`<kind>-<id>` with its value in `prompt_preview`), e.g. a
+   *  form's answers. Checked by `add_message` on the desktop and the hub alike. */
+  attachment?: ValueAttachment[];
+}
+
+/** A typed value riding a message: what `value_attachment` builds on the Python side. */
+export interface ValueAttachment {
+  attachment_type: 'type_id';
+  data: string;
+  prompt_preview: string;
 }
 
 /** Serialize shareConfig to the backend's snake_case share_config shape.
@@ -109,6 +119,7 @@ export async function sendReply(
     if (extras?.replyToId) form.append('reply_to_id', extras.replyToId);
     if (extras?.threadRootId) form.append('thread_root_id', extras.threadRootId);
     if (extras?.mentions?.length) form.append('mentions', JSON.stringify(extras.mentions));
+    if (extras?.attachment?.length) form.append('attachment', JSON.stringify(extras.attachment));
     action.bodyParameters = form;
     // File sends are multipart — binary bodies only travel over REST.
     return sentReply(await dataManager.callAction(action));
@@ -125,6 +136,7 @@ export async function sendReply(
     if (extras?.replyToId) body.reply_to_id = extras.replyToId;
     if (extras?.threadRootId) body.thread_root_id = extras.threadRootId;
     if (extras?.mentions?.length) body.mentions = extras.mentions;
+    if (extras?.attachment?.length) body.attachment = extras.attachment;
     action.bodyParameters = body;
     // REST, not the socket: only the local server answers REST frames over its WebSocket.
     return sentReply(await dataManager.callAction(action));

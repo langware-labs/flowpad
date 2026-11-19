@@ -1,0 +1,17 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "from": {
+      "shape": "string",
+      "description": "The node this exit leaves."
+    },
+    "to": {
+      "shape": "string",
+      "description": "The node it leads to."
+    },
+    "label": {
+      "shape": "?string",
+      "description": "The answer this exit stands for (yes, no, help desk). Every exit of a question has one."
+    }
+  }
+}

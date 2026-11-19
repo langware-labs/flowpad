@@ -111,7 +111,7 @@ describe('IssueReplyLine', () => {
     expect(screen.getByTestId('issue-card-row-cause').textContent).toContain('connection reset');
     expect(screen.getByTestId('issue-card-row-status').textContent).toContain('Resolved by itself after 50s');
 
-    fireEvent.click(screen.getByTestId('issue-card-row-cause'));
+    fireEvent.click(screen.getByTestId('issue-card-row-what'));
     expect(h.openDockOnThisPage).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(h.openDockOnThisPage.mock.calls[0][0])).toContain(`issue/${ISSUE_ID}`);
   });

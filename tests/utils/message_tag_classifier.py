@@ -1,12 +1,12 @@
-"""Deterministic model boundary for the real message-tags browser acceptance rig.
+"""The automation executors of the real message-tags browser acceptance rig.
 
-Only the LLM endpoint is replaced. Ontology selection, FlowCall validation,
-message persistence, tag mutation and automation execution remain production code.
+Classification goes through the Decision API (doubled by ``MOCK_DECISION``). This
+registers the acceptance callbacks and their correlated release gate; message
+persistence, tag mutation and automation admission remain production code.
 """
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -47,32 +47,9 @@ def _start_control() -> None:
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
 
-class MessageTagEndpoint:
-    typeid = "llm_endpoint-message-tags-test"
-
-    async def create_completion(self, system: str, user: str, timeout: float) -> str:
-        del system, timeout
-        payload = user.split("Input JSON:\n", 1)[1].split("\n\nAnswer with JSON", 1)[0]
-        data = json.loads(payload)
-        message = json.dumps(data["message"]).lower()
-        if "classifier-failure" in message:
-            raise RuntimeError("Intentional classifier fixture failure")
-        names = [entry["name"] for entry in data["ontology"]]
-        suffixes = ("billing.refund", "priority.today", "message.action-required")
-        tags = [] if "unmatched-message" in message else [
-            name for name in names if name.endswith(suffixes)
-        ]
-        return json.dumps({"tags": tags})
-
-
 def install() -> None:
-    from flow_sdk.core.compute_op import runner  # noqa: PLC0415
     from flow_sdk.builtin import trigger_callbacks  # noqa: PLC0415
 
-    async def endpoint():
-        return MessageTagEndpoint()
-
-    runner._box_llm = endpoint
     _start_control()
 
     @trigger_callbacks.register("message_tags_acceptance_refund")

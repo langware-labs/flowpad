@@ -18,6 +18,9 @@ export const CHART_LIGHT = {
   '--s4': '#6250d6',
   '--s-other': '#8a8984',
   '--focus': '#2a78d6',
+  // The side panel's two kinds of row — a fixed meaning each, kept apart from the series slots.
+  '--side-fact': '#2a78d6',
+  '--side-note': '#eb6834',
 };
 
 export const CHART_DARK: typeof CHART_LIGHT = {
@@ -35,6 +38,8 @@ export const CHART_DARK: typeof CHART_LIGHT = {
   '--s4': '#9085e9',
   '--s-other': '#8f8e88',
   '--focus': '#3987e5',
+  '--side-fact': '#3987e5',
+  '--side-note': '#d95926',
 };
 
 export const CHART_SLOTS = ['--s1', '--s2', '--s3', '--s4'];

@@ -1,15 +1,19 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   instancePreferences,
+  PageId,
+  ViewType,
   isPrefVisible,
   PREF_GROUPS,
   PREF_REGISTRY,
   PrefInfo,
   PrefKey,
   PrefTab,
+  PrefTabLink,
   resolvePreferencesPointer,
 } from '@sdk';
 import { SettingsCard } from '@src/components/settings/settings-card';
+import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { usePreferencesVersion } from '@src/hooks/use-preference';
@@ -23,6 +27,11 @@ import { TraceLoggingSection } from './TraceLoggingSection';
 /** Reads live values for the `visibleWhen` filter; no stable identity needed. */
 const readPref = (key: PrefKey) => instancePreferences.get(key);
 const ALL_TABS = PREF_GROUPS.flatMap((g) => g.tabs);
+
+/** Where each tab link goes: a screen of its own (`PrefTab.link`). */
+const TAB_LINKS: Record<PrefTabLink, { page: PageId; view: ViewType }> = {
+  'email-rules': { page: PageId.HUB, view: ViewType.NOTIFICATIONS },
+};
 
 const layoutName = (id: string) => translatePrefLayout(id, humanizeType(id.split('/').pop() ?? id));
 
@@ -129,6 +138,16 @@ export function PreferencesView() {
                   </TabsList>
                 </Tabs>
                 {tab.custom === 'toplog' ? <TraceLoggingSection /> : <PrefRows infos={visibleRows(tab)} />}
+                {tab.link && (
+                  <Button
+                    variant="link"
+                    className="mt-4 px-0"
+                    data-testid={`open-${tab.link}`}
+                    onClick={() => navigation.openPage(TAB_LINKS[tab.link!].page, TAB_LINKS[tab.link!].view)}
+                  >
+                    {layoutName(tab.link)} →
+                  </Button>
+                )}
               </>
             )}
           </div>

@@ -95,6 +95,9 @@ async def test_an_unanswered_wait_is_cancelled_with_a_message():
 
     spent = await Trigger.get_by_id(rule.id)
     assert spent.ended_reason == "expired" and await pending_callbacks(await AgenticProcess.get_by_id(process.id)) == []
+    # the ended rule still says which session made it; the session no longer lists it
+    assert process.typeid in spent.shared_context_entities
+    assert spent.typeid not in (await AgenticProcess.get_by_id(process.id)).shared_context_entities
     note = await Conversation.get_one({"channel": "automations", "channel_source_id": f"trigger-{rule.id}"})
     texts = [m.text for m in await FlowMessage.get_all({"conversation_id": note.id})]
     assert any(t.startswith("Prompt handling cancelled") for t in texts)
@@ -109,5 +112,23 @@ async def test_a_wait_past_its_time_never_fires():
     await rule.update()
 
     await _arrive(rule, await _message(conv.id, "Team"))
+
+    assert _queued(process) == []
+
+
+@async_context
+async def test_the_sessions_own_send_is_not_the_reply():
+    """A session sends again into the conversation it waits on: its own send, through the send handler,
+    never wakes it — however soon the reply check runs after the save."""
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+
+    from ._helpers import settle  # noqa: PLC0415
+
+    process, conv, _, rule = await _setup()
+    await arm_trigger(await Trigger.get_by_id(rule.id), replace=True)
+
+    await handle_add_message({"conversation_id": str(conv.id), "message": "Change of plan"}, None,
+                             pending_send=True, origin_process=process.id)
+    await settle()
 
     assert _queued(process) == []

@@ -95,6 +95,10 @@ def describe_when(trigger: Any, catalog: Optional[dict[str, tuple[str, str]]] = 
     if kind == "event":
         event = describe_event(str(trigger.tag_pattern or ""), trigger.tag_target, catalog)
         subject = for_pattern(event.pattern)
+        tags = list(getattr(trigger, "message_tags", None) or [])
+        if tags:
+            event = event.model_copy(update={"message_tags": tags})
+            return WhenPart(kind=kind, text=f"When a message is tagged {' or '.join(tags)}", event=event)
         if subject is not None and subject.when_text:
             return WhenPart(kind=kind, text=subject.when_text, event=event)
         label = event.title or event.pattern or "an event"
@@ -133,6 +137,10 @@ class _Names:
         return found
 
 
+#: The shipped block a rule's "Mark as read" step names.
+MARK_READ_OP = "mark-message-read"
+
+
 async def _describe_then_wizard(spec: Any, *, names: _Names, parent_type_id: str = "") -> list[ThenPart]:
     """A ``then`` wizard in words: the sugar's one agent or script, else the steps."""
     if spec.run_agent is not None:
@@ -144,7 +152,26 @@ async def _describe_then_wizard(spec: Any, *, names: _Names, parent_type_id: str
         return [ThenPart(kind="run_script", text=f"Run {spec.run_script}", target_name=spec.run_script)]
     if spec.ref:
         return [ThenPart(kind="workflow", text=f"Run the wizard {spec.ref}", target_name=spec.ref)]
-    return [ThenPart(kind="workflow", text=f"Run {len(spec.steps)} steps", detail=", ".join(s.id for s in spec.steps))]
+    # A sequence a person built on the rule page reads step by step; any other reads as its size.
+    from flow_sdk.automations.then import inline_ops  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.compute_op_spec import OpSubkind  # noqa: PLC0415
+
+    ops = inline_ops(spec)
+    parts: list[ThenPart] = []
+    for step in spec.steps:
+        op = ops.get(step.ref)
+        if step.ref == MARK_READ_OP:
+            parts.append(ThenPart(kind="mark_read", text="Mark as read"))
+        elif op is not None and op.subkind is OpSubkind.AGENT:
+            who = await names.name(op.exe_data.agent) or op.exe_data.agent
+            parts.append(ThenPart(kind="run_agent", text=f"Run {who}", target=op.exe_data.agent, target_name=who,
+                                  prompt=op.exe_data.prompt))
+        elif op is not None and op.subkind is OpSubkind.CLI:
+            command = next(iter(op.exe_data.commands.values()), "")
+            parts.append(ThenPart(kind="run_script", text=f"Run {command}", target_name=command))
+        else:
+            return [ThenPart(kind="workflow", text=f"Run {len(spec.steps)} steps", detail=", ".join(s.id for s in spec.steps))]
+    return parts
 
 
 async def describe_then(trigger: Any, *, names: Optional[_Names] = None,

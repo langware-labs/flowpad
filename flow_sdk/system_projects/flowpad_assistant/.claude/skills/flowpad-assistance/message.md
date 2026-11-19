@@ -82,11 +82,12 @@ to run".
 Write the text with the `message-formatter` skill before any send below (title = the subject in
 a few words; the text never repeats it).
 
-`flow conversation send <conv-id> <text>` exists and is fine for a **text-only** send. It
-takes no attachment, asset or prompt options, so every richer send goes through the backend's
-own `add_message` action — the same endpoint the UI uses — called over local HTTP. Prefer the
-HTTP path whenever the message carries anything besides text, so one shape covers every case.
-Everything below is one `curl` per step.
+**Use the CLI first:** `flow conversation send <conv-id> "<text>"` takes `--file <path>` (repeat
+for several files — a report, a `git bundle`), `--prompt`, `--session`, `--reply-to`, `--form` and
+`--on-reply`, in any combination. `flow conversation attach <conv-id> <entity-TypeId> "<text>"`
+references an entity. The `curl` steps below are for what the CLI does not cover
+(`asset_references` beside files, `prompt_files`, `thread_root_id`) — the same `add_message`
+endpoint the UI uses.
 
 ## Step 0 — resolve the backend port
 

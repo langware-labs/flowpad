@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { type HelpRequestDiagnosis, helpRequestDiagnosis } from '@sdk';
 
 /** A help request's diagnosis state (`help-request-diagnosis`), read on mount and — while the diagnosis still
- *  runs — again every few seconds until it lands. `reload` reads it now (after Report it). One reader for
+ *  or its fix runs — again every few seconds until it lands. `reload` reads it now (after Report it). One reader for
  *  every surface that shows it: the diagnosis message's actions and the warning it was started from. */
 export function useHelpRequestDiagnosis(conversationId: string): [HelpRequestDiagnosis | null, () => void] {
   const [state, setState] = useState<HelpRequestDiagnosis | null>(null);
@@ -17,7 +17,7 @@ export function useHelpRequestDiagnosis(conversationId: string): [HelpRequestDia
         .then((s) => {
           if (!live) return;
           setState(s);
-          if (s.diagnosing) timer = window.setTimeout(load, 3000);
+          if (s.state === 'diagnosing' || s.state === 'fixing') timer = window.setTimeout(load, 3000);
         })
         .catch(() => live && setState(null));
     void load();

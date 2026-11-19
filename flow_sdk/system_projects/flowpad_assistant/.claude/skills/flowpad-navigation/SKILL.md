@@ -35,8 +35,10 @@ Key on the **intent**, not on the mode and not on who authored the file:
   itself that explicit ask. It moves the tab the user is looking at, so use it only
   when being moved is what they asked for.
 
-When in doubt, `flow show` — the failure mode of showing is a tab the user ignores;
-the failure mode of navigating is yanking them out of their work.
+Between the two, when in doubt, `flow show` — the failure mode of showing is a tab the
+user ignores; the failure mode of navigating is yanking them out of their work. Whether
+to show at all is a separate question: show only what they asked to see or the
+deliverable they asked for; a file saved for them is reported by its path.
 
 **A session opens as a live-session tab, not its transcript.** `flow show entity` opens
 nothing for a `claude_session` or `agentic_process`, and `flow navigate entity` lands
@@ -214,6 +216,7 @@ opens a different screen and reports success.
 | Machines *(hub)* | `machines` | sandboxes, computers |
 | Stream Inbox | `stream_inbox` | messages |
 | LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
+| Notifications *(hub)* | `notifications` | email notifications, mute emails, unsubscribe |
 | Token sources | `llm-sources` | llm sources, harness funding |
 | Set up LLM | `llm-setup` | llm setup, choose llm, connect llm |
 | Machine | `machine` | system, this machine |

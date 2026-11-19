@@ -3,11 +3,11 @@
  *
  * One sentence per automation, its last result and what happens next, grouped
  * by whose it is: this project, mine everywhere, other projects, and — folded
- * into one line — Flowpad's own. Kinds are filter chips with counts, not
- * sections; an attention strip names failures before anyone has to look.
+ * into one line — Flowpad's own. Statuses are tabs with counts (an ended rule is
+ * Done, not a switched-on row); an attention strip names failures before anyone has to look.
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { AutomationKind, AutomationSummary } from '@sdk';
+import type { AutomationSummary } from '@sdk';
 import { AlertTriangle, ChevronDown, ChevronRight, CloudOff, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
@@ -26,7 +26,6 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { useAutomationWords } from './automation-words';
 import { AutomationRow } from './AutomationRow';
 import { PackageRow } from './PackageRow';
 import { KindGallery } from './KindGallery';
@@ -34,18 +33,20 @@ import type { CreatingKind } from './automations-pointer';
 import { IfThenGraphic } from './IfThenGraphic';
 import { Pills } from './Pills';
 
-const KIND_ORDER: AutomationKind[] = ['schedule', 'event', 'file', 'agent_hook'];
+type Status = NonNullable<AutomationSummary['status']>;
+const STATUS_ORDER: Status[] = ['active', 'off', 'done', 'expired', 'cancelled'];
+/** Where the rule stands (backend `lifecycle.status`); an older backend sends none, so the switch says it. */
+export const statusOf = (a: AutomationSummary): Status => a.status ?? (a.enabled ? 'active' : 'off');
 
 export function AutomationsList() {
   const { t } = useLingui();
-  const words = useAutomationWords();
   const { navigation } = useDockNavigation();
   const [scope, setScope, projectId] = useDefaultScopeFilter();
   const { data: all = [], isLoading, error, cloudWarning } = useAutomations();
   const runOnce = useRunOnce();
   const setEnabled = useSetAutomationEnabled();
   const setPackage = useSetPackageEnabled();
-  const [kind, setKind] = useState<AutomationKind | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
   const [showBuiltin, setShowBuiltin] = useState(false);
   const [choosing, setChoosing] = useState(false);
   // Flowpad's own rules follow no scope; yours follow the scope bar ("mine" = user scope).
@@ -58,19 +59,21 @@ export function AutomationsList() {
   );
 
   const counts = useMemo(() => {
-    const c: Partial<Record<AutomationKind, number>> = {};
-    for (const a of automations) if (a.group !== 'builtin') c[a.kind] = (c[a.kind] ?? 0) + 1;
+    const c: Partial<Record<Status, number>> = {};
+    for (const a of automations) if (a.group !== 'builtin' && !a.classifier) c[statusOf(a)] = (c[statusOf(a)] ?? 0) + 1;
     return c;
   }, [automations]);
 
-  const visible = automations.filter((a) => !kind || a.kind === kind);
+  // The message classifier is one fixed line at the top: not a built-in to unfold, not one of yours to count.
+  const classifier = all.find((a) => a.classifier);
+  const visible = automations.filter((a) => !a.classifier && (!status || statusOf(a) === status));
   const groups = {
     project: visible.filter((a) => a.group === 'project' && a.project_id === projectId),
     mine: visible.filter((a) => a.group === 'mine'),
     otherProjects: visible.filter((a) => a.group === 'project' && a.project_id !== projectId),
     builtin: visible.filter((a) => a.group === 'builtin'),
   };
-  const yours = automations.filter((a) => a.group !== 'builtin');
+  const yours = automations.filter((a) => a.group !== 'builtin' && !a.classifier);
   const failing = yours.filter((a) => a.last_run?.status === 'failed');
   // The one failing automation, and what its run said (a data source's own words, a script's last error line).
   const lone = failing.length === 1 ? failing[0] : undefined;
@@ -166,6 +169,14 @@ export function AutomationsList() {
         {byParent(list, showProject)}
       </section>
     ) : null;
+
+  const words: Record<Status, string> = {
+    active: t`Active`,
+    off: t`Off`,
+    done: t`Done`,
+    expired: t`Expired`,
+    cancelled: t`Cancelled`,
+  };
 
   const empty = !isLoading && yours.length === 0;
 
@@ -266,37 +277,43 @@ export function AutomationsList() {
           <div className="mx-auto max-w-3xl">
             <IfThenGraphic />
             <KindGallery onPick={(k, r) => create(k, r)} />
-            {builtinSection && <div className="overflow-hidden rounded-lg border border-border">{builtinSection}</div>}
+            {(classifier || builtinSection) && (
+              <div className="overflow-hidden rounded-lg border border-border [&>div:first-child]:border-t-0">
+                {classifier && rows([classifier])}
+                {builtinSection}
+              </div>
+            )}
           </div>
         ) : (
           <>
             <div className="pb-2">
               <Pills
-                testId="automations-chip"
-                label={t`Filter by kind`}
-                value={kind ?? 'all'}
-                onChange={(v) => setKind(v === 'all' || v === kind ? null : v)}
+                testId="automations-status"
+                label={t`Filter by status`}
+                value={status ?? 'all'}
+                onChange={(v) => setStatus(v === 'all' ? null : v)}
                 options={[
+                  ...STATUS_ORDER.map((k) => ({
+                    value: k,
+                    label: (
+                      <span className={cn(!counts[k] && 'opacity-50')}>
+                        {words[k]} <span className="text-muted-foreground">{counts[k] ?? 0}</span>
+                      </span>
+                    ),
+                  })),
                   {
-                    value: 'all',
+                    value: 'all' as const,
                     label: (
                       <>
                         {t`All`} <span className="text-muted-foreground">{yours.length}</span>
                       </>
                     ),
                   },
-                  ...KIND_ORDER.filter((k) => counts[k]).map((k) => ({
-                    value: k,
-                    label: (
-                      <>
-                        {words.kindPlural(k)} <span className="text-muted-foreground">{counts[k]}</span>
-                      </>
-                    ),
-                  })),
                 ]}
               />
             </div>
-            <div className="overflow-hidden rounded-lg border border-border [&>section:first-child>h3]:pt-3">
+            <div className="overflow-hidden rounded-lg border border-border [&>div:first-child]:border-t-0 [&>section:first-child>h3]:pt-3">
+              {classifier && rows([classifier])}
               {group('project', t`This project`, groups.project)}
               {group('mine', t`Mine, everywhere`, groups.mine)}
               {group('other', t`Other projects`, groups.otherProjects, true)}
@@ -304,7 +321,7 @@ export function AutomationsList() {
             </div>
             {visible.length === 0 && (
               <p className="px-4 py-6 text-sm text-muted-foreground">
-                <Trans>Nothing of this kind yet.</Trans>
+                <Trans>Nothing here.</Trans>
               </p>
             )}
           </>

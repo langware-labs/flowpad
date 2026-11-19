@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { reportError } from '@src/telemetry/sentry';
 
 interface ErrorBoundaryProps {
   /** Rendered instead of `children` when a descendant throws during render. */
@@ -44,6 +45,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     // Always log: the fallback is by design an ordinary-looking empty state, so
     // without this the crash is silent and nobody learns the data is broken.
     console.error(`[ErrorBoundary${this.props.label ? `: ${this.props.label}` : ''}]`, error, info.componentStack);
+    reportError(error, 'boundary');
   }
 
   render(): ReactNode {

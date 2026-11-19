@@ -30,6 +30,8 @@ const SPLIT_KEY = 'flowpad.ticket-page.split';
 const SPLIT_MIN = 28;
 const SPLIT_MAX = 72;
 const EMPTY_FEED = { items: [], hasOlder: false };
+/** A side that has not answered yet: the merge draws nothing until it has. */
+const PENDING_FEED = { items: [], hasOlder: false, loaded: false };
 const DIM = 0.45;
 
 /** A message that carries chips keeps its controls apart from them: a gap and a line. */
@@ -68,14 +70,23 @@ export function TicketPage(props: TicketPageProps) {
       current = false;
     };
   }, [conversationId]);
-  // Asked on open, and again whenever the ticket moves while the team side is still empty: a teammate or an
-  // agent may have opened it meanwhile, and the ticket itself carries nothing that says so.
+  // Asked on open -- alongside the ticket's own messages, not after them -- and again whenever the ticket moves
+  // while the team side is still empty: a teammate or an agent may have opened it meanwhile, and the ticket
+  // itself carries nothing that says so.
   const ticketMoves = customer?.items.length ?? 0;
-  const ticketLoaded = !!customer?.loaded;
+  const movesSeen = useRef<number | null>(null);
   useEffect(() => {
-    if (teamId || !ticketLoaded) return;
+    movesSeen.current = null;
     return lookUp();
-  }, [lookUp, teamId, ticketLoaded, ticketMoves]);
+  }, [lookUp]);
+  useEffect(() => {
+    if (teamId || !customer?.loaded) return;
+    // The first load is what the ask on open already covers; only a later move asks again.
+    const seen = movesSeen.current;
+    movesSeen.current = ticketMoves;
+    if (seen === null || seen === ticketMoves) return;
+    return lookUp();
+  }, [lookUp, teamId, customer?.loaded, ticketMoves]);
   useEffect(() => {
     if (teamId) return;
     const onFocus = () => void lookUp();
@@ -89,8 +100,8 @@ export function TicketPage(props: TicketPageProps) {
   const timeline = useMemo(
     () =>
       ticketTimeline(
-        shown('customer') ? (customer ?? EMPTY_FEED) : EMPTY_FEED,
-        shown('team') && teamId && team ? team : EMPTY_FEED,
+        shown('customer') ? (customer ?? PENDING_FEED) : EMPTY_FEED,
+        !shown('team') || teamId === null ? EMPTY_FEED : (teamId && team) || PENDING_FEED,
       ),
     // `shown` reads `narrow` and `tab`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -179,7 +190,7 @@ export function TicketPage(props: TicketPageProps) {
   );
   const loadOlder = () =>
     void Promise.all([customer?.hasOlder && customer.loadOlder(), team?.hasOlder && team.loadOlder()]);
-  const noNotes = teamId === null || (!!teamId && !!team?.loaded && team.items.length === 0);
+  const noNotes = timeline.ready && (teamId === null || team?.items.length === 0);
   // What the desk sent, marked on the team side: the answer left the building at this point of the story.
   const sent = narrow ? [] : (customer?.items ?? []).filter((item) => !item.fromAsker);
   const teamCount = team?.items.length ?? 0;
@@ -279,7 +290,11 @@ export function TicketPage(props: TicketPageProps) {
               </button>
             </div>
           )}
-          <div style={{ ...columns, rowGap: 12 }} data-testid="ticket-timeline">
+          <div
+            style={{ ...columns, rowGap: 12 }}
+            data-testid="ticket-timeline"
+            data-merged={timeline.ready}
+          >
             <ConversationView {...props} embed={customerEmbed} />
             {teamId && <ConversationView key={teamId} conversationId={teamId} embed={teamEmbed} />}
             {!narrow &&

@@ -360,3 +360,15 @@ async def test_a_rule_with_no_gate_is_still_handed_the_message_that_woke_it(init
 
     assert prepared.value.state.message_id == fm.id and prepared.value.state.conversation_id == fm.conversation_id
     assert prepared.value.scope_key
+
+
+def test_own_message_is_refused_unless_a_person_asks_about_it():
+    from flow_sdk.automations.decision_subjects import NotCaught
+    from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+    from flow_sdk.stream_inbox.message_subject import message_state, state_of
+
+    me = str(uuid.uuid4())
+    fm = FlowMessage(id=str(uuid.uuid4()), text="mine", conversation_id=str(uuid.uuid4()), sender=MessageSender.user(me))
+    with pytest.raises(NotCaught):
+        state_of(fm, {me})
+    assert message_state(fm).text == "mine"

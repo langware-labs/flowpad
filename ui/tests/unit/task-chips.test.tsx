@@ -5,11 +5,14 @@
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const guard = vi.hoisted(() => ({ allow: true }));
 vi.mock('@src/services/privacy-guard', () => ({ guardCloudAction: () => guard.allow }));
 vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => () => Promise.resolve({ ok: true }) }));
+// The picker's team rows open the organization screen through the dock; these tests stay in the chips.
+vi.mock('@src/components/organization/tabs/org-route', () => ({ useOrgRoute: () => ({ openTeam: vi.fn() }) }));
 
 import { Task } from '@sdk/entities/task';
 import { TaskChips, type TaskPeople } from '@src/components/conversation/task-it';
@@ -33,8 +36,13 @@ const people: TaskPeople = {
   ],
 };
 
+// The owner chip's ContactPicker opens a team page (useOrgRoute), so it needs a router.
 function show(task: Task, who: TaskPeople = people) {
-  return render(<TaskChips task={task} onOpen={vi.fn()} people={who} />);
+  return render(
+    <MemoryRouter>
+      <TaskChips task={task} onOpen={vi.fn()} people={who} />
+    </MemoryRouter>,
+  );
 }
 
 beforeEach(() => {

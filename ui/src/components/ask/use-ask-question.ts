@@ -68,6 +68,8 @@ export interface AskChoice {
    *  the choice's `value` — nothing typed, nothing stored. Empty: not this kind of way. */
   provider?: string;
   scopes?: string[];
+  /** The provider's scope group the sign-in is for (`gmail`); empty: the default. */
+  group?: string;
   /** A way of several values given together: one input per field, answered as newline-joined
    *  `<field.value>=<typed>` lines. Empty: the choice is one value (or a sign-in). */
   fields?: AskChoice[];
@@ -89,6 +91,8 @@ export interface AskQuestion {
   /** A check of the typed value before it is sent: the source setup step that judges it (`AskForm` runs it
    *  through the host's `verifyWith`). Null: nothing to verify. */
   verify?: { label?: string; source_step: string } | null;
+  /** Where the asked-for credential is declared (no `project_id`: Flowpad's own or the user's) — a chip. */
+  origin?: { label: string; project_id?: string; credential?: string } | null;
   /** Closes by itself once its goal holds (a phone sends a code): nothing to Send, only to watch. */
   auto?: boolean;
   /** The declared kind opened one level: `{field: form}`, or the kind itself for a scalar. */

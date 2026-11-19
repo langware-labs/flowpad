@@ -38,7 +38,7 @@ from __future__ import annotations
 from enum import IntEnum
 from typing import Annotated, Any, ClassVar, Optional
 
-from pydantic import BeforeValidator, WrapSerializer, model_serializer
+from pydantic import BeforeValidator, PrivateAttr, WrapSerializer, model_serializer
 from typing_extensions import Self
 
 from flow_sdk.schema.data_spec._missing import MISSING
@@ -432,6 +432,12 @@ class DecisionVerdict(ReturnedValue):
     #: The APIEndpoint that answered, as ``api_endpoint-<id>``.
     endpoint: str = ""
     latency_ms: float = 0.0
+    #: The decision as it happened (``decision.run``) — run detail, never part of the answer's shape.
+    _run: Any = PrivateAttr(default=None)
+
+    @property
+    def run(self) -> Any:
+        return self._run
 
 
 class WizardResult(ReturnedValue):

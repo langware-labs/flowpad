@@ -295,7 +295,7 @@ async def _load_rows() -> tuple[list, dict]:
     self_ids = await User.self_ids()
 
     async def fetch(ids: list[str]) -> list:
-        # hydrate=False: the formula reads is_read/sender/is_draft, never text —
+        # hydrate=False: the formula reads is_read/sender/delivery_status, never text —
         # joining every reference row's SourceItem here would put a mailbox join
         # on every mutation's recompute.
         return await FlowMessage.get_all(

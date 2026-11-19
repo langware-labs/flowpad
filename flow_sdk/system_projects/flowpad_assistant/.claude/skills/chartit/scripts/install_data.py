@@ -23,7 +23,7 @@ SKILL = Path(__file__).resolve().parent.parent
 SCHEMA_SRC = SKILL / "schema" / "agentic-assets" / "data_schema" / "chartit"
 KINDS = ("sequence", "participant", "message", "c4", "c4_element", "c4_boundary", "c4_relation", "c4_link", "c4_param",
          "architecture", "architecture_group", "architecture_tier", "architecture_part", "architecture_link",
-         "architecture_step")
+         "architecture_step", "flowchart", "flowchart_node", "flowchart_edge")
 
 
 def fail(message: str) -> None:

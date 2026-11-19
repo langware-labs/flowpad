@@ -217,6 +217,10 @@ async def _place(source: DataSource, found: Pass) -> Optional[IngestReport]:
         from flow_sdk.stream_inbox.reactions import apply_reactions  # noqa: PLC0415
 
         await apply_reactions(source, found.reactions)
+    if found.reads:
+        from flow_sdk.stream_inbox.reads import apply_reads  # noqa: PLC0415
+
+        await apply_reads(source, found.reads)
     return report
 
 

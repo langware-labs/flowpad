@@ -45,7 +45,14 @@ import { ChoiceField } from './ChoiceField';
 import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { groupMembers, offeredSpecs, sourceChoices, useSourceSpecs, isObjectDriverSpec } from './use-source-specs';
+import {
+  choiceKey,
+  groupMembers,
+  offeredSpecs,
+  sourceChoices,
+  useSourceSpecs,
+  isObjectDriverSpec,
+} from './use-source-specs';
 import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
 
 /** The one config-shaped field that is NOT stored in `config` — it is the
@@ -89,6 +96,7 @@ export function DataSourceDialog({
   editing,
   owner,
   only,
+  added,
   initial,
   variant = 'source',
 }: {
@@ -102,6 +110,8 @@ export function DataSourceDialog({
   /** Narrow the provider tiles — the channels line offers only specs that
    *  `sends`. An empty result renders as a sentence, not a blank picker. */
   only?: (spec: DataDriver) => boolean;
+  /** Tiles already added, by choice key (group, else driver name): drawn disabled, the value is the tooltip. */
+  added?: ReadonlyMap<string, string>;
   /** Open on this provider as if its tile had been pressed: a group's ways to connect, else its form. */
   initial?: DataDriver;
   /** Copy follows the resource being added, not whether providers are filtered. */
@@ -488,6 +498,19 @@ export function DataSourceDialog({
               // A group's tile is the choice ("WhatsApp"), so it shows the group's own glyph, not its first member's.
               const Glyph = lucideByName(iconName);
               const chosen = p.group ? group === p.group : draft.provider === p.name;
+              const addedTip = added?.get(choiceKey(p));
+              if (addedTip)
+                return (
+                  <Tooltip key={p.name} delayDuration={TILE_TIP_DELAY}>
+                    {/* A disabled button gets no hover: the wrapper carries the tip. */}
+                    <TooltipTrigger asChild>
+                      <span data-testid={`provider-added-${choiceKey(p)}`}>
+                        <DesktopTile Icon={Glyph} label={label} disabled />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{addedTip}</TooltipContent>
+                  </Tooltip>
+                );
               return (
                 <Tooltip key={p.name} delayDuration={TILE_TIP_DELAY}>
                   <TooltipTrigger asChild>

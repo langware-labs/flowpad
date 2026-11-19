@@ -133,6 +133,16 @@ class DiagnosisFinding(DataSpec):
     evidence: str = ""
 
 
+class DiagnosisBug(DataSpec):
+    """A bug the diagnose suspects in a component -- Flowpad, a package, a dependency."""
+
+    spec_kind: ClassVar[str] = "diagnosis.bug"
+
+    package: str = ""
+    version: str = ""
+    suspected: str = ""
+
+
 class DiagnosisEnvironment(DataSpec):
     """The machine, as of the moment it was diagnosed -- it travels with the diagnosis, so a helper
     reads the asker's machine, not their own."""
@@ -163,6 +173,10 @@ class DiagnosisSpec(DataSpec):
     symptoms: str = ""
     rca: str = ""
     fix: str = ""
+    #: The diagnose can apply ``fix`` itself on this machine, safely and reversibly: Fix is offered.
+    local_fix: bool = False
+    #: A bug it suspects in a component; ``None`` when it found none.
+    bug: Optional[DiagnosisBug] = None
     findings: list[DiagnosisFinding] = Field(default_factory=list)
     environment: DiagnosisEnvironment = Field(default_factory=DiagnosisEnvironment)
     logs: list[LogTail] = Field(default_factory=list)

@@ -146,9 +146,9 @@ DERIVED: dict[str, dict[str, str]] = {
 OVERRIDES[Rung] = {"subkind": "agent", "exe_data": {"agent": "provisioner", "prompt": "install"}}
 # A credential variable carries `login`/`check` only when it is a `cli` one, which an lm_provider credential
 # (the sample above) cannot hold; a cli variable's round trip is in test_credential_asset/test_one_of.py.
-# Likewise `provider`/`scopes` belong to an `oauth` variable alone, and `way` to a ONE_OF one (round trips in
+# Likewise `provider`/`scopes`/`group` belong to an `oauth` variable alone, and `way` to a ONE_OF one (round trips in
 # test_one_of.py).
-OVERRIDES[CredentialVarSpec] = {"login": None, "check": None, "provider": "", "scopes": [], "way": ""}
+OVERRIDES[CredentialVarSpec] = {"login": None, "check": None, "provider": "", "scopes": [], "group": "", "way": ""}
 # A data schema's rule names exactly TWO paths -- a pairing the sampler's one-element list cannot make.
 OVERRIDES[DataSchemaRule] = {"same": ["persona.icp", "icp"]}
 
@@ -189,7 +189,7 @@ def _prepare(name: str, entity: type) -> None:
 
 def test_the_registry_has_the_asset_types_we_think_it_does():
     """A new asset type lands in this list on its own; the count is the notice."""
-    assert len(TYPES) == 22, [n for n, _ in TYPES]
+    assert len(TYPES) == 29, [n for n, _ in TYPES]
 
 
 @pytest.mark.parametrize(("name", "entity"), TYPES, ids=[n for n, _ in TYPES])

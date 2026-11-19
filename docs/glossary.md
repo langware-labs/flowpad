@@ -114,8 +114,9 @@ A provider mirror is read-only-ish and its format is not ours to change. A nativ
 a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
 
 **Chart** (`flow_sdk/builtin/chart.py`, `agentic-assets/chart/<name>/`) is ours: ONE visual
-asset whose `format` (`sequence` / `excalidraw` / `mermaid`) says which source file it keeps
-(`chart.json` / `board.json` / the ```mermaid``` block of `CHART.md`). It replaced the
+asset whose `format` (`sequence` / `flowchart` / `c4` / `architecture` / `excalidraw` / `mermaid`)
+says which source file it keeps (`chart.json` / `flowchart.json` / `c4.json` / `architecture.json` /
+`board.json` / the ```mermaid``` block of `CHART.md`). It replaced the
 WHITEBOARD entity (a whiteboard is an excalidraw chart; migrated in 0.2.215). Not a
 data-viz chart over a dataset, and not the `graph-view`.
 
@@ -163,6 +164,9 @@ mechanism: [`ontology.md`](ontology.md).
   `--flow--` is never written.** An externally authored asset declares `ns` in its
   document and every kind its code mints is prefixed; a data driver that declares
   none is refused at load.
+- **Email kind** (2026-11-17) — the dot path naming what an email is about
+  (`notification.email.issue.budget_exhausted`). It is a NAME, not a schema. A mute rule's key is
+  the same path, optionally narrowed to one entity (`….deployment.id.<uuid>`); the longest prefix wins.
 - Don't reuse `kind` for a registry key. `Capability.kind` and `DataDriver.kind`
   hold a driver's own *name*, which is neither an ontology kind nor a subkind.
 
@@ -527,6 +531,14 @@ is what our `SubAgent` mirrors; a Chief of Staff uses it natively for short jobs
 | **task run** | `AgenticProcess` with `context_data.task_id` | The headless worker that works one task as its owner, in `records_data/task/<id>/work/`. It may act only on that task. |
 | **Tasks channel** | `data_driver/task_manager` | A principal's tasks as a standard, PULLED message source: each task it asked, owns, is assigned or reported is a thread, each change and comment a message, and a message sent into the thread is a comment on the task (the ledger's `replied` on a delegated one). One driver, two kinds of row: the local person's (`user:local`, created at startup, `ensure_user_tasks_channel`) and a chief's (`agent:<id>`, follows the checkbox). The bus only says "pull now" (`bus_topics` + `wants`, after the writer commits). The machinery finds it by what it declares (`principal_channel`), never by name. |
 | `created · started · note · asked · replied · done · failed · canceled · stalled` | `TaskEvent` | Ledger events. Statuses: `submitted → working ⇄ input_required → done \| failed \| canceled` (A2A), each on the three-bucket board via `status_family`. |
+
+## Page state key (2026-11-18)
+
+**Ours.** A random string the LOCAL server mints for a page it was asked to run (`flow_sdk/server/page_state.py`),
+mapped to a `PageState` value (`page.state`: `context`, `grant`). Unrelated to the OAuth `state`
+parameter, to `stream_inbox.message.state`, and to the cookie gate (which keeps unauthorized users off the machine;
+this keeps a link from running something in the user's own app). Written `stateKey` in a dock address,
+`X-Flowpad-State` on a call, `__FLOWPAD_STATE_KEY__` in a page. Local installs only.
 
 ## Project setup (2026-09-24)
 

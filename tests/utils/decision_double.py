@@ -26,16 +26,28 @@ DECIDER = {
 }
 
 
-def jev_answers(wire: dict, overrides: dict[str, Any] | None = None) -> dict:
+def _closest(criteria: dict[str, str], state: Any) -> str:
+    """The option whose meaning shares the most words with the state (ties: the first)."""
+    import json as _json
+    import re
+
+    words = lambda text: set(re.findall(r"[a-z]{3,}", str(text).lower()))  # noqa: E731
+    seen = words(_json.dumps(state))
+    return max(criteria, key=lambda key: len(words(criteria[key]) & seen))
+
+
+def jev_answers(wire: dict, overrides: dict[str, Any] | None = None, *, match: bool = False) -> dict:
     """What Jev answers, in its own shape: the first option, a mid score, a likely yes — or what
-    ``overrides`` says for a question by name."""
+    ``overrides`` says for a question by name. ``match`` picks the choice whose meaning the state
+    mentions most, so editing an option's meaning moves the answer."""
     overrides = overrides or {}
     answers = {}
     for name, q in wire["questions"].items():
         given = overrides.get(name)
         if q["type"] == "choice":
             keys = list(q["criteria"])
-            chosen = given if isinstance(given, str) and given in keys else keys[0]
+            chosen = (given if isinstance(given, str) and given in keys
+                      else _closest(q["criteria"], wire.get("state")) if match else keys[0])
             sure = 0.97
             answers[name] = {
                 "type": "choice",
@@ -75,7 +87,7 @@ def seams(state: dict[str, Any]):
         state["invoked"].append((entity_id, sub_path))
         if state["status"] != 200:
             return httpx.Response(state["status"], json={"error": "rate_limited", "message": "slow down"})
-        return httpx.Response(200, json=jev_answers(json, state["answers"]))
+        return httpx.Response(200, json=jev_answers(json, state["answers"], match=state.get("match", False)))
 
     return _hub_call, _send
 
