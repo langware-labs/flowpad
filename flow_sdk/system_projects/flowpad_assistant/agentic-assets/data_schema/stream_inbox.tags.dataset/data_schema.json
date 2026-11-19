@@ -1,0 +1,9 @@
+{
+  "type": "data_schema",
+  "id": "1d519ffe-01c8-4dc3-8a53-b55aa821acc1",
+  "name": "stream_inbox.tags.dataset",
+  "rows": {
+    "input": "stream_inbox.message.context",
+    "output": "tags.classification"
+  }
+}

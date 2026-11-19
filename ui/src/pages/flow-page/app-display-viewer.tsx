@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { reloadOnNewEpoch, type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { AppLifecyclePanel } from '@src/components/webapp-display/AppLifecyclePanel';
@@ -7,8 +7,8 @@ import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { type AppRuntime } from '@src/navigation/app-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { PageAllowGate } from '@src/components/page-allow/PageAllowGate';
-import { withStateKey } from '@sdk/page-state';
+import { probePageKey, vouchedContext } from '@src/components/page-allow/probe-page-key';
+import { stateKey as appPageKey, withStateKey } from '@sdk/page-state';
 import { useContext } from '@src/hooks/useContext';
 import { tryParseDock } from '@src/navigation/try-parse-dock';
 import { buildDockPointer } from '@src/navigation/entity-pointer';
@@ -65,6 +65,8 @@ export interface AppDisplayViewerProps {
   /** Pooled: told the frame's `src` whenever it changes, so the pool can free the frame when its
    *  tab closes. */
   onFrameSrc?: (src: string) => void;
+  /** The page key on the app's own dock, if an agent opened it with one (`appDockAddress`). */
+  stateKey?: string | null;
 }
 
 /** The served folder's version the frame was loaded at, by `src` (see `content_version` on the server). */
@@ -128,18 +130,30 @@ export function guestExternalUrl(data: unknown): string | null {
 }
 
 /**
- * An installed app, shown. It runs with a state key (`PageAllowGate`, `installed`: the address names an app, so
- * nothing is asked): the one `flow show` minted, or one minted here and written into the address.
+ * The key this app VIEW runs with (`STATE_KEY_PARAM`). Normally none of its own: the frame then carries the
+ * app's key, which never changes, so the view keeps one frame however often it is left and returned to. A key
+ * an agent opened the app with becomes the view's for its life, once the server vouches for it; one the server
+ * does not know is ignored. `checking` holds the frame while the first such key is asked about.
  */
-export function AppDisplayViewer(props: AppDisplayViewerProps) {
-  return (
-    <PageAllowGate title="App" installed>
-      {({ stateKey }) => <AppDisplayViewerBody {...props} stateKey={stateKey} />}
-    </PageAllowGate>
-  );
+function useViewKey(dockKey: string | null | undefined): { key: string | undefined; checking: boolean } {
+  const [own, setOwn] = useState(() => (vouchedContext(dockKey) ? (dockKey ?? undefined) : undefined));
+  const [refused, setRefused] = useState<string>();
+  const candidate = dockKey && dockKey !== appPageKey() && dockKey !== own && dockKey !== refused ? dockKey : null;
+  useEffect(() => {
+    if (!candidate) return;
+    let live = true;
+    void probePageKey(candidate)
+      .then((answer) => !!answer.probed)
+      .catch(() => false)
+      .then((known) => live && (known ? setOwn : setRefused)(candidate));
+    return () => {
+      live = false;
+    };
+  }, [candidate]);
+  return { key: own, checking: !!candidate && !own };
 }
 
-function AppDisplayViewerBody({
+export function AppDisplayViewer({
   artifactId,
   microAppId = null,
   endpointId = null,
@@ -149,8 +163,8 @@ function AppDisplayViewerBody({
   reloadKey,
   active = true,
   onFrameSrc,
-  stateKey,
-}: AppDisplayViewerProps & { stateKey: string | undefined }) {
+  stateKey: dockKey,
+}: AppDisplayViewerProps) {
   const { currentDock, navigation } = useDockNavigation();
   const { project } = useContext();
   const frameRef = useRef<PersistentIframeHandle>(null);
@@ -165,9 +179,10 @@ function AppDisplayViewerBody({
     runtime ?? null,
   );
 
-  // The key the page was opened with (`flow show`, an agent) rides the frame's address, so the app's SDK holds
-  // it from the first call. No key leaves the address as the app serves it.
-  const src = withStateKey(appDisplay.src, stateKey);
+  // The key rides the frame's address, so the app's SDK holds it from its first call: the view's own, else
+  // the app's page key. No key at all (a server that asks for none) leaves the address as the app serves it.
+  const viewKey = useViewKey(dockKey);
+  const src = viewKey.checking ? '' : withStateKey(appDisplay.src, viewKey.key);
 
   // The webapp asset behind what is shown — named by the address, or by the route serving it. Its lifecycle
   // record decides whether the frame is on screen; opening it asks the backend to make it work, once.
@@ -240,7 +255,7 @@ function AppDisplayViewerBody({
   }, [pushSkin, src, navigation, project?.id]);
 
   // Nothing is known until the endpoints serving the app answered: an app not looked up yet is not down.
-  if (appDisplay.loading) return null;
+  if (appDisplay.loading || viewKey.checking) return null;
   // The app itself is not on this machine (removed, or a link from another one): there is nothing to
   // bring up or wait for, and saying "opening" forever would be a lie.
   if (microAppId && lifecycle.notFound && !src) {

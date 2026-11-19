@@ -27,7 +27,7 @@ import {
 } from './MessageTags';
 import { TagOffIcon } from './TagOffIcon';
 import { KindValue } from '@src/components/value-viewer/KindValue';
-import { ClassifyDialog } from './ClassifyTable';
+import { ClassifyDialog, useClassifyRun } from './ClassifyTable';
 import { messageLabel, TagChip } from './tag-chip';
 
 const SWATCHES = ['#3b82f6', '#8b5cf6', '#f97316', '#ef4444', '#22c55e', '#14b8a6', '#eab308', '#a1a1aa'];
@@ -143,7 +143,7 @@ export function StreamInboxTags() {
   const [search, setSearch] = useState('');
   // Ticked in the picker: Classify opens the dry-run table for them.
   const [ticked, setTicked] = useState<string[]>([]);
-  const [classifying, setClassifying] = useState<string[] | null>(null);
+  const classifying = useClassifyRun();
 
   const updateSettings = async (patch: Partial<MessageClassificationSettings>) => {
     try {
@@ -475,7 +475,11 @@ export function StreamInboxTags() {
                     size="sm"
                     // One message runs right here in the Try pane; several get the dry-run table.
                     onClick={() => {
-                      if (ticked.length > 1) return setClassifying(ticked);
+                      if (ticked.length > 1) {
+                        const conversations = ticked.map((id) => recent.find((m) => m.id === id)?.conversation_id);
+                        setTicked([]);
+                        return classifying.start(conversations.filter((id): id is string => !!id));
+                      }
                       const conversation = recent.find((m) => m.id === ticked[0])?.conversation_id ?? null;
                       setTicked([]);
                       open({ message: ticked[0], conversation, pick: null, run: '1' });
@@ -615,7 +619,7 @@ export function StreamInboxTags() {
           </DialogContent>
         </Dialog>
       )}
-      {classifying && <ClassifyDialog messageIds={classifying} onClose={() => setClassifying(null)} />}
+      {classifying.callId && <ClassifyDialog callId={classifying.callId} onClose={classifying.close} />}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(isOpen) => {

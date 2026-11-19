@@ -136,3 +136,37 @@ async def test_a_drafted_session_prompt_is_sent_by_the_same_action(bootstrapped_
     assert sum(1 for a in fm.attachment or [] if str(a.data) == f"remote_worker_session-{fm.remote_worker_session_id}") == 1
     assert (await RemoteWorkerSession.get_one({"id": fm.remote_worker_session_id})).status == "pending"
     assert [m.id for m in await (await Conversation.get_one({"id": conv_id})).messages()] == [fm_id]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_a_private_message_is_read_here_only_until_it_is_shared(bootstrapped_client, user):
+    from flow_sdk import stream_inbox
+
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    sent = await client.post(f"/api/v1/graph/conversation/{conv_id}/add_message", data={"text": "first"})
+    assert sent.json().get("status") == "SUCCESS", sent.text
+    resp = await client.post(f"/api/v1/graph/conversation/{conv_id}/add_message", data={"text": "for me", "private": "true"})
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    note_id = resp.json()["data"]["id"]
+
+    note = await FlowMessage.get_one({"id": note_id})
+    assert note.is_private and not note.is_read and not note.owes_delivery
+    # Nobody's typing, and not in the conversation -- but it is unread, for this machine's user.
+    assert await FlowMessage.find_composer_draft(conv_id) is None
+    conv = await Conversation.get_one({"id": conv_id})
+    assert [m.id for m in await conv.messages()] == [sent.json()["data"]["id"]]
+    await stream_inbox.recompute_unread("test")
+    assert (await Conversation.get_one({"id": conv_id})).unread_count == 1
+    # Typing in the composer leaves it alone.
+    await _put(client, conv_id, {"text": "typing"})
+    assert (await FlowMessage.get_one({"id": note_id})).text == "for me"
+
+    shared = await client.post(f"/api/v1/graph/flow_message/{note_id}/send-draft", json={})
+    assert shared.json().get("status") == "SUCCESS", shared.text
+    note = await FlowMessage.get_one({"id": note_id})
+    assert not note.is_private and not note.is_draft and note.written_here
+    conv = await Conversation.get_one({"id": conv_id})
+    assert [m.id for m in await conv.messages()][-1] == note_id  # the same row, appended last
+    await stream_inbox.recompute_unread("test")
+    assert (await Conversation.get_one({"id": conv_id})).unread_count == 0

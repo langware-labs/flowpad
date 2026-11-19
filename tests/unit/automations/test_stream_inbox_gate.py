@@ -158,6 +158,30 @@ async def test_caught_runs_the_wizard_with_the_message_as_the_agents_input(
     assert automation["trigger_id"] == rule.id and automation["run_id"] == start["id"]
     assert automation["reason"] == "asks for a refund or disputes a charge" and automation["confidence"] == 0.9
     assert [e.data["outcome"] for e in decided] == ["caught"]
+    # What it answered is a private message in the message's own conversation: read here, sent to nobody.
+    (note,) = [m for m in await FlowMessage.get_all({"match": {"conversation_id": fm.conversation_id}}) if m.is_private]
+    assert (note.text, note.sender_name, note.is_read, note.owes_delivery) == ("Drafted.", rule.name, False, False)
+
+
+async def test_a_rule_that_reports_to_automations_posts_in_its_own_conversation(
+    initialize_test_db, decision_double, mock_driver
+):
+    from flow_sdk.builtin.conversation import Conversation
+
+    mock_driver(lambda turn: "Drafted.")
+    source, agent = await _source(), await _agent()
+    rule = await _rule(source, agent)
+    rule.report_to = "automations"
+    await rule.save()
+    item, fm = await _message(source, "I see two charges of $49 on my card, please refund one.")
+    try:
+        _arrives(item, source)
+        await drain()
+    finally:
+        tag_triggers.unregister_tag_trigger(rule.id)
+    assert not [m for m in await FlowMessage.get_all({"match": {"conversation_id": fm.conversation_id}}) if m.is_draft]
+    own = await Conversation.get_one({"channel": "automations", "channel_source_id": f"trigger-{rule.id}"})
+    assert [m.text for m in await own.messages()] == ["Drafted."]
 
 
 async def test_unavailable_is_recorded_and_the_rule_waits(initialize_test_db, decision_double, decided, mock_driver):

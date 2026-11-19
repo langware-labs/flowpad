@@ -101,6 +101,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.message_reaction_spec  # noqa: F401  — registers ``message.reaction``
     import flow_sdk.schema.data_spec.message_sender_spec  # noqa: F401  — registers ``message.sender``
     import flow_sdk.schema.data_spec.message_state_spec  # noqa: F401  — registers ``stream_inbox.message.state``
+    import flow_sdk.schema.data_spec.stream_inbox_classification_spec  # noqa: F401  — registers ``stream_inbox.classification`` (+ ``.conversation`` / ``.tree_change``)
     import flow_sdk.schema.data_spec.tag_classification_spec  # noqa: F401  — registers ``tags.classification`` / ``stream_inbox.message.context``
     import flow_sdk.schema.data_spec.navigator_spec  # noqa: F401  — registers ``navigator.route`` / ``navigator.target``
     import flow_sdk.schema.data_spec.page_state_spec  # noqa: F401  — registers ``page.state``
@@ -128,6 +129,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.token_allocation_spec  # noqa: F401
     import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action`` / ``trigger.then``
     import flow_sdk.schema.data_spec.usage_report_spec  # noqa: F401  — registers ``usage.summary`` / ``usage.summary.session``
+    import flow_sdk.schema.data_spec.webapp_hosted_spec  # noqa: F401  — registers ``webapp.hosted`` / ``webapp.page_presence``
     import flow_sdk.schema.data_spec.webapp_lifecycle_spec  # noqa: F401  — registers ``webapp.lifecycle`` / ``webapp.failure`` / ``webapp.handling``
     import flow_sdk.schema.data_spec.webapp_spec  # noqa: F401  — registers ``webapp.mount`` / ``webapp.service``
     import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401

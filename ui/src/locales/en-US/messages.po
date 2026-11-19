@@ -604,6 +604,11 @@ msgstr "{0} changed"
 msgid "{0} chats — their transcripts stay on disk."
 msgstr "{0} chats — their transcripts stay on disk."
 
+#. placeholder {0}: rows.length
+#: src/components/tags/ClassifyTable.tsx
+msgid "{0} classified · {changing} would change · {done} applied"
+msgstr "{0} classified · {changing} would change · {done} applied"
+
 #. placeholder {0}: whens.length
 #: src/components/automations/PackageRow.tsx
 msgid "{0} conditions — any one of them starts it"
@@ -952,6 +957,11 @@ msgstr "{0} of {1} would be caught. Change the sentence and try again. Hover a c
 msgid "{0} of the last {1} runs failed"
 msgstr "{0} of the last {1} runs failed"
 
+#. placeholder {0}: tile.issueCount
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "{0} open issues"
+msgstr "{0} open issues"
+
 #. placeholder {0}: live.length
 #: src/components/footer/LiveSessionsChip.tsx
 msgid "{0} open live sessions"
@@ -1220,8 +1230,8 @@ msgid "{answererName}'s answers — updated"
 msgstr "{answererName}'s answers — updated"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "{applied} applied · no automation started"
-msgstr "{applied} applied · no automation started"
+#~ msgid "{applied} applied · no automation started"
+#~ msgstr "{applied} applied · no automation started"
 
 #: src/components/conversation/conversation-category.ts
 msgid "{base} help desk"
@@ -1260,6 +1270,10 @@ msgstr "{completedCount}/{totalCount} completed"
 msgid "{count, plural, one {# commit behind} other {# commits behind}}"
 msgstr "{count, plural, one {# commit behind} other {# commits behind}}"
 
+#: src/components/footer/HostedAppRow.tsx
+msgid "{count, plural, one {# connection} other {# connections}}"
+msgstr "{count, plural, one {# connection} other {# connections}}"
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "{count, plural, one {# issue} other {# issues}}"
 msgstr "{count, plural, one {# issue} other {# issues}}"
@@ -1277,6 +1291,10 @@ msgstr "{count} {0} attached"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "{count} channels need attention"
 msgstr "{count} channels need attention"
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "{count} deployments"
+msgstr "{count} deployments"
 
 #: src/components/assets/ContextFolderGitBadge.tsx
 msgid "{count} pending change(s) — click to view diff"
@@ -1329,13 +1347,12 @@ msgid "{documentCount} docs · {chunkCount} chunks"
 msgstr "{documentCount} docs · {chunkCount} chunks"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "{done} classified · {wouldChange} would change · {failed} failed"
-msgstr "{done} classified · {wouldChange} would change · {failed} failed"
+#~ msgid "{done} classified · {wouldChange} would change · {failed} failed"
+#~ msgstr "{done} classified · {wouldChange} would change · {failed} failed"
 
-#. placeholder {0}: ids.length
 #: src/components/tags/ClassifyTable.tsx
-msgid "{done} of {0} classified"
-msgstr "{done} of {0} classified"
+#~ msgid "{done} of {0} classified"
+#~ msgstr "{done} of {0} classified"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "{done} of {total} set up"
@@ -1381,6 +1398,14 @@ msgstr "{files} files need merging — let the assistant merge them"
 #: src/components/git/RepoPicker.tsx
 msgid "{filteredCount} of {totalCount} repos"
 msgstr "{filteredCount} of {totalCount} repos"
+
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+#~ msgid "{first}–{0} of {1}"
+#~ msgstr "{first}–{0} of {1}"
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "{first}–{last} of {total}"
+msgstr "{first}–{last} of {total}"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "{firstName} is still uploading the bundle. Try again in a moment."
@@ -1556,6 +1581,10 @@ msgstr "{m}m ago"
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "{machines} machines have the old value. Paused ones get it when they next start."
 msgstr "{machines} machines have the old value. Paused ones get it when they next start."
+
+#: src/components/stream-inbox-view/TagFilterButton.tsx
+msgid "{matches} conversations"
+msgstr "{matches} conversations"
 
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "{memberCount, plural, one {# member} other {# members}}"
@@ -2502,8 +2531,8 @@ msgid "A deployment"
 msgstr "A deployment"
 
 #: src/components/items/home-tabs.tsx
-msgid "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
-msgstr "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
+#~ msgid "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
+#~ msgstr "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
 
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A desktop instance or a machine, and a channel id on it"
@@ -2514,8 +2543,8 @@ msgid "A document is saved, a folder gets a new file."
 msgstr "A document is saved, a folder gets a new file."
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "A dry run: nothing is tagged until you apply, and no automation starts."
-msgstr "A dry run: nothing is tagged until you apply, and no automation starts."
+#~ msgid "A dry run: nothing is tagged until you apply, and no automation starts."
+#~ msgstr "A dry run: nothing is tagged until you apply, and no automation starts."
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "A few words about what went wrong help us look in the right place."
@@ -2636,6 +2665,10 @@ msgstr "A project was shared with you"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
 msgstr "A project with that name exists"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth."
+msgstr "A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "A real email address the hub creates for one of your agents. Nothing to set up."
@@ -2807,7 +2840,7 @@ msgid "Accepts runs until"
 msgstr "Accepts runs until"
 
 #: src/components/graph-view/ui/NodePanel.tsx
-#: src/components/items/ItemsSection.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 msgid "Access"
 msgstr "Access"
 
@@ -3544,11 +3577,20 @@ msgstr "agent"
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/quick-create/registry.ts
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
 msgid "Agent"
 msgstr "Agent"
+
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Agent · shared with you"
+msgstr "Agent · shared with you"
+
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Agent · yours"
+msgstr "Agent · yours"
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "agent (definition)"
@@ -3562,6 +3604,7 @@ msgstr "Agent {0}"
 #: src/components/footer/BrowserChip.tsx
 #: src/components/footer/BrowserChip.tsx
 #: src/components/footer/BrowserChip.tsx
+#: src/components/footer/HostedAppRow.tsx
 msgid "Agent browser"
 msgstr "Agent browser"
 
@@ -3644,12 +3687,15 @@ msgstr "agents"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
-#: src/components/items/ItemsSection.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr "Agents"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Agents are reading — closing keeps it running"
+msgstr "Agents are reading — closing keeps it running"
 
 #: src/i18n/pref-labels.ts
 msgid "AI & chat"
@@ -3709,7 +3755,6 @@ msgstr "all"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
-#: src/components/items/ItemsSection.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -4531,6 +4576,10 @@ msgstr "API URL"
 msgid "App"
 msgstr "App"
 
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "App · yours"
+msgstr "App · yours"
+
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "App id"
 msgstr "App id"
@@ -4581,6 +4630,7 @@ msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "Appended to the current worker's prompt queue, tagged with this message."
 
 #: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "applied"
 msgstr "applied"
 
@@ -4600,6 +4650,18 @@ msgstr "Applies to"
 #: src/components/tags/ClassifyTable.tsx
 msgid "Apply"
 msgstr "Apply"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Apply all"
+msgstr "Apply all"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Apply every row you did not reject, with the tag changes they need"
+msgstr "Apply every row you did not reject, with the tag changes they need"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Apply tag changes"
+msgstr "Apply tag changes"
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Apply to message"
@@ -4640,6 +4702,10 @@ msgstr "Approve now"
 msgid "Approve this live session only"
 msgstr "Approve this live session only"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Approved as a new tag."
+msgstr "Approved as a new tag."
+
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
 msgstr "Approved by {hostName}"
@@ -4653,6 +4719,7 @@ msgid "Approving lets this machine act as you on FlowPad. Only approve a code yo
 msgstr "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 
 #: src/components/asset-counters/app-counters.tsx
+#: src/components/home-tiles/HomeTiles.tsx
 #: src/components/project-home/ProjectApps.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
@@ -4877,6 +4944,10 @@ msgstr "Asked before? Your open requests are in the help desk."
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Asked by"
 msgstr "Asked by"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Asked for"
+msgstr "Asked for"
 
 #: src/components/help/AskForHelpButton.tsx
 msgid "Asked of you"
@@ -5263,6 +5334,7 @@ msgid "automatic"
 msgstr "automatic"
 
 #: src/components/automations/RunsView.tsx
+#: src/components/conversation/AutomationMessageActions.tsx
 #: src/components/conversation/ConversationAutomationChip.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/project-setup/setup-labels.ts
@@ -5644,7 +5716,7 @@ msgstr "Brand this project's home ({HOME_CUSTOMIZATION_DIR}). Applies on every h
 msgid "breadcrumb"
 msgstr "breadcrumb"
 
-#: src/components/items/ItemsSection.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 msgid "Breadcrumb"
 msgstr "Breadcrumb"
 
@@ -5700,6 +5772,7 @@ msgid "Browse…"
 msgstr "Browse…"
 
 #: src/components/footer/BrowserChip.tsx
+#: src/components/footer/HostedAppRow.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
@@ -6152,6 +6225,7 @@ msgid "cancelled"
 msgstr "cancelled"
 
 #: src/components/automations/AutomationsList.tsx
+#: src/components/conversation/AutomationResultCard.tsx
 msgid "Cancelled"
 msgstr "Cancelled"
 
@@ -6845,10 +6919,14 @@ msgstr "classification.json"
 msgid "Classify"
 msgstr "Classify"
 
-#. placeholder {0}: ids.length
+#. placeholder {0}: value ? rows.length : asked.length
 #: src/components/tags/ClassifyTable.tsx
-msgid "Classify {0} messages"
-msgstr "Classify {0} messages"
+msgid "Classify {0} conversations"
+msgstr "Classify {0} conversations"
+
+#: src/components/tags/ClassifyTable.tsx
+#~ msgid "Classify {0} messages"
+#~ msgstr "Classify {0} messages"
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Classify arriving messages"
@@ -6988,6 +7066,7 @@ msgstr "clear"
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
+#: src/components/stream-inbox-view/TagFilterButton.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Clear"
@@ -7261,6 +7340,7 @@ msgstr "Cloning…"
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/inbound/RouteCheck.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -7390,6 +7470,10 @@ msgstr "Close tab"
 msgid "Close terminal"
 msgstr "Close terminal"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Close the tag tree"
+msgstr "Close the tag tree"
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Close ticket"
 msgstr "Close ticket"
@@ -7417,6 +7501,7 @@ msgid "Closed after {took}"
 msgstr "Closed after {took}"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Cloud"
 msgstr "Cloud"
@@ -8080,6 +8165,7 @@ msgstr "Connection verified"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/connections-manager.tsx
+#: src/components/footer/HostedAppRow.tsx
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "Connections"
 msgstr "Connections"
@@ -8630,10 +8716,6 @@ msgstr "Could not add the help desk."
 msgid "Could not allocate"
 msgstr "Could not allocate"
 
-#: src/components/page-allow/PageAllowGate.tsx
-msgid "Could not allow this page."
-msgstr "Could not allow this page."
-
 #: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
@@ -8699,6 +8781,7 @@ msgstr "Could not change IT Enabled"
 msgid "Could not change privacy mode"
 msgstr "Could not change privacy mode"
 
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
@@ -8726,7 +8809,6 @@ msgstr "Could not change where the project runs"
 msgid "Could not check sign-in"
 msgstr "Could not check sign-in"
 
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Could not classify"
 msgstr "Could not classify"
@@ -9251,6 +9333,7 @@ msgstr "Could not recover this session's project."
 msgid "Could not recover this session’s project."
 msgstr "Could not recover this session’s project."
 
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "Could not remove"
@@ -9622,6 +9705,10 @@ msgstr "Could not start sign-in"
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Could not start the {0} sign-in."
 msgstr "Could not start the {0} sign-in."
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Could not start the classification"
+msgstr "Could not start the classification"
 
 #: src/notifications/diagnose/diagnose-and-fix.ts
 msgid "Could not start the diagnosis"
@@ -10243,6 +10330,7 @@ msgstr "Cross-links"
 msgid "current"
 msgstr "current"
 
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/StreamInboxTags.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/journey/JourneyViewer.tsx
@@ -10287,8 +10375,8 @@ msgid "Current resolved buffer row (may differ from stored line if terminal scro
 msgstr "Current resolved buffer row (may differ from stored line if terminal scrolled)"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Current tags"
-msgstr "Current tags"
+#~ msgid "Current tags"
+#~ msgstr "Current tags"
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Current Time"
@@ -10704,6 +10792,10 @@ msgstr "Defined in"
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 msgid "Definition"
 msgstr "Definition"
+
+#: src/components/footer/HostedAppRow.tsx
+msgid "Degraded"
+msgstr "Degraded"
 
 #: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
@@ -11173,8 +11265,8 @@ msgid "Deploy"
 msgstr "Deploy"
 
 #: src/components/items/home-tabs.tsx
-msgid "Deploy an agent"
-msgstr "Deploy an agent"
+#~ msgid "Deploy an agent"
+#~ msgstr "Deploy an agent"
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "Deploy failed."
@@ -11193,6 +11285,7 @@ msgid "Deployed agent"
 msgstr "Deployed agent"
 
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 msgid "Deployment"
 msgstr "Deployment"
 
@@ -11227,6 +11320,11 @@ msgstr "Deployment WorldView"
 #: src/navigation/asset-doc-types.ts
 msgid "Deployments"
 msgstr "Deployments"
+
+#. placeholder {0}: deployments.length
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Deployments · {0}"
+msgstr "Deployments · {0}"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "deployments at once"
@@ -11323,7 +11421,7 @@ msgstr "Detail"
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/conversation/ContactDialog.tsx
-#: src/components/conversation/DiagnosisCard.tsx
+#: src/components/conversation/StatusCard.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
@@ -11822,6 +11920,7 @@ msgstr "done"
 #: src/components/automations/AutomationsList.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/contact-picker/ContactsDialog.tsx
+#: src/components/conversation/AutomationResultCard.tsx
 #: src/components/conversation/ContactDialog.tsx
 #: src/components/conversation/DiagnosisCard.tsx
 #: src/components/conversation/DiagnosisCard.tsx
@@ -11833,6 +11932,7 @@ msgstr "done"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
+#: src/components/stream-inbox-view/TagFilterButton.tsx
 #: src/components/tags/MessageTags.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -12337,6 +12437,7 @@ msgstr "Edit SubAgent Hook"
 msgid "Edit tags"
 msgstr "Edit tags"
 
+#: src/components/stream-inbox-view/TagFilterButton.tsx
 #: src/components/tags/MessageTags.tsx
 msgid "Edit tags…"
 msgstr "Edit tags…"
@@ -13248,6 +13349,7 @@ msgid "Expert details"
 msgstr "Expert details"
 
 #: src/components/automations/AutomationsList.tsx
+#: src/components/conversation/AutomationResultCard.tsx
 msgid "Expired"
 msgstr "Expired"
 
@@ -13344,6 +13446,7 @@ msgstr "failed"
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
+#: src/components/conversation/AutomationResultCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
@@ -14006,6 +14109,10 @@ msgstr "Filter by status"
 msgid "Filter by subject"
 msgstr "Filter by subject"
 
+#: src/components/stream-inbox-view/TagFilterButton.tsx
+msgid "Filter by tag"
+msgstr "Filter by tag"
+
 #: src/components/llm-endpoints/endpoint-catalog.ts
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 msgid "Filter ceilings must be non-negative numbers."
@@ -14464,6 +14571,7 @@ msgstr "FlowPad stops, upgrades and starts again on each. Anyone working in them
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 
+#: src/components/footer/HostedAppRow.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Flowpad tab"
 msgstr "Flowpad tab"
@@ -14864,6 +14972,10 @@ msgstr "Generate FlowPad API Key"
 msgid "Generated"
 msgstr "Generated"
 
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "Generated by:"
+msgstr "Generated by:"
+
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "generated:"
 msgstr "generated:"
@@ -15218,8 +15330,8 @@ msgid "Graph Workflows"
 msgstr "Graph Workflows"
 
 #: src/components/items/ItemsSection.tsx
-msgid "Grid view"
-msgstr "Grid view"
+#~ msgid "Grid view"
+#~ msgstr "Grid view"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "group"
@@ -15725,6 +15837,10 @@ msgstr "Hooks:"
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Host"
 msgstr "Host"
+
+#: src/components/footer/PendingActionsChip.tsx
+msgid "Hosted apps"
+msgstr "Hosted apps"
 
 #: src/components/git/GitRepoPicker.tsx
 msgid "Hosted by Flowpad — use it when you have no GitHub"
@@ -16535,6 +16651,10 @@ msgstr "Instance id"
 msgid "instead?"
 msgstr "instead?"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "instead."
+msgstr "instead."
+
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Instruction"
 msgstr "Instruction"
@@ -16694,6 +16814,8 @@ msgstr "Invitations — dismiss"
 #: src/components/account/organization-panel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/helpdesk/HelpDeskPage.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 msgid "Invite"
 msgstr "Invite"
 
@@ -16831,6 +16953,7 @@ msgstr "It cannot be removed from the project"
 #: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "It did not work"
 msgstr "It did not work"
 
@@ -16981,6 +17104,11 @@ msgstr "Its budget is not shared with you."
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "Its contents look like binary data (for example an image), so it can't be shown in the editor."
+
+#. placeholder {0}: change.merged_into.split('.').at(-1)
+#: src/components/tags/ClassifyTable.tsx
+msgid "its conversations go to {0}"
+msgstr "its conversations go to {0}"
 
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Its files are not on this machine yet"
@@ -17574,6 +17702,10 @@ msgstr "Leave it running. This card turns Running by itself once the machine con
 msgid "Leave out"
 msgstr "Leave out"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Leave this conversation as it is"
+msgstr "Leave this conversation as it is"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
 msgstr "Leave this conversation?"
@@ -17854,7 +17986,6 @@ msgstr "List of models available for selection"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
-#: src/components/items/ItemsSection.tsx
 msgid "List view"
 msgstr "List view"
 
@@ -18008,7 +18139,6 @@ msgstr "load error"
 msgid "Load Flowpad assistant"
 msgstr "Load Flowpad assistant"
 
-#: src/components/items/ItemsSection.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
@@ -18636,6 +18766,7 @@ msgid "Mailbox settings saved"
 msgstr "Mailbox settings saved"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "Main agent"
 msgstr "Main agent"
 
@@ -18643,7 +18774,7 @@ msgstr "Main agent"
 msgid "Make a todo app"
 msgstr "Make a todo app"
 
-#: src/components/items/home-tabs.tsx
+#: src/components/quick-create/MakeAgentDialog.tsx
 msgid "Make an agent"
 msgstr "Make an agent"
 
@@ -18652,28 +18783,36 @@ msgid "Make an agent in 60 seconds — where will you talk to it?"
 msgstr "Make an agent in 60 seconds — where will you talk to it?"
 
 #: src/pages/flow-page/vibe-new-chat.tsx
-msgid "Make me an agent"
-msgstr "Make me an agent"
+#~ msgid "Make me an agent"
+#~ msgstr "Make me an agent"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Make the new tags the messages' tags. No automation runs."
-msgstr "Make the new tags the messages' tags. No automation runs."
+#~ msgid "Make the new tags the messages' tags. No automation runs."
+#~ msgstr "Make the new tags the messages' tags. No automation runs."
 
 #: src/components/data-sources/source-attention.ts
 msgid "Make the two the same — edit either one — then Pull, or wait for the next sync."
 msgstr "Make the two the same — edit either one — then Pull, or wait for the next sync."
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Make this the conversation's tag. No automation runs."
+msgstr "Make this the conversation's tag. No automation runs."
 
 #: src/components/harness-login/StatusRow.tsx
 msgid "Make this the default assistant"
 msgstr "Make this the default assistant"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Make this the message's tag. No automation runs."
-msgstr "Make this the message's tag. No automation runs."
+#~ msgid "Make this the message's tag. No automation runs."
+#~ msgstr "Make this the message's tag. No automation runs."
 
 #: src/components/search-index/index-copy.ts
 msgid "Make your records searchable"
 msgstr "Make your records searchable"
+
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Manage"
+msgstr "Manage"
 
 #: src/components/ai-config-view/ai-config-view.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
@@ -18987,6 +19126,7 @@ msgid "Members"
 msgstr "Members"
 
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/organization/org-node-management.tsx
 msgid "Members are unavailable in Local mode."
 msgstr "Members are unavailable in Local mode."
@@ -19186,7 +19326,6 @@ msgid "min: {minLabel}"
 msgstr "min: {minLabel}"
 
 #: src/components/asset-counters/axes.tsx
-#: src/components/items/ItemsSection.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
 msgid "Mine"
 msgstr "Mine"
@@ -19723,6 +19862,10 @@ msgstr "Needs attention · {count}"
 msgid "Needs git"
 msgstr "Needs git"
 
+#: src/components/conversation/AutomationResultCard.tsx
+msgid "Needs review"
+msgstr "Needs review"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "needs setup"
 msgstr "needs setup"
@@ -20065,6 +20208,10 @@ msgstr "New sub-team"
 msgid "New tab"
 msgstr "New tab"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "new tag"
+msgstr "new tag"
+
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
@@ -20072,8 +20219,8 @@ msgstr "New tab"
 #~ msgstr "New tag"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "New tags"
-msgstr "New tags"
+#~ msgid "New tags"
+#~ msgstr "New tags"
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "New team"
@@ -20149,6 +20296,10 @@ msgstr "next {0}"
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "Next match (Enter)"
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "Next page"
+msgstr "Next page"
 
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
@@ -20231,8 +20382,8 @@ msgid "No agent without a mailbox"
 msgstr "No agent without a mailbox"
 
 #: src/components/items/home-tabs.tsx
-msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
-msgstr "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
+#~ msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
+#~ msgstr "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
 
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No alert logs found"
@@ -20388,8 +20539,8 @@ msgid "No channel reaches this agent yet. Give it its built-in email to start."
 msgstr "No channel reaches this agent yet. Give it its built-in email to start."
 
 #: src/components/items/home-tabs.tsx
-msgid "No channels yet. Add a number, bot or app that sends you messages."
-msgstr "No channels yet. Add a number, bot or app that sends you messages."
+#~ msgid "No channels yet. Add a number, bot or app that sends you messages."
+#~ msgstr "No channels yet. Add a number, bot or app that sends you messages."
 
 #: src/components/inbound/InboundView.tsx
 msgid "No channels yet. Add one: messages arrive at the hub and go where its rules say — anything else is ignored."
@@ -20451,6 +20602,10 @@ msgstr "No computer to open a terminal on"
 #: src/components/connections-manager.tsx
 msgid "No connection test is defined for this provider."
 msgstr "No connection test is defined for this provider."
+
+#: src/components/footer/HostedAppRow.tsx
+msgid "no connections"
+msgstr "no connections"
 
 #: src/components/connections-manager.tsx
 msgid "No connections yet"
@@ -20755,6 +20910,10 @@ msgstr "No hooks configured"
 msgid "No hooks match your filters"
 msgstr "No hooks match your filters"
 
+#: src/components/footer/PendingActionsChip.tsx
+msgid "No hosted apps"
+msgstr "No hosted apps"
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "No index.md to view"
 msgstr "No index.md to view"
@@ -20892,8 +21051,8 @@ msgid "No machine yet"
 msgstr "No machine yet"
 
 #: src/components/items/home-tabs.tsx
-msgid "No machines yet. A machine runs your agents and workspaces in the cloud."
-msgstr "No machines yet. A machine runs your agents and workspaces in the cloud."
+#~ msgid "No machines yet. A machine runs your agents and workspaces in the cloud."
+#~ msgstr "No machines yet. A machine runs your agents and workspaces in the cloud."
 
 #: src/components/markdown-viewer.tsx
 msgid "No markdown file selected"
@@ -20922,7 +21081,6 @@ msgid "No matches"
 msgstr "No matches"
 
 #: src/components/asset-counters/AssetItems.tsx
-#: src/components/items/ItemsSection.tsx
 msgid "No matches for “{query}”."
 msgstr "No matches for “{query}”."
 
@@ -21426,8 +21584,8 @@ msgid "No skills or sub-agents used yet"
 msgstr "No skills or sub-agents used yet"
 
 #: src/components/items/home-tabs.tsx
-msgid "No skills yet. A skill teaches your agents one job."
-msgstr "No skills yet. A skill teaches your agents one job."
+#~ msgid "No skills yet. A skill teaches your agents one job."
+#~ msgstr "No skills yet. A skill teaches your agents one job."
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
@@ -21676,6 +21834,10 @@ msgstr "Nobody can log in to this sandbox, including its owner."
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr "Nobody has a budget in this team yet."
+
+#: src/components/footer/HostedAppRow.tsx
+msgid "Nobody has it open"
+msgstr "Nobody has it open"
 
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Nobody has talked to it yet — each person gets their own machine on their first message."
@@ -22234,7 +22396,6 @@ msgid "Nothing here yet — use the + below to add one."
 msgstr "Nothing here yet — use the + below to add one."
 
 #: src/components/asset-counters/AssetItems.tsx
-#: src/components/items/ItemsSection.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Nothing here yet."
 msgstr "Nothing here yet."
@@ -22667,6 +22828,10 @@ msgstr "Once per project, the first time it is opened. Enabling this turns off a
 msgid "Once, on {date} at {time}"
 msgstr "Once, on {date} at {time}"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval."
+msgstr "One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval."
+
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "One click — a new code for one user."
 msgstr "One click — a new code for one user."
@@ -22760,6 +22925,10 @@ msgstr "Only about"
 msgid "Only about (optional)"
 msgstr "Only about (optional)"
 
+#: src/components/stream-inbox-view/TagFilterButton.tsx
+msgid "Only conversations with a ticked tag show"
+msgstr "Only conversations with a ticked tag show"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Only files like"
 msgstr "Only files like"
@@ -22839,6 +23008,7 @@ msgstr "Oops! Page not found"
 #: src/components/footer/ActivityDetailsModal.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/items/item-state.ts
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -23036,7 +23206,6 @@ msgstr "Open assistant project"
 msgid "Open authorization page"
 msgstr "Open authorization page"
 
-#: src/components/conversation/AutomationMessageActions.tsx
 #: src/components/footer/ActivityDetailsModal.tsx
 msgid "Open automation"
 msgstr "Open automation"
@@ -23625,6 +23794,7 @@ msgstr "Open the sandbox as it is"
 msgid "Open the script"
 msgstr "Open the script"
 
+#: src/components/conversation/AutomationResultCard.tsx
 #: src/components/conversation/ConversationAutomationChip.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Open the session"
@@ -24600,6 +24770,10 @@ msgstr "Pick a contact to see your conversations with them."
 msgid "Pick a contacts group or people"
 msgstr "Pick a contacts group or people"
 
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Pick a deployment"
+msgstr "Pick a deployment"
+
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "Pick a flow from the left menu, or create one with “+ New flow”."
 msgstr "Pick a flow from the left menu, or create one with “+ New flow”."
@@ -24721,6 +24895,10 @@ msgstr "Pick up to reply to {asker}"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Pick what to do with this invitation."
 msgstr "Pick what to do with this invitation."
+
+#: src/components/quick-create/MakeAgentDialog.tsx
+msgid "Pick where you will talk to it, describe it, and launch it."
+msgstr "Pick where you will talk to it, describe it, and launch it."
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "Pick who handles it."
@@ -25123,6 +25301,10 @@ msgstr "Previous 7 days"
 msgid "Previous match (Shift+Enter)"
 msgstr "Previous match (Shift+Enter)"
 
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "Previous page"
+msgstr "Previous page"
+
 #: src/journey/JourneyViewer.tsx
 msgid "Previous runs"
 msgstr "Previous runs"
@@ -25329,6 +25511,11 @@ msgstr "Project data store"
 #: src/components/assets/AssetsPage.tsx
 msgid "Project deleted"
 msgstr "Project deleted"
+
+#. placeholder {0}: deployments.length
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Project deployments · {0}"
+msgstr "Project deployments · {0}"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Project details"
@@ -25607,6 +25794,10 @@ msgstr "Prompts queued for this agent; the backend injects each when the worker 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Properties"
 msgstr "Properties"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Proposed"
+msgstr "Proposed"
 
 #: src/components/git/BranchPicker.tsx
 msgid "protected"
@@ -26561,9 +26752,14 @@ msgstr "Registered on the hub, but its document hasn't been uploaded to the proj
 msgid "registered watchers: <0>{registeredCount}</0>"
 msgstr "registered watchers: <0>{registeredCount}</0>"
 
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Reject"
 msgstr "Reject"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "rejected"
+msgstr "rejected"
 
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/harness-login/funding-pill.ts
@@ -28174,6 +28370,7 @@ msgstr "running"
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
 #: src/components/data-sources/health-style.ts
+#: src/components/footer/HostedAppRow.tsx
 #: src/components/items/item-state.ts
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
@@ -28285,6 +28482,10 @@ msgstr "Runs agent"
 msgid "Runs as an AgenticProcess — see per-row status + transcript."
 msgstr "Runs as an AgenticProcess — see per-row status + transcript."
 
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "Runs in the cloud"
+msgstr "Runs in the cloud"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Runs itself when"
 msgstr "Runs itself when"
@@ -28294,6 +28495,7 @@ msgid "Runs of this flow"
 msgstr "Runs of this flow"
 
 #: src/components/assets/editor/agent-profile/RunsOnPicker.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Runs on"
 msgstr "Runs on"
@@ -28309,6 +28511,10 @@ msgstr "Runs on this computer as its project's main agent"
 #: src/components/assets/editor/markdown/PlainMarkdownAssetEditor.tsx
 msgid "Runs on this file"
 msgstr "Runs on this file"
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "Runs on this machine"
+msgstr "Runs on this machine"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Runs on your machine, in your Claude Code · Enter to send"
@@ -29569,6 +29775,10 @@ msgstr "Served"
 msgid "Served by"
 msgstr "Served by"
 
+#: src/components/footer/HostedAppRow.tsx
+msgid "Served by Flowpad"
+msgstr "Served by Flowpad"
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Server did not come back. Restart Flowpad manually."
 msgstr "Server did not come back. Restart Flowpad manually."
@@ -29629,6 +29839,11 @@ msgstr "Session"
 #: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Session — {0}"
 msgstr "Session — {0}"
+
+#. placeholder {0}: agenticProcessName(processId) ?? processId.slice(0, 8)
+#: src/components/footer/HostedAppRow.tsx
+msgid "session {0}"
+msgstr "session {0}"
 
 #. placeholder {0}: entry.worker_id
 #: src/tabs/useTerminalStripController.tsx
@@ -30216,8 +30431,8 @@ msgid "Shared with {0}"
 msgstr "Shared with {0}"
 
 #: src/components/items/ItemsSection.tsx
-msgid "Shared with me"
-msgstr "Shared with me"
+#~ msgid "Shared with me"
+#~ msgstr "Shared with me"
 
 #: src/components/machine-overview/shared-machine.tsx
 msgid "Shared with you"
@@ -30556,11 +30771,9 @@ msgstr "Show unpushed commits"
 msgid "Show value"
 msgstr "Show value"
 
-#. placeholder {0}: page.length
-#. placeholder {1}: rows.length
 #: src/components/items/ItemsSection.tsx
-msgid "Showing {0} of {1}"
-msgstr "Showing {0} of {1}"
+#~ msgid "Showing {0} of {1}"
+#~ msgstr "Showing {0} of {1}"
 
 #: src/components/assets/AssetDataTable.tsx
 msgid "Showing {rangeStart}–{rangeEnd} of {total}"
@@ -30718,6 +30931,10 @@ msgstr "Sign in to manage people"
 #: src/components/organization/organization-page.tsx
 msgid "Sign in to see the people and teams you share work with."
 msgstr "Sign in to see the people and teams you share work with."
+
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Sign in to see who has access."
+msgstr "Sign in to see who has access."
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
@@ -31715,6 +31932,7 @@ msgstr "status"
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
+#: src/components/conversation/AutomationResultCard.tsx
 #: src/components/conversation/DiagnosisCard.tsx
 #: src/components/conversation/ItSendTable.tsx
 #: src/components/conversation/task-it.tsx
@@ -31723,6 +31941,7 @@ msgstr "status"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -32079,6 +32298,7 @@ msgstr "Summarize what changed since yesterday and list what needs me."
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
+#: src/components/conversation/AutomationResultCard.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Summary"
@@ -32291,6 +32511,10 @@ msgstr "tag"
 msgid "Tag"
 msgstr "Tag"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Tag changes"
+msgstr "Tag changes"
+
 #: src/components/tags/StreamInboxTags.tsx
 #~ msgid "Tag created"
 #~ msgstr "Tag created"
@@ -32313,6 +32537,10 @@ msgstr "Tag Graph"
 msgid "Tag shape"
 msgstr "Tag shape"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Tag tree"
+msgstr "Tag tree"
+
 #: src/components/graph-view/TagGraphView.tsx
 msgid "Tag Tree"
 msgstr "Tag Tree"
@@ -32329,6 +32557,14 @@ msgstr "Tags"
 #: src/components/automations/MessageRulePage.tsx
 msgid "Tags on this message"
 msgstr "Tags on this message"
+
+#: src/components/stream-inbox-view/TagFilterButton.tsx
+msgid "Tags: {short}"
+msgstr "Tags: {short}"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Take the proposal back into Apply all"
+msgstr "Take the proposal back into Apply all"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Takes ~4 seconds"
@@ -32399,6 +32635,7 @@ msgstr "Tasked: {0}"
 
 #: src/components/conversation/ConversationPanel.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
+#: src/components/stream-inbox-view/OpenTasksButton.tsx
 #: src/types/ViewType.ts
 msgid "Tasks"
 msgstr "Tasks"
@@ -32802,6 +33039,10 @@ msgstr "The changes did not finish"
 #: src/components/data-sources/use-source-verify.ts
 msgid "The check did not run."
 msgstr "The check did not run."
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "The classification did not finish."
+msgstr "The classification did not finish."
 
 #: src/components/tags/MessageTags.tsx
 msgid "The classifier was off when this arrived."
@@ -34005,6 +34246,7 @@ msgstr "This live-session URL is malformed or unavailable."
 msgid "this machine"
 msgstr "this machine"
 
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/i18n/pref-labels.ts
 msgid "This machine"
@@ -35218,6 +35460,7 @@ msgstr "Under OAuth & Permissions add the bot scopes channels:history, groups:hi
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/notifications-view/NotificationsView.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "Undo"
 msgstr "Undo"
 
@@ -35292,6 +35535,7 @@ msgstr "Unknown error"
 #: src/components/account/organization-panel.tsx
 #: src/components/account/user-info.tsx
 #: src/components/conversation/InviteCard.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/invite-row.tsx
@@ -35530,6 +35774,7 @@ msgstr "Update values"
 
 #: src/components/asset-counters/channel-project-counters.tsx
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 #: src/lib/publish-state.ts
 #: src/tabs/provider-meta.tsx
@@ -35701,6 +35946,7 @@ msgstr "Usage unavailable"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Use"
@@ -36403,6 +36649,11 @@ msgstr "Warning: {warning}"
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Warnings"
 msgstr "Warnings"
+
+#. placeholder {0}: change.was
+#: src/components/tags/ClassifyTable.tsx
+msgid "was {0}"
+msgstr "was {0}"
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "was {previous}"
@@ -37262,6 +37513,7 @@ msgstr "yesterday {hhmm}"
 
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/data-sources/DataSourcePage.tsx
+#: src/components/footer/HostedAppRow.tsx
 msgid "you"
 msgstr "you"
 
@@ -37536,6 +37788,7 @@ msgstr "Your business number in your own Meta app. Meta calls the hub's webhook 
 #: src/components/footer/BrowserChip.tsx
 #: src/components/footer/BrowserChip.tsx
 #: src/components/footer/BrowserChip.tsx
+#: src/components/footer/HostedAppRow.tsx
 msgid "Your Chrome"
 msgstr "Your Chrome"
 

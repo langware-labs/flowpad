@@ -88,6 +88,55 @@ export function treeRows(names: string[], root: string): Array<{ name: string; d
   return rows;
 }
 
+type TagTreeRow = { name: string; depth: number };
+
+/** The live (not deprecated) tags of the classification tree, as rows. */
+export function useTagTreeRows(): TagTreeRow[] {
+  const definitions = useTagDefinitions();
+  const { root } = useClassificationSettings();
+  return useMemo(
+    () => treeRows(definitions.filter((tag) => !tag.deprecated).map((tag) => tag.name ?? ''), root),
+    [definitions, root],
+  );
+}
+
+/** The tag tree as a list of ticks — a message's tags, or the Stream Inbox's tag filter. */
+export function TagTreeList({
+  rows,
+  isOn,
+  onToggle,
+  optionTestId,
+  trailing,
+  'data-testid': testId,
+}: {
+  rows: TagTreeRow[];
+  isOn: (name: string) => boolean;
+  /** `on` is the tick's state before the click. */
+  onToggle: (name: string, on: boolean) => void;
+  optionTestId: string;
+  trailing?: (name: string) => ReactNode;
+  'data-testid'?: string;
+}) {
+  const colors = useTagColors();
+  return (
+    <ul className="max-h-64 overflow-auto" data-testid={testId}>
+      {rows.map(({ name, depth }) => {
+        const on = isOn(name);
+        return (
+          <li key={name} style={{ paddingInlineStart: 4 + depth * 16 }}>
+            <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-muted">
+              <input type="checkbox" checked={on} data-testid={`${optionTestId}-${name}`} onChange={() => onToggle(name, on)} />
+              <TagIcon className="size-3" style={{ color: colors.get(name) ?? undefined }} />
+              {name.split('.').at(-1)}
+              {trailing?.(name)}
+            </label>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /** The message's quick-menu panel lives in the URL (`message_tags=<id>:picker|queue`). */
 function useMessagePanel(message: FlowMessage) {
   const { navigation, currentDock } = useDockNavigation();
@@ -269,8 +318,6 @@ function QuickMenu({ message, children }: { message: FlowMessage; children: Reac
 function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => void }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const definitions = useTagDefinitions();
-  const colors = useTagColors();
   const { root } = useClassificationSettings();
   const rulesOf = useTagAutomations();
   const { error, change } = useTagChange(message);
@@ -289,14 +336,7 @@ function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => vo
     await change(name, remove);
     setPending((all) => Object.fromEntries(Object.entries(all).filter(([key]) => key !== name)));
   };
-  const rows = useMemo(
-    () =>
-      treeRows(
-        definitions.filter((tag) => !tag.deprecated).map((tag) => tag.name ?? ''),
-        root,
-      ),
-    [definitions, root],
-  );
+  const rows = useTagTreeRows();
   /** The tag tree editor, opened on this message so its Try pane is about it. */
   const manageTags = (extra: Record<string, string> = {}) =>
     DockPointer.forTagGraph(null, {
@@ -340,34 +380,24 @@ function TagPicker({ message, onDone }: { message: FlowMessage; onDone: () => vo
         <TagIcon className="size-3" />
         {root}
       </div>
-      <ul className="max-h-64 overflow-auto" data-testid="message-tags-tree">
-        {rows.map(({ name, depth }) => {
-          const on = pending[name] ?? tags.includes(name);
-          return (
-            <li key={name} style={{ paddingInlineStart: 4 + depth * 16 }}>
-              <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-muted">
-                <input
-                  type="checkbox"
-                  checked={on}
-                  data-testid={`message-tag-option-${name}`}
-                  onChange={() => void mutate(name, on)}
-                />
-                <TagIcon className="size-3" style={{ color: colors.get(name) ?? undefined }} />
-                {name.split('.').at(-1)}
-                {rulesOf(name).some(({ rule }) => rule.enabled) && (
-                  <span
-                    className="ms-auto text-muted-foreground"
-                    title={t`Starts an automation`}
-                    data-testid={`message-tag-automation-${name}`}
-                  >
-                    <Zap className="size-3" />
-                  </span>
-                )}
-              </label>
-            </li>
-          );
-        })}
-      </ul>
+      <TagTreeList
+        rows={rows}
+        data-testid="message-tags-tree"
+        optionTestId="message-tag-option"
+        isOn={(name) => pending[name] ?? tags.includes(name)}
+        onToggle={(name, on) => void mutate(name, on)}
+        trailing={(name) =>
+          rulesOf(name).some(({ rule }) => rule.enabled) && (
+            <span
+              className="ms-auto text-muted-foreground"
+              title={t`Starts an automation`}
+              data-testid={`message-tag-automation-${name}`}
+            >
+              <Zap className="size-3" />
+            </span>
+          )
+        }
+      />
       {!tags.length && !message.outbound && ['skipped', 'failed'].includes(processing?.classification ?? 'skipped') && (
         <p role="status" className="mt-2 text-xs text-muted-foreground" data-testid="message-unclassified">
           {processing?.classification === 'failed'

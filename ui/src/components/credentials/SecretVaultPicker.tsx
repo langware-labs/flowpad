@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
-import { credentialsService, type SecretManagerInfo } from '@sdk';
+import { credentialsService, type SecretManagerInfo, type SecretVault } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { describeApiError } from '@src/lib/error-message';
@@ -16,10 +16,13 @@ import { cn } from '@src/lib/utils';
 export function SecretVaultPicker({
   projectId,
   credential,
+  onSave,
   onDone,
   onCancel,
 }: {
   projectId: string;
+  /** Saves the vault somewhere else than the project (the instance's global vault): no name is asked. */
+  onSave?: (vault: SecretVault) => Promise<void>;
   /** The credential being shared: its local values are published into the new vault. */
   credential?: string;
   onDone: () => void;
@@ -50,7 +53,7 @@ export function SecretVaultPicker({
 
   const chosen = managers?.find((m) => m.name === manager);
   const fields = chosen?.config_fields ?? [];
-  const ready = !!chosen && !!vault.trim() && fields.every((f) => !f.required || (config[f.name] ?? '').trim());
+  const ready = !!chosen && (!!onSave || !!vault.trim()) && fields.every((f) => !f.required || (config[f.name] ?? '').trim());
 
   const save = async () => {
     if (!chosen) return;
@@ -63,8 +66,12 @@ export function SecretVaultPicker({
           .map(([k, v]) => [k, v.trim()] as const)
           .filter(([, v]) => v),
       );
-      await credentialsService.addVault(projectId, name, { manager: chosen.name, config: values });
-      if (credential) await credentialsService.publish(credential, projectId, name);
+      if (onSave) {
+        await onSave({ manager: chosen.name, config: values });
+      } else {
+        await credentialsService.addVault(projectId, name, { manager: chosen.name, config: values });
+        if (credential) await credentialsService.publish(credential, projectId, name);
+      }
       onDone();
     } catch (err) {
       const { code, message } = describeApiError(err, t`Could not save the vault.`);
@@ -105,13 +112,15 @@ export function SecretVaultPicker({
       )}
       {chosen && (
         <div className="grid grid-cols-2 gap-2">
-          <Input
-            value={vault}
-            onChange={(e) => setVault(e.target.value)}
-            placeholder={t`Vault name`}
-            aria-label={t`Vault name`}
-            data-testid="secret-vault-name"
-          />
+          {!onSave && (
+            <Input
+              value={vault}
+              onChange={(e) => setVault(e.target.value)}
+              placeholder={t`Vault name`}
+              aria-label={t`Vault name`}
+              data-testid="secret-vault-name"
+            />
+          )}
           {fields.map((f) => (
             <Input
               key={f.name}

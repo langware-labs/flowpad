@@ -174,9 +174,10 @@ def instance_store(folder: Path | str) -> Path:
     root = _project_of_folder(folder)
     if root is None:   # a standalone dataset folder is its own store
         return Path(folder)
-    from flow_sdk.core.log_dataset import temp_datasets  # noqa: PLC0415
+    from flow_sdk.core.log_dataset import instance_dataset_roots  # noqa: PLC0415
 
-    if Path(folder).resolve().parent == temp_datasets().resolve():   # a temp log keeps its rows in temp
+    # Flowpad's own datasets (a temp log, a kept one) hold their rows beside the manifest.
+    if any(Path(folder).resolve().parent == own.resolve() for own in instance_dataset_roots()):
         return Path(folder)
     manifest = root / "agentic-assets" / "project_manifest" / "project_manifest.json"
     ns = str(load_json_dict(manifest).get("ns") or "") or _digest(str(root.resolve()).encode())

@@ -25,9 +25,9 @@ function stub({ sealed = [], vars = {}, present = false }: { sealed?: object[]; 
   const status = vi.spyOn(credentialsService, 'status').mockResolvedValue({
     credentials: [{ name: 'bright_data', vars: [{ env_var: 'BRIGHT_DATA_API', present }] }],
   } as never);
-  vi.spyOn(credentialsService, 'vaults').mockResolvedValue({
-    team: { manager: 'onepassword', config: { vault: 'GTM Studio' } },
-  });
+  vi.spyOn(credentialsService, 'vaultList').mockResolvedValue({
+    vaults: { team: { manager: 'onepassword', config: { vault: 'GTM Studio' } } },
+  } as never);
   vi.spyOn(credentialsService, 'listManagers').mockResolvedValue([
     { name: 'onepassword', title: '1Password' } as never,
   ]);

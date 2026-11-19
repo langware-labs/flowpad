@@ -34,6 +34,7 @@ export function AppSlot({
       viewer.route,
       viewer.runtime,
       viewer.reloadKey,
+      viewer.stateKey,
       optionsKey,
     ],
   );

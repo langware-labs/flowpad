@@ -1,0 +1,25 @@
+{
+  "type": "agent",
+  "id": "8b595971-9ae6-4fe0-b949-a0df78eff77f",
+  "name": "stream-inbox-classifier",
+  "description": "Reads the Stream Inbox conversations you give it and proposes one tag for each, keeping the tag tree small. It proposes only: you review and apply.",
+  "avatar": "🏷️",
+  "worker_type": "claude",
+  "model": "sonnet",
+  "permission_mode": "bypassPermissions",
+  "subagents": [
+    "conversation_tagger"
+  ],
+  "input": {
+    "conversations": [
+      "string"
+    ],
+    "since": "?date",
+    "until": "?date"
+  },
+  "enabled": true,
+  "load_flowpad_assistant": true,
+  "assistant_skills": [
+    "stream-inbox-classifier"
+  ]
+}

@@ -288,7 +288,7 @@ class ComputeOp(Entity):
 
         return data_dir_for(EntityType.COMPUTE_OP.value, self.id) / "calls"
 
-    async def start(self, *, input: Any = MISSING, approved: bool = False,
+    async def start(self, *, input: Any = MISSING, approved: bool = False, workdir: Optional[Path] = None,
                     invocation_id: str | None = None, parent_call_id: str | None = None) -> CallRecord:
         """Persist admission and run independently of the requesting connection.
 
@@ -305,7 +305,7 @@ class ComputeOp(Entity):
             self._calls_folder(), block=str(self.typeid), project_id=self.project_id,
             input=None if input is MISSING else input, input_present=input is not MISSING,
             invocation_id=invocation_id, parent_call_id=parent_call_id,
-            execute=lambda identity, attach: self.call(input=input, approved=approved,
+            execute=lambda identity, attach: self.call(input=input, approved=approved, workdir=workdir,
                                                       invocation_id=invocation_id or identity, call_id=identity,
                                                       parent_call_id=parent_call_id, on_executor=attach),
         )

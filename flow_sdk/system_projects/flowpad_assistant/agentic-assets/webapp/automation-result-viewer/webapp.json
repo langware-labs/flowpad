@@ -1,0 +1,11 @@
+{
+  "name": "automation-result-viewer",
+  "title": "Automation result viewer",
+  "description": "Shows what an automation's run did: where it stands (done, expired, cancelled, needs review, failed), what happened in a line, the details folded under it, and the session it called back.",
+  "kind": "application.web.viewer",
+  "build": ".",
+  "views": [
+    {"kind": "automation.result", "shows": ["single"]}
+  ],
+  "module": "viewer.js"
+}

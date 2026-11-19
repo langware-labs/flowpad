@@ -20,6 +20,7 @@ import {
 import { msg } from '@lingui/core/macro';
 import { McpCreateDialog } from './McpCreateDialog';
 import { ChartCreateDialog } from './ChartCreateDialog';
+import { MakeAgentDialog } from './MakeAgentDialog';
 import { DatasetCreateDialog } from './DatasetCreateDialog';
 import { subjectEditorPointer } from '@src/navigation/subject-editor';
 import { DiagnosisRequestCreateDialog } from '@src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog';
@@ -107,6 +108,14 @@ export interface QuickCreateDescriptor {
     onOpenChange: (open: boolean) => void;
     projectId?: string | null;
   }>;
+  /** `Dialog` is answered by the hub: signed out, the generic form is used instead. */
+  dialogNeedsCloud?: boolean;
+}
+
+/** The type's own create dialog, when it brings one that can run now. */
+export function customDialogFor(type: string | null, signedIn: boolean): QuickCreateDescriptor['Dialog'] {
+  const descriptor = type ? getDescriptor(type) : undefined;
+  return descriptor?.dialogNeedsCloud && !signedIn ? undefined : descriptor?.Dialog;
 }
 
 /** Placement options are backend registry data, never a vendor directory table. */
@@ -121,6 +130,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     group: 'build',
     label: msg`Agent`,
     wikiword: 'Agent Management',
+    Dialog: MakeAgentDialog,
+    dialogNeedsCloud: true,
     create: async ({ project, name, destination }) => {
       const saved = await Agent.createInProject(project, name, destination);
       return {

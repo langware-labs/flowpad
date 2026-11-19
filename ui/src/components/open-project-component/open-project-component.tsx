@@ -32,10 +32,13 @@ import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 // The server's own sentence (e.g. a name another project already holds), never Axios's status line.
 import { errorMessage } from '@src/lib/error-message';
 
-/** Free-text match against a project's display name or cwd. `q` must already be
- *  trimmed + lowercased. */
-const matchesProjectQuery = (project: ProjectListItem, q: string): boolean =>
-  getProjectDisplayName(project).toLowerCase().includes(q) || (project.cwd ?? '').toLowerCase().includes(q);
+/** Free-text match against a project's own name, its folder name or its cwd —
+ *  a project's name can differ from its folder. `q` must already be trimmed +
+ *  lowercased. */
+export const matchesProjectQuery = (project: ProjectListItem, q: string): boolean =>
+  (project.name ?? '').toLowerCase().includes(q) ||
+  getProjectDisplayName(project).toLowerCase().includes(q) ||
+  (project.cwd ?? '').toLowerCase().includes(q);
 
 /** Abbreviate the host home directory to `~` for the compact path subscript;
  *  the full path stays on the tooltip and in the details popover. */

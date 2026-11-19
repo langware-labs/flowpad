@@ -96,6 +96,26 @@ describe('every call carries the key', () => {
   });
 });
 
+describe('when Flowpad is not running', () => {
+  it('shows a small closeable tag, never an error overlay, and drops it once a call gets through', async () => {
+    apiClient.defaults.adapter = async (config) => {
+      throw new AxiosError('Network Error', 'ERR_NETWORK', config);
+    };
+    await expect(apiClient.get('/api/v1/anything')).rejects.toBeTruthy();
+    const tag = document.querySelector('[data-testid="flowpad-page-offline"]');
+
+    expect(tag).not.toBeNull();
+    expect(notice()).toBeNull();
+    (tag?.querySelector('button') as HTMLButtonElement).click();
+    expect(document.querySelector('[data-testid="flowpad-page-offline"]')).toBeNull();
+
+    await expect(apiClient.get('/api/v1/anything')).rejects.toBeTruthy();
+    server({ data: {} });
+    await apiClient.get('/api/v1/anything');
+    expect(document.querySelector('[data-testid="flowpad-page-offline"]')).toBeNull();
+  });
+});
+
 describe('htmlPage()', () => {
   it('gives the page what it was opened about', async () => {
     g.__FLOWPAD_STATE_KEY__ = KEY;

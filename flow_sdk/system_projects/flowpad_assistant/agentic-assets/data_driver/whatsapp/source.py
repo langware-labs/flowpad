@@ -488,6 +488,7 @@ class WhatsAppSource(MessageSource):
                 ready=False,
                 detail="Meta refused the token. A temporary token from the setup page expires in 24 hours — "
                 "create a System User token for one that does not.",
+                refused=True,
             )
         except SourceError as exc:
             if is_transient(exc):

@@ -1,4 +1,4 @@
-import { ARTIFACT_KINDS, TypeId, kindMatches, type Project, type WebApp } from '@sdk';
+import { ARTIFACT_KINDS, TypeId, WebApp, kindMatches, type Project } from '@sdk';
 import { useCallback, useMemo } from 'react';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { appsQuery, EDITOR_APP_KIND } from '@src/hooks/flow-hooks/useAssetApps';
@@ -62,12 +62,15 @@ export function useProjectApps(project: Project | null | undefined): ProjectApp[
  * opens with (`homePageDock`, `dependencyHomeDock`).
  */
 export function projectAppDock(entry: ProjectApp, consumerProjectId: string): DockPointer {
-  const dock = DockPointer.forAppEntity(new TypeId(`${entry.app.type}-${entry.app.id}`))
+  return appDock(String(entry.app.id), entry.providerProjectId, consumerProjectId);
+}
+
+/** `projectAppDock` by ids, for a caller that holds no app row (the hosted apps list). */
+export function appDock(webappId: string, providerProjectId: string, consumerProjectId: string): DockPointer {
+  const dock = DockPointer.forAppEntity(new TypeId(`${WebApp.type}-${webappId}`))
     .withScopeFilter(projectScope(consumerProjectId))
-    .withOption(PROVIDER_PROJECT_PARAM, entry.providerProjectId);
-  return entry.providerProjectId === consumerProjectId
-    ? dock
-    : dock.withOption(CONSUMER_PROJECT_PARAM, consumerProjectId);
+    .withOption(PROVIDER_PROJECT_PARAM, providerProjectId);
+  return providerProjectId === consumerProjectId ? dock : dock.withOption(CONSUMER_PROJECT_PARAM, consumerProjectId);
 }
 
 /**

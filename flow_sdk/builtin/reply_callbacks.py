@@ -7,8 +7,8 @@ The rule is an ordinary TAG trigger with one ``prompt_process`` action — the s
   emits (a reply typed here, a hub message live or caught up, a channel projection);
 - the first message there after the question, written by a person and not by a session or an
   agent, is the reply — quoted or not. The rule fires once (``fire_once``);
-- at ``expires_at`` an unanswered rule is cancelled: a message in its Automations conversation
-  says so, and it never fires (docs/automations.md "A callback into a session").
+- however it ends -- answered, its time passed (``expires_at``), cancelled -- a message in its
+  Automations conversation says so (docs/automations.md "A callback into a session").
 """
 
 from __future__ import annotations
@@ -144,6 +144,16 @@ async def reply_text(rule: Any, event: Any) -> str:
     return " ".join(parts)
 
 
+async def _first_reply(asked: Any) -> Any:
+    """The first message that answers ``asked``, or None."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    rows = await FlowMessage.sent_in(asked.conversation_id)
+    written = await _session_written(asked.conversation_id)
+    replies = [fm for fm in rows if _answers(asked, fm, written)]
+    return min(replies, key=lambda m: iso_to_utc(m.occurred_at) or iso_to_utc(asked.occurred_at)) if replies else None
+
+
 async def reconcile(rule: Any) -> None:
     """On arming: a reply that landed while nothing listened (the app closed, before the rule existed)
     fires now, once. Its end time is the generic one (automations/lifecycle.py)."""
@@ -155,11 +165,8 @@ async def reconcile(rule: Any) -> None:
     asked = await FlowMessage.get_by_id(_message_id(rule.awaits_reply))
     if asked is None:
         return
-    rows = await FlowMessage.sent_in(asked.conversation_id)
-    written = await _session_written(asked.conversation_id)
-    replies = [fm for fm in rows if _answers(asked, fm, written)]
-    if replies:
-        fm = min(replies, key=lambda m: iso_to_utc(m.occurred_at) or iso_to_utc(asked.occurred_at))
+    fm = await _first_reply(asked)
+    if fm is not None:
         from flow_sdk.builtin.tag_triggers import _fire_tag_trigger  # noqa: PLC0415
         from flow_sdk.tags.bus import event_bus  # noqa: PLC0415
 
@@ -169,27 +176,66 @@ async def reconcile(rule: Any) -> None:
         await _fire_tag_trigger(str(rule.id), event)
 
 
+def _waited(asked: Any, until: Any) -> str:
+    """How long the wait was, in words: "3 days", "2 hours"."""
+    start, end = iso_to_utc(getattr(asked, "occurred_at", None)), iso_to_utc(until)
+    if start is None or end is None:
+        return "the time it was given"
+    minutes = max(round((end - start).total_seconds() / 60), 1)
+    for size, word in ((1440, "day"), (60, "hour"), (1, "minute")):
+        if minutes >= size:
+            n = round(minutes / size)
+            return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+async def _asked_whom(asked: Any) -> str:
+    """Who the question went to: the conversation's other members, by name."""
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+
+    conv = await Conversation.get_by_id(asked.conversation_id) if asked is not None else None
+    names = [m["name"] for m in getattr(conv, "members", None) or []
+             if m.get("name") and str(m.get("user_id") or m.get("id") or "") != str(getattr(asked, "sender_id", "") or "")]
+    return ", ".join(names)
+
+
 @on_end
-async def post_not_answered(rule: Any, reason: str) -> None:
-    """A reply wait that ended with no reply (its time passed, or it was cancelled) says so in its
-    Automations conversation. The generic end calls it for every rule (automations/lifecycle.on_end)."""
-    if not getattr(rule, "awaits_reply", None) or reason == "max_runs":
+async def post_ended(rule: Any, reason: str) -> None:
+    """A reply wait says how it ended in its Automations conversation: answered (the session was started),
+    its time passed, or it was cancelled. The generic end calls it for every rule (automations/lifecycle.on_end)."""
+    if not getattr(rule, "awaits_reply", None):
         return
-    from flow_sdk.app.automation_message import automation_conversation, post_message  # noqa: PLC0415
-    from flow_sdk.builtin.flow_message import FlowMessage, FlowMessageKind  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.automation_spec import AutomationRef  # noqa: PLC0415
-    from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+    from flow_sdk.app.automation_message import post_automation_result  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.automation_spec import AutomationRef, AutomationResult  # noqa: PLC0415
 
     asked = await FlowMessage.get_by_id(_message_id(rule.awaits_reply))
     head = _quote(asked, 80)
     process = await rule.target_process()
     session = getattr(process, "name", None) or "the session"
-    someone = (await get_or_create_local_user()).typeid
-    conv = await automation_conversation(AutomationRef(trigger_id=str(rule.id), name=rule.name), someone)
-    await post_message(
-        conv.id,
-        f"Prompt handling cancelled: nobody replied to {head} in time. {session} was not woken.",
-        kind=FlowMessageKind.AUTOMATION_RESULT,
-        sender_name=rule.name or "Automation",
-        someone=someone,
-    )
+    session_id = str(process.typeid) if process is not None else None
+    prompt = next((a.prompt for a in rule.actions if getattr(a, "prompt", None)), "")
+    whom = await _asked_whom(asked)
+    whose, Whose = (f"{whom}'s",) * 2 if whom else ("a", "A")
+    until = iso_to_utc(rule.expires_at)
+    details = {
+        "Waited for": f"{Whose} reply to {head}",
+        "Waited until": until.strftime("%d %b %Y, %H:%M UTC").lstrip("0") if until else "",
+    }
+    if reason == "max_runs":
+        reply = await _first_reply(asked) if asked is not None else None
+        who = getattr(reply, "author_label", "") or whom or "Someone"
+        result = AutomationResult.of(
+            "done", f"{who} replied to {head}. The session was started to send the follow-up.",
+            {**details, "Done": f"Started the session and asked it: “{prompt}”", "Session": session}, session_id)
+    else:
+        waited = _waited(asked, rule.expires_at)
+        gone = f"{whom} did not reply to {head} within {waited}" if whom else f"Nobody replied to {head} within {waited}"
+        ended = {**details, "Not done": f"Start the session and ask it: “{prompt}”", "Session": f"{session} · not started",
+                 "What now": "Nothing else will run. To try again, send the message again from the session."}
+        if reason == "expired":
+            result = AutomationResult.of("expired", f"{gone}, so the follow-up was not sent.", ended, session_id)
+        else:
+            result = AutomationResult.of(
+                "cancelled", f"The wait for {whose} reply to {head} was cancelled before a reply came. "
+                "The follow-up was not sent.", ended, session_id)
+    await post_automation_result(AutomationRef(trigger_id=str(rule.id), name=rule.name or ""), result)

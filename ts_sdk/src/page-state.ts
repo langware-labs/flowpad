@@ -96,6 +96,34 @@ export function showPageStateError(reason: Reason): void {
   (document.body ?? document.documentElement).prepend(notice);
 }
 
+const OFFLINE = '[data-testid="flowpad-page-offline"]';
+
+/** Say, inside the page, that Flowpad cannot be reached: a small tag in the corner the user can close. Never blocks the page. */
+export function showOfflineTag(): void {
+  if (typeof document === 'undefined' || document.querySelector(OFFLINE)) return;
+  const tag = document.createElement('div');
+  tag.setAttribute('data-testid', 'flowpad-page-offline');
+  tag.setAttribute('role', 'status');
+  tag.style.cssText =
+    'position:fixed;right:12px;bottom:12px;z-index:2147483647;display:flex;gap:8px;align-items:center;' +
+    'padding:6px 10px;border-radius:6px;font:12px/1.4 system-ui,sans-serif;background:#fff3cd;color:#664d03;' +
+    'border:1px solid #ffda6a';
+  const text = document.createElement('span');
+  text.textContent = "Flowpad isn't running";
+  const close = document.createElement('button');
+  close.setAttribute('aria-label', 'Close');
+  close.textContent = '✕';
+  close.style.cssText = 'border:0;background:none;color:inherit;cursor:pointer;padding:0;font:inherit';
+  close.onclick = () => tag.remove();
+  tag.append(text, close);
+  (document.body ?? document.documentElement).append(tag);
+}
+
+/** Take the offline tag away: a call got through. */
+export function hideOfflineTag(): void {
+  if (typeof document !== 'undefined') document.querySelector(OFFLINE)?.remove();
+}
+
 export interface HtmlPage {
   /** What the page was opened about: named typed ids, e.g. `{ process: 'agentic_process-<id>' }`. */
   context: Record<string, string>;

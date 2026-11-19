@@ -124,6 +124,9 @@ export type ProcessRunsPointerOptions = ProcessRunScope & { run?: string | null 
 export const HIGHLIGHT_PARAM = 'highlight';
 /** An entry of an `fs/` folder to show selected. */
 export const FS_SELECT_PARAM = 'select';
+/** The home's selected icon (an agent's or app's typeid) and, inside it, the deployment opened from its list. */
+const HOME_TILE_PARAM = 'tile';
+const HOME_TILE_DEPLOYMENT_PARAM = 'tileDeployment';
 /** A transcript entry to scroll to and select. */
 export const TRANSCRIPT_ENTRY_PARAM = 'transcript_entry_id';
 /** A timestamp to seek a transcript to. */
@@ -310,11 +313,11 @@ export const WORKSPACE_PARAM = 'workspace';
 export const WORKSPACE_ENTRY_PARAM = 'workspaceEntry';
 
 /**
- * URL query-param key carrying the STATE KEY a page was opened with (`flow_sdk/server/page_state.py`):
- * minted by whoever opened the page on this machine (`flow show`, an agent, the user saying Allow), and
- * handed by the host to the page's frame. A dock without one asks the user before it runs a page.
- * It is this dock's own — NOT sticky: carrying one page's key onto another page would hand it reach it
- * never earned. Excluded from `tabHash` like every option.
+ * URL query-param key carrying the STATE KEY a page runs with (`flow_sdk/server/page_state.py`). Normally
+ * the app's own key, minted once at startup: every navigation made inside the app carries it
+ * (`NavigationActions.openDock`), so a dock WITHOUT a known key is one a link from outside named, and it
+ * asks the user before it runs a page. An agent that opens a page may give it a key of its own, to hand
+ * it a context; that key stays on its dock and is never carried on. Excluded from `tabHash` like every option.
  */
 export const STATE_KEY_PARAM = 'stateKey';
 
@@ -725,6 +728,12 @@ export class DockPointer implements IDockPointer {
     return this.withPageBefore(null).withOption(STREAM_INBOX_CHANNEL_PARAM, value);
   }
 
+  /** Clone with these tags ticked (`?tags=a,b`: a conversation shows when it carries any of them); none
+   *  clears the filter. A new pick starts at now. */
+  withStreamInboxTags(names: readonly string[]): DockPointer {
+    return this.withPageBefore(null).withOption('tags', names.length ? names.join(',') : null);
+  }
+
   /** The stream inbox's search text, or '' for none. */
   get streamInboxSearch(): string {
     return this.options?.[STREAM_INBOX_SEARCH_PARAM] ?? '';
@@ -795,6 +804,19 @@ export class DockPointer implements IDockPointer {
    * generic form behind `withLang`/`withJourney` and the sticky-param
    * carry-forward in `openDock`.
    */
+  /** The home's selected icon and the deployment opened inside it. */
+  get homeTile(): { key: string | null; deployment: string | null } {
+    return {
+      key: this.options?.[HOME_TILE_PARAM] ?? null,
+      deployment: this.options?.[HOME_TILE_DEPLOYMENT_PARAM] ?? null,
+    };
+  }
+
+  /** Select an icon on the home (and a deployment inside it); null clears both. */
+  withHomeTile(key: string | null, deployment: string | null = null): DockPointer {
+    return this.withOption(HOME_TILE_PARAM, key).withOption(HOME_TILE_DEPLOYMENT_PARAM, key ? deployment : null);
+  }
+
   withOption(key: string, value: string | null): DockPointer {
     const nextOptions = { ...(this.options ?? {}) };
     if (value) nextOptions[key] = value;

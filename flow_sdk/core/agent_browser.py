@@ -87,6 +87,19 @@ def status(instance: str | None = None) -> AgentBrowserStatus:
     )
 
 
+def open_urls(instance: str | None = None) -> set[str]:
+    """The addresses of the pages open in the agent browser now (no fragment); empty when it is not up."""
+    port = status(instance).port
+    if not port:
+        return set()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=1) as resp:
+            tabs = json.loads(resp.read())
+    except (OSError, ValueError):
+        return set()
+    return {str(tab.get("url") or "").split("#")[0] for tab in tabs if isinstance(tab, dict) and tab.get("type") == "page"}
+
+
 def find_browser() -> Optional[str]:
     """The user's installed Chrome, else Edge — the order ``browser.mjs`` uses."""
     candidates = [os.environ.get("CHROME_BIN")]

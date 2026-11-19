@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Annotation } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Briefcase, Plus, Trash2, User } from 'lucide-react';
+import { Briefcase, Check, Pencil, Plus, Trash2, User } from 'lucide-react';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useAuth } from '@src/hooks/useAuth';
@@ -10,6 +10,7 @@ import {
   deleteNote,
   noteTitle,
   quickPromptTime,
+  saveNote,
   touchQuickPrompt,
   useQuickPrompts,
 } from '@src/hooks/use-entity-notes';
@@ -65,7 +66,12 @@ export function QuickPromptsMenu({
           />
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-80 p-0" data-testid="quick-prompts-popover">
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-max min-w-80 max-w-[70vw] p-0"
+        data-testid="quick-prompts-popover"
+      >
         <div className="flex items-center gap-1.5 border-b border-border px-3 py-2">
           <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
             <Trans>Quick prompts</Trans>
@@ -81,35 +87,7 @@ export function QuickPromptsMenu({
             </p>
           )}
           {prompts.map((p) => (
-            <div
-              key={p.id}
-              data-testid="quick-prompt-row"
-              className="flex w-full items-center gap-2 rounded px-1.5 py-1.5 hover:bg-muted"
-            >
-              <ScopeIcon project={p.target_type === 'project'} />
-              <button
-                type="button"
-                onClick={() => run(p)}
-                data-testid="quick-prompt-run"
-                className="flex min-w-0 flex-1 items-center gap-2 text-start"
-              >
-                <StickyNoteShape color={p.data?.color as string | undefined} size={18} />
-                <span className="block min-w-0 flex-1 truncate text-xs text-foreground">{noteTitle(p)}</span>
-              </button>
-              <span className="shrink-0 text-[10px] text-muted-foreground">
-                {formatTimeAgoShort(quickPromptTime(p))}
-              </span>
-              <button
-                type="button"
-                title={t`Delete`}
-                aria-label={t`Delete`}
-                onClick={() => void deleteNote(p)}
-                data-testid="quick-prompt-delete"
-                className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
-            </div>
+            <QuickPromptRow key={p.id} note={p} onRun={() => run(p)} />
           ))}
           <div className="mt-1 flex items-center gap-1.5 border-t border-border px-1.5 pt-2">
             <ScopeIcon project={false} />
@@ -133,7 +111,8 @@ export function QuickPromptsMenu({
                   type="button"
                   onClick={() => saveMine(last)}
                   data-testid="quick-prompt-last"
-                  className="mt-1 flex w-full items-center gap-1.5 rounded px-1.5 py-1.5 text-start text-xs text-muted-foreground hover:bg-muted"
+                  // w-0 + min-w-full: fills the menu without its long text setting the menu's width.
+                  className="mt-1 flex w-0 min-w-full items-center gap-1.5 rounded px-1.5 py-1.5 text-start text-xs text-muted-foreground hover:bg-muted"
                 >
                   <Plus className="h-3 w-3 shrink-0" />
                   <span className="shrink-0">
@@ -165,6 +144,76 @@ export function QuickPromptsMenu({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+const ROW_BUTTON = 'shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground';
+
+/** One saved prompt: click runs it, the pencil edits its text in place, and delete takes two clicks. */
+function QuickPromptRow({ note, onRun }: { note: Annotation; onRun: () => void }) {
+  const { t } = useLingui();
+  const [editing, setEditing] = useState(false);
+  // Delete takes two clicks: the first arms it (the bin turns into a check), the second deletes.
+  const [armed, setArmed] = useState(false);
+  const deleteLabel = armed ? t`Confirm: Delete` : t`Delete`;
+
+  return (
+    <div data-testid="quick-prompt-row" className="flex w-full items-center gap-2 rounded px-1.5 py-1.5 hover:bg-muted">
+      <ScopeIcon project={note.target_type === 'project'} />
+      {editing ? (
+        <textarea
+          autoFocus
+          rows={Math.min(6, (note.content ?? '').split('\n').length)}
+          defaultValue={note.content ?? ''}
+          data-testid="quick-prompt-edit-input"
+          onBlur={() => setEditing(false)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
+            e.preventDefault();
+            const text = e.currentTarget.value.trim();
+            if (text && text !== (note.content ?? '').trim()) void saveNote(note, { content: text });
+            setEditing(false);
+          }}
+          className="min-w-0 flex-1 resize-none rounded border border-border bg-transparent px-1.5 py-0.5 text-xs text-foreground outline-none"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onRun}
+          data-testid="quick-prompt-run"
+          className="flex min-w-0 flex-1 items-center gap-2 text-start"
+        >
+          <StickyNoteShape color={note.data?.color as string | undefined} size={18} />
+          <span className="block min-w-0 flex-1 truncate text-xs text-foreground">{noteTitle(note)}</span>
+        </button>
+      )}
+      <span className="shrink-0 text-[10px] text-muted-foreground">{formatTimeAgoShort(quickPromptTime(note))}</span>
+      <button
+        type="button"
+        title={t`Edit`}
+        aria-label={t`Edit`}
+        onClick={() => setEditing(true)}
+        data-testid="quick-prompt-edit"
+        className={ROW_BUTTON}
+      >
+        <Pencil className="h-3 w-3" />
+      </button>
+      <button
+        type="button"
+        title={deleteLabel}
+        aria-label={deleteLabel}
+        onClick={() => (armed ? void deleteNote(note) : setArmed(true))}
+        onPointerLeave={() => setArmed(false)}
+        onBlur={() => setArmed(false)}
+        data-armed={armed || undefined}
+        data-testid="quick-prompt-delete"
+        className={
+          armed ? 'shrink-0 rounded bg-destructive/10 p-0.5 text-destructive hover:bg-destructive/20' : ROW_BUTTON
+        }
+      >
+        {armed ? <Check className="h-3 w-3" /> : <Trash2 className="h-3 w-3" />}
+      </button>
+    </div>
   );
 }
 

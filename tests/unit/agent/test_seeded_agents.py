@@ -15,7 +15,7 @@ AGENT_ROOT = Path(flowpad_assistant_project_root()) / "agentic-assets" / "agent"
 
 EXPECTED = {
     "artifact-setup", "asset-cleanup", "capability-installer", "chrome-auth",
-    "cloud-error-fixer", "diagnose", "email-summarizer", "emailer", "git-setup",
+    "cloud-error-fixer", "diagnose", "email-summarizer", "emailer", "git-setup", "stream-inbox-classifier",
     "migration-runner", "prompt-runner", "provisioner", "setup-fixer", "slack-poster", "slack-summarizer", "task-analyze",
     "vibe",
 }
@@ -38,6 +38,12 @@ COSTLIER_BY_DESIGN = {
     # the same send-verb tool-calling pattern the emailer's incident documented.
     # Same reasoning, same tier.
     "slack-poster": "sonnet",
+    # The main agent of a Stream Inbox classification reads nothing itself: one haiku
+    # `conversation_tagger` per conversation does. What it decides is the tag
+    # tree — approve a new tag or answer "use the existing one" across dozens of
+    # requests — and a wrong call there is a duplicate tag every later run
+    # inherits. The per-conversation cost stays on haiku.
+    "stream-inbox-classifier": "sonnet",
 }
 
 

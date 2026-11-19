@@ -14,6 +14,7 @@ const notes = vi.hoisted(() => ({
   add: vi.fn(),
   touch: vi.fn(),
   del: vi.fn(),
+  save: vi.fn(),
 }));
 
 vi.mock('@src/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: USER, name: 'me' } }) }));
@@ -23,6 +24,7 @@ vi.mock('@src/hooks/use-entity-notes', async (orig) => ({
   addQuickPrompt: notes.add,
   touchQuickPrompt: notes.touch,
   deleteNote: notes.del,
+  saveNote: notes.save,
 }));
 
 import { QuickPromptsMenu } from '@src/components/notes/QuickPromptsMenu';
@@ -77,9 +79,23 @@ describe('QuickPromptsMenu', () => {
     expect(screen.queryByTestId('quick-prompt-last')).toBeNull();
   });
 
-  it('delete removes the prompt', async () => {
+  it('delete takes two clicks: the first arms it, the second removes the prompt', async () => {
     await open();
     await userEvent.click(screen.getByTestId('quick-prompt-delete'));
+    expect(notes.del).not.toHaveBeenCalled();
+    expect(screen.getByTestId('quick-prompt-delete').dataset.armed).toBe('true');
+    await userEvent.click(screen.getByTestId('quick-prompt-delete'));
     expect(notes.del).toHaveBeenCalledWith(notes.prompts[0]);
+  });
+
+  it('edit changes the text in place and sends nothing', async () => {
+    const onSend = await open();
+    await userEvent.click(screen.getByTestId('quick-prompt-edit'));
+    const box = screen.getByTestId('quick-prompt-edit-input');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'Run all tests{Enter}');
+    expect(notes.save).toHaveBeenCalledWith(notes.prompts[0], { content: 'Run all tests' });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('quick-prompt-edit-input')).toBeNull();
   });
 });

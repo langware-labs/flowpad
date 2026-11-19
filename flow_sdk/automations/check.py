@@ -24,7 +24,7 @@ SPEC_FIELDS: frozenset[str] = frozenset({
     "tag_pattern", "tag_target", "tag_scope", "message_tags", "max_fires_per_minute", "fire_once", "confirm",
     "watch_path", "recursive", "watch_glob", "ignore_patterns", "respect_gitignore",
     "hook_events", "mask", "actions", "instruction", "workdir",
-    "gate", "then", "max_runs", "expires_at",
+    "gate", "then", "report_to", "max_runs", "expires_at",
 })
 
 

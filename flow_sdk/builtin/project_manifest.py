@@ -54,6 +54,10 @@ class ProjectManifest(Entity):
         default_factory=dict,
         description="The project's named secret vaults {name: {manager, config}} — where its shared values live. Empty = none.",
     )
+    default_secret_vault: str = APIField(
+        default="",
+        description="The vault the project's agents and shares use by default. Empty = the first of secret_vaults by name.",
+    )
     browser: str = APIField(
         default="agent",
         description="The browser agent sessions use: agent (Flowpad's own Chrome) or extension (Claude in Chrome).",

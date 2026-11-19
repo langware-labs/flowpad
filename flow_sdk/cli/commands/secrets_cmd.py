@@ -8,20 +8,25 @@
     flow secrets publish <cred> --vault V                   — this computer's values into the vault
     flow secrets fetch [cred]                               — the vaults into this computer's store
     flow secrets grant <vault> <email>                      — give a teammate read access
+    flow secrets active                                     — the vault in use here, and how its manager behaves
+    flow secrets vault default <name>                       — make a vault the project's default
+    flow secrets run NAME[,NAME] -- <command>               — run a command with values read from the active vault
 
-A value moves only local → vault (publish) and vault → local store (fetch). Every command prints
-names, never a value. Over HTTP when a backend runs, in-process when none does — the same
+A value moves only local → vault (publish) and vault → local store (fetch); ``run`` hands values to one
+command's environment and saves nothing. Every command prints names, never a value. Over HTTP when a backend runs, in-process when none does — the same
 ``builtin/credential_service`` functions either way.
 """
 from __future__ import annotations
 
+import asyncio
+import os
 from typing import Any, Optional
 
 import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import discover_port, fail, get_graph_json, ok, parse_config_pairs, post_graph_json
-from flow_sdk.cli.commands.credentials_cmd import EXIT_NOT_YET, _here, _project_id, _refused, _status, _url
+from flow_sdk.cli.commands.credentials_cmd import EXIT_NOT_YET, _here, _project, _project_id, _refused, _status, _url
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 secrets_app = typer.Typer(
@@ -61,6 +66,10 @@ def _call(verb: str, payload: dict, *, needs_project: bool = True, get: bool = F
                 return await svc.set_vault(pid, payload["name"], payload["spec"])
             if verb == "vault-remove":
                 return await svc.set_vault(pid, payload["name"], None)
+            if verb == "vault-default":
+                return await svc.set_default_vault(pid, payload["name"])
+            if verb == "active":
+                return await svc.active_vault(pid)
             if verb == "vault-check":
                 return await svc.vault_check(pid, vault)
             if verb == "publish":
@@ -106,6 +115,53 @@ def vault_remove_cmd(
 ) -> None:
     """Forget the project's vault NAME. The secrets in the manager are not touched."""
     ok(_call("vault-remove", {"project_id": project, "name": name}))
+
+
+@vault_app.command("default")
+def vault_default_cmd(
+    name: Annotated[str, typer.Argument(help="The vault to make the default (\"\" clears it: the first by name).")],
+    project: _ProjectOpt = None,
+) -> None:
+    """Make NAME the project's default vault: the one its agents read a missing secret from."""
+    ok(_call("vault-default", {"project_id": project, "name": name}))
+
+
+@secrets_app.command("active")
+def active_cmd(project: _ProjectOpt = None) -> None:
+    """The vault in use here — the project's default, else this instance's — whether this computer can use
+    it, and its manager's own instructions. Never a value."""
+    port = discover_port(required=False)
+    pid = _project_id(port, project) or ""
+    ok(_call("active", {"project_id": pid}, needs_project=False, get=True))
+
+
+@secrets_app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def run_cmd(
+    names: Annotated[str, typer.Argument(help="The variables the command needs, comma-separated (STRIPE_API_KEY,DATABASE_URL).")],
+    command: Annotated[list[str], typer.Argument(help="The command to run, after `--`.")],
+    project: _ProjectOpt = None,
+) -> None:
+    """Run COMMAND with NAMES in its environment: each from this environment when it is there, else read from
+    the active vault. Nothing is printed and nothing is saved; the command's own exit code is returned."""
+    values = asyncio.run(_read_for_run([n.strip() for n in names.split(",") if n.strip()], project))
+    try:
+        os.execvpe(command[0], command, {**os.environ, **values})
+    except OSError as e:
+        fail(int(ExitCode.NOT_FOUND), "NO_COMMAND", f"cannot run {command[0]!r}: {e}")
+
+
+async def _read_for_run(names: list[str], project_id: Optional[str]) -> dict[str, str]:
+    """``active.read_secrets`` for the project here; a refusal exits with its code — never a value."""
+    from flow_sdk.builtin.credential_service import CredentialError, store_errors  # noqa: PLC0415
+    from flow_sdk.secrets.active import read_secrets  # noqa: PLC0415
+    from flow_sdk.secrets.errors import SecretStoreError  # noqa: PLC0415
+
+    try:
+        with store_errors():
+            held = await read_secrets(names, await _project(project_id))
+    except (CredentialError, SecretStoreError) as e:
+        fail(EXIT_NOT_YET, str(e.code or "REFUSED"), str(e))
+    return {name: value.get_secret_value() for name, value in held.items()}
 
 
 @secrets_app.command("check")
