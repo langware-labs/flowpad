@@ -1037,38 +1037,80 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
         session = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation))
     who = display_name_of(getattr(message, "author_display", "") or "", author)
     outbox = reply_outbox(source, turn_key(message))
-    outcome = await engine.run(
-        Turn(
-            session=session,
-            key=turn_key(message),
-            body=turn_body(
-                message, outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None
+    # The person sees the agent has their message while it works on it; however the turn ends, ours goes.
+    seen = await try_react_seen(message, driver_cls)
+    try:
+        outcome = await engine.run(
+            Turn(
+                session=session,
+                key=turn_key(message),
+                body=turn_body(
+                    message, outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None
+                ),
+                name=" · ".join(p for p in (agent.name, source.channel or source.provider, who) if p) or None,
             ),
-            name=" · ".join(p for p in (agent.name, source.channel or source.provider, who) if p) or None,
-        ),
-        process=process,
-    )
-    answer_files = outbox_files(outbox)
-    if not outcome.ok or not (outcome.text or answer_files):
-        console.info("✗ %s  %s — no reply: %s", channel, who, _line(outcome.detail))
-        if not outcome.ok and engine.deployment is not None and not getattr(outcome, "timed_out", False):
-            await _hold_failed(engine, message, source, session, turn_key(message), outcome, process)
-        return False
-    if engine.deployment is not None:
-        await _outage_over(process or await engine.find_process(session))
-    if getattr(driver_cls, "replies_explicitly", False):
-        await skip_message(message)
+            process=process,
+        )
+        answer_files = outbox_files(outbox)
+        if not outcome.ok or not (outcome.text or answer_files):
+            console.info("✗ %s  %s — no reply: %s", channel, who, _line(outcome.detail))
+            if not outcome.ok and engine.deployment is not None and not getattr(outcome, "timed_out", False):
+                await _hold_failed(engine, message, source, session, turn_key(message), outcome, process)
+            return False
+        if engine.deployment is not None:
+            await _outage_over(process or await engine.find_process(session))
+        if getattr(driver_cls, "replies_explicitly", False):
+            await skip_message(message)
+            return True
+        if getattr(driver_cls, "answers_once", False) and not sends_turn_text(
+            driver_cls, spoke=await _answered_before(message, source, agent)
+        ):
+            console.info("✗ %s  %s — already answered once; the turn's text is not sent", channel, who)
+            await skip_message(message)
+            return True
+        # quote=None: the answer quotes the message only when the person wrote again meanwhile.
+        await message.reply(await message.reply_spec(body=outcome.text or "", files=answer_files))
+        console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
         return True
-    if getattr(driver_cls, "answers_once", False) and not sends_turn_text(
-        driver_cls, spoke=await _answered_before(message, source, agent)
-    ):
-        console.info("✗ %s  %s — already answered once; the turn's text is not sent", channel, who)
-        await skip_message(message)
-        return True
-    # quote=None: the answer quotes the message only when the person wrote again meanwhile.
-    await message.reply(await message.reply_spec(body=outcome.text or "", files=answer_files))
-    console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
-    return True
+    finally:
+        if seen is not None:
+            await try_unreact_seen(message)
+
+
+#: What the person sees on their message while the agent works on it.
+SEEN_REACTION = "👀"
+
+
+def driver_reacts(driver_cls) -> bool:
+    """Whether a channel's driver can put our emoji on a message (``Reacting``)."""
+    from flow_sdk.sources.protocols import Reacting  # noqa: PLC0415
+
+    return driver_cls is not None and issubclass(driver_cls, Reacting)
+
+
+async def try_react_seen(message, driver_cls) -> Optional[str]:
+    """Put :data:`SEEN_REACTION` on *message*, on a channel whose driver reacts. Answers the emoji put, or None:
+    the channel has no reactions, or it refused this one. A reaction is the person's feedback, never a reason
+    for the turn to fail."""
+    if not driver_reacts(driver_cls):
+        return None
+    try:
+        await message.react(SEEN_REACTION)
+    except Exception as exc:  # noqa: BLE001 — feedback only; the message is answered either way
+        logger.warning("could not react %s on %s: %s", SEEN_REACTION, turn_key(message), exc)
+        return None
+    return SEEN_REACTION
+
+
+async def try_unreact_seen(message) -> Optional[str]:
+    """Take back our reactions from *message* once its turn is over (``unreact()``: all of ours). Answers
+    :data:`SEEN_REACTION`, the one this loop put, or None when the channel refused — the answer is out either way."""
+    try:
+        await message.unreact()
+    except Exception as exc:  # noqa: BLE001 — feedback only; the answer is out either way
+        logger.warning("could not take back %s on %s: %s", SEEN_REACTION, turn_key(message), exc)
+        return None
+    return SEEN_REACTION
 
 
 async def _hold_failed(engine: TurnEngine, message, source, session: str, key: str, outcome, process=None) -> None:
