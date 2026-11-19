@@ -1046,8 +1046,9 @@ async def answer_one(
     hook = getattr(driver_cls, "turn_session", None)
     if not session and callable(hook):
         session = str(hook(message) or "")
-    conversation = await conversation_of(message, source)
+    conversation: Optional[str] = None
     if not session:
+        conversation = await conversation_of(message, source)
         if not conversation:
             logger.warning("agent %s: message on %s has no conversation yet", agent.name or agent.id, source.id)
             return False
@@ -1212,7 +1213,7 @@ def generate_conversation_source_context_prompt(
     parts.append("reply in a format suitable for the message.")
     if forwarded:
         parts.append("Your reply will be forwarded to the user automatically via flowpad.")
-    
+
     return f"<flowpad>{', '.join(parts)} </flowpad>"
 
 
