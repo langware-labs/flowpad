@@ -277,14 +277,15 @@ test('enable email, receive Gmail, and show the pirate reply in UI and Gmail', a
     fallbackEnv = childEnv;
     await openAgentStreamInbox(page, ready.agent_id);
 
-    await page.getByRole('button', { name: 'Create email for agent', exact: true }).click();
+    await page.getByTestId('agent-email-create-cta').click();
     await expect(page.getByTestId('agent-mailbox-address')).toBeVisible();
     const mailboxAddress = (await page.getByTestId('agent-mailbox-address').textContent())?.trim() ?? '';
     expect(mailboxAddress).toContain('@');
 
-    await page.getByTestId('agent-email-allowed-senders-add-input').fill(ready.gmail_address);
-    await page.getByTestId('agent-email-allowed-senders-add').click();
-    await expect(page.getByTestId('agent-email-allowed-senders-senders')).toContainText(ready.gmail_address);
+    // Receiving is the lists editor's default tab: who the agent reads and answers.
+    await page.getByTestId('mailbox-receiving-allowed-add-input').fill(ready.gmail_address);
+    await page.getByTestId('mailbox-receiving-allowed-add').click();
+    await expect(page.getByTestId('mailbox-receiving-allowed-entries')).toContainText(ready.gmail_address);
 
     harness.send(`SEND ${mailboxAddress}`);
     expect((await harness.next()).kind).toBe('deployed');
