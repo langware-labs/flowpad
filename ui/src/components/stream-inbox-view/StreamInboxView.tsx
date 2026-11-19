@@ -99,6 +99,7 @@ import {
 } from './channel-owner';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 import { StreamInboxPager } from './StreamInboxPager';
+import { OpenTasksButton } from './OpenTasksButton';
 import { useContext } from '@src/hooks/useContext';
 import { useStreamInboxManager } from '@src/hooks/useStreamInboxManager';
 import {
@@ -1638,6 +1639,7 @@ export function StreamInboxView({
             <BookUser />
             <Trans>Contacts</Trans>
           </Button>
+          <OpenTasksButton />
           <div className="ms-auto flex min-w-0 items-center gap-2">{channelButtons}</div>
         </div>
       )}
