@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional
 
 from flow_sdk.core.flow_command import flow_command
+from flow_sdk.ingest.health import ACCESS_DENIED
 from flow_sdk.request_context.detached import add_detached_done_callback, create_detached_task
 from flow_sdk.schema.data_spec.compute_op_spec import AskOriginSpec, ComputeOpSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
@@ -409,7 +410,7 @@ async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[Se
     out = await _undeclared_connections(project, undeclared, templates, skips)
     # A source whose provider refused its login: the values it read with are wrong, not merely present.
     refused = {str(s.typeid): str(s.error_detail or "the login was refused")
-               for s in needs.sources if getattr(s, "error_code", None) == "access_denied"}
+               for s in needs.sources if getattr(s, "error_code", None) == ACCESS_DENIED}
     for name, roots in packs.items():
         if gap := _undeclared_for_agents(name, roots, rows):
             out.append(gap)

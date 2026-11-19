@@ -23,6 +23,10 @@ from flow_sdk._compat import StrEnum
 #: failure contract.
 ERROR_DETAIL_MAX = 500
 
+#: The code of a refused credential — what ``classify`` names an ``AccessDenied``. A sync and a setup check
+#: both stamp it, and setup asks again for the credential of a source that carries it.
+ACCESS_DENIED = "access_denied"
+
 def stamp_error(source: Any, code: Optional[str], detail: Optional[str]) -> None:
     """The row's verdict pair, written in ONE place for every stamper: the code, and its detail cut to
     what the card can show."""
