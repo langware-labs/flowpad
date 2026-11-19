@@ -66,3 +66,22 @@ async def test_search_hits_channel_bodies_and_native_text(bootstrapped_client):
 @pytest.mark.asyncio
 async def test_blank_query_matches_nothing_rather_than_everything(bootstrapped_client):
     assert await _search(bootstrapped_client, "   ") == []
+
+
+@pytest.mark.asyncio
+async def test_tag_filter_keeps_a_conversation_with_any_ticked_tag_or_a_tag_under_one(bootstrapped_client):
+    root = f"t{uuid.uuid4().hex[:8]}"
+    conversations = {}
+    for tag in ("support.billing", "sales", "urgent"):
+        conversations[tag] = str(uuid.uuid4())
+        await FlowMessage(id=str(uuid.uuid4()), conversation_id=conversations[tag], text="hi", tags=[f"{root}.{tag}"]).save(notify=False)
+
+    async def tagged(*tags: str) -> set[str]:
+        response = await bootstrapped_client.post(
+            "/api/v1/graph/stream-inbox-search", json={"q": "", "tags": [f"{root}.{tag}" for tag in tags]}
+        )
+        assert response.status_code == 200, response.text
+        return set(response.json()["data"]["conversation_ids"])
+
+    assert await tagged("sales", "urgent") == {conversations["sales"], conversations["urgent"]}
+    assert await tagged("support") == {conversations["support.billing"]}

@@ -2362,7 +2362,7 @@ async def handle_stream_inbox_update(fm_id: str, patch: dict, someone_typeid: st
 
 @action.post(action_name="stream-inbox-search", types=None)
 async def stream_inbox_search() -> ApiResponse:
-    """Full-stream-inbox search → conversation ids; optional q and all-of tags.
+    """Full-stream-inbox search → conversation ids; optional q and any-of tags.
 
     Two lanes because bodies live in two places under the reference model:
     a channel message's text is on its SourceItem (the FlowMessage row is a
@@ -2377,7 +2377,7 @@ async def stream_inbox_search() -> ApiResponse:
         body = await request_info.get_post_data() or {}
         scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
         needle = str(body.get("q") or "").strip()
-        from flow_sdk.server.search_filters import apply_tag_filter, wanted_tags
+        from flow_sdk.server.search_filters import apply_any_tag_filter, wanted_tags
 
         selected_tags = wanted_tags(body.get("tags"))
         if not needle and not selected_tags:
@@ -2391,19 +2391,17 @@ async def stream_inbox_search() -> ApiResponse:
 
         # Narrow in the query before the shared hierarchy predicate. LIKE is
         # only a candidate filter (a legal underscore is a LIKE wildcard), so
-        # apply_tag_filter remains the exact canonical matcher.
-        tag_match = ExpressionNode(op=QueryOp.AND, operands=[
-            ExpressionNode(op=QueryOp.OR, operands=[
-                ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}"%']),
-                ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}.%']),
-            ]) for tag in selected_tags
+        # apply_any_tag_filter remains the exact canonical matcher.
+        tag_match = ExpressionNode(op=QueryOp.OR, operands=[
+            ExpressionNode(op=QueryOp.LIKE, operands=["tags", pattern])
+            for tag in selected_tags for pattern in (f'%"{tag}"%', f'%"{tag}.%')
         ]) if selected_tags else None
 
         def filtered(match):
             return QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[match, tag_match]) if tag_match else match)
 
         if not needle:
-            messages = apply_tag_filter(await FlowMessage.get_all(QueryFilter(match=tag_match), hydrate=False), selected_tags)
+            messages = apply_any_tag_filter(await FlowMessage.get_all(QueryFilter(match=tag_match), hydrate=False), selected_tags)
             ids = {str(m.conversation_id) for m in messages if m.conversation_id}
             if scope is not None:
                 ids &= scope.conversation_ids
@@ -2428,7 +2426,7 @@ async def stream_inbox_search() -> ApiResponse:
             ),
         )
         native = [m for m in native if not m.is_draft]  # an unsent draft is not a message to find
-        conversation_ids: set[str] = {str(m.conversation_id) for m in apply_tag_filter(native, selected_tags) if m.conversation_id}
+        conversation_ids: set[str] = {str(m.conversation_id) for m in apply_any_tag_filter(native, selected_tags) if m.conversation_id}
         if items:
             refs = await FlowMessage.get_all(
                 filtered(
@@ -2439,7 +2437,7 @@ async def stream_inbox_search() -> ApiResponse:
                 ),
                 hydrate=False,
             )
-            conversation_ids |= {str(m.conversation_id) for m in apply_tag_filter(refs, selected_tags) if m.conversation_id}
+            conversation_ids |= {str(m.conversation_id) for m in apply_any_tag_filter(refs, selected_tags) if m.conversation_id}
         if scope is not None:
             conversation_ids &= scope.conversation_ids
         return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})

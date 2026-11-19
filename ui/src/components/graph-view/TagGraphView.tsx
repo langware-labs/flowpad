@@ -77,7 +77,7 @@ export function TagGraphView() {
       {returnPointer && <button type="button" className="text-xs underline" data-testid="tag-view-back"
         onClick={() => navigation.openDock(returnPointer)}><Trans>Back to tags</Trans></button>}
       {tag && <button type="button" className="text-xs underline" data-testid="tag-view-messages"
-        onClick={() => navigation.openDock(DockPointer.forStreamInbox().withOption('tags', tag))}><Trans>View tagged messages</Trans></button>}
+        onClick={() => navigation.openDock(DockPointer.forStreamInbox().withStreamInboxTags([tag]))}><Trans>View tagged messages</Trans></button>}
       <button type="button" className="text-xs underline" data-testid="tag-view-manage"
         onClick={() => navigation.openDock(DockPointer.forTagGraph(null, { carry: { ...activeDock?.options, origin_tag: tag ?? '', manage: 'stream_inbox' } }))}><Trans>Stream Inbox tags</Trans></button>
     <div className="graph-segmented-toggle" role="group" aria-label={t`Tag shape`}>

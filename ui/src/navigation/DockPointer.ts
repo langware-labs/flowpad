@@ -728,6 +728,12 @@ export class DockPointer implements IDockPointer {
   /** The stream inbox's search text, or '' for none. */
   get streamInboxSearch(): string {
     return this.options?.[STREAM_INBOX_SEARCH_PARAM] ?? '';
+  /** Clone with these tags ticked (`?tags=a,b`: a conversation shows when it carries any of them); none
+   *  clears the filter. A new pick starts at now. */
+  withStreamInboxTags(names: readonly string[]): DockPointer {
+    return this.withPageBefore(null).withOption('tags', names.length ? names.join(',') : null);
+  }
+
   }
 
   /** Clone with the given stream inbox filters set ('all' / '' clear them). A page is a page of ONE filter

@@ -68,7 +68,7 @@ import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchStreamInbox, watchMessageTags } from './stream-inbox-api';
-import { TagFilterBar } from '@src/components/assets/TagFilterBar';
+import { TagFilterButton } from './TagFilterButton';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { MessageTags } from '@src/components/tags/MessageTags';
 import { ClassifyDialog, useClassifyRun } from '@src/components/tags/ClassifyTable';
@@ -1546,10 +1546,10 @@ export function StreamInboxView({
   const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
     const active = viewMode === mode;
     // Unread in the user's own Stream Inbox: the backend total, on the pill whether or not it is active —
-    // but that total spans every channel, so it is not shown while the list is narrowed to some of them.
+    // but that total spans every channel and tag, so it is not shown while the list is narrowed to some of them.
     // Otherwise the rows on this page — a full page holds more than it shows, so it reads "N+".
     let badge: string | null = null;
-    if (mode === 'unread' && ownStreamInbox && channelFilter.size === 0)
+    if (mode === 'unread' && ownStreamInbox && channelFilter.size === 0 && tagFilters.length === 0)
       badge = streamInboxUnread > 0 ? String(streamInboxUnread) : null;
     else if (active && visibleCount > 0)
       badge = visibleCount >= STREAM_INBOX_PAGE_SIZE ? `${STREAM_INBOX_PAGE_SIZE}+` : String(visibleCount);
@@ -1588,6 +1588,12 @@ export function StreamInboxView({
       onClick={() => setView(inInvitesView ? 'all' : 'invites')}
     />
   );
+  const leadingMarks = (
+    <>
+      <TagFilterButton tags={tagFilters} matches={matchIds.size} />
+      {invitesChip}
+    </>
+  );
   const channelButtons = (
     <>
       {channelsOwner && !embedded ? (
@@ -1603,11 +1609,11 @@ export function StreamInboxView({
           selected={channelFilter}
           onSelectedChange={setChannelFilter}
           className="shrink-0"
-          leading={invitesChip}
+          leading={leadingMarks}
         />
         </>
       ) : (
-        invitesChip
+        leadingMarks
       )}
     </>
   );
@@ -1723,11 +1729,6 @@ export function StreamInboxView({
           <>
             {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
             <div className="flex flex-1 items-center max-md:flex-wrap max-md:gap-y-1">
-              {tagFilters.length > 0 && <div data-testid="stream-inbox-tag-filter" className="me-2 max-w-64">
-                <TagFilterBar tags={tagFilters} onTagsChange={(tags) => {
-                  if (currentDock) navigation.openDock(currentDock.withPageBefore(null).withOption('tags', tags.length ? tags.join(',') : null));
-                }} />
-              </div>}
               <div
                 className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
                 role="tablist"
@@ -1757,7 +1758,7 @@ export function StreamInboxView({
                     data-testid="stream-inbox-search-input"
                     aria-label={t`Search messages`}
                   />
-                  {searchActive && (
+                  {needle !== '' && (
                     <button
                       type="button"
                       onClick={() => {
