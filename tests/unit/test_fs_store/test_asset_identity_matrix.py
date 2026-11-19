@@ -35,6 +35,7 @@ INDEXED_TYPES = {
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
     "task", "todo_file", "trigger", "usage_report", "chart", "wizard", "workflow_run", "icon_pack",
+    "qa_phase", "qa_test_file", "qa_test_case", "qa_cycle", "qa_iteration", "qa_test_execution", "rca",
     "monitor",
 }
 
@@ -56,7 +57,10 @@ FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
 #: Entity documents (``<type>.json``): the id is the document root's ``"id"``
 #: (``JsonRoot``), and an authored asset mints a portable v4 like any capsule.
-JSON_PORTABLE = ("agent", "asset_setup", "compute_op", "data_source", "data_schema")
+JSON_PORTABLE = (
+    "agent", "asset_setup", "compute_op", "data_source", "data_schema",
+    "qa_phase", "qa_test_file", "qa_test_case", "qa_cycle", "qa_iteration", "qa_test_execution", "rca",
+)
 
 
 def _info(type_name: str):
@@ -112,9 +116,9 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     # config file we cannot write an id into. 15 derived, including `micro_app`,
     # whose webapp.json carries no id — so it still owes an install-independent
     # key. See `test_shipped_asset_declares_an_install_independent_key`.
-    # Native JSON: the three reports + the entity documents `agent`, `asset_setup`, `compute_op` and
-    # `data_source`, which carry their ids.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (24, 8, 18)
+    # Native JSON: the three reports + the entity documents `agent`, `asset_setup`, `compute_op`,
+    # `data_source`, `data_schema`, the six QA types and `rca`, which carry their ids.
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (24, 15, 18)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
