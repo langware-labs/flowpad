@@ -1202,19 +1202,18 @@ def outbox_files(outbox) -> list[str]:
 def generate_conversation_source_context_prompt(
     source: str, *, sender: str = "", sender_id: str = "", conversation_id: str = "", forwarded: bool = True
 ) -> str:
-    """Where a channel message came from — the channel, who sent it, its Flowpad conversation — and how the
-    agent's answer reaches them: forwarded by itself, or (*forwarded* False) only through
-    ``flow conversation reply``."""
+    """Where a channel message came from — the channel, who sent it, its Flowpad conversation — and, when
+    *forwarded*, that the agent's answer is sent back to them by itself."""
     parts = [f"The user has sent a message from this source {source}"]
     if sender or sender_id:
         parts.append(f"sender: {sender or sender_id}" + (f" (id: {sender_id})" if sender and sender_id else ""))
     if conversation_id:
         parts.append(f"flowpad conversation: {conversation_id}")
     parts.append("reply in a format suitable for the message.")
+    context = ", ".join(parts)
     if forwarded:
-        parts.append("Your reply will be forwarded to the user automatically via flowpad.")
-
-    return f"<flowpad>{', '.join(parts)} </flowpad>"
+        context += " Your reply will be forwarded to the user automatically via flowpad."
+    return f"<flowpad>{context}</flowpad>"
 
 
 def turn_body(
