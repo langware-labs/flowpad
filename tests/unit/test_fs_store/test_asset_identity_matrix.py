@@ -36,6 +36,7 @@ INDEXED_TYPES = {
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
     "task", "todo_file", "trigger", "usage_report", "chart", "wizard", "workflow_run", "icon_pack",
     "qa_phase", "qa_test_file", "qa_test_case", "qa_cycle", "qa_iteration", "qa_test_execution", "rca",
+    "monitor",
 }
 
 FRONTMATTER_PORTABLE = ("subagent", "claude_md", "markdown")
@@ -48,7 +49,7 @@ FOLDER_PORTABLE = (
 #: Folder-capsule types introduced after the json capsule; they mint +
 #: persist + adopt like the rest. ``project_manifest`` is the per-project
 #: published-asset ledger: a singleton folder whose main is JSON.
-FOLDER_NO_LEGACY = ("credential", "mcp", "project_manifest", "trigger")
+FOLDER_NO_LEGACY = ("credential", "mcp", "project_manifest", "trigger", "monitor")
 #: Folder types whose main document is markdown: the id lives in that
 #: document's frontmatter (``Frontmatter``).
 FOLDER_MARKDOWN = ("skill", "task", "chart")
@@ -110,14 +111,14 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     derived_types = INDEXED_TYPES - capsule_types - native_types
     # Capsule: base's 17 + `mcp` + `wizard` + `project_manifest` +
     # `credential` (an asset we AUTHOR carries its own v4; the shipped
-    # credential templates commit theirs, so every install indexes one row).
+    # credential templates commit theirs, so every install indexes one row) + `monitor`.
     # The sibling `mcp_server` SCAN is derived, because its source is a vendor
     # config file we cannot write an id into. 15 derived, including `micro_app`,
     # whose webapp.json carries no id — so it still owes an install-independent
     # key. See `test_shipped_asset_declares_an_install_independent_key`.
     # Native JSON: the three reports + the entity documents `agent`, `asset_setup`, `compute_op`,
     # `data_source`, `data_schema`, the six QA types and `rca`, which carry their ids.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (23, 15, 18)
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (24, 15, 18)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
