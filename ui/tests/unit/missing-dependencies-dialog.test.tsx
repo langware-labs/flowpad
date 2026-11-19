@@ -148,7 +148,7 @@ describe('MissingDependenciesDialog', () => {
     expect(project.dismissDependencyWarning).not.toHaveBeenCalled();
   });
 
-  it('"Fix…" opens the project setup', async () => {
+  it('"Open setup" opens the project setup', async () => {
     const user = userEvent.setup();
     h.project = makeProject();
     renderRoot();

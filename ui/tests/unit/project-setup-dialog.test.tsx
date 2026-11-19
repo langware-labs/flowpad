@@ -142,7 +142,7 @@ describe('ProjectSetupDialog — skipping', () => {
     expect(screen.queryByTestId('project-setup-skipped')).toBeNull(); // folded by default
     fireEvent.click(toggle);
     const skipped = screen.getByTestId('project-setup-skipped');
-    expect(skipped).toHaveTextContent('Required — skipped on this machine');
+    expect(skipped).toHaveTextContent('Required — skipped on this computer');
     expect(screen.queryByTestId('project-setup-chip-google-cloud')).toBeNull();
     expect(screen.getByTestId('project-setup-undo-google-cloud')).toBeInTheDocument();
     expect(h.openDock).not.toHaveBeenCalled(); // a button in the row is not the row's link

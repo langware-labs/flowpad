@@ -63,7 +63,7 @@ it('up draws nothing', () => {
 
 it('degraded is a thin banner, never a screen', () => {
   show(lifecycleOf(rec('degraded', { failure: { phase: 'page', code: 'console_error', source: 'console', text: 'favicon 404', fingerprint: 'f' } })));
-  expect(screen.getByTestId('app-lifecycle-degraded')).toHaveTextContent('Up, with problems: favicon 404');
+  expect(screen.getByTestId('app-lifecycle-degraded')).toHaveTextContent('Running, with problems: favicon 404');
   expect(screen.queryByTestId('app-lifecycle-panel')).not.toBeInTheDocument();
 });
 
@@ -83,8 +83,8 @@ it("recovering: says what is being done, and draws the fixer's question in place
       questionId: 'q-1',
     }),
   );
-  expect(screen.getByText('Recovering: an agent repairs the app')).toBeInTheDocument();
-  expect(screen.getByText('An agent is repairing the app')).toBeInTheDocument();
+  expect(screen.getByText('Fixing the app…')).toBeInTheDocument();
+  expect(screen.getByText("Flowpad's assistant is fixing the app")).toBeInTheDocument();
   expect(screen.getByTestId('ask-form')).toHaveTextContent('q-1');
   expect(screen.queryByRole('button', { name: 'Fix it' })).not.toBeInTheDocument();
 });
@@ -98,6 +98,6 @@ it.each(['needs_person', 'failed'] as const)('%s: needs you, with ONE Fix it and
   expect(screen.getAllByRole('button', { name: 'Fix it' })).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: 'Fix it' }));
   expect(lifecycle.fixIt).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Stop the app' }));
   expect(lifecycle.stop).toHaveBeenCalledTimes(1);
 });

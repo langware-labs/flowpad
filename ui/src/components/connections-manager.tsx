@@ -790,7 +790,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     </div>
                     {!!credential?.missingScopes.length && (
                       <div className="mt-0.5 text-xs text-amber-600" data-testid={`connection-missing-scopes-${connection.id}`}>
-                        <Trans>Connected without {credential.missingScopes.join(', ')}: reconnect to grant them</Trans>
+                        <Trans>Missing permissions ({credential.missingScopes.join(', ')}) — connect again</Trans>
                       </div>
                     )}
                   </TableCell>

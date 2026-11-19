@@ -66,7 +66,7 @@ export function AppSetupTab({ app }: { app: WebApp }) {
         <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
           {!record ? (
             <span className="flex-1 text-muted-foreground">
-              <Trans>Not run on this machine yet</Trans>
+              <Trans>Not run on this computer yet</Trans>
             </span>
           ) : showable ? (
             <>

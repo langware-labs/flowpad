@@ -24,7 +24,7 @@ export function SourceSetupButton({ source }: { source: DataSource }) {
       }}
     >
       <Wrench className="size-3.5" />
-      {t`Setup`}
+      {t`Set up`}
     </Button>
   );
 }

@@ -60,7 +60,7 @@ function GitPointerPreview({ ma }: { ma: MessageAttachment }) {
     >
       <p>
         <Trans>
-          Shared by Git — Download opens exactly the version that was shared, without touching your own checkout.
+          Shared by Git — Open brings in exactly the version that was shared, without touching your own checkout.
         </Trans>
       </p>
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-xs">

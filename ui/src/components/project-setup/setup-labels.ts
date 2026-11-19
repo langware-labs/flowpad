@@ -9,24 +9,28 @@ export const rowKey = (req: ProjectSetupRequirement) => `${req.kind}-${req.typei
  *  data source using it can share a name). */
 export const rowId = (req: ProjectSetupRequirement) => (req.kind === 'pack' ? req.name : `${req.kind}-${req.name}`);
 
+/** Who uses a row, as "Used by:" lists it — empty when it is only the project itself, which says nothing. */
+export const usedByOf = (req: ProjectSetupRequirement) =>
+  req.used_by.some((name) => name !== 'project') ? req.used_by.join(', ') : '';
+
 /** A root's kind, as "Removes: Gmail (data source)" names it. */
 export const ROOT_KIND: Record<string, MessageDescriptor> = {
   data_source: msg`data source`,
   agent: msg`agent`,
   webapp: msg`web app`,
-  dependency: msg`dependency`,
+  dependency: msg`package`,
   credential: msg`credential`,
 };
 
 /** What a setup step is, as its row's chip names it. A credential pack is a Connection when it is a sign-in. */
 export function stepKind(req: ProjectSetupRequirement): MessageDescriptor {
   if (req.kind === 'pack') return req.credential_kind === 'oauth' ? msg`Connection` : msg`Credential`;
-  return STEP_KIND[req.kind] ?? msg`Dependency`;
+  return STEP_KIND[req.kind] ?? msg`Package`;
 }
 
 const STEP_KIND: Record<string, MessageDescriptor> = {
   source: msg`Data source`,
   webapp: msg`Web app`,
-  dependency: msg`Dependency`,
+  dependency: msg`Package`,
   automation: msg`Automation`,
 };

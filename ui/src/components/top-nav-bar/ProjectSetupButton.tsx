@@ -65,7 +65,7 @@ export function ProjectSetupButton({ project }: { project?: Project | null }) {
               <Trans>Setup required</Trans>
             </div>
             {sharedSetUp ? (
-              <Trans>Its files are not on this machine yet</Trans>
+              <Trans>Its files are not on this computer yet</Trans>
             ) : (
               <Plural
                 value={left}

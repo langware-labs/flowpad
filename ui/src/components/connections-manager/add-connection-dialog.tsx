@@ -123,7 +123,7 @@ export function AddConnectionDialog({
             ))}
             <DesktopTile
               Icon={KeySquare}
-              label={t`Custom credentials`}
+              label={t`Custom credential`}
               data-testid="add-connection-custom"
               onClick={onPickCustom}
             />

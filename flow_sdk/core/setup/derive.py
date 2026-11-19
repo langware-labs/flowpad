@@ -411,7 +411,7 @@ class ProjectTree:
 def skip_detail(mark) -> str:
     """What a node skipped here says (``mark``: its ``SetupSkipSpec``)."""
     note = str(getattr(mark, "note", "") or "").strip()
-    return f"skipped on this machine — {note}" if note else "skipped on this machine"
+    return f"skipped on this computer — {note}" if note else "skipped on this computer"
 
 
 def requirement_node_id(req) -> str:

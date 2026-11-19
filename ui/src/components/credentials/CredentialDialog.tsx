@@ -101,7 +101,7 @@ export function CredentialDialog({
 
   const problemText = (p: DraftProblem): string =>
     ({
-      'title-required': t`Give the pack a name`,
+      'title-required': t`Give the credential a name`,
       'setup-required': t`Say how to get these values — AI Assist follows it`,
       'no-vars': t`Add at least one variable`,
       'bad-env-var': t`Letters, digits and _ only`,
@@ -115,9 +115,9 @@ export function CredentialDialog({
   const baseTitle = (() => {
     switch (d.mode) {
       case 'custom':
-        return t`New credentials`;
+        return t`New credential`;
       case 'pack':
-        return t`Pack keys into credentials`;
+        return t`Group keys into a credential`;
       case 'edit':
         return t`Edit ${d.title}`;
       case 'values':
@@ -140,7 +140,7 @@ export function CredentialDialog({
           : await credentialsService.save(toSaveRequest(d, projectId, status.deployment_id));
       await onSaved(saved);
     } catch (error) {
-      const { code, message } = describeApiError(error, t`The credentials could not be saved.`);
+      const { code, message } = describeApiError(error, t`The credential could not be saved.`);
       setFailure(code === 'vault-disabled' ? t`The encrypted vault is not enabled on this machine yet.` : message);
     } finally {
       setBusy(false);
@@ -172,7 +172,7 @@ export function CredentialDialog({
           {editsDefinition && (
             <div className="space-y-1">
               <Label htmlFor="credential-title" className="text-xs">
-                <Trans>Credentials name</Trans>
+                <Trans>Credential name</Trans>
               </Label>
               <Input
                 id="credential-title"

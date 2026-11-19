@@ -45,7 +45,8 @@ async def test_a_source_in_setup_and_a_dead_site_make_the_project_not_ready(proj
 
     assert not readiness.ready
     left = {(r.kind, r.name): r.note for r in readiness.to_do}
-    assert left == {(REQUIREMENT_SOURCE, "WhatsApp (bridge)"): "Bridge does not answer", (REQUIREMENT_WEBAPP, "site"): "site is not running"}
+    assert left == {(REQUIREMENT_SOURCE, "WhatsApp (bridge)"): "Data source WhatsApp (bridge): Bridge does not answer",
+                    (REQUIREMENT_WEBAPP, "site"): "Web app site is not running"}
 
 
 async def test_an_active_source_and_a_running_site_leave_it_ready(project, running):

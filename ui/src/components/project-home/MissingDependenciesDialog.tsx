@@ -89,7 +89,7 @@ export function MissingDependenciesDialog({ open, warnings, onNotNow, onFix }: M
             <Trans>Not now</Trans>
           </Button>
           <Button onClick={() => onFix(dontShow)} data-testid="missing-dependencies-fix">
-            <Trans>Fix…</Trans>
+            <Trans>Open setup</Trans>
           </Button>
         </DialogFooter>
       </DialogContent>
