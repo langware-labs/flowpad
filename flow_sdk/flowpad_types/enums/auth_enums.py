@@ -85,4 +85,13 @@ class HubRole(StrEnum):
     GUEST = "guest"
 
 
+def without_guest(roles: Iterable[str]) -> tuple[str, ...]:
+    """``guest`` is an agent-only role the hub gives (it may only post a guest message): no picker offers it."""
+    return tuple(role for role in roles if role != HubRole.GUEST)
+
+
+#: The roles a person may be invited with or shared to: every role an owner grants, but ``guest``.
+INVITE_ROLES = without_guest(role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"])
+
+
 VISITOR_AUTH_ROLE = AuthRole.READER

@@ -9,7 +9,6 @@ import { t } from '@lingui/core/macro';
 import { isViewer } from './conversation-category';
 import {
   Agent,
-  APIEntity,
   Artifact,
   createConversationForShare,
   dataContext,

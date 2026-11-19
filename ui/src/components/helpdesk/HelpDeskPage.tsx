@@ -38,6 +38,8 @@ import { SegmentedControl } from '@src/components/ui/segmented-control';
 import { Switch } from '@src/components/ui/switch';
 import { helpDeskUrl } from '@src/lib/hub-page-url';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { errorMessage } from '@src/lib/error-message';
+import { notify } from '@src/notifications';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { HelpDeskAgentDialog } from './HelpDeskAgentDialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -108,11 +110,16 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
     if (isTeam) void ensureHelpDeskSources(deskId).catch(() => undefined);
   }, [isTeam, deskId]);
 
-  const run = async (work: () => Promise<unknown>) => {
+  /** Runs one change and reloads the desk; a failed change is said in a toast. True when it saved. */
+  const run = async (work: () => Promise<unknown>): Promise<boolean> => {
     setBusy(true);
     try {
       await work();
       await load();
+      return true;
+    } catch (e: unknown) {
+      notify.error({ title: t`Could not save the change`, message: errorMessage(e, ''), forceToast: true });
+      return false;
     } finally {
       setBusy(false);
     }
@@ -252,7 +259,7 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
             onSubmit={(event) => {
               event.preventDefault();
               const who = invitee.trim();
-              if (who) void run(() => inviteHelpDeskStaff(deskId, who)).then(() => setInvitee(''));
+              if (who) void run(() => inviteHelpDeskStaff(deskId, who)).then((ok) => ok && setInvitee(''));
             }}
           >
             <span className="w-32 shrink-0" />
@@ -319,16 +326,21 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
                 aria-label={t`Days until a solved ticket closes by itself`}
                 data-testid="help-desk-auto-close-days"
                 onBlur={(e) => {
-                  const days = Math.min(365, Math.max(0, Math.trunc(Number(e.currentTarget.value) || 0)));
-                  if (days !== (project.helpdesk?.auto_close_days ?? 7)) {
-                    void run(() => setHelpDeskAutoCloseDays(deskId, on, days));
+                  const field = e.currentTarget;
+                  const saved = project.helpdesk?.auto_close_days ?? 7;
+                  const days = Math.min(365, Math.max(0, Math.trunc(Number(field.value) || 0)));
+                  if (days !== saved) {
+                    // A failed save puts the saved number back, so the field never shows what was not kept.
+                    void run(() => setHelpDeskAutoCloseDays(deskId, on, days)).then((ok) => {
+                      if (!ok) field.value = String(saved);
+                    });
                   }
                 }}
               />
               <Trans>days after it is marked solved, unless the customer writes again. 0 = never.</Trans>
             </span>
           </div>
-          {/* The optional agents run on a computer, so they are set up from the desktop app. */}
+          {/* The optional agents are set up from the desktop app: the team agent runs on it, the support agent in the cloud. */}
           {!isHubOnly() &&
             Object.values(HelpDeskAgentSide).map((side) => {
               const agent = agents.find((a) => a.side === side);

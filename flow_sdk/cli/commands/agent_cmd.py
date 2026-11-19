@@ -152,11 +152,13 @@ async def _deploy_and_follow(port: int, agent_id: str, project_id: str, url: str
 @agent_app.command("steer")
 def steer(
     agent: Annotated[str, typer.Argument(help="The agent's name or id (the one working the ticket).")],
-    ticket_id: Annotated[str, typer.Argument(help="The help-desk ticket (conversation) id.")],
+    ticket_id: Annotated[str, typer.Argument(help="The help-desk ticket (or its team conversation) id.")],
     message: Annotated[str, typer.Argument(help="The admin message for the agent.")],
 ) -> None:
-    """Steer AGENT's process for TICKET_ID with MESSAGE. Answers a status (ran / busy / failed / capped) and never the
-    agent's words; its reply to the customer follows the agent's reply mode."""
+    """Steer AGENT's process for TICKET_ID with MESSAGE, through the hub: it checks you hold admin on the agent, writes
+    the steer into the ticket's team conversation and delivers it. Answers the steer message's id and ``sending``;
+    how delivery went (ran / busy / failed / capped) lands on that message, never the agent's words. Its reply to the
+    customer follows the agent's reply mode."""
     if not message.strip():
         fail(int(ExitCode.REFUSED), "INVALID_ARG", "message is required")
     port = discover_port(required=True)

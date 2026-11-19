@@ -963,13 +963,13 @@ class DriverRuntime:
             else:
                 await source.react(target, emoji)  # type: ignore[attr-defined]
 
-    async def attended(self, row: Any, data: Any) -> bool:
-        """Whether a person is handling the conversation of message ``data`` on this channel now (live read)."""
+    async def attended(self, row: Any, conversation: str) -> bool:
+        """Whether a person is handling ``conversation`` (the thread key the channel gave it) now (live read)."""
         if not issubclass(self.cls, MessageSource):
             return False
         source = await self.open(row)
         async with source:
-            return bool(await source.attended(data))  # type: ignore[attr-defined]
+            return bool(await source.attended(conversation))  # type: ignore[attr-defined]
 
     async def act(
         self, row: Any, conversation: CloudOrigin, action: str, text: str = "", *, ended: bool = False

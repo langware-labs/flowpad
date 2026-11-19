@@ -60,6 +60,7 @@ from flow_sdk.cli.commands._common import (
 from flow_sdk.cli.commands._common import (
     ok as _ok,
 )
+from flow_sdk.schema.data_spec.helpdesk_agent_spec import TicketVerdict
 
 conversation_app = typer.Typer(
     name="conversation",
@@ -696,21 +697,22 @@ def guest_message(
     if not _signed_in():
         _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
     data = _post_json(_graph_url(port, f"conversation/{cid}/guest_message"), {"text": message}, timeout=60)
-    _ok({"ticket_id": cid, **{k: data.get(k) for k in ("id", "message_id", "status")}})
+    # The hub answers the queue item: its id, the reference message in the team conversation, and its status.
+    _ok({"ticket_id": cid, **{k: data.get(k) for k in ("id", "reference_id", "status")}})
 
 
-def _ticket_verdict(ticket_id: str, verdict: str) -> None:
+def _ticket_verdict(ticket_id: str, verdict: TicketVerdict) -> None:
     cid = _conversation_id(ticket_id)
     port = _discover_port()
     if not _signed_in():
         _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
-    _post_json(_graph_url(port, f"conversation/{cid}/ticket_verdict"), {"verdict": verdict}, timeout=60)
-    _ok({"ticket_id": cid, "verdict": verdict})
+    _post_json(_graph_url(port, f"conversation/{cid}/ticket_verdict"), {"verdict": verdict.value}, timeout=60)
+    _ok({"ticket_id": cid, "verdict": verdict.value})
 
 
 @conversation_app.command("close", help="Close a help-desk ticket: the customer confirmed they got what they wanted.")
 def close_ticket(ticket_id: Annotated[str, typer.Argument(help="The help-desk ticket (conversation) id.")]) -> None:
-    _ticket_verdict(ticket_id, "closed")
+    _ticket_verdict(ticket_id, TicketVerdict.CLOSED)
 
 
 @conversation_app.command(
@@ -723,7 +725,7 @@ def close_ticket(ticket_id: Annotated[str, typer.Argument(help="The help-desk ti
 def mark_ticket_solved(
     ticket_id: Annotated[str, typer.Argument(help="The help-desk ticket (conversation) id.")],
 ) -> None:
-    _ticket_verdict(ticket_id, "solved")
+    _ticket_verdict(ticket_id, TicketVerdict.SOLVED)
 
 
 def _entity_typeid_or_none(target: str):

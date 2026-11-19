@@ -1,17 +1,18 @@
 """Steer: an admin's message into the process of the agent working one ticket, with a status back and never its words.
 
-``steer(run)`` is the one function the box route (``server/routes/agent_steer.py``, which the hub calls) and the
-desktop's local action (``app/actions/agent_steer_action.py``) both reach. It finds the ONE deployment on this machine
-that answers the ticket's channel (zero or several: refused -- two deployments must not answer one desk), runs one
+``steer(run)`` runs one steer on this machine. Its only caller is the box route (``server/routes/agent_steer.py``),
+which only the hub's hop reaches: the hub checks that the caller holds ``admin`` on the agent, writes the steer message
+into the ticket's team conversation and relays it here (``flow agent steer`` and the desktop's ``steer`` action go
+through the hub, so no local process can inject an admin turn). It finds the ONE deployment on this machine that
+answers the ticket's channel (zero or several: refused -- two deployments must not answer one desk), runs one
 ``TurnAuthor.ADMIN`` turn in the ticket's session (the process is started when none exists), counts it against the
 unattended cap, and sends the turn's text to the ticket only when the agent's reply mode says so
-(:func:`flow_sdk.builtin.agent_serve.sends_turn_text`). The outcome carries a status; the text is never returned.
+(:func:`flow_sdk.builtin.agent_serve.may_speak`). The outcome carries a status; the text is never returned.
 """
 
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
 
 from flow_sdk.builtin import agent_serve as serve
 from flow_sdk.schema.data_spec.steer_run_spec import SteerOutcome, SteerRun, SteerStatus
@@ -69,14 +70,12 @@ async def steer(run: SteerRun) -> SteerOutcome:
     deployment, source = await placement(agent, run.conversation_id)
     engine = serve.TurnEngine(agent, deployment)
     session = str(TypeId(type=EntityType.CONVERSATION.value, id=run.conversation_id))
-    driver_cls = serve._driver_cls(source)
-    ticket = SimpleNamespace(data=SimpleNamespace(hub_conversation_id=run.conversation_id))
 
-    attended = await serve.attendance_of(source, driver_cls, ticket)
+    attended = await serve.attendance_of(source, run.conversation_id)
     ap = await engine.find_process(session)
     await serve.note_attendance(ap, attended)
     if serve.at_cap(ap, attended):
-        await serve._flag_cap_once(engine, ap)
+        await serve.flag_cap_once(engine, ap)
         return SteerOutcome(status=SteerStatus.CAPPED, detail=serve.CAP_REACHED)
     outcome = await engine.run(
         serve.Turn(
@@ -95,10 +94,7 @@ async def steer(run: SteerRun) -> SteerOutcome:
         return SteerOutcome(status=SteerStatus.RAN, detail="already run: answered from the turn record")
     await serve.count_unattended(await engine.find_process(session), attended)
     # Decided after the turn, right before the send: a person may have picked the ticket up while it ran.
-    mode = serve.reply_mode_of(agent, driver_cls)
-    if outcome.text and serve.sends_turn_text(
-        mode, attended=bool(await serve.attendance_of(source, driver_cls, ticket))
-    ):
+    if outcome.text and await serve.may_speak(agent, source, run.conversation_id):
         try:
             driver = DataDriver.loaded(str(source.provider))
             await driver.send(source, thread_key=run.conversation_id, to=run.conversation_id, text=outcome.text)

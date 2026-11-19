@@ -22,7 +22,7 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.project import Project, ProjectInviteRoleError
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.flowpad_types.enums.auth_enums import ROLE_GRANTS, ROLE_ORDER
+from flow_sdk.flowpad_types.enums.auth_enums import INVITE_ROLES
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -52,7 +52,7 @@ def _local_mode_share_blocked() -> bool:
 
 # The roles a share invite may grant — one global list, served by ``share-roles``.
 
-SHARE_ROLES: tuple[str, ...] = tuple(role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"] and role != "guest")
+SHARE_ROLES: tuple[str, ...] = INVITE_ROLES
 
 
 @action.get(action_name="share-roles", types=None)
@@ -369,6 +369,13 @@ async def conversation_add_message() -> ApiResponse:
         return ApiFailResponse(
             message="Only a session can wait for a reply (--on-reply runs inside one).", status_code=422
         )
+    if origin_process:
+        from flow_sdk.builtin.agent_serve import REPLY_MODE_REFUSAL, deployed_agent_of, may_speak_in  # noqa: PLC0415
+
+        # An agent a deployment runs speaks under its reply mode whichever way it writes into its channel's conversation.
+        agent = await deployed_agent_of(origin_process)
+        if agent is not None and not await may_speak_in(agent, body["conversation_id"]):
+            return ApiFailResponse(message=REPLY_MODE_REFUSAL, status_code=409)
     response = await handle_add_message(
         body,
         request_info.someone_typeid,

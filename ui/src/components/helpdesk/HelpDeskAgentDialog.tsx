@@ -2,7 +2,8 @@
  * Setting up one of a desk's optional agents, from its Support agent / Team agent row: what it does (with a few ideas
  * to start from), then whether its answers wait for the team, then Launch. The channel is the desk and the side comes
  * from the row -- the person never picks either. Launch makes the agent, gives it the desk (its source says the side
- * and that it replies to untaken and tagged tickets) and runs it on this computer.
+ * and that it replies to untaken and tagged tickets) and runs it: the support agent in the cloud, on its own
+ * deployment; the team agent on this computer.
  */
 import { createHelpDeskAgent, HelpDeskAgentSide, type HelpDeskAgent } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -14,6 +15,12 @@ import { SteppedDialogContent } from '@src/components/ui/stepped-dialog';
 import { Textarea } from '@src/components/ui/textarea';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
+
+/** The dialog's two steps. */
+enum SetupStep {
+  WHAT = 'what',
+  LAUNCH = 'launch',
+}
 
 export function HelpDeskAgentDialog({
   deskId,
@@ -29,7 +36,7 @@ export function HelpDeskAgentDialog({
   onLaunched: (agent: HelpDeskAgent) => void;
 }) {
   const { t } = useLingui();
-  const [step, setStep] = useState<'what' | 'launch'>('what');
+  const [step, setStep] = useState<SetupStep>(SetupStep.WHAT);
   const [instructions, setInstructions] = useState('');
   const [launching, setLaunching] = useState(false);
   const customer = side === HelpDeskAgentSide.CUSTOMER;
@@ -69,9 +76,9 @@ export function HelpDeskAgentDialog({
   };
 
   const crumbs =
-    step === 'what'
+    step === SetupStep.WHAT
       ? [{ label: title }, { label: t`What it does` }]
-      : [{ label: title }, { label: t`What it does`, onClick: () => setStep('what') }, { label: t`Launch` }];
+      : [{ label: title }, { label: t`What it does`, onClick: () => setStep(SetupStep.WHAT) }, { label: t`Launch` }];
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -79,13 +86,13 @@ export function HelpDeskAgentDialog({
         crumbs={crumbs}
         data-testid="help-desk-agent-dialog"
         footer={
-          step === 'what' ? (
-            <Button onClick={() => setStep('launch')} data-testid="help-desk-agent-next">
+          step === SetupStep.WHAT ? (
+            <Button onClick={() => setStep(SetupStep.LAUNCH)} data-testid="help-desk-agent-next">
               <Trans>Next</Trans>
             </Button>
           ) : (
             <>
-              <Button variant="outline" onClick={() => setStep('what')}>
+              <Button variant="outline" onClick={() => setStep(SetupStep.WHAT)}>
                 <Trans>← Back</Trans>
               </Button>
               <Button disabled={launching} onClick={() => void launch()} data-testid="help-desk-agent-launch">
@@ -96,7 +103,7 @@ export function HelpDeskAgentDialog({
           )
         }
       >
-        {step === 'what' ? (
+        {step === SetupStep.WHAT ? (
           <div className="flex flex-col gap-3 text-sm">
             <p className="text-muted-foreground">
               <Trans>Channel: Help desk · {deskName}</Trans>
@@ -130,9 +137,12 @@ export function HelpDeskAgentDialog({
           <div className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
               {customer ? (
-                <Trans>It answers customers while nobody on the team has picked the ticket up.</Trans>
+                <Trans>
+                  It answers customers while nobody on the team has picked the ticket up. It runs in the cloud, not on
+                  this computer.
+                </Trans>
               ) : (
-                <Trans>It writes to the team only, never to the customer.</Trans>
+                <Trans>It writes to the team only, never to the customer. It runs on this computer.</Trans>
               )}
             </p>
           </div>

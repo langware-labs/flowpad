@@ -154,6 +154,7 @@ async def task_event(task_id: str, verb: str, request: Request):
 async def conversation_reply(conversation_id: str, request: Request):
     """Say ``text`` to the person in a conversation, through the channel it lives on — the one way a
     Chief of Staff speaks outside, whichever channel the person used."""
+    from flow_sdk.builtin.agent_serve import deployed_agent_of  # noqa: PLC0415
     from flow_sdk.stream_inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
 
     body = await _body(request)
@@ -162,9 +163,11 @@ async def conversation_reply(conversation_id: str, request: Request):
     if not text and not files:
         return ApiFailResponse(message="nothing to say")
     reply_to = str(body.get("reply_to_id") or "").strip() or None
-    response = await dispatch_channel_reply(conversation_id, text=text, reply_to=reply_to, files=files)
-    # The send runs in the background (no message id yet): only the conversation learns its session.
     origin_process = str(body.get("origin_process") or "").strip()
+    # An agent a deployment runs speaks under its reply mode here too, not only through its turn's text.
+    agent = await deployed_agent_of(origin_process) if origin_process else None
+    response = await dispatch_channel_reply(conversation_id, text=text, reply_to=reply_to, files=files, agent=agent)
+    # The send runs in the background (no message id yet): only the conversation learns its session.
     if origin_process and isinstance(response, ApiSuccessResponse):
         from flow_sdk.app.actions.notification_action import link_origin_session  # noqa: PLC0415
 

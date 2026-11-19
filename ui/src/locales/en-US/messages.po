@@ -9367,6 +9367,10 @@ msgstr "Could not save the allowed models"
 msgid "Could not save the budget"
 msgstr "Could not save the budget"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Could not save the change"
+msgstr "Could not save the change"
+
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Could not save the default"
 msgstr "Could not save the default"
@@ -10511,6 +10515,7 @@ msgstr "DeepAgents Session"
 msgid "default"
 msgstr "default"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/links/LinkMenu.tsx
@@ -16662,8 +16667,12 @@ msgid "It answered without using any tool."
 msgstr "It answered without using any tool."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "It answers customers while nobody on the team has picked the ticket up."
-msgstr "It answers customers while nobody on the team has picked the ticket up."
+#~ msgid "It answers customers while nobody on the team has picked the ticket up."
+#~ msgstr "It answers customers while nobody on the team has picked the ticket up."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "It answers customers while nobody on the team has picked the ticket up. It runs in the cloud, not on this computer."
+msgstr "It answers customers while nobody on the team has picked the ticket up. It runs in the cloud, not on this computer."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
@@ -16803,8 +16812,12 @@ msgstr "It will run {0}."
 #~ msgstr "it writes a draft and does not send it; a team member sends"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "It writes to the team only, never to the customer."
-msgstr "It writes to the team only, never to the customer."
+#~ msgid "It writes to the team only, never to the customer."
+#~ msgstr "It writes to the team only, never to the customer."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "It writes to the team only, never to the customer. It runs on this computer."
+msgstr "It writes to the team only, never to the customer. It runs on this computer."
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 msgid "It's in your projects list, marked new."
@@ -36525,8 +36538,12 @@ msgid "Where your server answers Meta's API. https only."
 msgstr "Where your server answers Meta's API. https only."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Whether the text the agent ends a turn with is sent to the person. \"Only while alone\": it is sent while no one on the team has picked the conversation up."
-msgstr "Whether the text the agent ends a turn with is sent to the person. \"Only while alone\": it is sent while no one on the team has picked the conversation up."
+#~ msgid "Whether the text the agent ends a turn with is sent to the person. \"Only while alone\": it is sent while no one on the team has picked the conversation up."
+#~ msgstr "Whether the text the agent ends a turn with is sent to the person. \"Only while alone\": it is sent while no one on the team has picked the conversation up."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Whether the text the agent ends a turn with is sent to the person. \"Only while alone\": it is sent while no one on the team has picked the conversation up. \"Default\": the agent's channel decides; a help desk agent replies only while alone."
+msgstr "Whether the text the agent ends a turn with is sent to the person. \"Only while alone\": it is sent while no one on the team has picked the conversation up. \"Default\": the agent's channel decides; a help desk agent replies only while alone."
 
 #: src/i18n/pref-labels.ts
 msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."

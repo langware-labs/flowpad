@@ -20,4 +20,6 @@ Reader and Runner are independent. Select both when someone needs to inspect and
 
 When sharing an asset, **Fix** selects Reader for a recipient who is not already a project member. You can select multiple roles before clicking Share. Leaving every role unselected sends the share without adding project membership. Existing memberships are unchanged.
 
-Only owners and admins manage project membership. Owners may grant Admin, Editor, Reader, and Runner; admins may grant Editor, Reader, and Runner. The server validates every requested role. A failed membership lookup never means someone is a non-member, and pending invitations count as existing membership for this suggestion.
+Only owners and admins manage project membership. Owners may grant Admin, Editor, Reader, Runner, and Guest; admins may grant Editor, Reader, Runner, and Guest.
+
+Guest is not an access level for people. It is the role the hub gives a help desk's support agent on a ticket's team conversation: it may post one screened guest message and nothing else — it cannot read the conversation. No share or invite picker offers it. The server validates every requested role. A failed membership lookup never means someone is a non-member, and pending invitations count as existing membership for this suggestion.

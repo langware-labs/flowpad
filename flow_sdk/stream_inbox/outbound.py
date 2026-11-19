@@ -173,8 +173,13 @@ async def _started_target(conversation_id: str, newest) -> ReplyTarget:
             return _reply_target(source, item, newest.origin.kind)
         raise ChannelSendUnavailable("no one else has written in this thread yet")
     return ReplyTarget(
-        driver=driver, source=source, channel=newest.origin.kind, to=address[0],
-        thread_key=str(getattr(item, "thread_key", "") or ""), subject=str(getattr(item, "name", "") or ""), in_reply_to="",
+        driver=driver,
+        source=source,
+        channel=newest.origin.kind,
+        to=address[0],
+        thread_key=str(getattr(item, "thread_key", "") or ""),
+        subject=str(getattr(item, "name", "") or ""),
+        in_reply_to="",
     )
 
 
@@ -253,6 +258,7 @@ async def dispatch_channel_reply(
     source=None,
     reply_to=None,
     files=(),
+    agent=None,
 ):
     """Accept a reply and start it. Returns once DISPATCHED. ``item`` is the message this answers;
     without it the reply answers the newest message someone else wrote. ``source`` is ``item``'s
@@ -260,7 +266,8 @@ async def dispatch_channel_reply(
 
     ``reply_to`` (a FlowMessage or its id) quotes that message; without it a person's reply does not
     quote — a channel whose replies only thread keeps its reference either way. ``files`` are checked
-    here, so a refusal reaches the caller rather than the log."""
+    here, so a refusal reaches the caller rather than the log. ``agent`` is the agent sending, when an agent
+    is: its reply mode decides here as it does for a turn's text (``agent_serve.may_speak``)."""
     from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
     try:
@@ -274,6 +281,11 @@ async def dispatch_channel_reply(
         outgoing = outgoing_files(target, files)
     except (ChannelSendUnavailable, ValueError) as exc:
         return ApiFailResponse(message=str(exc))
+    if agent is not None:
+        from flow_sdk.builtin.agent_serve import REPLY_MODE_REFUSAL, may_speak  # noqa: PLC0415
+
+        if not await may_speak(agent, target.source, target.thread_key):
+            return ApiFailResponse(message=REPLY_MODE_REFUSAL, status_code=409)
     quote = bool(reply_to) or item is not None
 
     task = asyncio.create_task(
@@ -302,7 +314,9 @@ async def send_to(conversation_id: str, target: ReplyTarget, text: str, *, files
     )
 
 
-async def _run_send(conversation_id: str, target: ReplyTarget, text: str, *, files: tuple = (), quote: bool = True) -> None:
+async def _run_send(
+    conversation_id: str, target: ReplyTarget, text: str, *, files: tuple = (), quote: bool = True
+) -> None:
     """The background half. Never raises — a failed reply must not take down
     the request that started it, and the worker's own record is the trail."""
     from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
@@ -325,4 +339,3 @@ async def _run_send(conversation_id: str, target: ReplyTarget, text: str, *, fil
         logger.exception("[channel-send] %s → %s failed", target.channel, target.to)
         # A refusal carries the far end's own words (``HubError.reason``: "WhatsApp refused: …").
         emit_reply_failed(target.source, conversation_id, str(getattr(exc, "reason", "") or exc))
-

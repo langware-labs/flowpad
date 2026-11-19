@@ -14,7 +14,6 @@ import {
   ticketMessagesFromHub,
   Agent,
   Conversation,
-  DataSource,
   fetchConversations,
   FlowMessage,
   MessageThread,

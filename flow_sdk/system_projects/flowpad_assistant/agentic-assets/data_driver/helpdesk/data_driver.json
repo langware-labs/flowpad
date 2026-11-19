@@ -17,12 +17,6 @@
       "label": "Desk",
       "placeholder": "hub project id",
       "hint": "Pick a desk you belong to, or paste the hub project id of one."
-    },
-    "side": {
-      "type": "text",
-      "choices": true,
-      "label": "Side",
-      "hint": "customer: answers the requester. team: writes notes for the team only."
     }
   }
 }

@@ -357,6 +357,7 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
             # `mark` is a nested MessageMarkSpec, None on a message that did nothing.
             # `invite` is a nested MessageInvite, None on every message but an invite.
             # `message_processing` is a nested MessageProcessing, None until the message is enrolled.
+            # `guest_message` / `steer` are a nested GuestMessageRef / SteerRef, None but on those two kinds.
             [
                 "attachment",
                 "body_status",
@@ -365,6 +366,7 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "expand",
                 "fs_storage_provider",
                 "envelope",
+                "guest_message",
                 "invite",
                 "kind",
                 "last_active_at",
@@ -377,6 +379,7 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "reactions",
                 "sender",
                 "shared_context_entities",
+                "steer",
             ],
         ),
         (

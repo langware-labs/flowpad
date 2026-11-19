@@ -17,6 +17,13 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { formatBytes } from '@src/utils/format-bytes';
 
+/** What a person is doing to a guest message while its button spins. */
+enum GuestMessageAction {
+  SHOW = 'show',
+  RELEASE = 'release',
+  REJECT = 'reject',
+}
+
 /** One file of a guest message: its name and size, how screening went for it, and a download for whoever may open it. */
 function GuestFileChip({
   file,
@@ -111,11 +118,11 @@ export function GuestMessageLine({
 }) {
   const { t } = useLingui();
   const [held, setHeld] = useState<HeldGuestMessage | null>(null);
-  const [busy, setBusy] = useState<'show' | 'release' | 'reject' | null>(null);
+  const [busy, setBusy] = useState<GuestMessageAction | null>(null);
   const fail = (title: string, e: unknown) => notify.error({ title, message: errorMessage(e, ''), forceToast: true });
 
   const show = async () => {
-    setBusy('show');
+    setBusy(GuestMessageAction.SHOW);
     try {
       setHeld(await getHeldGuestMessage(conversationId, guestMessage.id));
     } catch (e: unknown) {
@@ -124,12 +131,15 @@ export function GuestMessageLine({
       setBusy(null);
     }
   };
-  const decide = async (verb: 'release' | 'reject') => {
+  const decide = async (verb: GuestMessageAction.RELEASE | GuestMessageAction.REJECT) => {
     setBusy(verb);
     try {
-      await (verb === 'release' ? releaseGuestMessage : rejectGuestMessage)(conversationId, guestMessage.id);
+      await (verb === GuestMessageAction.RELEASE ? releaseGuestMessage : rejectGuestMessage)(
+        conversationId,
+        guestMessage.id,
+      );
     } catch (e: unknown) {
-      fail(verb === 'release' ? t`Could not release the message` : t`Could not reject the message`, e);
+      fail(verb === GuestMessageAction.RELEASE ? t`Could not release the message` : t`Could not reject the message`, e);
     } finally {
       setBusy(null);
     }
@@ -138,7 +148,7 @@ export function GuestMessageLine({
   const status = guestMessage.status;
   const who = senderName || t`The support agent`;
   const reasons = guestMessage.reasons?.length ? ` — ${guestMessage.reasons.join(', ')}` : '';
-  const line = {
+  const lines = {
     [GuestMessageStatus.PENDING]: {
       icon: ShieldQuestion,
       tone: 'text-muted-foreground',
@@ -155,7 +165,9 @@ export function GuestMessageLine({
       label: t`${who}: message held by screening${reasons}`,
     },
     [GuestMessageStatus.REJECTED]: { icon: ShieldX, tone: 'text-red-600', label: t`${who}: message rejected` },
-  }[status];
+  };
+  // A status this build does not know yet (a newer hub) reads as "being screened" rather than crashing the view.
+  const line = lines[status] ?? lines[GuestMessageStatus.PENDING];
   const Icon = line.icon;
 
   return (
@@ -204,7 +216,7 @@ export function GuestMessageLine({
                 onClick={() => void show()}
                 data-testid="guest-message-show"
               >
-                {busy === 'show' && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                {busy === GuestMessageAction.SHOW && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
                 {t`Show text`}
               </Button>
             </div>
@@ -228,20 +240,20 @@ export function GuestMessageLine({
             <Button
               size="sm"
               disabled={busy !== null}
-              onClick={() => void decide('release')}
+              onClick={() => void decide(GuestMessageAction.RELEASE)}
               data-testid="guest-message-release"
             >
-              {busy === 'release' && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+              {busy === GuestMessageAction.RELEASE && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
               {t`Release`}
             </Button>
             <Button
               size="sm"
               variant="outline"
               disabled={busy !== null}
-              onClick={() => void decide('reject')}
+              onClick={() => void decide(GuestMessageAction.REJECT)}
               data-testid="guest-message-reject"
             >
-              {busy === 'reject' && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+              {busy === GuestMessageAction.REJECT && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
               {t`Reject`}
             </Button>
           </div>

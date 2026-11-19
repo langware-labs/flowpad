@@ -32,9 +32,11 @@ class _NoHub:
 def test_a_guest_message_reference_gives_the_message_its_kind_and_keeps_its_last_status():
     fm = FlowMessage.model_validate({"text": ""})
     derive_guest_message(fm, {"metadata": {"guest_message": {"id": "gm-1", "status": "pending"}}})
-    assert fm.kind is FlowMessageKind.GUEST_MESSAGE and fm.guest_message == {"id": "gm-1", "status": "pending"}
+    assert fm.kind is FlowMessageKind.GUEST_MESSAGE and fm.guest_message == GuestMessageRef(id="gm-1")
     derive_guest_message(fm, {"text": "no metadata"})
-    assert fm.guest_message["status"] == "pending"
+    assert fm.guest_message.status is GuestMessageStatus.PENDING
+    derive_guest_message(fm, {"metadata": {"guest_message": {"id": "gm-1", "status": "held", "screened_by": "x"}}})
+    assert fm.guest_message.status is GuestMessageStatus.HELD, "projected field by field: a key we do not model drops"
     other = FlowMessage.model_validate({"text": "hi"})
     derive_guest_message(other, {"metadata": {"guest_message": {"status": "passed"}}})  # no id: not a reference
     assert other.guest_message is None and other.kind is FlowMessageKind.USER
@@ -43,7 +45,7 @@ def test_a_guest_message_reference_gives_the_message_its_kind_and_keeps_its_last
 def test_a_steer_gives_the_message_its_kind():
     fm = FlowMessage.model_validate({"text": "Ask for the invoice month."})
     derive_steer(fm, {"metadata": {"steer": {"agent": "a-1", "ticket": "t-1", "status": "sending"}}})
-    assert fm.kind is FlowMessageKind.STEER and fm.steer["ticket"] == "t-1"
+    assert fm.kind is FlowMessageKind.STEER and fm.steer == SteerRef(agent="a-1", ticket="t-1")
 
 
 def test_no_client_may_send_the_hub_owned_kinds():
@@ -82,7 +84,7 @@ async def test_the_update_that_passes_a_guest_message_fills_in_its_text():
     )
 
     stored = await FlowMessage.get_one({"id": fm.id})
-    assert stored.guest_message["status"] == "passed" and stored.text == "Where is my invoice?"
+    assert stored.guest_message.status is GuestMessageStatus.PASSED and stored.text == "Where is my invoice?"
 
 
 def test_a_passed_reference_names_its_files():

@@ -55,4 +55,4 @@ All of this is in `flow_sdk/app/actions/ask_for_help_action.py`:
   "<title>", so `expect(opening?.text).toContain(task.title)` failed.
 * A failure on the files assertion in the same test is a different matter. The opening
   message also carries the request's own context files (`CONTEXT_FILES` in this module:
-  `help_request.value.json`, `logs.txt`, …), and the test filters them out.
+  `help_request.value.json`, `logs.value.json`, …), and the test filters them out.

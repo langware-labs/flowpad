@@ -213,7 +213,8 @@ export async function helpDeskAgents(deskId: string): Promise<HelpDeskAgent[]> {
   return (await dataManager.callAction<unknown, HelpDeskAgent[]>(action)) ?? [];
 }
 
-/** Make one of the desk's agents: the agent, its source on the desk, and its deployment on this computer. */
+/** Make one of the desk's agents: the agent, its source on the desk, and its deployment -- the support agent's in
+ *  the cloud, the team agent's on this computer. */
 export async function createHelpDeskAgent(agent: HelpDeskAgent, deskName: string): Promise<HelpDeskAgent> {
   const action = new ActionInfo('helpdesk-agent', null, null, 'POST');
   action.bodyParameters = { ...agent, desk_name: deskName };
@@ -223,7 +224,7 @@ export async function createHelpDeskAgent(agent: HelpDeskAgent, deskName: string
 /** What the hub answers when a guest message is queued: the queue item and the reference left in the conversation. */
 export interface GuestMessagePosted {
   id: string;
-  message_id: string;
+  reference_id: string;
   status: GuestMessageMeta['status'];
 }
 

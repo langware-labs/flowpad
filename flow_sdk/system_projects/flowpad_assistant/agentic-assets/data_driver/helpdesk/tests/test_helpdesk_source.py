@@ -40,7 +40,6 @@ DESK = "4f9f1fd1-39b6-5465-9c20-cb4c59b08318"
 TICKET = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 ME = "11111111-1111-4111-8111-111111111111"
 GUEST = "22222222-2222-4222-8222-222222222222"
-TEAM = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 POOL = [
     {
         "conversation_id": TICKET,
@@ -76,23 +75,16 @@ class _Hub:
             {TICKET},
         )
         self.params = {}
-        self.team = None
 
     async def get(self, entity_type, entity_id, action, *, params=None):
         self.calls.append(("get", entity_type, entity_id, action))
         self.params[action] = dict(params or {})
-        if action == "team_conversation":
-            return self.team
         return self.pool if action == "helpdesk_conversations" else self.messages
 
     async def post(self, entity_type, payload, entity_id, action):
         self.calls.append(("post", entity_type, entity_id, action))
-        if action == "add_message" and self.team and entity_id == self.team["id"]:
-            return {"id": "note-1", "conversation_id": entity_id, "text": payload["text"]}
         if entity_id not in self.tickets:
             raise NotFound("no such ticket")
-        if action == "open_team_conversation":
-            return {"id": TEAM}
         if action == "add_message":
             sent = {
                 "id": str(uuid.uuid4()),
@@ -373,7 +365,7 @@ class TestSend:
 
 
 class TestHowTheAgentAnswers:
-    """The desk's agent: notes only on the team side; whether a person attends the ticket is asked of the driver."""
+    """The desk's agent answers the customer; whether a person attends the ticket is asked of the driver."""
 
     async def test_a_persons_own_desk_source_answers_the_customer_at_once(self, hub):
         """No agent settings: the staffer's own source -- a reply they type goes out, goes out."""
@@ -383,37 +375,18 @@ class TestHowTheAgentAnswers:
             ("post", "conversation", TICKET, "add_message"),
         ]
 
-    async def test_a_team_side_agent_opens_the_team_conversation_then_writes_in_it(self, hub):
-        row = _row(side="team")
-        await DataDriver.loaded("helpdesk").send(row, thread_key=TICKET, to=TICKET, text="first RCA")
-        hub.team = {"id": TEAM}
-        await DataDriver.loaded("helpdesk").send(row, thread_key=TICKET, to=TICKET, text="more")
-        assert [c for c in hub.calls if c[0] == "post"] == [
-            ("post", "conversation", TICKET, "open_team_conversation"),
-            ("post", "conversation", TEAM, "add_message"),
-        ]
-
     @pytest.mark.parametrize(
         "picked_by, attended",
         [
             ([], False),
             (["staff-1"], True),
-            ([ME], False),  # its own answer picked the ticket up: still alone with it
+            ([ME], True),  # the desk's owner picked it up: a person, whose desk it is
             ([ME, "staff-1"], True),
         ],
     )
-    async def test_a_person_attends_a_ticket_only_when_someone_other_than_the_agent_picked_it_up(
-        self, hub, picked_by, attended
-    ):
+    async def test_a_person_who_picked_the_ticket_up_attends_it_the_desks_owner_too(self, hub, picked_by, attended):
         hub.pool = [{**POOL[0], "picked_up_by": picked_by}]
-        data = SimpleNamespace(hub_conversation_id=TICKET)
-        assert await DataDriver.loaded("helpdesk").attended(_row(), data) is attended
-
-    async def test_every_ticket_message_is_a_call_for_the_agent_whoever_has_the_ticket(self, hub):
-        hub.pool = [{**POOL[0], "picked_up_by": ["staff-1"]}]
-        hub.messages = [MSG]
-        (item,) = (await DataDriver.loaded("helpdesk").traverse(_row(), _view())).items
-        assert item.data.quiet is False
+        assert await DataDriver.loaded("helpdesk").attended(_row(), TICKET) is attended
 
 
 class TestTheAppHub:

@@ -190,7 +190,7 @@ status is classified first and the envelope is used as detail:
 
 To the person it is just a conversation. `ask-for-help` writes ONE `FlowMessage` of kind `help_request`
 (`FlowMessageKind.HELP_REQUEST`). Its attachments are ordinary files: `diagnosis.value.json` (the `run_diagnose`
-answer, `flow_sdk/diagnose`), `screen.value.json`, `session.value.json`, `logs.txt`, plus the person's own files — and
+answer, `flow_sdk/diagnose`), `screen.value.json`, `session.value.json`, `logs.value.json`, plus the person's own files — and
 `help_request.value.json` (`HelpRequestCarrier`), the carrier that marks the message on every machine, since the hub
 drops the `kind` field (`derive_help_request_kind` re-derives it on arrival). The carrier is plumbing and never shown.
 
@@ -210,9 +210,9 @@ drops the `kind` field (`derive_help_request_kind` re-derives it on arrival). Th
 **Diagnose & fix** and **Ask for help** are the same request; the diagnosis never holds it up.
 
 - `ask-for-help` writes the conversation and the person's `help_request` message at once and answers; the diagnosis
-  runs in the background (`_diagnose_then_deliver`) and lands as a `diagnosis` message of its own — its text the one
-  bottom line (`bottom_line`), `diagnosis.value.json` the details (held here unless the context is shared). Only then is
-  the request delivered.
+  runs in the background (`_diagnose_then_deliver`) and is folded into that same message — its last line becomes
+  `Diagnosis: <bottom line>` (`bottom_line`) and `diagnosis.value.json` rides on it as the details (held here unless
+  the context is shared). One message, never a second `diagnosis` message. Only then is the request delivered.
 - **Diagnose & fix** (warnings popover, error toasts, the error screen, Error details — `diagnoseAndFix`) is one click,
   no window: `recipients: []`, `purpose: repair` (the repairing agent, told it was asked to fix and which folders are
   the project's dependencies). Private by design: nothing reaches the hub until **Report it**.

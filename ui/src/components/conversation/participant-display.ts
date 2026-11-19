@@ -4,6 +4,7 @@ import {
   newInviteRoles,
   grantableRoleSet,
   canManageRoles,
+  withoutGuest,
   type ConversationParticipant,
 } from '@sdk';
 
@@ -119,8 +120,6 @@ export function participantRoleLabel(participant: ConversationParticipant | null
   return participantRoles(participant).join(', ');
 }
 export const PARENT_ROLES: readonly string[] = ROLE_ORDER;
-/** `guest` is an agent-only role the hub gives (it may only post a guest message): no picker offers it. */
-export const withoutGuest = (roles: readonly string[]): string[] => roles.filter((role) => role !== 'guest');
 export const CONFERRABLE_ROLES: readonly string[] = withoutGuest(ROLE_GRANTS.owner);
 export function participantIsOwner(participant: ConversationParticipant | null | undefined): boolean {
   return participantRoles(participant).includes('owner');

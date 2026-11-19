@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Mapping, Optional
 
+from flow_sdk.schema.data_spec.agent_spec import AgentReplyMode
+from flow_sdk.schema.data_spec.helpdesk_agent_spec import HelpdeskAgentSide
 from flow_sdk.sources.base import Family, Source
 from flow_sdk.sources.files import FileSupport
 
@@ -68,22 +70,32 @@ class MessageSource(RecordSource):
     #: bot); 0 = any number (Slack).
     reactions_per_actor: ClassVar[int] = 0
 
-    #: The ``AgentReplyMode`` value an agent answering this channel has when its own definition names none
-    #: (``"auto"`` for a help desk). ``None``: the agent default, ``always``.
-    default_reply_mode: ClassVar[Optional[str]] = None
+    #: The reply mode an agent answering this channel has when its own definition names none (``auto`` for a help
+    #: desk). ``None``: the agent default, ``always``.
+    default_reply_mode: ClassVar[Optional[AgentReplyMode]] = None
     #: The channel knows whether a person is handling a conversation (``attended``), so an agent's turns there are
     #: counted against the unattended cap and its ``auto`` reply mode has something to read.
     tracks_attendance: ClassVar[bool] = False
     #: One deployment answers a source of this channel: a source that names no ``answer_place`` is answered by its
     #: agent's deployment only while that is the agent's single serving one (two answering one desk would each reply).
     single_place: ClassVar[bool] = False
+    #: The side of a help desk an agent serving this channel works: the desk's page sets its agents up by side and
+    #: finds the driver for each here. ``None``: not a desk agent's channel.
+    desk_agent_side: ClassVar[Optional[HelpdeskAgentSide]] = None
 
-    async def attended(self, data: Any) -> bool:
-        """Whether a person (not the agent) is handling the conversation ``data`` belongs to, right now.
+    async def attended(self, conversation: str) -> bool:
+        """Whether a person (not the agent) is handling ``conversation`` (the thread key this channel gave it) now.
 
         Asked after a turn, immediately before its text would be sent, so it reads the channel's live state.
         ``False`` for a channel with no such notion."""
         return False
+
+    @classmethod
+    def untrusted_author(cls, data: Any) -> str:
+        """Who wrote message ``data``, when its words must reach an agent as data and never as an instruction (a
+        screened guest message relays a customer): the runtime then quotes them under its own line naming that
+        author. ``""``: the channel's usual trust."""
+        return ""
 
     @classmethod
     def outbound_spec(cls) -> Optional[type]:

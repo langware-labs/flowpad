@@ -49,6 +49,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.helpdesk_agent_spec import TicketVerdict
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.stream_inbox.agent_scope import (
@@ -1764,7 +1765,7 @@ async def conversation_guest_message_read() -> ApiResponse:
 
 
 #: What a desk's staff (its support agent too) says about a ticket, by the hub action that says it.
-_TICKET_VERDICTS = {"closed": "close", "solved": "mark_solved"}
+_TICKET_VERDICTS = {TicketVerdict.CLOSED: "close", TicketVerdict.SOLVED: "mark_solved"}
 
 
 @action.post(action_name="ticket_verdict", types=["conversation"])
@@ -1777,10 +1778,14 @@ async def conversation_ticket_verdict() -> ApiResponse:
         return ApiFailResponse(message="No authenticated user in request context")
     info = get_current_request_info()
     body = (await info.get_post_data() or {}) if info else {}
-    hub_action = _TICKET_VERDICTS.get(str(body.get("verdict") or ""))
+    try:
+        hub_action = _TICKET_VERDICTS[TicketVerdict(str(body.get("verdict") or ""))]
+    except ValueError:
+        hub_action = None
     if not conv_id or hub_action is None:
         return ApiFailResponse(
-            message="ticket_verdict: a ticket and a verdict (closed | solved) are required", status_code=400
+            message=f"ticket_verdict: a ticket and a verdict ({' | '.join(TicketVerdict)}) are required",
+            status_code=400,
         )
     try:
         data = await HubProxy.call(

@@ -952,10 +952,17 @@ class HubWsBridge:
                 data = {**data, "issue_reply": issue}
                 fields = (*fields, "issue_reply", *(("text",) if isinstance(data.get("text"), str) else ()))
             # A guest message is screened and a steer is delivered on the hub: their metadata moves with them.
-            for key in ("guest_message", "steer"):
-                ref = (data.get("metadata") or {}).get(key) if isinstance(data.get("metadata"), dict) else None
-                if isinstance(ref, dict):
-                    data = {**data, key: dict(ref)}
+            from flow_sdk.schema.data_spec.guest_message_spec import (  # noqa: PLC0415
+                GuestMessageRef,
+                GuestMessageStatus,
+                SteerRef,
+            )
+
+            for key, spec in (("guest_message", GuestMessageRef), ("steer", SteerRef)):
+                meta = data.get("metadata")
+                ref = spec.from_hub(meta.get(key) if isinstance(meta, dict) else None)
+                if ref is not None:
+                    data = {**data, key: ref.model_dump(mode="json")}
                     # A guest message's text fills in on the UPDATE that flips it to passed; no other text moves.
                     take_text = key == "guest_message" and isinstance(data.get("text"), str)
                     fields = (*fields, key, *(("text",) if take_text else ()))
@@ -1020,7 +1027,7 @@ class HubWsBridge:
                 # only exists here from now on): announce it the way an arriving message is, so a source waiting on
                 # arrivals lists it.
                 guest_ref = data.get("guest_message")
-                if isinstance(guest_ref, dict) and guest_ref.get("status") == "passed":
+                if isinstance(guest_ref, dict) and guest_ref.get("status") == GuestMessageStatus.PASSED:
                     from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_conversation_message_tag  # noqa: PLC0415
 
                     emit_conversation_message_tag(

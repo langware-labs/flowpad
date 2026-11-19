@@ -1,4 +1,4 @@
-import { ROLE_ORDER } from '@sdk';
+import { ROLE_ORDER, Role, withoutGuest } from '@sdk';
 import { t } from '@lingui/core/macro';
 import {
   ActionInfo,
@@ -21,7 +21,7 @@ import {
   WORKSPACE_FLAVOR,
 } from '@sdk';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
-import { type ContentInstallSpec, installProjectLandingUrl } from '@src/lib/content-install';
+import { type ContentInstallSpec } from '@src/lib/content-install';
 import { errorMessage } from '@src/lib/error-message';
 import { type BulkResult, runLimited } from '@src/lib/run-limited';
 import { type BulkAction, bulkActionCopy, bulkSummary } from '@src/pages/hub-home/machines-bulk';
@@ -279,7 +279,7 @@ export interface LoginAccess {
 }
 
 /** The roles that mean anything on a machine, highest first (the hub's `LOGIN_ROLE_CHOICES`); `guest` only posts guest messages. */
-export const LOGIN_ROLE_CHOICES = ROLE_ORDER.filter((role) => role !== 'owner_by_api' && role !== 'guest');
+export const LOGIN_ROLE_CHOICES = withoutGuest(ROLE_ORDER.filter((role) => role !== Role.OWNER_BY_API));
 
 /** What the hub gives a new box: admin and everything above it. */
 export const DEFAULT_LOGIN_ACCESS: LoginAccess = { allowLogin: true, roles: ['owner', 'admin'] };

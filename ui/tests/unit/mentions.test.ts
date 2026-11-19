@@ -54,6 +54,7 @@ describe('writing and reading the tag', () => {
     expect(mentionedIn('@System please look', picks)).toEqual(['u-sys']);
     expect(mentionedIn('@Systems is not System', picks)).toEqual([]);
     expect(mentionedIn('@System and @Dana Levi', picks)).toEqual(['u-sys', 'u-dana']);
+    expect(mentionedIn('@Systems first, then @System', picks)).toEqual(['u-sys']);
   });
 
   it('a tagged name reads in bold, and only where it stands alone', () => {

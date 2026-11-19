@@ -5,9 +5,9 @@
  * Plain functions, out of `member-list.tsx` so that file exports only components — a non-component
  * export there breaks React Fast Refresh.
  */
-import { canManageRoles, grantableRoleSet, type EntityMember } from '@sdk';
+import { canManageRoles, grantableRoleSet, withoutGuest, type EntityMember } from '@sdk';
 
-import { assignableRoles, withoutGuest } from '@src/components/conversation/participant-display';
+import { assignableRoles } from '@src/components/conversation/participant-display';
 
 /** A team/org that holds a role appears in the roster as a first-class row with
  *  ``user_id === null`` — the principal id lives in ``id``. */

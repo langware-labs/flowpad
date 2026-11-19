@@ -81,6 +81,9 @@ interface AgentProfileEditorProps {
 /** Dock option: the editor's open tab. */
 const EDITOR_TAB_OPTION = 'tab';
 
+/** The reply-mode segment for an agent with no `reply_mode` of its own: its channel's driver decides. */
+const REPLY_MODE_DEFAULT = 'default';
+
 /** What the invite section reads on the hub, where the agent row is the published version. */
 const HUB_PUBLISHED: AgentVersionState = { published: true, published_commit: '', has_repo: false, pending_changes: 0 };
 
@@ -745,9 +748,10 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                       <SegmentedControl
                         testId="agent-reply-mode-control"
                         ariaLabel={t`Reply to the person`}
-                        value={profile.reply_mode ?? AgentReplyMode.ALWAYS}
-                        onChange={(v) => void save({ reply_mode: v })}
+                        value={profile.reply_mode ?? REPLY_MODE_DEFAULT}
+                        onChange={(v) => void save({ reply_mode: v === REPLY_MODE_DEFAULT ? undefined : v })}
                         options={[
+                          [REPLY_MODE_DEFAULT, t`Default`],
                           [AgentReplyMode.ALWAYS, t`Always`],
                           [AgentReplyMode.AUTO, t`Only while alone`],
                           [AgentReplyMode.NEVER, t`Never`],
@@ -757,7 +761,8 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                     <p className="text-xs text-muted-foreground">
                       <Trans>
                         Whether the text the agent ends a turn with is sent to the person. "Only while alone": it is
-                        sent while no one on the team has picked the conversation up.
+                        sent while no one on the team has picked the conversation up. "Default": the agent's channel
+                        decides; a help desk agent replies only while alone.
                       </Trans>
                     </p>
                   </div>

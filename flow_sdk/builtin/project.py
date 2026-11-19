@@ -40,7 +40,7 @@ from flow_sdk.core.project_status import changes_status as _changes_status
 from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.core.urls.service_urls import build_hub_url
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.flowpad_types.enums.auth_enums import ROLE_GRANTS, ROLE_ORDER
+from flow_sdk.flowpad_types.enums.auth_enums import INVITE_ROLES
 from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
 from flow_sdk.fs_store.origin.field import as_project_origin
 from flow_sdk.fs_store.origin.git_origin import GitOrigin, fresh_clone_slot
@@ -280,9 +280,7 @@ class HelpdeskConfig(BaseModel):
 # role-set grant policy remains authoritative; reject unknown roles up front.
 
 ProjectInviteRole = str
-PROJECT_INVITE_ROLES: tuple[str, ...] = tuple(
-    role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"] and role != "guest"
-)
+PROJECT_INVITE_ROLES: tuple[str, ...] = INVITE_ROLES
 PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "reader"
 
 

@@ -55,7 +55,14 @@ owns a `flow_conversation` source over the desk's team conversations: it runs th
 with the team and never talks to the customer. It is called by a guest message that passed
 screening, or by a person tagging it; it reaches the support agent only with a *steer*, which
 answers a status and never the support agent's words. The desk's page sets both up from its
-Support agent / Team agent rows.
+Support agent / Team agent rows and tells the hub which is which (`project/<desk>/helpdesk_agents`).
+
+The support agent runs only in the cloud: the desk's page saves its source, then deploys its
+project the way `flow agent deploy` does (`Project.deploy`), and the machine signs in as the
+agent's own hub Identity — never on the desk owner's computer under the owner's login. That
+machine is the one place answering the desk (the driver's `single_place`), so a person's
+pickup, the owner's included, is always a person's. The internal agent runs on the owner's
+computer. The snippet above makes the source; deploy the agent's project to put it to work.
 
 `create_source(..., allowed_senders=[...])` restricts the desk to those hub user
 ids; leaving it empty keeps the desk open. Pausing the source (the switch on the

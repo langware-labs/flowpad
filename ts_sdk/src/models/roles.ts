@@ -3,6 +3,10 @@ export const ROLE_ORDER = ["owner", "owner_by_api", "admin", "editor", "reader",
 export const Role = {"OWNER": "owner", "OWNER_BY_API": "owner_by_api", "ADMIN": "admin", "EDITOR": "editor", "READER": "reader", "RUNNER": "runner", "GUEST": "guest"} as const;
 export const ROLE_PEER_INVITE_TYPES: readonly string[] = ["conversation"];
 export type Role = (typeof ROLE_ORDER)[number];
+/** `guest` is an agent-only role the hub gives (it may only post a guest message): no picker offers it. */
+export function withoutGuest(roles: readonly string[]): string[] {
+  return roles.filter(role => role !== Role.GUEST);
+}
 export const MEMBERSHIP_ROLES: readonly Role[] = ["owner", "admin", "editor", "reader", "runner", "guest"];
 export const ROLE_INCLUDES: Record<Role, readonly Role[]> = {
   "owner": [

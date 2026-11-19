@@ -22,6 +22,7 @@ from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sha
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.guest_message_spec import GuestMessageRef, SteerRef
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
@@ -472,18 +473,20 @@ def derive_guest_message(fm: "FlowMessage", payload: dict) -> None:
     """Carry a guest message's reference (``metadata.guest_message``, hub-written) onto ``guest_message`` and make the
     message that kind. Idempotent; absent leaves it as is, so a refresh without metadata keeps the last status."""
     metadata = payload.get("metadata")
-    ref = metadata.get(FlowMessageKind.GUEST_MESSAGE.value) if isinstance(metadata, dict) else None
-    if isinstance(ref, dict) and ref.get("id"):
-        fm.guest_message = dict(ref)
+    ref = GuestMessageRef.from_hub(
+        metadata.get(FlowMessageKind.GUEST_MESSAGE.value) if isinstance(metadata, dict) else None
+    )
+    if ref is not None:
+        fm.guest_message = ref
         fm.kind = FlowMessageKind.GUEST_MESSAGE
 
 
 def derive_steer(fm: "FlowMessage", payload: dict) -> None:
     """Carry a steer's ``metadata.steer`` (hub-written) onto ``steer`` and make the message that kind. Idempotent."""
     metadata = payload.get("metadata")
-    steer = metadata.get(FlowMessageKind.STEER.value) if isinstance(metadata, dict) else None
-    if isinstance(steer, dict) and steer.get("ticket"):
-        fm.steer = dict(steer)
+    steer = SteerRef.from_hub(metadata.get(FlowMessageKind.STEER.value) if isinstance(metadata, dict) else None)
+    if steer is not None:
+        fm.steer = steer
         fm.kind = FlowMessageKind.STEER
 
 
@@ -852,8 +855,8 @@ class FlowMessage(Entity):
     issue_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
     # A guest message's screening reference and a steer's delivery status in a ticket's team conversation: the hub's
     # ``metadata.guest_message`` / ``metadata.steer``. PRIVATE, re-derived like ``issue_reply``.
-    guest_message: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
-    steer: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
+    guest_message: Optional[GuestMessageRef] = APIField(None, sharing=Sharing.PRIVATE)
+    steer: Optional[SteerRef] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)

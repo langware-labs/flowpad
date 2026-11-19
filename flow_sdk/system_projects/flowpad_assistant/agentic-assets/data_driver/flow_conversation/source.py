@@ -14,8 +14,10 @@ What calls the agent -- exactly two things, and nothing else is listed at all:
 * a **person's message that tags the agent** (``mentions`` carries its hub user id). Key ``<message id>:tagged``.
 
 Never: the agent's own words, a steer (the internal agent's own message into the support agent's process), or the
-hub's lines (a ticket closed). The agent answers in free text, into the same conversation (``send`` is
-``add_message``); its reply mode here is ``always`` -- people are in the conversation, so ``auto`` would silence it.
+hub's lines (a ticket closed). A guest message's words are the support agent's, relaying a customer: they reach the
+agent's turn quoted under the runtime's own line (``untrusted_author``), never as the team's instruction. The agent
+answers in free text, into the same conversation (``send`` is ``add_message``); its reply mode here is ``always`` --
+people are in the conversation, so ``auto`` would silence it.
 """
 
 from __future__ import annotations
@@ -26,6 +28,9 @@ from typing import Annotated, Any, ClassVar, Optional, Sequence
 from pydantic import StringConstraints
 
 from flow_sdk.builtin.source_item import MessageSpec
+from flow_sdk.schema.data_spec.agent_spec import AgentReplyMode
+from flow_sdk.schema.data_spec.guest_message_spec import GuestMessageStatus
+from flow_sdk.schema.data_spec.helpdesk_agent_spec import HelpdeskAgentSide
 from flow_sdk.sources.base import CollectionSource
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import NotFound, OutcomeUnknown, Rejected, Unsupported
@@ -39,7 +44,7 @@ from flow_sdk.utils.serialization import iso_to_utc
 CHANNEL = "flow_conversation"
 #: The tag an arriving Flowpad conversation message is announced under, once its row is stored here.
 ARRIVED_TAG = "stream_inbox.flowpad.message.projected"
-PASSED = "passed"
+PASSED = GuestMessageStatus.PASSED.value
 TAGGED = "tagged"
 
 
@@ -50,6 +55,8 @@ class FlowConversationMessageData(MessageData):
 
     hub_conversation_id: Optional[str] = None
     hub_message_id: Optional[str] = None
+    #: A guest message that passed screening: the support agent's words, relaying a customer -- data, not an instruction.
+    guest: bool = False
     #: Not a call to act: never set on what this source lists (it lists only what calls the agent).
     quiet: bool = False
 
@@ -81,7 +88,9 @@ class FlowConversationSource(MessageSource, CollectionSource):
     #: A Flowpad conversation message arriving here (or a guest message flipping to passed) says "pull now".
     bus_topics: ClassVar[tuple[str, ...]] = (ARRIVED_TAG,)
     #: People are in the conversation, so ``auto`` would silence the agent: it answers in free text, always.
-    default_reply_mode: ClassVar[Optional[str]] = "always"
+    default_reply_mode: ClassVar[Optional[AgentReplyMode]] = AgentReplyMode.ALWAYS
+    #: The desk's internal agent serves its team conversations; it never reads a ticket.
+    desk_agent_side: ClassVar[Optional[HelpdeskAgentSide]] = HelpdeskAgentSide.TEAM
 
     @classmethod
     def wants(cls, tag: str, data: dict) -> bool:
@@ -90,6 +99,14 @@ class FlowConversationSource(MessageSource, CollectionSource):
     @classmethod
     def outbound_spec(cls) -> type:
         return FlowConversationMessageSpec
+
+    @classmethod
+    def untrusted_author(cls, data: Any) -> str:
+        return (
+            "the support agent, in a screened guest message relaying the customer"
+            if getattr(data, "guest", False)
+            else ""
+        )
 
     @property
     def desk(self) -> str:
@@ -140,6 +157,7 @@ class FlowConversationSource(MessageSource, CollectionSource):
             sent_at=iso_to_utc(raw.created_date),
             hub_conversation_id=conversation_id,
             hub_message_id=str(raw.id),
+            guest=key.endswith(f":{PASSED}"),
         )
         return MessageItem(origin=self.origin(key, conversation_id), data=data)
 
@@ -159,8 +177,9 @@ class FlowConversationSource(MessageSource, CollectionSource):
             return None  # the agent's own words
         kind = str(getattr(fm.kind, "value", fm.kind) or "")
         if kind == FlowMessageKind.GUEST_MESSAGE.value:
-            ref = fm.guest_message or {}
-            return PASSED if ref.get("status") == PASSED and str(fm.text or "").strip() else None
+            ref = fm.guest_message
+            passed = ref is not None and ref.status is GuestMessageStatus.PASSED
+            return PASSED if passed and str(fm.text or "").strip() else None
         if kind in (FlowMessageKind.STEER.value, FlowMessageKind.TICKET_EVENT.value):
             return None
         return TAGGED if me and me in (fm.mentions or []) and str(fm.text or "").strip() else None

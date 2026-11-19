@@ -1,6 +1,7 @@
 """Steering a ticket's agent: one admin turn, a status back and never the agent's words, the reply mode decides the send.
 
-``steer`` runs over fakes for the placement, the engine and the channel: no database, no worker.
+``steer`` (the box route's, which only the hub's hop reaches) runs over fakes for the placement, the engine and the
+channel: no database, no worker. The local ``steer`` action and ``flow agent steer`` only relay to the hub.
 """
 
 from __future__ import annotations
@@ -62,7 +63,8 @@ def rig(monkeypatch):
     async def placement(agent, conversation_id):
         return SimpleNamespace(id="d1"), SimpleNamespace(id="s1", provider="desk")
 
-    async def attendance(source, driver_cls, message):
+    async def attendance(source, conversation):
+        assert conversation == "ticket-1", "asked about the ticket by its id"
         return state.attended
 
     class Driver:
@@ -72,7 +74,7 @@ def rig(monkeypatch):
     monkeypatch.setattr(Agent, "get_by_id", get_by_id)
     monkeypatch.setattr(agent_steer, "placement", placement)
     monkeypatch.setattr(serve, "TurnEngine", _Engine)
-    monkeypatch.setattr(serve, "_driver_cls", lambda source: SimpleNamespace(default_reply_mode="auto"))
+    monkeypatch.setattr(serve, "driver_class", lambda source: SimpleNamespace(default_reply_mode="auto"))
     monkeypatch.setattr(serve, "attendance_of", attendance)
     monkeypatch.setattr(data_driver.DataDriver, "loaded", classmethod(lambda cls, name: Driver()))
     return state
@@ -139,3 +141,27 @@ def test_zero_or_several_deployments_refuse_the_steer(monkeypatch):
     with pytest.raises(agent_steer.SteerRefused) as refused:
         asyncio.run(agent_steer.steer(RUN))
     assert refused.value.status_code == 409
+
+
+def test_the_local_steer_action_relays_to_the_hub_and_runs_nothing_here(monkeypatch):
+    """A process on this machine cannot inject an admin turn: the local action is the hub's, which checks the caller
+    holds admin on the agent and records the steer message before anything is delivered."""
+    from flow_sdk.app.actions import agent_steer_action
+    from flow_sdk.cloud_client.hub_proxy import HubProxy
+
+    calls = []
+
+    async def call(cls, method, entity_type, entity_id, action, **kw):
+        calls.append((method, str(entity_type), entity_id, action, kw["payload"]))
+        return {"message_id": "m1", "status": "sending"}
+
+    async def post_data():
+        return {"agent_id": "agent-a1", "text": "Ask Dana for the logs"}
+
+    info = SimpleNamespace(target_entity_typeid=SimpleNamespace(id="ticket-1"), get_post_data=post_data)
+    monkeypatch.setattr(HubProxy, "call", classmethod(call))
+    monkeypatch.setattr(agent_steer_action, "get_current_request_info", lambda: info)
+    monkeypatch.setattr(agent_steer, "steer", lambda run: pytest.fail("a local steer must not run a turn"))
+    response = asyncio.run(agent_steer_action.steer_ticket())
+    assert response.data == {"message_id": "m1", "status": "sending"}
+    assert calls == [("POST", "conversation", "ticket-1", "steer", {"agent_id": "a1", "text": "Ask Dana for the logs"})]

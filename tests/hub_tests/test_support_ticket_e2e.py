@@ -1,8 +1,7 @@
 """A support ticket, end to end, with the real support agent and three real users.
 
-The customer asks for help; the agent acknowledges and consults the team in a private
-``[ticket <id>]`` conversation; nothing reaches the customer until a team member approves; then
-the approved answer does.
+The customer asks for help; the agent acknowledges once and hands the request to the team as a guest message, which
+the hub screens into the ticket's team conversation; nothing of the team side reaches the customer.
 
 It needs more than the hub tier gives: a real ``claude`` turn that runs ``flow`` commands, so the
 agent must run on a live instance. Point it at one with the variables below and it drives the rest
@@ -61,17 +60,19 @@ def _until(what: str, found: Callable[[], Any]) -> Any:
     raise AssertionError(f"no {what} within {STEP_SECONDS}s")
 
 
-def _invitation_to(hub: str, team: dict, ticket: str) -> Optional[str]:
-    """The team member's invitation to the ticket's private conversation."""
-    pending = httpx.get(f"{hub}/api/v1/graph/invitation/pending", headers=team, timeout=15).json()["data"]
-    return next((row for row in pending if ticket in str(row)), None)
+def _team_conversation(hub: str, team: dict, ticket: str) -> Optional[str]:
+    """The ticket's team conversation, once the desk opened it (on the support agent's first guest message)."""
+    answer = httpx.get(f"{hub}/api/v1/graph/conversation/{ticket}/team_conversation", headers=team, timeout=15)
+    if answer.status_code != 200:
+        return None
+    return str((answer.json().get("data") or {}).get("id") or "") or None
 
 
 @pytest.mark.skipif(
     not all(os.environ.get(f"SUPPORT_E2E_{name}") for name in NAMES),
     reason="needs a live support agent (see the module)",
 )
-def test_a_customer_gets_the_answer_the_team_approved(hub_base_url):
+def test_a_customer_is_acknowledged_and_the_team_gets_a_screened_guest_message(hub_base_url):
     hub = hub_base_url
     customer = _bearer(hub, _setting("CUSTOMER_EMAIL"), _setting("CUSTOMER_PW"))
     team = _bearer(hub, _setting("TEAM_EMAIL"), _setting("TEAM_PW"))
@@ -91,31 +92,17 @@ def test_a_customer_gets_the_answer_the_team_approved(hub_base_url):
     ).json()
     assert asked["status"] == "SUCCESS", asked
 
-    # The agent consults the team: an invitation, then the summary with its proposed answer.
-    invitation = _until("invitation to the private conversation", lambda: _invitation_to(hub, team, ticket))
-    accepted = httpx.get(
-        f"{hub}/api/v1/graph/members/accept", params={"invitation-id": invitation["id"]}, headers=team, timeout=20
+    # The agent hands the request to the team as a guest message: the desk opens the team conversation, which holds
+    # its screened reference.
+    private = _until("team conversation", lambda: _team_conversation(hub, team, ticket))
+    reference = _until(
+        "guest message",
+        lambda: [m for m in _messages(hub, team, private) if (m.get("metadata") or {}).get("guest_message")],
     )
-    assert accepted.status_code in (200, 302), accepted.text
-    private = invitation["entity_id"] if "entity_id" in invitation else invitation["target"]["id"]
-    summary = _until("summary", lambda: _messages(hub, team, private))
-    assert "approve" in summary[0]["text"].lower(), summary[0]["text"]
+    assert reference[0]["metadata"]["guest_message"]["status"] in ("pending", "passed", "held"), reference[0]
 
-    # Until the team approves, the customer holds their own messages and ONE acknowledgement.
-    before = _messages(hub, customer, ticket)
-    desk = [m for m in before if m.get("sender_name") != customer_name(before)]
+    # The customer holds their own messages and ONE acknowledgement: the team's side writes them nothing.
+    after = _messages(hub, customer, ticket)
+    desk = [m for m in after if m.get("sender_name") != customer_name(after)]
     assert len(desk) == 1, f"one acknowledgement, not {len(desk)}: {[m['text'][:60] for m in desk]}"
-    answered = httpx.post(
-        f"{hub}/api/v1/graph/conversation/{private}/add_message",
-        headers=team,
-        json={"id": str(uuid.uuid4()), "text": "approve"},
-        timeout=20,
-    )
-    assert answered.status_code == 200, answered.text
-
-    after = _until(
-        "answer to the customer", lambda: (m := _messages(hub, customer, ticket)) and len(m) > len(before) and m
-    )
-    answer = after[-1]
-    assert answer["sender_name"] != _setting("TEAM_EMAIL"), "the customer sees the desk, never the team member"
-    assert "[ticket" not in answer["text"], "nothing of the private conversation reaches the customer"
+    assert desk[0]["sender_name"] != _setting("TEAM_EMAIL"), "the customer sees the desk, never the team member"

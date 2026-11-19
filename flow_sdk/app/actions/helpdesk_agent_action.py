@@ -2,27 +2,40 @@
 
 POST /api/v1/graph/helpdesk-agents  {desk_project_id}           — the desk's agents on this machine, by side
 POST /api/v1/graph/helpdesk-agent   {HelpdeskAgent fields}       — make one: its project, the agent, its source on the
-                                                                   desk, and its loop running on this computer
+                                                                   desk, where it runs (the support agent on a cloud
+                                                                   machine, the internal agent here), and the hub told
+                                                                   which agent it is
 
-A desk agent is an ordinary agent that owns a source on the desk: the support agent (customer side) the desk's
-``helpdesk`` source, the internal agent (team side) the ``flow_conversation`` source over the desk's team
-conversations. The agent's ``reply_mode`` says whether its words are sent while a person attends the ticket. Each one is the main
-agent of a project of its own -- a project has one local deployment with one main agent, so a desk's two agents
-could not both answer from one project.
+A desk agent is an ordinary agent that owns a source on the desk: the support agent (customer side) a source of the
+driver that serves tickets, the internal agent (team side) one of the driver that serves the desk's team
+conversations. Each driver declares its side (``MessageSource.desk_agent_side``); nothing here names one. The agent's
+``reply_mode`` says whether its words are sent while a person attends the ticket. Each one is the main agent of a
+project of its own -- a project has one local deployment with one main agent, so a desk's two agents could not both
+answer from one project. The support agent runs only in the cloud, under its own hub Identity; the internal agent on
+the owner's computer. Once one is made, the hub learns the desk's support and internal agent
+(``project/<desk>/helpdesk_agents``): it makes the support agent the desk's staff and gives the internal agent
+``admin`` on it, the standing a steer needs.
 """
 
 from __future__ import annotations
 
 from flow_sdk.actions.action_registry import action
+from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.agent_spec import AgentReplyMode
 from flow_sdk.schema.data_spec.helpdesk_agent_spec import HelpdeskAgent, HelpdeskAgentSide
 
-PROVIDER = "helpdesk"
-#: The channel each side's agent serves: the support agent the ticket (the customer's side), the internal agent the
-#: desk's team conversations (``flow_conversation``) -- it never reads a ticket, and the support agent never reads there.
-DRIVER_OF_SIDE = {HelpdeskAgentSide.CUSTOMER: PROVIDER, HelpdeskAgentSide.TEAM: "flow_conversation"}
+#: The hub's names for the desk's two agents in ``project/<desk>/helpdesk_agents``.
+HUB_FIELD_OF_SIDE = {HelpdeskAgentSide.CUSTOMER: "support_agent", HelpdeskAgentSide.TEAM: "internal_agent"}
+
+
+def driver_of(side: HelpdeskAgentSide):
+    """The loaded driver whose channel a desk agent of *side* serves (it declares ``desk_agent_side``), or ``None``."""
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+
+    return next((d for _key, d in DRIVERS.items() if getattr(d.cls, "desk_agent_side", None) == side), None)
+
 
 #: What each side's agent does when the owner writes nothing of their own.
 DEFAULT_INSTRUCTIONS = {
@@ -66,8 +79,12 @@ async def desk_agents(desk_project_id: str) -> list[HelpdeskAgent]:
     from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
 
     found: dict[HelpdeskAgentSide, HelpdeskAgent] = {}
+    drivers = [(side, driver_of(side)) for side in HelpdeskAgentSide]
     sources = [
-        (side, s) for side, provider in DRIVER_OF_SIDE.items() for s in await DataSource.get_all({"provider": provider})
+        (side, s)
+        for side, driver in drivers
+        if driver is not None
+        for s in await DataSource.get_all({"provider": driver.name})
     ]
     for side, source in sources:
         config = source.config or {}
@@ -112,13 +129,18 @@ async def _project_for(name: str, someone=None):
 
 
 async def create_desk_agent(spec: HelpdeskAgent, desk_name: str, someone=None) -> HelpdeskAgent:
-    """Its project, the agent, its source on the desk (saying the side and when it replies), and its loop."""
-    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    """Its project, the agent and its source on the desk (saying the side and when it replies), then where it runs.
 
-    driver = DataDriver.loaded(DRIVER_OF_SIDE[spec.side])
+    The support agent talks to strangers, so it never runs on this computer under its owner's login: it is deployed to
+    a cloud machine of its own, which signs in as the agent's own hub Identity (``Project.deploy``, the path of
+    ``flow agent deploy``). The internal agent runs here."""
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+    driver = driver_of(spec.side)
     if driver is None:
-        raise LookupError(f"the {DRIVER_OF_SIDE[spec.side]} driver is not installed")
+        raise LookupError(f"no installed driver serves a desk's {spec.side.value} side")
+    if spec.side is HelpdeskAgentSide.CUSTOMER and someone is None:
+        raise ValueError("the support agent is deployed to the cloud: sign in first")
     name = f"{desk_name or 'Help desk'} {NAMES[spec.side]}"
     # Validated before anything is written: a refused config leaves no agent or project behind.
     config = driver.create_config(desk_project_id=spec.desk_project_id)
@@ -129,12 +151,45 @@ async def create_desk_agent(spec: HelpdeskAgent, desk_name: str, someone=None) -
         project_id=str(project.id),
         reply_mode=REPLY_MODES[spec.side],
     ).save()
-    # The desk is answered from this deployment alone: named before the agent serves, so no second deployment of the
-    # agent (another machine's copy of the project) answers it too.
-    deployment = await agent.deploy("local")
-    await driver.create_source(config, name=name, owner=agent, answer_place=str(deployment.id)).save()
-    await agent.run_locally()
+    if spec.side is HelpdeskAgentSide.CUSTOMER:
+        from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_PROVIDER  # noqa: PLC0415
+
+        # Saved before the deploy: the source is a file of the agent's project, which the deploy publishes and the
+        # machine clones, and the plan names its desk (``Agent.hub_desks``) so the hub makes the agent's Identity the
+        # desk's staff. No ``answer_place``: the machine is the one place answering (the driver's ``single_place``).
+        await driver.create_source(config, name=name, owner=agent).save()
+        await project.deploy(someone, provider=DEFAULT_CLOUD_PROVIDER, main_agent=agent)
+    else:
+        # The desk is answered from this deployment alone: named before the agent serves, so no second deployment of
+        # the agent (another machine's copy of the project) answers it too.
+        deployment = await agent.deploy("local")
+        await driver.create_source(config, name=name, owner=agent, answer_place=str(deployment.id)).save()
+        await agent.run_locally()
     return spec.model_copy(update={"agent_id": str(agent.id), "agent_name": agent.name})
+
+
+async def wire_desk_agent(made: HelpdeskAgent, someone) -> dict:
+    """Tell the hub *made* is the desk's support or internal agent (the field of the other side is left out, which
+    keeps its agent). The hub grants roles on its own copy of the agent: the internal agent is published first; the
+    support agent's deploy already published it. Answers the desk's helpdesk config as the hub holds it; raises
+    ``HubError``."""
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+
+    if made.side is HelpdeskAgentSide.TEAM:
+        agent = await Agent.get_by_id(str(made.agent_id))
+        if agent is None:
+            raise LookupError(f"no agent {made.agent_id}")
+        await agent.ensure_on_hub(someone)
+    return await HubProxy.call(
+        "POST",
+        BuiltinEntityType.PROJECT,
+        made.desk_project_id,
+        "helpdesk_agents",
+        payload={HUB_FIELD_OF_SIDE[made.side]: str(made.agent_id)},
+        strict=True,
+    )
 
 
 @action.post(action_name="helpdesk-agents", types=None)
@@ -154,10 +209,21 @@ async def helpdesk_agent() -> ApiResponse:
         return ApiFailResponse(message=str(e), status_code=400)
     if any(a.side == spec.side for a in await desk_agents(spec.desk_project_id)):
         return ApiFailResponse(message=f"this desk already has a {NAMES[spec.side]}", status_code=409)
+    request_info = get_current_request_info()
+    someone = request_info.someone_typeid if request_info else None
     try:
-        request_info = get_current_request_info()
-        someone = request_info.someone_typeid if request_info else None
         made = await create_desk_agent(spec, str(body.get("desk_name") or ""), someone)
     except (LookupError, ValueError) as e:
         return ApiFailResponse(message=str(e), status_code=400)
+    except HubError as e:
+        return e.fail_response(f"The {NAMES[spec.side]} was made, but its deploy failed")
+    except Exception as e:  # noqa: BLE001 — a refused deploy (not ready, already running, unpublishable)
+        return ApiFailResponse(message=f"The {NAMES[spec.side]} was made, but its deploy failed: {e}", status_code=409)
+    refused = f"The {NAMES[spec.side]} was made, but the hub did not take it as the desk's agent"
+    try:
+        await wire_desk_agent(made, someone)
+    except HubError as e:
+        return e.fail_response(refused)
+    except Exception as e:  # noqa: BLE001 — publishing the agent to the hub failed; the agent itself stands
+        return ApiFailResponse(message=f"{refused}: {e}", status_code=502)
     return ApiSuccessResponse(data=made.model_dump(mode="json"))

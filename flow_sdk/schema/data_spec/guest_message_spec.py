@@ -10,9 +10,9 @@ agent only as a *steer*, a message the hub delivers into the ticket's agent proc
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, Optional
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -51,6 +51,31 @@ class GuestMessageRef(DataSpec):
     #: Its files, once the message passed.
     files: list[GuestFileRef] = Field(default_factory=list)
 
+    @classmethod
+    def from_hub(cls, meta: Any) -> Optional["GuestMessageRef"]:
+        """The hub's ``metadata.guest_message``, projected field by field (a key we do not model is dropped); ``None``
+        when it names no queued message or does not validate."""
+        if not isinstance(meta, dict) or not meta.get("id"):
+            return None
+        files = [f for f in meta.get("files") or [] if isinstance(f, dict)]
+        try:
+            return cls(
+                id=str(meta["id"]),
+                status=meta.get("status") or GuestMessageStatus.PENDING,
+                reasons=[str(r) for r in meta.get("reasons") or []],
+                decided_by=meta.get("decided_by") or None,
+                files=[
+                    GuestFileRef(
+                        name=str(f.get("name") or ""),
+                        media_type=str(f.get("media_type") or ""),
+                        size=int(f.get("size") or 0),
+                    )
+                    for f in files
+                ],
+            )
+        except (ValidationError, ValueError, TypeError):
+            return None
+
 
 class SteerDeliveryStatus(StrEnum):
     """What came of delivering a steer into the support agent's process (never the agent's words): the machine's own
@@ -76,3 +101,18 @@ class SteerRef(DataSpec):
     agent: str
     ticket: str
     status: SteerDeliveryStatus = SteerDeliveryStatus.SENDING
+
+    @classmethod
+    def from_hub(cls, meta: Any) -> Optional["SteerRef"]:
+        """The hub's ``metadata.steer``, projected field by field; ``None`` when it names no ticket or does not
+        validate."""
+        if not isinstance(meta, dict) or not meta.get("ticket"):
+            return None
+        try:
+            return cls(
+                agent=str(meta.get("agent") or ""),
+                ticket=str(meta["ticket"]),
+                status=meta.get("status") or SteerDeliveryStatus.SENDING,
+            )
+        except (ValidationError, ValueError):
+            return None

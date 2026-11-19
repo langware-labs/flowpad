@@ -15,6 +15,18 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openDisplayTarget } from '@src/navigation/open-display-target';
 import { applyProjectToConversation } from '../apply-project-choice';
 
+/** The review's action in flight -- only its own button spins. */
+enum InstallAction {
+  PROJECT = 'project',
+  USER = 'user',
+  SETUP = 'setup',
+}
+
+/** The install action of one scope. */
+function actionOfScope(scope: 'user' | 'project'): InstallAction {
+  return scope === 'user' ? InstallAction.USER : InstallAction.PROJECT;
+}
+
 /** One install-scope toggle: shows Uninstall when THIS scope is installed,
  *  Install (disabled while the other scope holds the install) otherwise. */
 function ScopeButton({
@@ -94,7 +106,7 @@ export function AssetInstallActions({
 }) {
   const { t } = useLingui();
   // Which action is in flight — ONLY that button spins; the others just disable.
-  const [busyAction, setBusyAction] = useState<null | 'project' | 'user' | 'setup'>(null);
+  const [busyAction, setBusyAction] = useState<InstallAction | null>(null);
   const busy = busyAction != null;
   // Why opening the git share failed (from the chip's 1-click open) — shown inline.
   const gitError = initialOutcome?.error ?? null;
@@ -139,7 +151,7 @@ export function AssetInstallActions({
 
   const doInstall = useCallback(
     async (scope: 'user' | 'project', projectId?: string) => {
-      setBusyAction(scope);
+      setBusyAction(actionOfScope(scope));
       try {
         const show = await attachment.install(scope, projectId);
         notify.success({ title: t`Installed`, message: attachment.name ?? attachment.asset_type ?? '' });
@@ -160,7 +172,7 @@ export function AssetInstallActions({
   const downloaded = attachment.effectiveScope != null;
 
   const doGitSetup = useCallback(async () => {
-    setBusyAction('setup');
+    setBusyAction(InstallAction.SETUP);
     try {
       const show = await attachment.runSetup();
       openDisplayTarget(show, navigation);
@@ -174,7 +186,7 @@ export function AssetInstallActions({
 
   const doUninstall = useCallback(async () => {
     // Only the installed scope's button shows Uninstall — it is the one that spins.
-    setBusyAction(installedScope);
+    setBusyAction(installedScope && actionOfScope(installedScope));
     try {
       await attachment.uninstall();
       notify.success({ title: t`Uninstalled`, message: attachment.name ?? attachment.asset_type ?? '' });
@@ -190,7 +202,7 @@ export function AssetInstallActions({
     async (id: string) => {
       const picked = projectItems.find((item) => item.id === id);
       if (!picked?.path) return;
-      setBusyAction('project');
+      setBusyAction(InstallAction.PROJECT);
       try {
         const project = await ensureProject(picked.path, { select: false });
         if (!project.id) throw new Error('picked project has no id');
@@ -231,7 +243,7 @@ export function AssetInstallActions({
     return <SharedOpenPanel attachment={attachment} initialOutcome={initialOutcome} />;
 
   if (isGit) {
-    const spinner = busyAction === 'setup' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
+    const spinner = busyAction === InstallAction.SETUP ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
     return (
       <div className="flex flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
@@ -263,7 +275,7 @@ export function AssetInstallActions({
         scope="project"
         installedScope={installedScope}
         busy={busy}
-        spinning={busyAction === 'project'}
+        spinning={busyAction === InstallAction.PROJECT}
         installLabel={setupLabel ?? <Trans>Install in project</Trans>}
         uninstallLabel={<Trans>Uninstall from project</Trans>}
         installIcon={<FolderDown className="h-3.5 w-3.5" />}
@@ -278,7 +290,7 @@ export function AssetInstallActions({
           scope="user"
           installedScope={installedScope}
           busy={busy}
-          spinning={busyAction === 'user'}
+          spinning={busyAction === InstallAction.USER}
           installLabel={<Trans>Install global</Trans>}
           uninstallLabel={<Trans>Uninstall</Trans>}
           installIcon={<Globe className="h-3.5 w-3.5" />}

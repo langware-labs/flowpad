@@ -65,11 +65,14 @@ export function insertMention(
   return { text: text.slice(0, start) + inserted + text.slice(caret), caret: start + inserted.length };
 }
 
+/** Whether `@Name` stands in the text as a whole word at any of its occurrences ("@Anna … @Ann" still has Ann). */
 function written(text: string, name: string): boolean {
-  const at = text.indexOf(`@${name}`);
-  if (at < 0) return false;
-  const after = text[at + name.length + 1];
-  return after === undefined || !/[\p{L}\p{N}_]/u.test(after);
+  const tag = `@${name}`;
+  for (let at = text.indexOf(tag); at >= 0; at = text.indexOf(tag, at + 1)) {
+    const after = text[at + tag.length];
+    if (after === undefined || !/[\p{L}\p{N}_]/u.test(after)) return true;
+  }
+  return false;
 }
 
 /** The ids of the picks whose `@Name` is still in the text -- a name edited away or deleted is no longer a tag. */
