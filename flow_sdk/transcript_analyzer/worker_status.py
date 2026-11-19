@@ -210,7 +210,8 @@ _IGNORED_TYPES: frozenset[str] = _ignored_types()
 # ``stop_hook_summary`` + ``turn_duration`` and only writes ``last-prompt`` much later
 # (at exit); read as the last meaningful entry they hid the ``end_turn`` before them
 # (often beyond the 4 KB window) and a finished PTY turn read UNKNOWN forever.
-_IGNORED_SYSTEM_SUBTYPES: frozenset[str] = frozenset({"turn_duration", "stop_hook_summary"})
+# ``away_summary`` is the recap written after a finished turn while the user is away.
+_IGNORED_SYSTEM_SUBTYPES: frozenset[str] = frozenset({"turn_duration", "stop_hook_summary", "away_summary"})
 
 
 # Tools whose ``tool_use`` block BLOCKS on a human response. While one is pending
