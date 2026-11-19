@@ -57,5 +57,5 @@ async def test_an_agent_on_an_open_channel_never_answers_the_echo_of_its_own_rep
 
     echo = await SourceItem.get_one({"id": str(reply.id)})
     assert echo.author_external_id == "U1" and echo.sent_by_us, "the echo is the same row, still ours"
-    assert worker.received_prompts == ["my order never arrived"], "the agent took its own reply as a customer's"
+    assert worker.received_messages == ["my order never arrived"], "the agent took its own reply as a customer's"
     assert len(double.sent()) == 1
