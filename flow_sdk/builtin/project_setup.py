@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional
 
 from flow_sdk.core.flow_command import flow_command
+from flow_sdk.core.oauth.provider_registry import grant_gap
 from flow_sdk.ingest.health import ACCESS_DENIED
 from flow_sdk.request_context.detached import add_detached_done_callback, create_detached_task
 from flow_sdk.schema.data_spec.compute_op_spec import AskOriginSpec, ComputeOpSpec
@@ -78,19 +79,19 @@ def _inside(path: str, root: str) -> bool:
 
 
 _ROOT_WORDS = {ROOT_SOURCE: "data source", ROOT_AGENT: "agent", ROOT_WEBAPP: "web app",
-               ROOT_DEPENDENCY: "dependency", ROOT_CREDENTIAL: "credential"}
+               ROOT_DEPENDENCY: "package", ROOT_CREDENTIAL: "credential"}
 
 
-def _said(what: str, name: str, detail: str, otherwise: str) -> str:
+def _said(what: str, name: str, detail: str | None, otherwise: str) -> str:
     """A row's one line, naming WHAT the thing is: "Web app site is not running". A detail that already starts
     with the name keeps its own sentence; any other detail follows the name; none says ``otherwise``."""
-    detail = detail.strip()
+    detail = (detail or "").strip()
     if not detail:
         return f"{what} {name} {otherwise}"
     return f"{what} {detail}" if detail.startswith(name) else f"{what} {name}: {detail}"
 
 
-#: A dependency's state as a row says it, when its resolver gave no reason of its own.
+#: The dependency states a setup row is made for, each as the row says it when its resolver gave no reason.
 _DEPENDENCY_STATE = {"missing": "is not on this computer yet", "unreachable": "cannot be reached",
                      "not_found": "was not found"}
 
@@ -264,7 +265,7 @@ def _from_row(row: "CredentialStatusRowSpec", roots: list[RootRef], project: "Pr
     if row.kind == "oauth":
         title = row.title or row.name
         note = {"needs_reauth": f"Your {title} sign-in expired — connect again",
-                "partial": f"{title} is missing permissions ({', '.join(row.missing_scopes)}) — connect again"}
+                "partial": grant_gap(row.missing_scopes, title)}
         return SetupRequirementSpec(
             kind=REQUIREMENT_PACK, credential_kind="oauth", name=row.name, title=row.title, typeid=row.typeid,
             provider=row.provider, scopes=list(row.scopes), help_url=row.help_url, **_why(row),
@@ -433,7 +434,7 @@ async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[Se
             req = _refused(_from_row(rows[name], roots, project), roots, refused)
             if wider := narrow.get(name):  # the setup step widens the row (``requirement_step``) before connecting
                 req = req.model_copy(update={"scopes": [*req.scopes, *wider], "satisfied": False,
-                                             "note": f"{req.title or req.name} is missing permissions ({', '.join(wider)}) — connect again"})
+                                             "note": grant_gap(wider, req.title or req.name)})
             out.append(req)
         elif name in templates:
             out.append(_from_template(templates[name], roots, project, skips))
@@ -452,7 +453,7 @@ async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[Se
     dependencies = []
     for dep in await project.dependencies():
         needs.updates += dep.behind > 0
-        if dep.state not in ("missing", "unreachable", "not_found"):
+        if dep.state not in _DEPENDENCY_STATE:
             continue
         key = project_dependencies.requirement_key(dep)
         # Declared in this project's flow.json — unless it came in through another dependency (``via``).
@@ -461,7 +462,7 @@ async def _collect(project: "Project", deployment_id: str = "") -> tuple[list[Se
         dependencies.append(SetupRequirementSpec(
             kind=REQUIREMENT_DEPENDENCY, name=key, title=dep.label or dep.source, typeid=str(project.typeid),
             satisfied=False, used_by=[PROJECT], required=dep.required,
-            note=_said("Package", key, str(dep.reason or ""), _DEPENDENCY_STATE.get(dep.state, "is not ready")),
+            note=_said("Package", key, dep.reason, _DEPENDENCY_STATE[dep.state]),
             skipped=skips.get(key), **skip_always_of(project, [root]),
         ))
     return dependencies + out + needs.gaps, needs
@@ -709,7 +710,7 @@ async def _running_here(project: "Project", sources: Optional[list] = None, *,
                              satisfied=source.status != SourceStatus.SETUP.value,
                              typeid=str(source.typeid), used_by=[PROJECT],
                              note=_said("Data source", str(source.name or source.provider),
-                                        str(source.setup_detail or ""), "is not set up yet")
+                                        source.setup_detail, "is not set up yet")
                              if source.status == SourceStatus.SETUP.value else "",
                              skipped=source.setup_skipped,
                              **skip_always_of(project, [_root(source, ROOT_SOURCE)]))
@@ -742,7 +743,7 @@ async def _running_here(project: "Project", sources: Optional[list] = None, *,
         records[i], answers[i] = record.read(str(app.id)), True
     out += [
         SetupRequirementSpec(kind=REQUIREMENT_WEBAPP, name=str(app.name), satisfied=bool(ok), used_by=[PROJECT],
-                             note=_said("Web app", str(app.name), str(rec.detail or ""), "is not running") if not ok else "up",
+                             note=_said("Web app", str(app.name), rec.detail, "is not running") if not ok else "up",
                              typeid=str(app.typeid), skipped=app.setup_skipped,
                              **skip_always_of(project, [_root(app, ROOT_WEBAPP)]))
         for app, rec, ok in zip(apps, records, answers) if include_ready or not ok
@@ -768,11 +769,18 @@ async def _automations_here(project: "Project", *, include_ready: bool = False) 
     return [row for row in rows if include_ready or not row.satisfied]
 
 
+def _decided_note(decided: bool, enabled: bool) -> str:
+    """An automation row's line: the choice made on this computer, nothing while it is still open."""
+    if not decided:
+        return ""
+    return "On for this computer" if enabled else "Off for this computer"
+
+
 def _automation_row(rule: Any) -> SetupRequirementSpec:
     return SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=str(rule.name), title=str(rule.name),
                                 typeid=str(rule.typeid), used_by=[PROJECT], satisfied=bool(rule.decided),
                                 needed_for=str(rule.description or ""),
-                                note="" if not rule.decided else ("On for this computer" if rule.enabled else "Off for this computer"))
+                                note=_decided_note(rule.decided, rule.enabled))
 
 
 async def _automation_group_row(parent_typeid: str, rules: list) -> SetupRequirementSpec:
@@ -781,7 +789,7 @@ async def _automation_group_row(parent_typeid: str, rules: list) -> SetupRequire
 
     parent = await Trigger.get_by_typeid(parent_typeid)
     decided = all(rule.decided for rule in rules)
-    note = "" if not decided else ("On for this computer" if all(rule.enabled for rule in rules) else "Off for this computer")
+    note = _decided_note(decided, all(rule.enabled for rule in rules))
     name = str(getattr(parent, "name", "") or parent_typeid)
     return SetupRequirementSpec(kind=REQUIREMENT_AUTOMATION, name=name, title=name, typeid=parent_typeid,
                                 used_by=[PROJECT], satisfied=decided, note=note,
@@ -942,7 +950,7 @@ async def requirement_step(project_id: str, which: str, *, check: bool) -> tuple
         need = await connection_need(provider)
         if need is not None:
             return False, need.detail
-        from flow_sdk.core.oauth.provider_registry import grant_gap, missing_granted  # noqa: PLC0415
+        from flow_sdk.core.oauth.provider_registry import missing_granted  # noqa: PLC0415
 
         # Checked against what the provider GRANTED, when that is known: a read-only grant cannot write back.
         if missing := await missing_granted(provider, [s for s in scopes.split(",") if s]):

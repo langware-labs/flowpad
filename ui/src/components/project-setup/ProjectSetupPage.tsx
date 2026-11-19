@@ -16,7 +16,7 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { detailOf, iconOf, namesItself, pointerForRequirement } from './ProjectSetupDialog';
+import { detailOf, iconOf, nameOf, pointerForRequirement } from './ProjectSetupDialog';
 import { rowId, rowKey, stepKind, usedByOf } from './setup-labels';
 import { countDrawn, stateGlyph } from './SetupTreeView';
 import { useSetupReadiness, withNotify } from './use-setup-readiness';
@@ -409,7 +409,7 @@ function StepRow({
     >
       <div className="flex items-center gap-2">
         <Icon className="size-4 shrink-0 text-muted-foreground" />
-        <span className="font-medium">{namesItself(req) ? req.name : req.title || req.name}</span>
+        <span className="font-medium">{nameOf(req)}</span>
         <Chip variant="muted">{i18n._(stepKind(req))}</Chip>
         <span data-testid={`project-setup-step-state-${id}`}>
           {liveChip && glyph ? (
