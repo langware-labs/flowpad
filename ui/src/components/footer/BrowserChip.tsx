@@ -75,7 +75,7 @@ function useBrowserStatus() {
   return { project, processId, status, refresh };
 }
 
-function Row({
+export function Row({
   icon,
   name,
   note,
@@ -140,7 +140,7 @@ const EXT_ROW: Record<ExtensionState, { note: React.ReactNode; tone: 'ok' | 'war
   not_installed: { note: <Trans>not installed</Trans>, tone: 'muted' },
 };
 
-const smallBtn = 'rounded px-2 py-0.5 text-[11px] border hover:bg-accent';
+export const smallBtn = 'rounded px-2 py-0.5 text-[11px] border hover:bg-accent';
 const primaryBtn = 'rounded px-2 py-0.5 text-[11px] bg-primary text-primary-foreground';
 
 /** Add browser: pick a kind → connect checks → done. v1 kinds: the extension (your Chrome)
@@ -287,6 +287,7 @@ export function BrowserChip() {
             data-testid="footer-browser-chip"
             data-state={state}
             data-browser={status.effective}
+            aria-label={label}
             title={status.last_use?.url ? `${label} · ${status.last_use.url}` : label}
             className={cn(
               'relative flex shrink-0 items-center gap-1 rounded-sm border border-transparent px-1.5 text-[10px] hover:bg-accent',
@@ -304,7 +305,6 @@ export function BrowserChip() {
                 />
               )}
             </span>
-            <span>{label}</span>
           </button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-80 p-0" data-testid="browser-picker">

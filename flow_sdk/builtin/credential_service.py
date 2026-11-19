@@ -1042,8 +1042,78 @@ def list_managers() -> list[dict[str, Any]]:
 
 
 async def list_vaults(project_id: str) -> dict[str, Any]:
-    """The project's vaults by name: ``{vaults: {name: {manager, config}}}`` — places, never values."""
-    return {"vaults": {n: v.model_dump(mode="json") for n, v in _vault_specs(await _project_of(project_id)).items()}}
+    """The project's vaults: ``{vaults: {name: {manager, config}}, rows, global, active}`` — places, never values.
+    ``rows``: each vault described (``ActiveVaultSpec``: title, usable here, default), the default first;
+    ``global``: this instance's vault; ``active``: the one in use for the project. Runs no manager."""
+    from flow_sdk.secrets import active  # noqa: PLC0415
+
+    rows = active.project_vaults(await _project_of(project_id))
+    shared, used = active.global_vault(), active.active_among(rows)
+    return {
+        "vaults": {row.name: row.vault.model_dump(mode="json") for row in rows},
+        "rows": [row.model_dump(mode="json") for row in rows],
+        "global": shared.model_dump(mode="json") if shared is not None else None,
+        "active": used.model_dump(mode="json") if used is not None else None,
+    }
+
+
+async def set_default_vault(project_id: str, name: str) -> dict[str, Any]:
+    """Name the project's default vault ("" clears it: the first by name is the default again); answers :func:`list_vaults`."""
+    from flow_sdk.assets.project_manifest import ManifestError, set_default_secret_vault  # noqa: PLC0415
+
+    project = await _project_of(project_id)
+    try:
+        set_default_secret_vault(Path(project.fs_storage_mount_path), name)
+    except ManifestError as e:
+        raise CredentialError(str(e), code="unknown_vault") from e
+    await project._reindex_manifest()
+    return await list_vaults(project_id)
+
+
+def set_global_vault(vault: Optional[Mapping[str, Any]]) -> dict[str, Any]:
+    """Name (``{manager, config}``) or clear (None) this instance's vault — the one used where a project names
+    none: ``{global}``."""
+    from flow_sdk.schema.data_spec.secret_vault_spec import SecretVaultSpec  # noqa: PLC0415
+    from flow_sdk.secrets import active  # noqa: PLC0415
+
+    try:
+        with store_errors():
+            active.set_global_vault(SecretVaultSpec.model_validate(dict(vault)) if vault is not None else None)
+    except ValidationError as e:
+        raise CredentialError(str(e)) from e
+    shared = active.global_vault()
+    return {"global": shared.model_dump(mode="json") if shared is not None else None}
+
+
+async def active_vault(project_id: str = "", target: str = "") -> dict[str, Any]:
+    """The vault ``target`` (a typeid; default: the project) uses — the most specific of entity, project and
+    this instance: ``{active: ActiveVaultSpec | None, instructions}``. ``instructions``: that manager's own,
+    for an agent. Runs no manager: places and names only."""
+    from flow_sdk.secrets import managers  # noqa: PLC0415
+    from flow_sdk.secrets.active import active_vault_of  # noqa: PLC0415
+
+    if target:
+        from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
+
+        entity = await DBEntity.get_by_typeid(target)
+        if entity is None:
+            raise CredentialError(f"{target} not found")
+    else:
+        entity = await get_project(project_id)
+    used = await active_vault_of(entity)
+    if used is None:
+        return {"active": None, "instructions": ""}
+    try:
+        instructions = managers.instructions_for(used.vault, name=used.name)
+    except managers.UnknownSecretManager:
+        instructions = ""
+    return {"active": used.model_dump(mode="json"), "instructions": instructions}
+
+
+async def vault_open(project_id: str, vault: str) -> dict[str, Any]:
+    """Where ``vault`` opens in its manager's own screen: ``{vault, url}`` ("" when the manager has none)."""
+    with store_errors():
+        return {"vault": vault, "url": await _vault_store(_vault_specs(await _project_of(project_id)), vault).open_url()}
 
 
 async def set_vault(project_id: str, name: str, vault: Optional[Mapping[str, Any]]) -> dict[str, Any]:

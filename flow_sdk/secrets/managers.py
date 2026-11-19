@@ -225,6 +225,34 @@ def shell_line(argv: list[str], env: Mapping[str, str], os: Optional[str] = None
     return " ".join([*(f"{k}={shlex.quote(v)}" for k, v in env.items()), shlex.join(argv)])
 
 
+def instructions_for(vault: Any, *, name: str = "") -> str:
+    """The manager's own instructions for an agent using this vault (its folder's ``instructions.md``, the
+    vault's config filled in like a command, ``{name}`` the vault's name in the project); "" when it ships none."""
+    spec, values = _prepared(vault, name)
+    try:
+        text = (SHIPPED_ROOT / spec.name / "instructions.md").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    return text.strip().format_map(_Keep({**{k: str(v) for k, v in values.items()}, "name": name}))
+
+
+def title_of(manager: str) -> str:
+    """The manager's title for a screen; its name when it has none or is unknown here."""
+    try:
+        return get_manager(manager).title or manager
+    except UnknownSecretManager:
+        return manager
+
+
+def missing_tool(vault: Any) -> str:
+    """What this computer lacks to use ``vault``: its manager's command line, or the manager's own name when
+    it is unknown here; "" when nothing. Runs nothing."""
+    try:
+        return tool_missing(vault)
+    except UnknownSecretManager:
+        return _vault_parts(vault)[0]
+
+
 def tool_missing(vault: Any) -> str:
     """The tool the vault's manager drives (its ``check``'s program) when it is not on this machine, else "".
     Runs nothing — no unlock prompt — so it is cheap enough for every status read."""
@@ -297,6 +325,6 @@ def _vault_name(vault: Any, config: Mapping[str, Any]) -> str:
 
 
 __all__ = [
-    "OSES", "SecretManagerSpec", "UnknownSecretManager", "cli_command", "get_manager", "list_managers", "load_managers",
-    "run_check", "run_grant", "shell_line", "store_class", "store_for", "tool_missing", "vault_command",
+    "OSES", "SecretManagerSpec", "UnknownSecretManager", "cli_command", "get_manager", "instructions_for", "list_managers",
+    "load_managers", "missing_tool", "run_check", "run_grant", "shell_line", "store_class", "store_for", "title_of", "tool_missing", "vault_command",
 ]

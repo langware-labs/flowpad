@@ -113,6 +113,9 @@ class GcpVaultStore(SecretStore):
     def where(self) -> str:
         return f"GCP project {self.config.project}" + (f" · {self.config.prefix}*" if self.config.prefix else "")
 
+    async def open_url(self) -> str:
+        return f"https://console.cloud.google.com/security/secret-manager?project={self.config.project}"
+
     async def load(self, names: Iterable[str]) -> dict[str, SecretStr]:
         wanted = self._secret_ids(names)
         out: dict[str, SecretStr] = {}

@@ -373,6 +373,20 @@ def read_secret_vaults(root: Path) -> dict[str, SecretVaultSpec]:
     return dict(spec.secret_vaults) if spec is not None else {}
 
 
+def read_secret_vault_setup(root: Path) -> tuple[dict[str, SecretVaultSpec], str]:
+    """The project's vaults and the one its manifest names as default ("" when none), in one read. Never raises."""
+    spec = _read_lenient(root)
+    return (dict(spec.secret_vaults), spec.default_secret_vault) if spec is not None else ({}, "")
+
+
+def set_default_secret_vault(root: Path, name: str) -> ProjectManifestSpec:
+    """Name the project's default vault ("" clears it); it must be one the project declares."""
+    name = (name or "").strip()
+    if name and name not in read_secret_vaults(root):
+        raise ManifestError(f"secret vault {name!r}: the project declares no vault by that name")
+    return _set_field(root, "default_secret_vault", name, clears=not name)
+
+
 def set_secret_vault(root: Path, name: str, spec: Optional[Mapping[str, Any]]) -> ProjectManifestSpec:
     """Add or replace (or, with None, remove) the vault ``name``; returns the manifest. The vault
     must name a known secret manager — a typo is refused here, not discovered by the teammate

@@ -11,6 +11,7 @@ import pytest
 from pydantic import SecretStr
 
 from flow_sdk.builtin import credential_service as svc
+from flow_sdk.schema.data_spec.secret_vault_spec import SecretVaultSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.secrets import StoreAccessDenied
 from flow_sdk.secrets.store import SecretStore, plain_values, register_store
@@ -96,8 +97,11 @@ async def _cred(pid: str, values: dict[str, str]):
 async def test_vaults_add_list_remove(home, project, pid):
     await _vault(pid, "team")
     listed = await svc.list_vaults(pid)
-    assert listed == {"vaults": {"team": {"manager": "memvault", "config": {"vault": "v-team"}}}}
-    assert (await svc.set_vault(pid, "team", None)) == {"vaults": {}}
+    assert listed["vaults"] == {"team": {"manager": "memvault", "config": {"vault": "v-team"}}}
+    row = listed["rows"][0]
+    assert (row["name"], row["manager_title"], row["usable"], row["is_default"]) == ("team", "Mem vault", True, True)
+    assert listed["active"]["name"] == "team" and listed["global"] is None
+    assert (await svc.set_vault(pid, "team", None))["vaults"] == {}
 
 
 async def test_an_unknown_manager_is_refused(home, project, pid):
@@ -176,3 +180,43 @@ async def test_check_and_grant(home, project, pid):
     assert await svc.vault_check(pid, "team") == {"vault": "team", "ready": True, "reason": ""}
     assert await svc.grant(pid, "team", "bob@x.test") == {"vault": "team", "email": "bob@x.test"}
     assert GRANTS == [("v-team", "bob@x.test")]
+
+
+async def test_active_vault_most_specific_scope_wins(home, project, pid, monkeypatch):
+    """entity > project default > first by name > this instance's vault (flow_sdk/secrets/active.py)."""
+    from flow_sdk.secrets import active
+
+    shared = active.describe(active.SecretScope.GLOBAL, "global", SecretVaultSpec(manager="memvault", config={"vault": "v-mine"}))
+    monkeypatch.setattr(active, "global_vault", lambda: shared)
+    assert (await active.active_vault_of(project)).scope == active.SecretScope.GLOBAL
+    await _vault(pid, "team")
+    await _vault(pid, "infra")
+    assert (await active.active_vault_of(project)).name == "infra", "no default named: the first by name"
+    assert (await svc.set_default_vault(pid, "team"))["rows"][0]["name"] == "team"
+    found = await active.active_vault_of(project)
+    assert (found.scope, found.name, found.usable) == (active.SecretScope.PROJECT, "team", True)
+    await _cred(pid, {"ACME_KEY": "k"})
+    await svc.publish("acme", pid, "infra")
+    own = await active.active_vault_of(await svc.credential_named("acme", project))
+    assert (own.scope, own.name) == (active.SecretScope.ENTITY, "infra"), "the credential's own vault beats the default"
+    with pytest.raises(svc.CredentialError):
+        await svc.set_default_vault(pid, "nope")
+    with pytest.raises(svc.CredentialError):
+        svc.set_global_vault({"manager": "no-such-manager"})
+
+
+async def test_read_secrets_env_first_then_the_active_vault_and_saves_nothing(home, project, pid, monkeypatch):
+    from flow_sdk.secrets import active
+    from flow_sdk.secrets.errors import MissingSecrets
+
+    monkeypatch.setenv("FROM_ENV", "e")
+    assert {k: v.get_secret_value() for k, v in (await active.read_secrets(["FROM_ENV"], project)).items()} == {"FROM_ENV": "e"}
+    with pytest.raises(active.NoActiveVault):
+        await active.read_secrets(["STRIPE_API_KEY"], project)
+    await _vault(pid, "team")
+    VAULTS["v-team"] = {"STRIPE_API_KEY": "from-vault"}
+    held = await active.read_secrets(["FROM_ENV", "STRIPE_API_KEY"], project)
+    assert held["STRIPE_API_KEY"].get_secret_value() == "from-vault"
+    with pytest.raises(MissingSecrets):
+        await active.read_secrets(["NOPE"], project)
+    assert not (Path(project.fs_storage_mount_path) / ".env.local").exists()

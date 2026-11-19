@@ -196,6 +196,38 @@ export interface SecretVault {
   config: Record<string, unknown>;
 }
 
+/** Where the vault in use was declared: the most specific wins. */
+export enum SecretScope {
+  ENTITY = 'entity',
+  PROJECT = 'project',
+  GLOBAL = 'global',
+}
+
+/** One vault as the server describes it (`ActiveVaultSpec`, `flow_sdk/secrets/active.py`). Never a value. */
+export interface ActiveVault {
+  scope: SecretScope;
+  name: string;
+  vault: SecretVault;
+  manager_title: string;
+  /** The manager's command line when it is not on this computer, else "". */
+  missing_tool: string;
+  /** This computer has the manager's command line. */
+  usable: boolean;
+  /** A project vault: it is the project's default. */
+  is_default: boolean;
+}
+
+/** The project's vaults as the server lists them. */
+export interface SecretVaultList {
+  vaults: Record<string, SecretVault>;
+  /** Each vault described, the default first. */
+  rows: ActiveVault[];
+  /** This instance's vault, used where a project names none. */
+  global: ActiveVault | null;
+  /** The vault in use for the project: its default, else the global one. */
+  active: ActiveVault | null;
+}
+
 /** A secret manager installed here (its `secret_manager.json`). */
 export interface SecretManagerInfo {
   name: string;
@@ -403,12 +435,46 @@ export class CredentialsService {
     return res?.managers ?? [];
   }
 
-  /** The project's vaults by name. */
-  async vaults(projectId: string): Promise<Record<string, SecretVault>> {
+  /** The project's vaults described, this instance's global one and the one in use. Runs no manager,
+   *  so it never raises an unlock prompt. */
+  async vaultList(projectId: string): Promise<SecretVaultList> {
     const action = this.action('vaults', 'GET');
     action.queryParameters = { project_id: projectId };
-    const res = await dataManager.callAction<unknown, { vaults?: Record<string, SecretVault> }>(action);
-    return res?.vaults ?? {};
+    return this.asVaultList(await dataManager.callAction<unknown, Partial<SecretVaultList>>(action));
+  }
+
+  private asVaultList(res: Partial<SecretVaultList> | null | undefined): SecretVaultList {
+    return { vaults: res?.vaults ?? {}, rows: res?.rows ?? [], global: res?.global ?? null, active: res?.active ?? null };
+  }
+
+  /** Name (or, with null, clear) this instance's vault — the one used where a project names none. */
+  async setGlobalVault(vault: SecretVault | null): Promise<ActiveVault | null> {
+    const action = this.action('vault-global', 'POST');
+    action.bodyParameters = { spec: vault };
+    return (await dataManager.callAction<unknown, { global?: ActiveVault | null }>(action))?.global ?? null;
+  }
+
+  /** The vault `target` (a typeid; default: the project) uses — entity, else project, else this instance's —
+   *  with its manager's own instructions. `active` is null when nothing names one. */
+  async activeVault(projectId?: string | null, target?: string | null): Promise<{ active: ActiveVault | null; instructions: string }> {
+    const action = this.action('active', 'GET');
+    action.queryParameters = { ...(projectId ? { project_id: projectId } : {}), ...(target ? { target } : {}) };
+    const res = await dataManager.callAction<unknown, { active?: ActiveVault | null; instructions?: string }>(action);
+    return { active: res?.active ?? null, instructions: res?.instructions ?? '' };
+  }
+
+  /** Make `name` the project's default vault ("" clears it). */
+  async setDefaultVault(projectId: string, name: string): Promise<SecretVaultList> {
+    const action = this.action('vault-default', 'POST');
+    action.bodyParameters = { project_id: projectId, name };
+    return this.asVaultList(await dataManager.callAction<unknown, Partial<SecretVaultList>>(action));
+  }
+
+  /** Where `vault` opens in its manager's own screen; "" when that manager has none. */
+  async vaultOpenUrl(projectId: string, vault: string): Promise<string> {
+    const action = this.action('vault-open', 'POST');
+    action.bodyParameters = { project_id: projectId, vault };
+    return (await dataManager.callAction<unknown, { url?: string }>(action))?.url ?? '';
   }
 
   /** Add or replace the project's vault `name`; answers every vault. */

@@ -191,6 +191,9 @@ class ProjectManifestSpec(DataSpec):
     #: in, a receiver fetches it into their own store. Empty: the project has none, and a
     #: credential cannot be shared with its values. A vault names a place, never a value.
     secret_vaults: dict[str, SecretVaultSpec] = Field(default_factory=dict)
+    #: The vault this project's agents and shares use when nothing more specific names one
+    #: (``flow_sdk/secrets/active.py``). Empty: the first of ``secret_vaults`` by name.
+    default_secret_vault: str = ""
     #: The browser this project's agent sessions use: ``agent`` — Flowpad's own Chrome window
     #: (always available) — or ``extension`` — the user's Chrome through Claude in Chrome. A
     #: session may override it; a harness with no extension (Codex) always gets ``agent``.
@@ -323,6 +326,9 @@ class ProjectManifestSpec(DataSpec):
         if not document.get("secret_vaults"):
             # Silent for ``home_page``'s second reason: an older desk would refuse the key.
             document.pop("secret_vaults", None)
+        if not document.get("default_secret_vault"):
+            # Silent for ``home_page``'s second reason: an older desk would refuse the key.
+            document.pop("default_secret_vault", None)
         return document
 
 

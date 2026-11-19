@@ -67,11 +67,14 @@ async def credentials_action() -> ApiResponse:
             except ValueError as e:
                 return ApiFailResponse(message=str(e))
             return ApiSuccessResponse(data=status.model_dump(mode="json"))
-        if method == "GET" and sub_path in ("managers", "vaults"):
+        if method == "GET" and sub_path in ("managers", "vaults", "active"):
             from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
 
             if sub_path == "managers":
                 return ApiSuccessResponse(data={"managers": svc.list_managers()})
+            if sub_path == "active":
+                params = request_info.request.query_params
+                return ApiSuccessResponse(data=await svc.active_vault(params.get("project_id") or "", params.get("target") or ""))
             return ApiSuccessResponse(data=await svc.list_vaults(request_info.request.query_params.get("project_id") or ""))
         if method == "POST":
             payload = await request_info.get_post_data() or {}
@@ -146,7 +149,7 @@ async def credentials_action() -> ApiResponse:
                 from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
 
                 return ApiSuccessResponse(data=await svc.test_credential(payload.get("name") or "", payload.get("project_id") or ""))
-            if sub_path in ("publish", "fetch", "vault-check", "vault-setup", "grant", "vault-set", "vault-remove"):
+            if sub_path in ("publish", "fetch", "vault-check", "vault-setup", "grant", "vault-set", "vault-remove", "vault-default", "vault-open", "vault-global"):
                 from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
 
                 pid, vault = payload.get("project_id") or "", payload.get("vault") or ""
@@ -165,6 +168,12 @@ async def credentials_action() -> ApiResponse:
                     return ApiSuccessResponse(data=await svc.vault_setup(pid, vault))
                 if sub_path == "grant":
                     return ApiSuccessResponse(data=await svc.grant(pid, vault, payload.get("email") or ""))
+                if sub_path == "vault-default":
+                    return ApiSuccessResponse(data=await svc.set_default_vault(pid, payload.get("name") or ""))
+                if sub_path == "vault-global":
+                    return ApiSuccessResponse(data=svc.set_global_vault(payload.get("spec")))
+                if sub_path == "vault-open":
+                    return ApiSuccessResponse(data=await svc.vault_open(pid, vault))
                 spec = payload.get("spec") if sub_path == "vault-set" else None
                 return ApiSuccessResponse(data=await svc.set_vault(pid, payload.get("name") or "", spec))
             if sub_path == "audit":

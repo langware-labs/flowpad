@@ -191,6 +191,25 @@ any process reads: a process still reads its deployment's binding (above).
   through the same ask-for-help path, and the owner grants it in the store itself (GCP IAM
   `roles/secretmanager.secretAccessor`; a 1Password vault share). Flowpad grants nothing itself yet.
 
+### The active vault — the one an agent reads from
+
+`flow_sdk/secrets/active.py` answers "which vault applies here?" for any target, the most specific
+scope winning (`SecretScope`): the **entity**'s own (`secret_vault()` on the entity — a credential names
+the vault its variables point into), else its **project**'s default (`default_secret_vault` in
+`project_manifest.json`, else the first of `secret_vaults` by name), else this instance's **global**
+vault (`preferences.secrets.vault` in `preferences.json`, written by `set_global_vault`, which refuses an
+unknown manager). `active_vault_of(target)` returns it as an `ActiveVaultSpec` (title, `usable` here,
+`is_default`); it runs no manager, so reading it never raises an unlock prompt. `read_secrets(names,
+target)` is the read: the environment first, else that vault, never a write.
+
+An agent that lacks a secret in its environment reads it from there (the rule is in
+`instructions/common.md`): `flow secrets run NAME[,NAME] -- <command>` hands the values to that one
+command and saves nothing; `flow secrets active` says which vault is in use and prints its manager's
+own instructions (`agentic-assets/secret_manager/<name>/instructions.md`). `flow secrets vault default
+<name>` names the project's default. `GET …/credentials/active?project_id=&target=<typeid>` is the same
+answer over HTTP. `GET …/credentials/vaults` lists a project's vaults described (`rows`), the `global` one
+and the `active` one in one answer; the footer's key chip (`useSecretManager`) renders it.
+
 The `onepassword` secret manager (`agentic-assets/secret_manager/onepassword/store.py`) runs the `op` CLI as whoever is signed in
 on the machine; a value never rides its command line (writes go as a JSON template on stdin).
 

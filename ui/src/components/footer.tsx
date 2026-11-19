@@ -2,6 +2,7 @@ import { LanguageSelector } from '@src/components/footer/LanguageSelector';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { LiveSessionsChip } from '@src/components/footer/LiveSessionsChip';
 import { BrowserChip } from '@src/components/footer/BrowserChip';
+import { SecretManagerChip } from '@src/components/footer/SecretManagerChip';
 import { ActivityStatusPill } from '@src/components/footer/ActivityStatusPill';
 import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
 import { PoweredBy } from '@src/components/powered-by';
@@ -76,6 +77,7 @@ export function Footer({ className = '' }: FooterProps) {
         <div className="flex w-full min-w-0 items-center justify-end gap-1 overflow-hidden sm:ms-auto sm:w-auto sm:flex-none sm:gap-2">
           {!isHubOnly() && <LiveSessionsChip />}
           {!isHubOnly() && <BrowserChip />}
+          {!isHubOnly() && <SecretManagerChip />}
           <PendingActionsChip />
           <AdvancedOnly reserve={false}>
             <IndexerStatusPill />
