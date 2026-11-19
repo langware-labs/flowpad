@@ -32,7 +32,7 @@ class QAEntity(Entity):
 
     async def find_existing_for_create(self) -> "Entity | None":
         schema_self = SchemaRegistry.get(self.get_type())
-        natural_keys = schema_self.natural_key if schema_self is not None else []
+        natural_keys = schema_self.natural_key or [] if schema_self is not None else []
 
         key = {name: getattr(self, name) for name in natural_keys}
         if any(value in (None, "") for value in key.values()):
