@@ -138,6 +138,7 @@ export function QuickPromptsMenu({
                   type="button"
                   onClick={() => saveMine(last)}
                   data-testid="quick-prompt-last"
+                  // w-0 + min-w-full: fills the menu without its long text setting the menu's width.
                   className="mt-1 flex w-0 min-w-full items-center gap-1.5 rounded px-1.5 py-1.5 text-start text-xs text-muted-foreground hover:bg-muted"
                 >
                   <Plus className="h-3 w-3 shrink-0" />
