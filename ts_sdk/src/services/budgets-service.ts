@@ -195,9 +195,7 @@ function budgetsRead(type: 'organization' | 'team', id: string) {
 export class BudgetsService {
   /** Every org and team the caller is on, with `can_read_budgets` answered by the hub's own policy. */
   async myScopes(): Promise<MyScope[]> {
-    const data = await dataManager.callAction<undefined, { scopes: MyScope[] }>(
-      hubAction('scopes', 'token_plan', null, 'GET'),
-    );
+    const data = await dataManager.callAction<undefined, { scopes: MyScope[] }>(hubAction('scopes', 'token_plan', null, 'GET'));
     return data.scopes;
   }
 

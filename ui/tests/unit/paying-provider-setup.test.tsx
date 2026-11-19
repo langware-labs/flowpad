@@ -286,6 +286,35 @@ describe("PayingProviderSetup — Vertex on Flowpad's own Google identity (no ke
     expect(h.setCredential).not.toHaveBeenCalled();
   });
 
+  it('says the organization was created, not that activation failed, when the status read fails', async () => {
+    h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
+    h.getChain.mockRejectedValue(new Error('hub blip'));
+    const user = userEvent.setup();
+    await chooseVertexWithoutKey(user);
+    fireEvent.click(screen.getByTestId('org-root-activate'));
+
+    const { notify } = await import('@src/notifications');
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    const title = vi.mocked(notify.error).mock.calls[0][0].title;
+    expect(title).toMatch(/created, but its status could not be read/);
+    expect(title).not.toMatch(/Could not activate/);
+    expect(h.invalidate).toHaveBeenCalled();
+    expect(h.setCredential).not.toHaveBeenCalled();
+  });
+
+  it('tells a person who was not granted to ask an admin or add a key, and stores nothing', async () => {
+    h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
+    h.getChain.mockResolvedValue({ hops: [{ id: ENDPOINT_BARE, has_credential: false }] });
+    const user = userEvent.setup();
+    await chooseVertexWithoutKey(user);
+    fireEvent.click(screen.getByTestId('org-root-activate'));
+
+    const { notify } = await import('@src/notifications');
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    expect(vi.mocked(notify.error).mock.calls[0][0].message).toMatch(/Ask an admin to grant it/);
+    expect(h.setCredential).not.toHaveBeenCalled();
+  });
+
   it('goes back to the key form when the choice is undone', async () => {
     const user = userEvent.setup();
     await chooseVertexWithoutKey(user);

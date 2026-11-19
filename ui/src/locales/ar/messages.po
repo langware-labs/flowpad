@@ -22855,6 +22855,10 @@ msgstr ""
 msgid "Open Backup Folder"
 msgstr "فتح مجلد النسخ الاحتياطي"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Open Billing & keys to see whether it is active."
+msgstr ""
+
 #: src/components/footer/BrowserChip.tsx
 msgid "Open Chrome Web Store"
 msgstr ""
@@ -23780,6 +23784,10 @@ msgstr ""
 #: src/components/organization/organization-page.tsx
 msgid "Organization created"
 msgstr "تم إنشاء المؤسسة"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Organization created, but its status could not be read"
+msgstr ""
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Organization created, but the key was not saved"
@@ -32925,8 +32933,12 @@ msgid "The one you already took"
 msgstr "التشخيص الذي أجريته بالفعل"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "The organization was created. Add your own key below."
+msgid "The organization was created without a credential. Ask an admin to grant it, or add your own key below."
 msgstr ""
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+#~ msgid "The organization was created. Add your own key below."
+#~ msgstr ""
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/FlowMessageBubble.tsx

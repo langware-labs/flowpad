@@ -22855,6 +22855,10 @@ msgstr ""
 msgid "Open Backup Folder"
 msgstr "פתחו תיקיית גיבוי"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Open Billing & keys to see whether it is active."
+msgstr "פתח את Billing & keys כדי לראות אם הוא פעיל."
+
 #: src/components/footer/BrowserChip.tsx
 msgid "Open Chrome Web Store"
 msgstr ""
@@ -23780,6 +23784,10 @@ msgstr ""
 #: src/components/organization/organization-page.tsx
 msgid "Organization created"
 msgstr "הארגון נוצר"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Organization created, but its status could not be read"
+msgstr "הארגון נוצר, אבל לא ניתן היה לקרוא את מצבו"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Organization created, but the key was not saved"
@@ -32925,8 +32933,12 @@ msgid "The one you already took"
 msgstr "זה שכבר ביצעתם"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
-msgid "The organization was created. Add your own key below."
-msgstr "הארגון נוצר. הוסף מפתח משלך למטה."
+msgid "The organization was created without a credential. Ask an admin to grant it, or add your own key below."
+msgstr "הארגון נוצר בלי credential. בקש ממנהל להעניק אותו, או הוסף מפתח משלך למטה."
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+#~ msgid "The organization was created. Add your own key below."
+#~ msgstr "הארגון נוצר. הוסף מפתח משלך למטה."
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/FlowMessageBubble.tsx

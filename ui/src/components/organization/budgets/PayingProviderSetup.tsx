@@ -247,9 +247,23 @@ function OrgKeyCreateForm({
         // No key to store. The hub decides whether this person may use its identity, and says so only by what the
         // root can do: a root that reports no credential was not granted, and the key form below takes over.
         const endpointId = endpointIdFromTypeId(created.endpoint_id);
-        const chain = await llmEndpointsService.getChain(endpointId);
+        let granted: boolean;
+        try {
+          const chain = await llmEndpointsService.getChain(endpointId);
+          granted = chain.hops.some((hop) => hop.id === endpointId && hop.has_credential);
+        } catch (e) {
+          // The root exists. Only the status read failed, so say that instead of "could not activate": the
+          // organization may already be active, and re-submitting a form that has moved on would be wrong.
+          void invalidate();
+          notify.error({
+            title: t`Organization created, but its status could not be read`,
+            message: errorMessage(e, t`Open Billing & keys to see whether it is active.`),
+            id: 'org-root',
+          });
+          return;
+        }
         void invalidate();
-        if (chain.hops.some((hop) => hop.id === endpointId && hop.has_credential)) {
+        if (granted) {
           notify.success({
             title: t`Organization activated`,
             message: t`Spending now bills Flowpad's Google Vertex AI.`,
@@ -258,7 +272,7 @@ function OrgKeyCreateForm({
         } else {
           notify.error({
             title: t`Flowpad's Google identity is not available to you`,
-            message: t`The organization was created. Add your own key below.`,
+            message: t`The organization was created without a credential. Ask an admin to grant it, or add your own key below.`,
             id: 'org-root',
           });
         }

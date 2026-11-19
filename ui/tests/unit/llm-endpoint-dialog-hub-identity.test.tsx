@@ -27,7 +27,7 @@ vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn(
 
 import { LLMEndpoint } from '@sdk';
 
-import { LlmEndpointDialog } from '@src/components/llm-endpoints/LlmEndpointDialog';
+import { explainsHubIdentity, LlmEndpointDialog } from '@src/components/llm-endpoints/LlmEndpointDialog';
 
 const ID = '00000001-0000-4000-8000-000000000000';
 
@@ -85,5 +85,32 @@ describe('LlmEndpointDialog: hub-identity Vertex root', () => {
     renderDialog(root({ provider: 'openrouter', credential_hint: '' }));
     await waitFor(() => expect(h.getChain).toHaveBeenCalled());
     expect(screen.queryByTestId('hub-identity-note')).toBeNull();
+  });
+});
+
+describe('explainsHubIdentity (the pure rule)', () => {
+  const hop = { is_root: true, has_credential: true };
+  const base = { local: false, provider: 'vertex', editing: { credential_hint: '' }, storedHint: '', hop };
+
+  it('says it for a Vertex root with a credential and no key', () => {
+    expect(explainsHubIdentity(base)).toBe(true);
+  });
+
+  it('does not say it for a root that holds a key, even on the first frame before storedHint catches up', () => {
+    expect(
+      explainsHubIdentity({ ...base, editing: { credential_hint: 'service account a@b.iam' }, storedHint: '' }),
+    ).toBe(false);
+    expect(explainsHubIdentity({ ...base, storedHint: '****1234' })).toBe(false);
+  });
+
+  it.each([
+    ['a local endpoint', { local: true }],
+    ['another provider', { provider: 'openrouter' }],
+    ['a create (nothing being edited)', { editing: null }],
+    ['a root with no credential', { hop: { is_root: true, has_credential: false } }],
+    ['a chain', { hop: { is_root: false, has_credential: true } }],
+    ['no hop yet', { hop: undefined }],
+  ])('does not say it for %s', (_name, change) => {
+    expect(explainsHubIdentity({ ...base, ...change } as typeof base)).toBe(false);
   });
 });
