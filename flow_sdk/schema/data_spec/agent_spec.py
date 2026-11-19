@@ -1,5 +1,6 @@
 """Filesystem contracts independent of application entities."""
 
+from enum import StrEnum
 from typing import ClassVar, Optional
 
 from flow_sdk.schema.data_spec import AssetDocumentSpec
@@ -11,6 +12,18 @@ from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 
 #: The launch settings a deployment may override for its main agent (``Deployment.main_agent_overrides``).
 PLACE_OVERRIDABLE_FIELDS: tuple[str, ...] = ("worker_type", "model", "permission_mode", "effort", "mcp_servers")
+
+
+class AgentReplyMode(StrEnum):
+    """Whether the text an agent's turn ends with is sent back to the person it is answering.
+
+    ``NEVER`` never sends it; ``ALWAYS`` always does; ``AUTO`` sends it only while the agent is the one handling
+    the conversation, i.e. no person attends it (a help desk ticket nobody picked up).
+    """
+
+    NEVER = "never"
+    AUTO = "auto"
+    ALWAYS = "always"
 
 
 class AgentSpec(AssetDocumentSpec):
@@ -48,6 +61,9 @@ class AgentSpec(AssetDocumentSpec):
     #: Which of the assistant's skills to load, by folder name. Unset = all of them.
     assistant_skills: Optional[list[str]] = None
     chief_of_staff: Optional[bool] = None
+    #: Whether a turn's closing text goes back to the person. Unset: the channel's driver declares its own default
+    #: (a help desk says ``auto``), else ``always``.
+    reply_mode: Optional[AgentReplyMode] = None
     cli_options: Optional[dict] = None
     enabled: Optional[bool] = None
     intro: Optional[str] = None

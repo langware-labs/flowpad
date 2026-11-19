@@ -1,4 +1,11 @@
-import { ROLE_ORDER, ROLE_GRANTS, newInviteRoles, grantableRoleSet, canManageRoles, type ConversationParticipant } from '@sdk';
+import {
+  ROLE_ORDER,
+  ROLE_GRANTS,
+  newInviteRoles,
+  grantableRoleSet,
+  canManageRoles,
+  type ConversationParticipant,
+} from '@sdk';
 
 /** Same cap as the hub's ``NAME_FROM_EMAIL_MAX``. */
 const NAME_FROM_EMAIL_MAX = 20;
@@ -112,17 +119,22 @@ export function participantRoleLabel(participant: ConversationParticipant | null
   return participantRoles(participant).join(', ');
 }
 export const PARENT_ROLES: readonly string[] = ROLE_ORDER;
-export const CONFERRABLE_ROLES: readonly string[] = ROLE_GRANTS.owner;
+/** `guest` is an agent-only role the hub gives (it may only post a guest message): no picker offers it. */
+export const withoutGuest = (roles: readonly string[]): string[] => roles.filter((role) => role !== 'guest');
+export const CONFERRABLE_ROLES: readonly string[] = withoutGuest(ROLE_GRANTS.owner);
 export function participantIsOwner(participant: ConversationParticipant | null | undefined): boolean {
   return participantRoles(participant).includes('owner');
 }
-export function assignableRoles(me: ConversationParticipant | null | undefined, target: ConversationParticipant | null | undefined): string[] {
+export function assignableRoles(
+  me: ConversationParticipant | null | undefined,
+  target: ConversationParticipant | null | undefined,
+): string[] {
   if (!target?.user_id || me?.user_id === target.user_id) return [];
   if (!canManageRoles(participantRoles(me), participantRoles(target))) return [];
-  return grantableRoleSet(participantRoles(me));
+  return withoutGuest(grantableRoleSet(participantRoles(me)));
 }
 export function grantableRoles(me: ConversationParticipant | null | undefined, entityType?: string): string[] {
-  return newInviteRoles(participantRoles(me), entityType ?? "");
+  return withoutGuest(newInviteRoles(participantRoles(me), entityType ?? ''));
 }
 export function canInviteMembers(me: ConversationParticipant | null | undefined, entityType?: string): boolean {
   return grantableRoles(me, entityType).length > 0;

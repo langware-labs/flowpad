@@ -22,6 +22,7 @@ export type AgentDocumentPatch = Partial<
     | 'load_flowpad_assistant'
     | 'assistant_skills'
     | 'chief_of_staff'
+    | 'reply_mode'
     | 'cli_options'
     | 'enabled'
     | 'intro'

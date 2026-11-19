@@ -68,7 +68,6 @@ import { DiagnosisMessageActions } from './DiagnosisMessageActions';
 import { HelpRequestLine } from './HelpRequestLine';
 import { IssueReplyLine } from './IssueReplyLine';
 import { highlightMentions, namesOfMentioned } from './mentions';
-import { TicketDraftLine } from './TicketDraftLine';
 import { ItReplyLine } from './ItReplyLine';
 import { ItSendTable } from './ItSendTable';
 import type { ItSend } from './it-sends';
@@ -870,7 +869,6 @@ export function FlowMessageBubble({
         <ItReplyLine reply={fm.it_reply} agentId={fm.sender_id ?? ''} conversationId={fm.conversation_id ?? ''} />
       )}
       {issueCard && <IssueReplyLine reply={issueCard} />}
-      {fm.ticket_draft && <TicketDraftLine draft={fm.ticket_draft} messageId={messageId} text={fm.text ?? ''} />}
       {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {isHelpRequest && <HelpRequestLine conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {isDiagnosis && <DiagnosisMessageActions conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}

@@ -95,16 +95,3 @@ async def test_an_update_without_an_issue_never_rewrites_text():
     stored = await FlowMessage.get_one({"id": fm.id})
     assert stored.text == "what the sender wrote"
     assert stored.issue_reply is None
-
-
-def test_a_ticket_draft_rides_the_hub_metadata_and_follows_its_decision():
-    """An agent's draft in a ticket's team conversation: pending on arrival, then sent as the hub decides it."""
-    from flow_sdk.builtin.flow_message import FlowMessageKind, derive_ticket_draft
-
-    fm = FlowMessage.model_validate({"text": "Try signing out and in again."})
-    derive_ticket_draft(fm, {"metadata": {"ticket_draft": {"ticket_id": "t-1", "status": "pending"}}})
-    assert fm.kind is FlowMessageKind.TICKET_DRAFT and fm.ticket_draft["status"] == "pending"
-    derive_ticket_draft(fm, {"metadata": {"ticket_draft": {"ticket_id": "t-1", "status": "sent", "by": "Noa"}}})
-    assert fm.ticket_draft == {"ticket_id": "t-1", "status": "sent", "by": "Noa"}
-    derive_ticket_draft(fm, {"text": "no metadata"})  # a refresh without it keeps the last decision
-    assert fm.ticket_draft["status"] == "sent"

@@ -1973,6 +1973,26 @@ msgstr "{who} asks for access to vault <0>{vault}</0>{0}"
 msgid "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
 msgstr "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
 
+#: src/components/conversation/SteerLine.tsx
+msgid "{who} steered the support agent"
+msgstr "{who} steered the support agent"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message being screened"
+msgstr "{who}: message being screened"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message held by screening{reasons}"
+msgstr "{who}: message held by screening{reasons}"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message passed screening"
+msgstr "{who}: message passed screening"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message rejected"
+msgstr "{who}: message rejected"
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{widerCount, plural, one {# error in the last {widerSpanLabel} — switch} other {# errors in the last {widerSpanLabel} — switch}}"
 msgstr "{widerCount, plural, one {# error in the last {widerSpanLabel} — switch} other {# errors in the last {widerSpanLabel} — switch}}"
@@ -2633,8 +2653,8 @@ msgid "A task is assigned, the app opens, an agent finishes."
 msgstr "A task is assigned, the app opens, an agent finishes."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "a team member sends the response to the customer"
-msgstr "a team member sends the response to the customer"
+#~ msgid "a team member sends the response to the customer"
+#~ msgstr "a team member sends the response to the customer"
 
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "A team without a budget gets its own pool, drawn from this one."
@@ -3989,6 +4009,7 @@ msgstr "Also share the secret values, through a <0/> or by <1/>."
 msgid "Also to"
 msgstr "Also to"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Always"
 msgstr "Always"
@@ -4254,8 +4275,8 @@ msgid "Answer or ask the agent…"
 msgstr "Answer or ask the agent…"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Answer to the customer"
-msgstr "Answer to the customer"
+#~ msgid "Answer to the customer"
+#~ msgstr "Answer to the customer"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
 msgid "Answer when a teammate tags @agent."
@@ -4283,8 +4304,8 @@ msgid "Answers fast and hands longer work to its staff as tasks. Their progress 
 msgstr "Answers fast and hands longer work to its staff as tasks. Their progress arrives on the agent's Tasks channel; only the agent talks to people."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Answers wait for the team"
-msgstr "Answers wait for the team"
+#~ msgid "Answers wait for the team"
+#~ msgstr "Answers wait for the team"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Anthropic"
@@ -5129,6 +5150,10 @@ msgstr "Auto-approve bash when sandbox is active"
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Auto-approve permissions that are not explicitly denied (--auto)"
 msgstr "Auto-approve permissions that are not explicitly denied (--auto)"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Auto-close"
+msgstr "Auto-close"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
@@ -7198,6 +7223,10 @@ msgstr "Close (Escape)"
 msgid "Close {0}"
 msgstr "Close {0}"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Close a ticket by itself after"
+msgstr "Close a ticket by itself after"
+
 #: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
 msgid "Close all"
 msgstr "Close all"
@@ -8752,8 +8781,8 @@ msgid "Could not discard"
 msgstr "Could not discard"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Could not discard the draft"
-msgstr "Could not discard the draft"
+#~ msgid "Could not discard the draft"
+#~ msgstr "Could not discard the draft"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -8764,6 +8793,10 @@ msgstr "Could not disconnect from {0}."
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Could not download"
 msgstr "Could not download"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not download the file"
+msgstr "Could not download the file"
 
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Could not download this message."
@@ -8919,6 +8952,10 @@ msgstr "Could not load the bus"
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Could not load the context."
 msgstr "Could not load the context."
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not load the held message"
+msgstr "Could not load the held message"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not load this automation"
@@ -9117,6 +9154,14 @@ msgstr "Could not recover this session's project."
 #: src/routes/loaders/load-next-process.ts
 msgid "Could not recover this session’s project."
 msgstr "Could not recover this session’s project."
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not reject the message"
+msgstr "Could not reject the message"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not release the message"
+msgstr "Could not release the message"
 
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/org-detail-panel.tsx
@@ -9380,8 +9425,8 @@ msgid "Could not send it"
 msgstr "Could not send it"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Could not send the draft"
-msgstr "Could not send the draft"
+#~ msgid "Could not send the draft"
+#~ msgstr "Could not send the draft"
 
 #: src/components/install/InstallButton.tsx
 msgid "Could not send the install"
@@ -10328,9 +10373,17 @@ msgstr "Day of the month"
 msgid "days"
 msgstr "days"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "days after it is marked solved, unless the customer writes again. 0 = never."
+msgstr "days after it is marked solved, unless the customer writes again. 0 = never."
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Days before old sessions are cleaned up"
 msgstr "Days before old sessions are cleaned up"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Days until a solved ticket closes by itself"
+msgstr "Days until a solved ticket closes by itself"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "DB row or shadow dir, file is gone"
@@ -10989,6 +11042,10 @@ msgstr "Delivered to"
 msgid "Delivered to a place that does not hold this channel"
 msgstr "Delivered to a place that does not hold this channel"
 
+#: src/components/conversation/SteerLine.tsx
+msgid "Delivered, the agent ran it"
+msgstr "Delivered, the agent ran it"
+
 #: src/components/data-sources/ChannelRouteControl.tsx
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Deliveries"
@@ -11432,7 +11489,6 @@ msgid "Disallowed tools"
 msgstr "Disallowed tools"
 
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
-#: src/components/conversation/TicketDraftLine.tsx
 #: src/components/image-annotator/ImageAnnotator.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
@@ -11472,8 +11528,8 @@ msgid "Discard unsaved changes and go back to stream inbox"
 msgstr "Discard unsaved changes and go back to stream inbox"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Discarded by {by}"
-msgstr "Discarded by {by}"
+#~ msgid "Discarded by {by}"
+#~ msgstr "Discarded by {by}"
 
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/LiveSessionView.tsx
@@ -11724,6 +11780,11 @@ msgstr "Download"
 msgid "Download .flowmsg"
 msgstr "Download .flowmsg"
 
+#. placeholder {0}: file.name
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Download {0}"
+msgstr "Download {0}"
+
 #: src/pages/entry/MessageLanding.tsx
 msgid "Download {attachmentFilename}"
 msgstr "Download {attachmentFilename}"
@@ -11859,8 +11920,8 @@ msgid "Draft"
 msgstr "Draft"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Draft for the customer — not sent"
-msgstr "Draft for the customer — not sent"
+#~ msgid "Draft for the customer — not sent"
+#~ msgstr "Draft for the customer — not sent"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Drag files or folders here, or use the + button"
@@ -12061,7 +12122,6 @@ msgstr "Edges by kind"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
-#: src/components/conversation/TicketDraftLine.tsx
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -12194,8 +12254,8 @@ msgid "Edited"
 msgstr "Edited"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Edited and sent to the customer by {by}"
-msgstr "Edited and sent to the customer by {by}"
+#~ msgid "Edited and sent to the customer by {by}"
+#~ msgstr "Edited and sent to the customer by {by}"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Edited items could not be loaded. Chat sessions are still shown."
@@ -14084,6 +14144,10 @@ msgstr "Fixing the setup…"
 msgid "Fixing these tightens the skill for every future run."
 msgstr "Fixing these tightens the skill for every future run."
 
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "flagged by screening"
+msgstr "flagged by screening"
+
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "Flow failed to load"
 msgstr "Flow failed to load"
@@ -15173,6 +15237,11 @@ msgstr "Health check"
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Health:"
 msgstr "Health:"
+
+#: src/components/conversation/GuestMessageLine.tsx
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "held — a person must release it"
+msgstr "held — a person must release it"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Held by"
@@ -16591,6 +16660,10 @@ msgstr "It also changes:"
 #: src/components/conversation/PromptRunSummaryDialog.tsx
 msgid "It answered without using any tool."
 msgstr "It answered without using any tool."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "It answers customers while nobody on the team has picked the ticket up."
+msgstr "It answers customers while nobody on the team has picked the ticket up."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
@@ -19511,6 +19584,7 @@ msgstr "Network errors"
 msgid "never"
 msgstr "never"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Never"
 msgstr "Never"
@@ -21527,6 +21601,10 @@ msgstr "Not copied into package folder"
 msgid "Not deleted"
 msgstr "Not deleted"
 
+#: src/components/conversation/SteerLine.tsx
+msgid "Not delivered"
+msgstr "Not delivered"
+
 #: src/components/items/item-state.ts
 msgid "Not deployed"
 msgstr "Not deployed"
@@ -21697,6 +21775,10 @@ msgstr "not run yet"
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "Not run yet."
 msgstr "Not run yet."
+
+#: src/components/conversation/SteerLine.tsx
+msgid "Not run: the turn limit for this ticket was reached"
+msgstr "Not run: the turn limit for this ticket was reached"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
@@ -22486,6 +22568,10 @@ msgstr "Only this device"
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "Only this port"
 msgstr "Only this port"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Only while alone"
+msgstr "Only while alone"
 
 #: src/pages/NotFound.tsx
 msgid "Oops! Page not found"
@@ -26212,6 +26298,7 @@ msgstr "Registered on the hub, but its document hasn't been uploaded to the proj
 msgid "registered watchers: <0>{registeredCount}</0>"
 msgstr "registered watchers: <0>{registeredCount}</0>"
 
+#: src/components/conversation/GuestMessageLine.tsx
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Reject"
 msgstr "Reject"
@@ -26247,6 +26334,7 @@ msgid "release"
 msgstr "release"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/conversation/GuestMessageLine.tsx
 msgid "Release"
 msgstr "Release"
 
@@ -26753,6 +26841,11 @@ msgstr "Reply to {asker}"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Reply to sender…"
 msgstr "Reply to sender…"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Reply to the person"
+msgstr "Reply to the person"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #~ msgid "Reply when (pick any)"
@@ -29062,8 +29155,8 @@ msgid "Send to agent"
 msgstr "Send to agent"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Send to the customer"
-msgstr "Send to the customer"
+#~ msgid "Send to the customer"
+#~ msgstr "Send to the customer"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Send to the machines"
@@ -29090,6 +29183,7 @@ msgid "Sender refused"
 msgstr "Sender refused"
 
 #: src/components/agents/MailboxListsEditor.tsx
+#: src/components/conversation/SteerLine.tsx
 msgid "Sending"
 msgstr "Sending"
 
@@ -29141,8 +29235,8 @@ msgid "Sent as a new reply; the first stays in the thread."
 msgstr "Sent as a new reply; the first stays in the thread."
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Sent to the customer by {by}"
-msgstr "Sent to the customer by {by}"
+#~ msgid "Sent to the customer by {by}"
+#~ msgstr "Sent to the customer by {by}"
 
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Sent to the help desk"
@@ -30133,6 +30227,10 @@ msgstr "Show system projects"
 #: src/i18n/pref-labels.ts
 msgid "Show system skills"
 msgstr "Show system skills"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Show text"
+msgstr "Show text"
 
 #: src/components/conversation/ConversationTasksPanel.tsx
 msgid "Show the message it was made from"
@@ -32358,6 +32456,10 @@ msgstr "The agent that answers every call on this machine."
 msgid "The agent this link names isn't in the project's files."
 msgstr "The agent this link names isn't in the project's files."
 
+#: src/components/conversation/SteerLine.tsx
+msgid "The agent was busy"
+msgstr "The agent was busy"
+
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "The agent writes this credential's test."
 msgstr "The agent writes this credential's test."
@@ -32687,6 +32789,10 @@ msgstr "The in-app terminal is always the primary shell. This controls whether a
 msgid "The index was not changed."
 msgstr "The index was not changed."
 
+#: src/components/conversation/SteerLine.tsx
+msgid "The internal agent"
+msgstr "The internal agent"
+
 #: src/components/conversation/ItOperationChip.tsx
 msgid "The IT operation: every send under this name lands in this conversation."
 msgstr "The IT operation: every send under this name lands in this conversation."
@@ -32985,6 +33091,10 @@ msgstr "The start command; a handling whose action is “restart” restarts it 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "The SubAgent definition's model + system prompt lead; the fields below are per-node overrides / task addendum."
 msgstr "The SubAgent definition's model + system prompt lead; the fields below are per-node overrides / task addendum."
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "The support agent"
+msgstr "The support agent"
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "The tab content could not be prepared."
@@ -36413,6 +36523,10 @@ msgstr "Where the key is created, and how to store it: flow credentials set <nam
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Where your server answers Meta's API. https only."
 msgstr "Where your server answers Meta's API. https only."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Whether the text the agent ends a turn with is sent to the person. \"Only while alone\": it is sent while no one on the team has picked the conversation up."
+msgstr "Whether the text the agent ends a turn with is sent to the person. \"Only while alone\": it is sent while no one on the team has picked the conversation up."
 
 #: src/i18n/pref-labels.ts
 msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."

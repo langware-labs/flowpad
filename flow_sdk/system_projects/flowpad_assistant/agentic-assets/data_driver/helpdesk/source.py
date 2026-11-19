@@ -34,6 +34,7 @@ from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, 
 
 from pydantic import StringConstraints
 
+from flow_sdk.schema.data_spec.agent_spec import AgentReplyMode
 from flow_sdk.schema.data_spec.helpdesk_agent_spec import HelpdeskAgentSide
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
@@ -73,10 +74,9 @@ class HelpdeskMessageData(MessageData):
     #: The hub's own id for the message, for adoption.
     hub_message_id: Optional[str] = None
     raw: Optional[dict] = None
-    #: Not a call for the agent to act: the ticket is a person's now and nobody tagged the agent, or the
-    #: agent was set to answer only when tagged.
+    #: Not a call for the agent to act: the agent's own write on the team side.
     quiet: bool = False
-    #: A write on the team side: the team conversation's own copy comes from the hub (a draft with its buttons),
+    #: A write on the team side: the team conversation's own copy comes from the hub,
     #: so nothing is recorded here -- recorded, it would be placed in the ticket the customer sees.
     recorded: bool = False
 
@@ -85,21 +85,13 @@ class HelpdeskMessageData(MessageData):
 NOT_ON_DESK = "you are not on this desk's team, so its tickets will not show"
 
 
-#: How a person calls the agent into a ticket it would otherwise leave alone.
-TAG = "@agent"
-
-
 class HelpdeskConfig(SourceConfig):
     """What a helpdesk source is configured with. The rest is how the agent that owns it answers: on the
-    customer's side (to the requester, moderated or not) or on the team's side (notes only), and when. The
-    defaults are a person's own desk source, which answers the customer at once; a desk's agent is made with
-    every one of them stated (``helpdesk_agent_action``), ``moderated`` on unless its owner turned it off."""
+    customer's side (to the requester) or on the team's side (notes only). Whether its answer is SENT while a person
+    attends the ticket is the agent's ``reply_mode`` (this driver's default: ``auto``), not a setting of the source."""
 
     desk_project_id: Union[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)], ChoiceEntry]
     side: HelpdeskAgentSide = HelpdeskAgentSide.CUSTOMER
-    reply_not_picked_up: bool = True
-    reply_tagged: bool = True
-    moderated: bool = False
 
 
 class HelpdeskSource(MessageSource):
@@ -116,12 +108,14 @@ class HelpdeskSource(MessageSource):
     conversation_kind = "helpdesk"
     #: Chat-grade while watched.
     attention_poll_seconds = 5
+    #: A desk's agent answers while it is alone with the ticket; once a person picks it up it goes quiet.
+    default_reply_mode = AgentReplyMode.AUTO
+    tracks_attendance = True
+    single_place = True
 
     def __init__(self, binding: SourceBinding, hub: Optional[HubTransport] = None) -> None:
         super().__init__(binding)
         self._hub = hub
-        #: Tickets a person has picked up, as the last pool read said.
-        self._staffed: set[str] = set()
 
     @classmethod
     def resume_at(cls, watermark: str, tickets: Mapping[str, tuple[str, str, list[str]]]) -> str:
@@ -386,15 +380,6 @@ class HelpdeskSource(MessageSource):
             await self.hub.get("project", self.desk, "helpdesk_conversations", params={"include_closed": "true"})
         )
         pool = []
-        # Picked up by someone other than this login: the agent's own pickup (an unmoderated answer) is not a
-        # person taking the ticket. On one computer the agent and its owner share a login, so the owner's own
-        # pickup there does not quiet it either -- a deployed agent signs in as itself.
-        me = self.hub.me()
-        self._staffed = {
-            str(row.get("conversation_id") or "").strip()
-            for row in rows
-            if any(who != me for who in row.get("picked_up_by") or [])
-        }
         for row in rows:
             ticket = str(row.get("conversation_id") or "").strip()
             if ticket:
@@ -416,15 +401,28 @@ class HelpdeskSource(MessageSource):
             hub_conversation_id=ticket,
             hub_message_id=fm_id,
             raw=fm,
-            quiet=not self._calls_the_agent(ticket, str(fm.get("text") or "")),
         )
         return MessageItem(origin=self.origin(fm_id, ticket), data=data)
 
-    def _calls_the_agent(self, ticket: str, text: str) -> bool:
-        """Whether a ticket message is the agent's to answer: nobody has the ticket yet, or it was tagged."""
-        if self.config.get("reply_tagged", True) and TAG in text.lower():
-            return True
-        return bool(self.config.get("reply_not_picked_up", True)) and ticket not in self._staffed
+    # ── is a person on it ────────────────────────────────────────────────────
+    async def attended(self, data: Any) -> bool:
+        """Whether a person other than this login has picked the ticket up. The agent's own pickup (its own answer)
+        is not a person taking the ticket; on one computer the agent and its owner share a login, so the owner's
+        own pickup there does not count either -- a deployed agent signs in as itself. A live read of the desk's
+        queue, so a pickup made while the turn ran is seen."""
+        ticket = str(getattr(data, "hub_conversation_id", "") or "").strip()
+        if not ticket:
+            return False
+        self._desk_required()
+        rows = _rows_of(
+            await self.hub.get("project", self.desk, "helpdesk_conversations", params={"include_closed": "true"})
+        )
+        me = self.hub.me()
+        return any(
+            any(who != me for who in row.get("picked_up_by") or [])
+            for row in rows
+            if str(row.get("conversation_id") or "").strip() == ticket
+        )
 
     # ── identity ────────────────────────────────────────────────────────────
     async def whoami(self) -> tuple[UserProfile, ...]:
@@ -452,32 +450,19 @@ class HelpdeskSource(MessageSource):
         return await self._answer(ticket, data.text or "", origin)
 
     async def _answer(self, ticket: str, text: str, answered: Optional[CloudOrigin]) -> MessageItem:
-        """Where a reply goes, by the source's config: a note on the team's side, a draft there for a person to send
-        (``moderated``), or straight to the requester. Nothing waits unless the config says so: a person's own source
-        states nothing, so what they type goes out; the desk's agents state it (``helpdesk_agent_action``)."""
+        """Where a reply goes, by the source's config: a note on the team's side, or straight to the requester."""
         if self.config.get("side") == HelpdeskAgentSide.TEAM:
-            return await self._on_team_side(ticket, text, answered, None)
-        if self.config.get("moderated", False):
-            return await self._on_team_side(ticket, text, answered, "draft")
+            return await self._on_team_side(ticket, text, answered)
         return await self._to_requester(ticket, text, answered)
 
-    async def _on_team_side(
-        self, ticket: str, text: str, answered: Optional[CloudOrigin], action: Optional[str]
-    ) -> MessageItem:
-        """A note in the ticket's team conversation, or (``action="draft"``) a draft the hub keeps there."""
-        if action == "draft":
-            body = await self.hub.post("conversation", {"text": text}, ticket, "draft")
-        else:
-            team = await self.hub.get("conversation", ticket, "team_conversation")
-            team_id = str((team or {}).get("id") or "")
-            if not team_id:
-                opened = await self.hub.post(
-                    "conversation", {"title": "", "text": text}, ticket, "open_team_conversation"
-                )
-                return self._sent(ticket, str((opened or {}).get("id") or ""), {"text": text}, answered)
-            body = await self.hub.post(
-                "conversation", {"text": text, "conversation_id": team_id}, team_id, "add_message"
-            )
+    async def _on_team_side(self, ticket: str, text: str, answered: Optional[CloudOrigin]) -> MessageItem:
+        """A note in the ticket's team conversation."""
+        team = await self.hub.get("conversation", ticket, "team_conversation")
+        team_id = str((team or {}).get("id") or "")
+        if not team_id:
+            opened = await self.hub.post("conversation", {"title": "", "text": text}, ticket, "open_team_conversation")
+            return self._sent(ticket, str((opened or {}).get("id") or ""), {"text": text}, answered)
+        body = await self.hub.post("conversation", {"text": text, "conversation_id": team_id}, team_id, "add_message")
         team_id = str((body or {}).get("conversation_id") or "")
         return self._sent(ticket, team_id, {"text": text, **(body or {})}, answered)
 

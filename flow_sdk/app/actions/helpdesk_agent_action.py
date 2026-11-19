@@ -1,12 +1,12 @@
 """A help desk's optional agents, set up from the desk's own page.
 
 POST /api/v1/graph/helpdesk-agents  {desk_project_id}           — the desk's agents on this machine, by side
-POST /api/v1/graph/helpdesk-agent   {HelpdeskAgent fields}       — make one: its project, the agent, its help-desk
-                                                                   source (which says the side and when it replies),
-                                                                   and its loop running on this computer
+POST /api/v1/graph/helpdesk-agent   {HelpdeskAgent fields}       — make one: its project, the agent, its source on the
+                                                                   desk, and its loop running on this computer
 
-A desk agent is an ordinary agent that owns the desk's ``helpdesk`` source: the source's config is where the side,
-the reply events and moderation live, so the driver alone decides where the agent's words go. Each one is the main
+A desk agent is an ordinary agent that owns a source on the desk: the support agent (customer side) the desk's
+``helpdesk`` source, the internal agent (team side) the ``flow_conversation`` source over the desk's team
+conversations. The agent's ``reply_mode`` says whether its words are sent while a person attends the ticket. Each one is the main
 agent of a project of its own -- a project has one local deployment with one main agent, so a desk's two agents
 could not both answer from one project.
 """
@@ -16,24 +16,42 @@ from __future__ import annotations
 from flow_sdk.actions.action_registry import action
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.agent_spec import AgentReplyMode
 from flow_sdk.schema.data_spec.helpdesk_agent_spec import HelpdeskAgent, HelpdeskAgentSide
 
 PROVIDER = "helpdesk"
+#: The channel each side's agent serves: the support agent the ticket (the customer's side), the internal agent the
+#: desk's team conversations (``flow_conversation``) -- it never reads a ticket, and the support agent never reads there.
+DRIVER_OF_SIDE = {HelpdeskAgentSide.CUSTOMER: PROVIDER, HelpdeskAgentSide.TEAM: "flow_conversation"}
 
 #: What each side's agent does when the owner writes nothing of their own.
 DEFAULT_INSTRUCTIONS = {
     HelpdeskAgentSide.CUSTOMER: (
-        "You answer customers of this help desk. Make sure the team has everything it needs from the customer: "
-        "what they tried, what they expected, what happened, and any error text. Ask for what is missing, one "
-        "short question at a time. Never promise a fix."
+        "You answer customers of this help desk, and only customers: you cannot read the team's conversation. When a "
+        'ticket arrives, thank the customer at once ("Thank you, we are on it."), then send the team the request and its '
+        'files with `flow conversation guest <ticket id> "<what the customer needs>"`, the only way you write to the team. '
+        "The team's internal agent reaches you with steer messages: relay what it asks to the customer in your own words, "
+        "and send the customer's answers back as guest messages. Write to the customer only to thank them, to ask what the "
+        "team needs, to give the response the team hands you, and to close the ticket. Close it with `flow conversation close <ticket id>` when the customer has "
+        "plainly confirmed it works. When it looks solved but they have not confirmed, say so with `flow conversation "
+        "solved <ticket id>`: the desk closes it by itself after its number of days unless the customer writes again. "
+        "Never promise a fix."
     ),
     HelpdeskAgentSide.TEAM: (
-        "You help this help desk's team. For each ticket, write a first root-cause analysis for a team member to "
-        "review: the likely cause, the evidence for it, and the next check. You write to the team only."
+        "You are this help desk's internal agent, and you never write to the customer. Each screened request from the "
+        "support agent, or a teammate tagging you, is yours to work: run /rca. When the RCA needs more from the customer, "
+        'ask the support agent with `flow agent steer <support agent> <ticket id> "<what to ask>"` and run /rca again on '
+        "the answer, until it is clear. Then report it to the team in this conversation: the likely cause, the evidence, "
+        "the suggested fix. When a teammate asks for details, give them here. To send the customer the response, steer "
+        "the support agent with it."
     ),
 }
 
 NAMES = {HelpdeskAgentSide.CUSTOMER: "customer agent", HelpdeskAgentSide.TEAM: "team agent"}
+
+#: What each side's agent does with a turn's closing text: the customer's answers while it is alone with the ticket
+#: and goes quiet once a person picks it up; the team's writes notes for the team, whoever attends.
+REPLY_MODES = {HelpdeskAgentSide.CUSTOMER: AgentReplyMode.AUTO, HelpdeskAgentSide.TEAM: AgentReplyMode.ALWAYS}
 
 
 async def _body() -> dict:
@@ -48,7 +66,10 @@ async def desk_agents(desk_project_id: str) -> list[HelpdeskAgent]:
     from flow_sdk.stream_inbox.projection import owner_of  # noqa: PLC0415
 
     found: dict[HelpdeskAgentSide, HelpdeskAgent] = {}
-    for source in await DataSource.get_all({"provider": PROVIDER}):
+    sources = [
+        (side, s) for side, provider in DRIVER_OF_SIDE.items() for s in await DataSource.get_all({"provider": provider})
+    ]
+    for side, source in sources:
         config = source.config or {}
         desk = config.get("desk_project_id")
         if (desk.get("id") if isinstance(desk, dict) else desk) != desk_project_id:
@@ -57,15 +78,11 @@ async def desk_agents(desk_project_id: str) -> list[HelpdeskAgent]:
         if owner is None or owner.type != "agent":
             continue
         agent = await Agent.get_by_id(owner.id)
-        side = HelpdeskAgentSide(config.get("side") or HelpdeskAgentSide.CUSTOMER.value)
         if agent is None or side in found:
             continue
         found[side] = HelpdeskAgent(
             desk_project_id=desk_project_id,
             side=side,
-            reply_not_picked_up=bool(config.get("reply_not_picked_up", True)),
-            reply_tagged=bool(config.get("reply_tagged", True)),
-            moderated=bool(config.get("moderated", False)),  # as the driver reads it: nothing waits unless stated
             agent_id=str(agent.id),
             agent_name=agent.name,
         )
@@ -99,25 +116,23 @@ async def create_desk_agent(spec: HelpdeskAgent, desk_name: str, someone=None) -
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-    driver = DataDriver.loaded(PROVIDER)
+    driver = DataDriver.loaded(DRIVER_OF_SIDE[spec.side])
     if driver is None:
-        raise LookupError("the help desk driver is not installed")
+        raise LookupError(f"the {DRIVER_OF_SIDE[spec.side]} driver is not installed")
     name = f"{desk_name or 'Help desk'} {NAMES[spec.side]}"
     # Validated before anything is written: a refused config leaves no agent or project behind.
-    config = driver.create_config(
-        desk_project_id=spec.desk_project_id,
-        side=spec.side.value,
-        reply_not_picked_up=spec.reply_not_picked_up,
-        reply_tagged=spec.reply_tagged,
-        moderated=spec.moderated,
-    )
+    config = driver.create_config(desk_project_id=spec.desk_project_id)
     project = await _project_for(name, someone)
     agent = await Agent(
         name=name,
         system_prompt=spec.instructions.strip() or DEFAULT_INSTRUCTIONS[spec.side],
         project_id=str(project.id),
+        reply_mode=REPLY_MODES[spec.side],
     ).save()
-    await driver.create_source(config, name=name, owner=agent).save()
+    # The desk is answered from this deployment alone: named before the agent serves, so no second deployment of the
+    # agent (another machine's copy of the project) answers it too.
+    deployment = await agent.deploy("local")
+    await driver.create_source(config, name=name, owner=agent, answer_place=str(deployment.id)).save()
     await agent.run_locally()
     return spec.model_copy(update={"agent_id": str(agent.id), "agent_name": agent.name})
 

@@ -88,6 +88,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.flow_json_spec  # noqa: F401  — registers ``flow.json`` / ``flow.dependency*``
     import flow_sdk.schema.data_spec.folder_change_spec  # noqa: F401  — registers ``ingest.folder_change``
     import flow_sdk.schema.data_spec.git_share_spec  # noqa: F401  — registers ``project.git_share``
+    import flow_sdk.schema.data_spec.guest_message_spec  # noqa: F401  — registers ``message.guest_message`` / ``message.steer``
     import flow_sdk.schema.data_spec.health_spec  # noqa: F401  — registers ``health.endpoint`` / ``health.node``
     import flow_sdk.schema.data_spec.help_request_spec  # noqa: F401  — registers ``help.recipient`` / ``help.request``
     import flow_sdk.schema.data_spec.helpdesk_agent_spec  # noqa: F401  — registers ``helpdesk.agent``

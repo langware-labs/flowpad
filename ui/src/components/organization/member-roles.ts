@@ -7,7 +7,7 @@
  */
 import { canManageRoles, grantableRoleSet, type EntityMember } from '@sdk';
 
-import { assignableRoles } from '@src/components/conversation/participant-display';
+import { assignableRoles, withoutGuest } from '@src/components/conversation/participant-display';
 
 /** A team/org that holds a role appears in the roster as a first-class row with
  *  ``user_id === null`` — the principal id lives in ``id``. */
@@ -34,5 +34,5 @@ export function memberPrincipalId(member: EntityMember): string | undefined {
 export function assignableRolesForMember(me: EntityMember | null | undefined, member: EntityMember): string[] {
   if (!isGroupMember(member)) return assignableRoles(me as never, member as never);
   const heldRoles = me?.roles ?? [];
-  return canManageRoles(heldRoles, member.roles ?? []) ? grantableRoleSet(heldRoles) : [];
+  return canManageRoles(heldRoles, member.roles ?? []) ? withoutGuest(grantableRoleSet(heldRoles)) : [];
 }

@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "name": "flow_conversation",
+  "title": "Flowpad conversation",
+  "icon_name": "MessagesSquare",
+  "description": "The team conversations of a help desk's tickets, as a channel an agent can serve. It wakes the agent on a guest message that passed screening, or on a person who tags it; what the agent writes goes back into the team conversation as free text. It never wakes it on a message still pending, held or rejected, on its own words, or on a steer.",
+  "kind": "datasource.internal.flow_conversation",
+  "config": {
+    "desk_project_id": {
+      "type": "text",
+      "account_key": true,
+      "label": "Desk",
+      "placeholder": "hub project id",
+      "hint": "The desk whose tickets' team conversations this agent works in."
+    }
+  }
+}

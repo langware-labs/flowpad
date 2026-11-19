@@ -99,12 +99,11 @@ from .routes import (
 
 async def _on_server_startup():
     """Write server.json for discovery by hooks/CLI and start cron scheduler."""
+    from flow_sdk import context
     from flow_sdk.builtin.process_lifecycle import clear_backend_restart_request
     from flow_sdk.config import set_server_info
     from flow_sdk.db.drivers.sqlite.connection import get_database_path
     from flow_sdk.instance_settings import get_instance_settings
-
-    from flow_sdk import context
 
     from .startup import server_launched_by
 
@@ -1056,9 +1055,11 @@ server.add_router(journeys_router)
 server.add_router(network_errors_router)
 server.add_router(git_router)
 server.add_router(worldview_router)
+from flow_sdk.server.routes.agent_steer import router as agent_steer_router  # noqa: E402
 from flow_sdk.server.routes.it_session import router as it_session_router  # noqa: E402
 
 server.add_router(it_session_router)
+server.add_router(agent_steer_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

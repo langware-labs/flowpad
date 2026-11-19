@@ -1973,6 +1973,26 @@ msgstr ""
 msgid "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
 msgstr "لدى {who} هذه المحادثة في المشروع {0}، وهذا المشروع ليس نسخة عمل من <0>{where}</0>"
 
+#: src/components/conversation/SteerLine.tsx
+msgid "{who} steered the support agent"
+msgstr "وجّه {who} وكيل الدعم"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message being screened"
+msgstr "{who}: الرسالة قيد الفحص"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message held by screening{reasons}"
+msgstr "{who}: الرسالة محتجزة بسبب الفحص{reasons}"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message passed screening"
+msgstr "{who}: الرسالة اجتازت الفحص"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message rejected"
+msgstr "{who}: الرسالة مرفوضة"
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{widerCount, plural, one {# error in the last {widerSpanLabel} — switch} other {# errors in the last {widerSpanLabel} — switch}}"
 msgstr "{widerCount, plural, one {خطأ واحد في آخر {widerSpanLabel} — التبديل} two {خطآن في آخر {widerSpanLabel} — التبديل} few {# أخطاء في آخر {widerSpanLabel} — التبديل} many {# خطأً في آخر {widerSpanLabel} — التبديل} other {# خطأ في آخر {widerSpanLabel} — التبديل}}"
@@ -2633,8 +2653,8 @@ msgid "A task is assigned, the app opens, an agent finishes."
 msgstr "تُسنَد مهمة، أو يُفتح التطبيق، أو ينتهي وكيل من عمله."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "a team member sends the response to the customer"
-msgstr "يرسل أحد أعضاء الفريق الرد إلى العميل"
+#~ msgid "a team member sends the response to the customer"
+#~ msgstr "يرسل أحد أعضاء الفريق الرد إلى العميل"
 
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "A team without a budget gets its own pool, drawn from this one."
@@ -3989,6 +4009,7 @@ msgstr ""
 msgid "Also to"
 msgstr "أيضاً إلى"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Always"
 msgstr "دائمًا"
@@ -4254,8 +4275,8 @@ msgid "Answer or ask the agent…"
 msgstr ""
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Answer to the customer"
-msgstr "الرد على العميل"
+#~ msgid "Answer to the customer"
+#~ msgstr "الرد على العميل"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
 msgid "Answer when a teammate tags @agent."
@@ -4283,8 +4304,8 @@ msgid "Answers fast and hands longer work to its staff as tasks. Their progress 
 msgstr "يُجيب بسرعة، ويُسنِد الأعمال الأطول إلى فريقه في صورة مهام. يصل تقدّم هذه المهام إلى قناة المهام الخاصة بالوكيل، ولا يتحدث إلى الناس سوى الوكيل نفسه."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Answers wait for the team"
-msgstr "الردود تنتظر الفريق"
+#~ msgid "Answers wait for the team"
+#~ msgstr "الردود تنتظر الفريق"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Anthropic"
@@ -5129,6 +5150,10 @@ msgstr "الموافقة التلقائية على أوامر Bash عند تفع
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Auto-approve permissions that are not explicitly denied (--auto)"
 msgstr "الموافقة التلقائية على الأذونات غير المرفوضة صراحةً (--auto)"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Auto-close"
+msgstr "الإغلاق التلقائي"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
@@ -7198,6 +7223,10 @@ msgstr "إغلاق (Escape)"
 msgid "Close {0}"
 msgstr "إغلاق {0}"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Close a ticket by itself after"
+msgstr "إغلاق التذكرة تلقائياً بعد"
+
 #: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
 msgid "Close all"
 msgstr "إغلاق الكل"
@@ -8752,8 +8781,8 @@ msgid "Could not discard"
 msgstr "تعذّر التجاهل."
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Could not discard the draft"
-msgstr "تعذّر تجاهل المسودة"
+#~ msgid "Could not discard the draft"
+#~ msgstr "تعذّر تجاهل المسودة"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -8764,6 +8793,10 @@ msgstr "تعذر قطع الاتصال عن {0}."
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Could not download"
 msgstr "تعذر التنزيل"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not download the file"
+msgstr "تعذّر تنزيل الملف"
 
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Could not download this message."
@@ -8919,6 +8952,10 @@ msgstr "تعذّر تحميل ناقل الأحداث"
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Could not load the context."
 msgstr "تعذّر تحميل السياق."
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not load the held message"
+msgstr "تعذّر تحميل الرسالة المحتجزة"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not load this automation"
@@ -9117,6 +9154,14 @@ msgstr "تعذّر استرجاع مشروع هذه الجلسة."
 #: src/routes/loaders/load-next-process.ts
 msgid "Could not recover this session’s project."
 msgstr "تعذّر استرجاع مشروع هذه الجلسة."
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not reject the message"
+msgstr "تعذّر رفض الرسالة"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not release the message"
+msgstr "تعذّر تحرير الرسالة"
 
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/org-detail-panel.tsx
@@ -9380,8 +9425,8 @@ msgid "Could not send it"
 msgstr "تعذّر إرساله"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Could not send the draft"
-msgstr "تعذّر إرسال المسودة"
+#~ msgid "Could not send the draft"
+#~ msgstr "تعذّر إرسال المسودة"
 
 #: src/components/install/InstallButton.tsx
 msgid "Could not send the install"
@@ -10328,9 +10373,17 @@ msgstr "يوم من الشهر"
 msgid "days"
 msgstr "أيام"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "days after it is marked solved, unless the customer writes again. 0 = never."
+msgstr "أيام من وضع علامة تم الحل، ما لم يكتب العميل مجدداً. 0 = أبداً."
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Days before old sessions are cleaned up"
 msgstr "عدد الأيام قبل حذف الجلسات القديمة"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Days until a solved ticket closes by itself"
+msgstr "الأيام حتى تُغلق التذكرة المحلولة تلقائياً"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "DB row or shadow dir, file is gone"
@@ -10989,6 +11042,10 @@ msgstr "يُسلَّم إلى"
 msgid "Delivered to a place that does not hold this channel"
 msgstr "يُسلَّم إلى مكان لا يضم هذه القناة"
 
+#: src/components/conversation/SteerLine.tsx
+msgid "Delivered, the agent ran it"
+msgstr "تم التسليم، وقام الوكيل بتشغيله"
+
 #: src/components/data-sources/ChannelRouteControl.tsx
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Deliveries"
@@ -11432,7 +11489,6 @@ msgid "Disallowed tools"
 msgstr "الأدوات المحظورة"
 
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
-#: src/components/conversation/TicketDraftLine.tsx
 #: src/components/image-annotator/ImageAnnotator.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
@@ -11472,8 +11528,8 @@ msgid "Discard unsaved changes and go back to stream inbox"
 msgstr "تجاهل التغييرات غير المحفوظة والعودة إلى صندوق التدفق الوارد"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Discarded by {by}"
-msgstr "تم التجاهل بواسطة {by}"
+#~ msgid "Discarded by {by}"
+#~ msgstr "تم التجاهل بواسطة {by}"
 
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/LiveSessionView.tsx
@@ -11724,6 +11780,11 @@ msgstr "تنزيل"
 msgid "Download .flowmsg"
 msgstr "تنزيل .flowmsg"
 
+#. placeholder {0}: file.name
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Download {0}"
+msgstr "تنزيل {0}"
+
 #: src/pages/entry/MessageLanding.tsx
 msgid "Download {attachmentFilename}"
 msgstr "تنزيل {attachmentFilename}"
@@ -11859,8 +11920,8 @@ msgid "Draft"
 msgstr "مسودة"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Draft for the customer — not sent"
-msgstr "مسودة للعميل — لم تُرسل"
+#~ msgid "Draft for the customer — not sent"
+#~ msgstr "مسودة للعميل — لم تُرسل"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Drag files or folders here, or use the + button"
@@ -12061,7 +12122,6 @@ msgstr "الحواف حسب النوع"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
-#: src/components/conversation/TicketDraftLine.tsx
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -12194,8 +12254,8 @@ msgid "Edited"
 msgstr "تم التعديل"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Edited and sent to the customer by {by}"
-msgstr "عُدّل وأُرسل إلى العميل بواسطة {by}"
+#~ msgid "Edited and sent to the customer by {by}"
+#~ msgstr "عُدّل وأُرسل إلى العميل بواسطة {by}"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Edited items could not be loaded. Chat sessions are still shown."
@@ -14084,6 +14144,10 @@ msgstr "جارٍ إصلاح الإعداد…"
 msgid "Fixing these tightens the skill for every future run."
 msgstr "معالجة هذه المشاكل تقوي المهارة لكل تشغيل مستقبلي."
 
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "flagged by screening"
+msgstr "تم وضع علامة عليه بواسطة الفحص"
+
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "Flow failed to load"
 msgstr "فشل تحميل الـ Flow"
@@ -15173,6 +15237,11 @@ msgstr ""
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Health:"
 msgstr "الحالة:"
+
+#: src/components/conversation/GuestMessageLine.tsx
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "held — a person must release it"
+msgstr "محتجز — يجب أن يفرج عنه شخص"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Held by"
@@ -16591,6 +16660,10 @@ msgstr "ما يتغيّر أيضًا:"
 #: src/components/conversation/PromptRunSummaryDialog.tsx
 msgid "It answered without using any tool."
 msgstr "أُجيب عنه دون استخدام أي أداة."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "It answers customers while nobody on the team has picked the ticket up."
+msgstr "يرد على العملاء ما دام لم يستلم أحد من الفريق التذكرة."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
@@ -19511,6 +19584,7 @@ msgstr ""
 msgid "never"
 msgstr "أبداً"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Never"
 msgstr "أبدًا"
@@ -21527,6 +21601,10 @@ msgstr "لم يُنسخ إلى مجلد الحزمة"
 msgid "Not deleted"
 msgstr ""
 
+#: src/components/conversation/SteerLine.tsx
+msgid "Not delivered"
+msgstr "لم يتم التسليم"
+
 #: src/components/items/item-state.ts
 msgid "Not deployed"
 msgstr ""
@@ -21697,6 +21775,10 @@ msgstr "لم يُشغَّل بعد"
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "Not run yet."
 msgstr "لم يُشغَّل بعد."
+
+#: src/components/conversation/SteerLine.tsx
+msgid "Not run: the turn limit for this ticket was reached"
+msgstr "لم يُشغَّل: تم الوصول إلى حد الأدوار لهذه التذكرة"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
@@ -22486,6 +22568,10 @@ msgstr ""
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "Only this port"
 msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Only while alone"
+msgstr "فقط عندما يكون وحده"
 
 #: src/pages/NotFound.tsx
 msgid "Oops! Page not found"
@@ -26212,6 +26298,7 @@ msgstr "مسجَّل على المركز، لكن مستنده لم يُرفع �
 msgid "registered watchers: <0>{registeredCount}</0>"
 msgstr "المراقبون المسجَّلون: <0>{registeredCount}</0>"
 
+#: src/components/conversation/GuestMessageLine.tsx
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Reject"
 msgstr "رفض"
@@ -26247,6 +26334,7 @@ msgid "release"
 msgstr "إصدار"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/conversation/GuestMessageLine.tsx
 msgid "Release"
 msgstr "إصدار"
 
@@ -26753,6 +26841,11 @@ msgstr ""
 #: src/components/conversation/MessageComposer.tsx
 msgid "Reply to sender…"
 msgstr "الرد على المرسل…"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Reply to the person"
+msgstr "الرد على الشخص"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #~ msgid "Reply when (pick any)"
@@ -29062,8 +29155,8 @@ msgid "Send to agent"
 msgstr ""
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Send to the customer"
-msgstr "إرسال إلى العميل"
+#~ msgid "Send to the customer"
+#~ msgstr "إرسال إلى العميل"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Send to the machines"
@@ -29090,6 +29183,7 @@ msgid "Sender refused"
 msgstr "رفض المُرسِل"
 
 #: src/components/agents/MailboxListsEditor.tsx
+#: src/components/conversation/SteerLine.tsx
 msgid "Sending"
 msgstr "الإرسال"
 
@@ -29141,8 +29235,8 @@ msgid "Sent as a new reply; the first stays in the thread."
 msgstr ""
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Sent to the customer by {by}"
-msgstr "أُرسل إلى العميل بواسطة {by}"
+#~ msgid "Sent to the customer by {by}"
+#~ msgstr "أُرسل إلى العميل بواسطة {by}"
 
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Sent to the help desk"
@@ -30133,6 +30227,10 @@ msgstr "عرض مشاريع النظام"
 #: src/i18n/pref-labels.ts
 msgid "Show system skills"
 msgstr "عرض مهارات النظام"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Show text"
+msgstr "عرض النص"
 
 #: src/components/conversation/ConversationTasksPanel.tsx
 msgid "Show the message it was made from"
@@ -32358,6 +32456,10 @@ msgstr "الوكيل الذي يرد على كل مكالمة على هذا ال
 msgid "The agent this link names isn't in the project's files."
 msgstr "الوكيل المذكور في هذا الرابط غير موجود في ملفات المشروع."
 
+#: src/components/conversation/SteerLine.tsx
+msgid "The agent was busy"
+msgstr "كان الوكيل مشغولاً"
+
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "The agent writes this credential's test."
 msgstr ""
@@ -32687,6 +32789,10 @@ msgstr "الطرفية داخل التطبيق هي دائمًا الصدفة ا
 msgid "The index was not changed."
 msgstr "لم يُعدَّل الفهرس."
 
+#: src/components/conversation/SteerLine.tsx
+msgid "The internal agent"
+msgstr "الوكيل الداخلي"
+
 #: src/components/conversation/ItOperationChip.tsx
 msgid "The IT operation: every send under this name lands in this conversation."
 msgstr "عملية IT: كل إرسال بهذا الاسم يصل إلى هذه المحادثة."
@@ -32985,6 +33091,10 @@ msgstr ""
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "The SubAgent definition's model + system prompt lead; the fields below are per-node overrides / task addendum."
 msgstr "النموذج ومطالبة النظام من تعريف SubAgent لهما الأولوية؛ الحقول أدناه تجاوزات لكل عقدة / إضافة للمهمة."
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "The support agent"
+msgstr "وكيل الدعم"
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "The tab content could not be prepared."
@@ -36413,6 +36523,10 @@ msgstr "مكان إنشاء المفتاح، وكيفية تخزينه: flow cre
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Where your server answers Meta's API. https only."
 msgstr "عنوان الخادم الذي يرد على واجهة Meta. يُقبل HTTPS فقط."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Whether the text the agent ends a turn with is sent to the person. \"Only while alone\": it is sent while no one on the team has picked the conversation up."
+msgstr "هل يُرسل إلى الشخص النص الذي ينهي به الوكيل الدور. \"فقط عندما يكون وحده\": يُرسل ما دام لم يستلم أحد من الفريق المحادثة."
 
 #: src/i18n/pref-labels.ts
 msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."

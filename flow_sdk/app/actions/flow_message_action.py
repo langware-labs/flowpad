@@ -1729,6 +1729,68 @@ async def conversation_team_conversation() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to read the team conversation: {str(e)}")
 
 
+async def _guest_message_via_hub(method: str) -> ApiResponse:
+    """The hub's ``conversation/<ticket>/guest_message[/<id>/release|reject]``, answered here untouched. A guest message
+    waits in the hub's screening queue and the team conversation holds only a reference to it, so nothing lands on
+    this machine from the call: the answer is the queue item (or, for a held one, its text for the person deciding)."""
+    someone_typeid, conv_id = _hub_conversation_target()
+    if someone_typeid is None:
+        return ApiFailResponse(message="No authenticated user in request context")
+    if not conv_id:
+        return ApiFailResponse(message="guest_message: target conversation required", status_code=400)
+    info = get_current_request_info()
+    sub_path = ((info.sub_path if info else "") or "").strip("/") or None
+    payload = ((await info.get_post_data() or {}) if info else {}) if method == "POST" else None
+    try:
+        data = await HubProxy.call(
+            method, BuiltinEntityType.CONVERSATION, conv_id, "guest_message", sub_path, payload=payload, strict=True
+        )
+    except HubError as e:
+        return e.fail_response("The hub refused the guest message call")
+    return ApiSuccessResponse(data=data)
+
+
+@action.post(action_name="guest_message", types=["conversation"])
+async def conversation_guest_message() -> ApiResponse:
+    """``POST conversation/<ticket id>/guest_message {text}`` posts a guest message (the support agent's only write to the
+    team side); ``.../<id>/release|reject`` lets a person decide a held one. The hub decides who may."""
+    return await _guest_message_via_hub("POST")
+
+
+@action.get(action_name="guest_message", types=["conversation"])
+async def conversation_guest_message_read() -> ApiResponse:
+    """``GET conversation/<ticket id>/guest_message/<id>`` -- a held guest message's text, for the person deciding it."""
+    return await _guest_message_via_hub("GET")
+
+
+#: What a desk's staff (its support agent too) says about a ticket, by the hub action that says it.
+_TICKET_VERDICTS = {"closed": "close", "solved": "mark_solved"}
+
+
+@action.post(action_name="ticket_verdict", types=["conversation"])
+async def conversation_ticket_verdict() -> ApiResponse:
+    """``POST conversation/<ticket id>/ticket_verdict {verdict}``: ``closed`` closes the ticket (the customer confirmed
+    it is solved); ``solved`` says the desk believes it is, and the hub closes it by itself after the desk's days
+    unless somebody writes in it. The hub decides who may."""
+    someone_typeid, conv_id = _hub_conversation_target()
+    if someone_typeid is None:
+        return ApiFailResponse(message="No authenticated user in request context")
+    info = get_current_request_info()
+    body = (await info.get_post_data() or {}) if info else {}
+    hub_action = _TICKET_VERDICTS.get(str(body.get("verdict") or ""))
+    if not conv_id or hub_action is None:
+        return ApiFailResponse(
+            message="ticket_verdict: a ticket and a verdict (closed | solved) are required", status_code=400
+        )
+    try:
+        data = await HubProxy.call(
+            "POST", BuiltinEntityType.CONVERSATION, conv_id, hub_action, None, payload={}, strict=True
+        )
+    except HubError as e:
+        return e.fail_response("The hub refused the ticket verdict")
+    return ApiSuccessResponse(data=data)
+
+
 @action.post(action_name="ensure-sources", types=None)
 async def ensure_sources_now() -> ApiResponse:
     """Make the sources this login should have, now: a desk just created or joined shows its tickets without a
@@ -2161,10 +2223,11 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         fm = FlowMessage.model_validate(payload)
         # The same derived fields materialize_flow_message fills on every other arrival path: this pull is the
         # one a reply takes when it lands before the live push (an IT machine answering within a second).
-        from flow_sdk.builtin.flow_message import derive_it_reply, derive_ticket_draft  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message import derive_guest_message, derive_it_reply, derive_steer  # noqa: PLC0415
 
         derive_it_reply(fm, raw)
-        derive_ticket_draft(fm, raw)
+        derive_guest_message(fm, raw)
+        derive_steer(fm, raw)
         await fm.save()
     except Exception as e:  # noqa: BLE001
         logger.warning("[fm-process] bundle-less fm=%s save failed: %s", fm_id[:8], e)

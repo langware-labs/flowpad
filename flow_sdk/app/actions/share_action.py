@@ -52,7 +52,7 @@ def _local_mode_share_blocked() -> bool:
 
 # The roles a share invite may grant — one global list, served by ``share-roles``.
 
-SHARE_ROLES: tuple[str, ...] = tuple(role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"])
+SHARE_ROLES: tuple[str, ...] = tuple(role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"] and role != "guest")
 
 
 @action.get(action_name="share-roles", types=None)

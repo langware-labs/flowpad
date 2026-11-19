@@ -77,6 +77,8 @@ class ConversationKind(StrEnum):
     IT = "it"
     #: A project's Monitoring channel: the hub posts one message per Issue and keeps it current.
     MONITORING = "monitoring"
+    #: A help-desk ticket's private team conversation: the desk's staff and its agents. Stamped by the hub.
+    HELPDESK_TEAM = "helpdesk_team"
 
 
 class ConversationStatus(StrEnum):

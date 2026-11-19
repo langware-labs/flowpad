@@ -49,7 +49,7 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec._form import ShapeForm
-from flow_sdk.schema.data_spec.agent_spec import AgentSpec
+from flow_sdk.schema.data_spec.agent_spec import AgentReplyMode, AgentSpec
 from flow_sdk.schema.data_spec.auto_open_spec import AutoOpenEntry
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
@@ -245,6 +245,12 @@ class Agent(Entity):
         description="Chief of Staff mode: answer fast, run quick jobs on native subagents, delegate long "
         "ones as tasks to its staff (subagents) and follow up. Everything the mode does hangs off this "
         "one flag — off, the agent is exactly as it was (flow_sdk/tasks/cos.py).",
+    )
+    reply_mode: Optional[AgentReplyMode] = APIField(
+        default=None,
+        description="Whether the text a turn ends with goes back to the person: never, always, or auto (only while "
+        "no person attends the conversation). Unset: the channel's driver declares its default (a help desk says "
+        "auto), else always.",
     )
     cli_options: dict = APIField(
         default_factory=dict,

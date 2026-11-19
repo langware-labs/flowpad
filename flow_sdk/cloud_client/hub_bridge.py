@@ -951,11 +951,14 @@ class HubWsBridge:
             if issue is not None:
                 data = {**data, "issue_reply": issue}
                 fields = (*fields, "issue_reply", *(("text",) if isinstance(data.get("text"), str) else ()))
-            # A ticket draft is decided on the hub (sent, discarded): its ``metadata.ticket_draft`` moves with it.
-            draft = (data.get("metadata") or {}).get("ticket_draft") if isinstance(data.get("metadata"), dict) else None
-            if isinstance(draft, dict) and draft.get("ticket_id"):
-                data = {**data, "ticket_draft": dict(draft)}
-                fields = (*fields, "ticket_draft")
+            # A guest message is screened and a steer is delivered on the hub: their metadata moves with them.
+            for key in ("guest_message", "steer"):
+                ref = (data.get("metadata") or {}).get(key) if isinstance(data.get("metadata"), dict) else None
+                if isinstance(ref, dict):
+                    data = {**data, key: dict(ref)}
+                    # A guest message's text fills in on the UPDATE that flips it to passed; no other text moves.
+                    take_text = key == "guest_message" and isinstance(data.get("text"), str)
+                    fields = (*fields, key, *(("text",) if take_text else ()))
             for field in fields:
                 # The hub leaves a cleared field out of a full message: no ``handling_at`` on a message that is
                 # otherwise whole means "not working any more".
@@ -1013,6 +1016,16 @@ class HubWsBridge:
                 # next poll (a staff member's own reply, the moment the hub said "sent").
                 await FlowMessage._hydrate([persisted])
                 await _publish_server_managed_field_update(existing, persisted, last_field)
+                # A guest message that just passed screening is news to whoever serves the team conversation (its text
+                # only exists here from now on): announce it the way an arriving message is, so a source waiting on
+                # arrivals lists it.
+                guest_ref = data.get("guest_message")
+                if isinstance(guest_ref, dict) and guest_ref.get("status") == "passed":
+                    from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_conversation_message_tag  # noqa: PLC0415
+
+                    emit_conversation_message_tag(
+                        str(existing.id), str(getattr(existing, "conversation_id", "") or parent_conv_id or "")
+                    )
             # Body just landed on the hub — pull it now so asset chips become
             # clickable without a refresh. ``_maybe_eager_pull_bundle`` is a
             # no-op when the FM carries no asset TYPE_ID attachments.

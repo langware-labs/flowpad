@@ -4,6 +4,7 @@ import { QueryFilter, QueryRequest } from '../FlowSync/query';
 import type { AgenticProcess } from '../process/agentic-process';
 import { lastChatQuery, recencyOf } from '../process/last-chat';
 import { ActionInfo } from '../models/ActionInfo';
+import { Conversation } from './conversation';
 import { TypeId } from '../models/TypeId';
 import { isHubOnly } from '../utils/hub-runtime';
 import type { GitOrigin } from '../models/GitOrigin';
@@ -17,6 +18,7 @@ import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 import type { ActivityProgressSpec } from '../activity';
 import type { ComputeNodeSize } from './compute-node/machine-status';
 import { Deployment, type IDeployment } from './deployment';
+import type { SteerStatus } from './flow-message';
 
 /** A hub compute provider a cloud deployment lands on, by the hub's own name — sent to the hub as-is. */
 export type CloudDeployProvider = string;
@@ -25,6 +27,21 @@ import { AgentMailbox, type IAgentMailbox } from './agent-mailbox';
 import { Trigger } from './trigger';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
+
+/** Whether the text an agent's turn ends with goes back to the person: never, always, or only while no person attends. */
+export enum AgentReplyMode {
+  NEVER = 'never',
+  AUTO = 'auto',
+  ALWAYS = 'always',
+}
+
+/** What a steer answers: a status only (the hub's call answers `sending` with the steer message's id and reports the
+ *  rest on that message); what the agent wrote never comes back. */
+export interface SteerOutcome {
+  status: SteerStatus;
+  detail?: string;
+  message_id?: string;
+}
 
 /** One entry of `GET /agent/<id>/assistant_skill_catalog`. */
 export interface AssistantSkillChoice {
@@ -320,6 +337,8 @@ export class Agent extends APIEntity<Agent> {
   assistant_skills?: string[] | null;
   /** Chief of Staff mode: answers fast and delegates long work to its subagents as tasks. */
   chief_of_staff: boolean;
+  /** Whether a turn's closing text goes back to the person; unset = the channel's default (a help desk: `auto`), else `always`. */
+  reply_mode?: AgentReplyMode | null;
   /** Vendor-specific launch keys the schema does not enumerate (e.g. Claude's
    *  `chrome: true`). Nested by nature — which is why this type must never be
    *  round-tripped through the markdown frontmatter editor. */
@@ -396,6 +415,7 @@ export class Agent extends APIEntity<Agent> {
     this.load_flowpad_assistant = entity.load_flowpad_assistant ?? false;
     this.assistant_skills = entity.assistant_skills ?? null;
     this.chief_of_staff = entity.chief_of_staff ?? false;
+    this.reply_mode = entity.reply_mode ?? null;
     this.cli_options = entity.cli_options || {};
 
     this.enabled = entity.enabled ?? true;
@@ -519,6 +539,17 @@ export class Agent extends APIEntity<Agent> {
     const action = new ActionInfo('run', Agent.type, this.id, 'POST');
     action.bodyParameters = { prompt };
     return dataManager.callFlowAction<PromptResult>(action);
+  }
+
+  /**
+   * Steer the agent working one help-desk ticket: an admin message into its process, answered with a status only
+   * (`conversation/<ticket id>/steer`, through the hub when the agent runs on a machine of its own).
+   */
+  async steer(conversationId: string, text: string): Promise<SteerOutcome> {
+    const info = new ActionInfo('steer', Conversation.type, conversationId, 'POST');
+    info.hubReflect = true;
+    info.bodyParameters = { agent_id: this.id, text };
+    return (await dataManager.callAction<unknown, SteerOutcome>(info))!;
   }
 
   /**

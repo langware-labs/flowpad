@@ -17,9 +17,12 @@ class AuthRole(Enum):
     EDITOR = "EDITOR"
     READER = "READER"
     RUNNER = "RUNNER"
+    GUEST = "GUEST"
 
 
-ROLE_ORDER = ("owner", "owner_by_api", "admin", "editor", "reader", "runner")
+# ``guest`` is the one role that is not an inspection/execution capability: on a conversation it may post one
+# screened guest message and nothing else (policies.json). Approved by the owner on 2026-11-18.
+ROLE_ORDER = ("owner", "owner_by_api", "admin", "editor", "reader", "runner", "guest")
 ROLE_NAMES = frozenset(ROLE_ORDER)
 ROLE_PEER_INVITE_TYPES = frozenset({"conversation"})
 MEMBERSHIP_ROLES = ROLE_NAMES - {"owner_by_api"}
@@ -31,13 +34,15 @@ ROLE_INCLUDES = {
     "editor": frozenset({"editor", "reader", "runner"}),
     "reader": frozenset({"reader"}),
     "runner": frozenset({"runner"}),
+    "guest": frozenset({"guest"}),
 }
 ROLE_GRANTS = {
-    "owner": frozenset({"admin", "editor", "reader", "runner"}),
-    "admin": frozenset({"editor", "reader", "runner"}),
+    "owner": frozenset({"admin", "editor", "reader", "runner", "guest"}),
+    "admin": frozenset({"editor", "reader", "runner", "guest"}),
     "editor": frozenset(),
     "reader": frozenset(),
     "runner": frozenset(),
+    "guest": frozenset(),
     "owner_by_api": frozenset(),
 }
 
@@ -71,12 +76,13 @@ def roles_cover(held: Iterable[str] | str | None, requested: Iterable[str] | str
 
 
 class HubRole(StrEnum):
-    OWNER = 'owner'
-    OWNER_BY_API = 'owner_by_api'
-    ADMIN = 'admin'
-    EDITOR = 'editor'
-    READER = 'reader'
-    RUNNER = 'runner'
+    OWNER = "owner"
+    OWNER_BY_API = "owner_by_api"
+    ADMIN = "admin"
+    EDITOR = "editor"
+    READER = "reader"
+    RUNNER = "runner"
+    GUEST = "guest"
 
 
 VISITOR_AUTH_ROLE = AuthRole.READER

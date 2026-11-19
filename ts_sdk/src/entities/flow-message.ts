@@ -10,25 +10,61 @@ import { issueStatusOf, type IssueFix, type IssueSeverity, type IssueStatus } fr
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
-/** Where a ticket draft stands. Mirrors the hub's `DraftStatus`. */
-export enum TicketDraftStatus {
-  /** Waiting on the team side for a person to send, edit or drop it. */
+/** Where a guest message stands in screening. Mirrors the backend's `GuestMessageStatus`. */
+export enum GuestMessageStatus {
+  /** Waiting for the screening to answer; the text is not readable. */
   PENDING = 'pending',
-  /** A person sent it to the requester. */
-  SENT = 'sent',
-  /** A person dropped it; it never reached the requester. */
-  DISCARDED = 'discarded',
+  /** Screening passed, or a person released it: the message's text is readable. */
+  PASSED = 'passed',
+  /** Screening flagged it: the text stays hidden until a person releases or rejects it. */
+  HELD = 'held',
+  /** A person rejected it: the text stays hidden for good. */
+  REJECTED = 'rejected',
 }
 
-/** An answer for a ticket's requester waiting in the ticket's team conversation (`metadata.ticket_draft`). */
-export interface TicketDraftMeta {
-  ticket_id: string;
-  status: TicketDraftStatus;
-  /** Who sent or dropped it. */
-  by?: string;
-  /** The answer it became in the ticket, once sent. */
-  answer_id?: string;
-  edited?: boolean;
+/** Where one file of a guest message stands in screening. Mirrors the backend's `GuestFileStatus`. */
+export enum GuestFileStatus {
+  PENDING = 'pending',
+  /** The filter read it and found nothing. */
+  PASSED = 'passed',
+  /** The filter read it and flagged it. */
+  FLAGGED = 'flagged',
+  /** Not sent to the filter (an image, or a type it cannot read): a person decides. */
+  HELD = 'held',
+}
+
+/** One file of a guest message as the reference shows it once the message passed (a hub-made copy). */
+export interface GuestFileMeta {
+  name: string;
+  media_type: string;
+  size: number;
+}
+
+/** A guest message's reference in a ticket's team conversation (`metadata.guest_message`). */
+export interface GuestMessageMeta {
+  id: string;
+  status: GuestMessageStatus;
+  reasons?: string[];
+  /** Who released or rejected it, once a person did. */
+  decided_by?: string;
+  /** Its files; named here only once the message passed (a name is attacker-written text). */
+  files?: GuestFileMeta[];
+}
+
+/** What came of delivering a steer into the support agent's process. Mirrors the backend's `SteerStatus`. */
+export enum SteerStatus {
+  SENDING = 'sending',
+  RAN = 'ran',
+  FAILED = 'failed',
+  BUSY = 'busy',
+  CAPPED = 'capped',
+}
+
+/** A steer's delivery status in a ticket's team conversation (`metadata.steer`). */
+export interface SteerMeta {
+  agent: string;
+  ticket: string;
+  status: SteerStatus;
 }
 
 /** A Monitoring message's issue, as the hub stamps it (`metadata.issue`) and keeps it current. */
@@ -106,8 +142,10 @@ export enum FlowMessageKind {
   AUTOMATION_RESULT = 'automation_result',
   /** A help-desk ticket was closed or reopened: the hub's line in the ticket, how the other side learns of it. */
   TICKET_EVENT = 'ticket_event',
-  /** An answer for a ticket's requester, waiting on the team side for a person to send, edit or drop it. */
-  TICKET_DRAFT = 'ticket_draft',
+  /** What the support agent writes to a ticket's team side: a reference the hub screens before its text is readable. */
+  GUEST_MESSAGE = 'guest_message',
+  /** The internal agent's message into the support agent's ticket process, with its delivery status. */
+  STEER = 'steer',
 }
 
 /** The file a diagnosis message carries once shared -- re-derives the kind when the hub drops it. */
@@ -361,8 +399,10 @@ export interface IFlowMessage extends IEntity {
   it_request?: ItRequestMeta | null;
   /** An Issue in a project's Monitoring conversation: the hub's `metadata.issue` (kept locally as `issue_reply`). */
   issue_reply?: IssueReplyMeta | null;
-  /** A ticket draft in a team conversation: the hub's `metadata.ticket_draft` (kept locally as `ticket_draft`). */
-  ticket_draft?: TicketDraftMeta | null;
+  /** A guest message's screening reference: the hub's `metadata.guest_message` (kept locally as `guest_message`). */
+  guest_message?: GuestMessageMeta | null;
+  /** A steer's delivery status: the hub's `metadata.steer` (kept locally as `steer`). */
+  steer?: SteerMeta | null;
   /** Hub-relayed opaque metadata (a hub-page read carries it raw). */
   metadata?: Record<string, unknown> | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
@@ -418,11 +458,17 @@ export function itReplyOf(metadata: Record<string, unknown> | null | undefined):
   return it && typeof it === 'object' && (it as ItReplyMeta).node_typeid ? (it as ItReplyMeta) : null;
 }
 
-/** The draft a team-conversation message's `metadata.ticket_draft` carries, else null. */
-export function ticketDraftOf(metadata: Record<string, unknown> | null | undefined): TicketDraftMeta | null {
-  const draft = metadata?.ticket_draft as Partial<TicketDraftMeta> | undefined;
-  return draft && typeof draft === 'object' && typeof draft.ticket_id === 'string' && draft.status
-    ? (draft as TicketDraftMeta)
+/** The guest-message reference a team-conversation message's `metadata.guest_message` carries, else null. */
+export function guestMessageOf(metadata: Record<string, unknown> | null | undefined): GuestMessageMeta | null {
+  const ref = metadata?.guest_message as Partial<GuestMessageMeta> | undefined;
+  return ref && typeof ref === 'object' && typeof ref.id === 'string' && ref.id ? (ref as GuestMessageMeta) : null;
+}
+
+/** The steer a team-conversation message's `metadata.steer` carries (it names its `ticket`), else null. */
+export function steerOf(metadata: Record<string, unknown> | null | undefined): SteerMeta | null {
+  const steer = metadata?.steer as Partial<SteerMeta> | undefined;
+  return steer && typeof steer === 'object' && typeof steer.ticket === 'string' && steer.ticket
+    ? (steer as SteerMeta)
     : null;
 }
 
@@ -500,7 +546,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   it_reply?: ItReplyMeta | null;
   it_request?: ItRequestMeta | null;
   issue_reply?: IssueReplyMeta | null;
-  ticket_draft?: TicketDraftMeta | null;
+  guest_message?: GuestMessageMeta | null;
+  steer?: SteerMeta | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
   envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
@@ -572,8 +619,9 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.it_request = entity.it_request ?? itRequestOf(entity.metadata);
     // The hub rewrites `metadata.issue` as the issue moves; a raw hub read's metadata is the newest copy.
     this.issue_reply = issueReplyOf(entity.metadata) ?? entity.issue_reply ?? null;
-    // Like `metadata.issue`, the hub rewrites `metadata.ticket_draft` as the draft is decided.
-    this.ticket_draft = ticketDraftOf(entity.metadata) ?? entity.ticket_draft ?? null;
+    // Likewise the hub keeps `metadata.guest_message` / `metadata.steer` current as screening and delivery end.
+    this.guest_message = guestMessageOf(entity.metadata) ?? entity.guest_message ?? null;
+    this.steer = steerOf(entity.metadata) ?? entity.steer ?? null;
     this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;

@@ -4,6 +4,8 @@ import { useMessageSessions } from '@src/hooks/conversation/useMessageAutomation
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Trans } from '@lingui/react/macro';
+import { GuestMessageLine } from './GuestMessageLine';
+import { SteerLine } from './SteerLine';
 import { TicketClosedBar } from './TicketClosedBar';
 import { useLingui } from '@lingui/react/macro';
 import { CheckCircle2, LifeBuoy, RefreshCw, RotateCcw } from 'lucide-react';
@@ -858,6 +860,22 @@ export function ConversationView({
             {fm.text}
           </div>
         );
+      }
+      // What the support agent wrote to the team side (a screened reference) and the internal agent's steer into the
+      // agent's ticket: slim lines with a status, not bubbles.
+      if (fm?.kind === FlowMessageKind.GUEST_MESSAGE && fm.guest_message) {
+        return (
+          <GuestMessageLine
+            key={item.key}
+            guestMessage={fm.guest_message}
+            conversationId={conversationId}
+            senderName={fm.sender_name ?? ''}
+            text={fm.text ?? ''}
+          />
+        );
+      }
+      if (fm?.kind === FlowMessageKind.STEER && fm.steer) {
+        return <SteerLine key={item.key} steer={fm.steer} senderName={fm.sender_name ?? ''} text={fm.text ?? ''} />;
       }
       // Hub-only secured-transfer frames (a sealed value, its ack, a promise, a request) are never chat rows; one
       // that arrived without its kind is removed on the next sync — never shown meanwhile.

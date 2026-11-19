@@ -1973,6 +1973,26 @@ msgstr ""
 msgid "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
 msgstr "השיחה הזו נמצאת אצל {who} בפרויקט {0}, שאינו עותק עבודה של <0>{where}</0>"
 
+#: src/components/conversation/SteerLine.tsx
+msgid "{who} steered the support agent"
+msgstr "{who} הכווינו את סוכן התמיכה"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message being screened"
+msgstr "{who}: ההודעה עוברת סינון"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message held by screening{reasons}"
+msgstr "{who}: ההודעה נעצרה בסינון{reasons}"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message passed screening"
+msgstr "{who}: ההודעה עברה סינון"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "{who}: message rejected"
+msgstr "{who}: ההודעה נדחתה"
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{widerCount, plural, one {# error in the last {widerSpanLabel} — switch} other {# errors in the last {widerSpanLabel} — switch}}"
 msgstr "{widerCount, plural, one {שגיאה אחת ב-{widerSpanLabel} האחרונים — מעבר} other {# שגיאות ב-{widerSpanLabel} האחרונים — מעבר}}"
@@ -2633,8 +2653,8 @@ msgid "A task is assigned, the app opens, an agent finishes."
 msgstr "משימה מוקצית, האפליקציה נפתחת, סוכן מסיים."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "a team member sends the response to the customer"
-msgstr "איש צוות שולח את התשובה ללקוח"
+#~ msgid "a team member sends the response to the customer"
+#~ msgstr "איש צוות שולח את התשובה ללקוח"
 
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "A team without a budget gets its own pool, drawn from this one."
@@ -3989,6 +4009,7 @@ msgstr ""
 msgid "Also to"
 msgstr "גם אל"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Always"
 msgstr "תמיד"
@@ -4254,8 +4275,8 @@ msgid "Answer or ask the agent…"
 msgstr ""
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Answer to the customer"
-msgstr "תשובה ללקוח"
+#~ msgid "Answer to the customer"
+#~ msgstr "תשובה ללקוח"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
 msgid "Answer when a teammate tags @agent."
@@ -4283,8 +4304,8 @@ msgid "Answers fast and hands longer work to its staff as tasks. Their progress 
 msgstr "עונה מהר ומעביר עבודה ארוכה לצוות כמשימות. ההתקדמות מגיעה לערוץ המשימות של הסוכן; רק הסוכן מדבר עם אנשים."
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
-msgid "Answers wait for the team"
-msgstr "תשובות ממתינות לצוות"
+#~ msgid "Answers wait for the team"
+#~ msgstr "תשובות ממתינות לצוות"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Anthropic"
@@ -5129,6 +5150,10 @@ msgstr "פקודות Bash יאושרו אוטומטית כשארגז החול פ
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Auto-approve permissions that are not explicitly denied (--auto)"
 msgstr "אישור אוטומטי של הרשאות שלא נשללו במפורש (--auto)"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Auto-close"
+msgstr "סגירה אוטומטית"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
@@ -7198,6 +7223,10 @@ msgstr "סגרו (Escape)"
 msgid "Close {0}"
 msgstr "סגירת {0}"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Close a ticket by itself after"
+msgstr "לסגור פנייה מעצמה אחרי"
+
 #: src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
 msgid "Close all"
 msgstr "סגרו הכול"
@@ -8752,8 +8781,8 @@ msgid "Could not discard"
 msgstr "לא ניתן היה להשליך"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Could not discard the draft"
-msgstr "לא ניתן היה לזרוק את הטיוטה"
+#~ msgid "Could not discard the draft"
+#~ msgstr "לא ניתן היה לזרוק את הטיוטה"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -8764,6 +8793,10 @@ msgstr "לא ניתן להתנתק מ-{0}."
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Could not download"
 msgstr "לא היה ניתן להוריד"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not download the file"
+msgstr "לא ניתן היה להוריד את הקובץ"
 
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Could not download this message."
@@ -8919,6 +8952,10 @@ msgstr "לא ניתן לטעון את אפיק האירועים"
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Could not load the context."
 msgstr "לא ניתן לטעון את ההקשר."
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not load the held message"
+msgstr "לא ניתן היה לטעון את ההודעה שנעצרה"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not load this automation"
@@ -9117,6 +9154,14 @@ msgstr "לא ניתן היה לשחזר את הפרויקט של הפעילות 
 #: src/routes/loaders/load-next-process.ts
 msgid "Could not recover this session’s project."
 msgstr "לא ניתן היה לשחזר את הפרויקט של הפעילות הזו."
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not reject the message"
+msgstr "לא ניתן היה לדחות את ההודעה"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Could not release the message"
+msgstr "לא ניתן היה לשחרר את ההודעה"
 
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/org-detail-panel.tsx
@@ -9380,8 +9425,8 @@ msgid "Could not send it"
 msgstr "לא ניתן לשלוח"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Could not send the draft"
-msgstr "לא ניתן היה לשלוח את הטיוטה"
+#~ msgid "Could not send the draft"
+#~ msgstr "לא ניתן היה לשלוח את הטיוטה"
 
 #: src/components/install/InstallButton.tsx
 msgid "Could not send the install"
@@ -10328,9 +10373,17 @@ msgstr "יום בחודש"
 msgid "days"
 msgstr "ימים"
 
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "days after it is marked solved, unless the customer writes again. 0 = never."
+msgstr "ימים אחרי שסומנה כנפתרה, אלא אם הלקוח כותב שוב. 0 = לעולם לא."
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Days before old sessions are cleaned up"
 msgstr "ימים לפני ניקוי סשנים ישנים"
+
+#: src/components/helpdesk/HelpDeskPage.tsx
+msgid "Days until a solved ticket closes by itself"
+msgstr "ימים עד שפנייה שנפתרה נסגרת מעצמה"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "DB row or shadow dir, file is gone"
@@ -10989,6 +11042,10 @@ msgstr "נמסר אל"
 msgid "Delivered to a place that does not hold this channel"
 msgstr "נמסר למקום שאין בו ערוץ זה"
 
+#: src/components/conversation/SteerLine.tsx
+msgid "Delivered, the agent ran it"
+msgstr "נמסר, הסוכן הריץ אותו"
+
 #: src/components/data-sources/ChannelRouteControl.tsx
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Deliveries"
@@ -11432,7 +11489,6 @@ msgid "Disallowed tools"
 msgstr "כלים אסורים"
 
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
-#: src/components/conversation/TicketDraftLine.tsx
 #: src/components/image-annotator/ImageAnnotator.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
@@ -11472,8 +11528,8 @@ msgid "Discard unsaved changes and go back to stream inbox"
 msgstr "בטלו שינויים שלא נשמרו וחזרו לדואר הנכנס"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Discarded by {by}"
-msgstr "נזרק על ידי {by}"
+#~ msgid "Discarded by {by}"
+#~ msgstr "נזרק על ידי {by}"
 
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/LiveSessionView.tsx
@@ -11724,6 +11780,11 @@ msgstr "הורידו"
 msgid "Download .flowmsg"
 msgstr "הורידו .flowmsg"
 
+#. placeholder {0}: file.name
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Download {0}"
+msgstr "הורדת {0}"
+
 #: src/pages/entry/MessageLanding.tsx
 msgid "Download {attachmentFilename}"
 msgstr "הורדת {attachmentFilename}"
@@ -11859,8 +11920,8 @@ msgid "Draft"
 msgstr "טיוטה"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Draft for the customer — not sent"
-msgstr "טיוטה ללקוח — לא נשלחה"
+#~ msgid "Draft for the customer — not sent"
+#~ msgstr "טיוטה ללקוח — לא נשלחה"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Drag files or folders here, or use the + button"
@@ -12061,7 +12122,6 @@ msgstr "קצוות לפי סוג"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
-#: src/components/conversation/TicketDraftLine.tsx
 #: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -12194,8 +12254,8 @@ msgid "Edited"
 msgstr "נערך"
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Edited and sent to the customer by {by}"
-msgstr "נערך ונשלח ללקוח על ידי {by}"
+#~ msgid "Edited and sent to the customer by {by}"
+#~ msgstr "נערך ונשלח ללקוח על ידי {by}"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Edited items could not be loaded. Chat sessions are still shown."
@@ -14084,6 +14144,10 @@ msgstr "מתקן את ההגדרה…"
 msgid "Fixing these tightens the skill for every future run."
 msgstr "תיקון אלה משפר את הכישוריות לכל הרצה עתידית."
 
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "flagged by screening"
+msgstr "סומן על ידי הסינון"
+
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "Flow failed to load"
 msgstr "טעינת ה-Flow נכשלה"
@@ -15173,6 +15237,11 @@ msgstr ""
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Health:"
 msgstr "מצב תקינות:"
+
+#: src/components/conversation/GuestMessageLine.tsx
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "held — a person must release it"
+msgstr "מוחזק — אדם צריך לשחרר אותו"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Held by"
@@ -16591,6 +16660,10 @@ msgstr "משנה גם:"
 #: src/components/conversation/PromptRunSummaryDialog.tsx
 msgid "It answered without using any tool."
 msgstr "התשובה ניתנה בלי להשתמש בכלים."
+
+#: src/components/helpdesk/HelpDeskAgentDialog.tsx
+msgid "It answers customers while nobody on the team has picked the ticket up."
+msgstr "הוא עונה ללקוחות כל עוד אף אחד בצוות לא לקח את הפנייה."
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "It can read your Slack channels."
@@ -19511,6 +19584,7 @@ msgstr ""
 msgid "never"
 msgstr "מעולם לא"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "Never"
 msgstr "אף פעם"
@@ -21527,6 +21601,10 @@ msgstr "לא הועתק לתיקיית החבילה"
 msgid "Not deleted"
 msgstr ""
 
+#: src/components/conversation/SteerLine.tsx
+msgid "Not delivered"
+msgstr "לא נמסר"
+
 #: src/components/items/item-state.ts
 msgid "Not deployed"
 msgstr ""
@@ -21697,6 +21775,10 @@ msgstr "טרם הורץ"
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "Not run yet."
 msgstr "עדיין לא הורץ."
+
+#: src/components/conversation/SteerLine.tsx
+msgid "Not run: the turn limit for this ticket was reached"
+msgstr "לא הורץ: הגענו למגבלת הסיבובים של הפנייה הזו"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
@@ -22486,6 +22568,10 @@ msgstr ""
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "Only this port"
 msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Only while alone"
+msgstr "רק כשהוא לבד"
 
 #: src/pages/NotFound.tsx
 msgid "Oops! Page not found"
@@ -26212,6 +26298,7 @@ msgstr "רשום ב-hub, אך המסמך שלו עדיין לא הועלה למ�
 msgid "registered watchers: <0>{registeredCount}</0>"
 msgstr "צופים רשומים: <0>{registeredCount}</0>"
 
+#: src/components/conversation/GuestMessageLine.tsx
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Reject"
 msgstr "דחייה"
@@ -26247,6 +26334,7 @@ msgid "release"
 msgstr "גרסה"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/conversation/GuestMessageLine.tsx
 msgid "Release"
 msgstr "גרסה"
 
@@ -26753,6 +26841,11 @@ msgstr ""
 #: src/components/conversation/MessageComposer.tsx
 msgid "Reply to sender…"
 msgstr "הגיבו למשלח…"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Reply to the person"
+msgstr "מענה לאדם"
 
 #: src/components/helpdesk/HelpDeskAgentDialog.tsx
 #~ msgid "Reply when (pick any)"
@@ -29062,8 +29155,8 @@ msgid "Send to agent"
 msgstr ""
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Send to the customer"
-msgstr "שליחה ללקוח"
+#~ msgid "Send to the customer"
+#~ msgstr "שליחה ללקוח"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Send to the machines"
@@ -29090,6 +29183,7 @@ msgid "Sender refused"
 msgstr "השולח נדחה"
 
 #: src/components/agents/MailboxListsEditor.tsx
+#: src/components/conversation/SteerLine.tsx
 msgid "Sending"
 msgstr "שליחה"
 
@@ -29141,8 +29235,8 @@ msgid "Sent as a new reply; the first stays in the thread."
 msgstr ""
 
 #: src/components/conversation/TicketDraftLine.tsx
-msgid "Sent to the customer by {by}"
-msgstr "נשלח ללקוח על ידי {by}"
+#~ msgid "Sent to the customer by {by}"
+#~ msgstr "נשלח ללקוח על ידי {by}"
 
 #: src/components/warnings-popover/warnings-popover.tsx
 msgid "Sent to the help desk"
@@ -30133,6 +30227,10 @@ msgstr "הציגו פרויקטי מערכת"
 #: src/i18n/pref-labels.ts
 msgid "Show system skills"
 msgstr "הציגו מיומנויות מערכת"
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "Show text"
+msgstr "הצגת הטקסט"
 
 #: src/components/conversation/ConversationTasksPanel.tsx
 msgid "Show the message it was made from"
@@ -32358,6 +32456,10 @@ msgstr "הסוכן שעונה לכל שיחה במכונה הזו."
 msgid "The agent this link names isn't in the project's files."
 msgstr "הסוכן שהקישור מציין לא נמצא בקבצי הפרויקט."
 
+#: src/components/conversation/SteerLine.tsx
+msgid "The agent was busy"
+msgstr "הסוכן היה עסוק"
+
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "The agent writes this credential's test."
 msgstr ""
@@ -32687,6 +32789,10 @@ msgstr "הטרמינל שבתוך האפליקציה הוא תמיד המעטפ�
 msgid "The index was not changed."
 msgstr "האינדקס לא השתנה."
 
+#: src/components/conversation/SteerLine.tsx
+msgid "The internal agent"
+msgstr "הסוכן הפנימי"
+
 #: src/components/conversation/ItOperationChip.tsx
 msgid "The IT operation: every send under this name lands in this conversation."
 msgstr "פעולת ה-IT: כל שליחה בשם הזה נכנסת לשיחה הזו."
@@ -32985,6 +33091,10 @@ msgstr ""
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "The SubAgent definition's model + system prompt lead; the fields below are per-node overrides / task addendum."
 msgstr "המודל והנחיית המערכת מהגדרת ה-SubAgent קובעים; השדות שלהלן הם עקיפות לכל צומת / תוספת למשימה."
+
+#: src/components/conversation/GuestMessageLine.tsx
+msgid "The support agent"
+msgstr "סוכן התמיכה"
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "The tab content could not be prepared."
@@ -36413,6 +36523,10 @@ msgstr "היכן יוצרים את המפתח ואיך שומרים אותו: fl
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Where your server answers Meta's API. https only."
 msgstr "הכתובת שבה השרת עונה ל-API של Meta. https בלבד."
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Whether the text the agent ends a turn with is sent to the person. \"Only while alone\": it is sent while no one on the team has picked the conversation up."
+msgstr "האם הטקסט שהסוכן מסיים בו סיבוב נשלח לאדם. \"רק כשהוא לבד\": הוא נשלח כל עוד אף אחד בצוות לא לקח את השיחה."
 
 #: src/i18n/pref-labels.ts
 msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."

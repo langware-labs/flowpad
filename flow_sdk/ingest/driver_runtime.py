@@ -15,6 +15,7 @@ the order they happened; a reflecting source's files become refs diffed against 
 observed stamp per key plus, when the source can say, a handle that survives a rename. A remote
 file source's changed bytes are pulled through ``open`` into the row's cache first.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,6 +36,7 @@ from flow_sdk.sources.binding import Persona, SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import ResolvedSecrets
 from flow_sdk.sources.errors import Rejected, SourceError, Unsupported
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.files import LOCAL_KIND, extension_of, plan_parts, resolve_files, safe_name
 from flow_sdk.sources.protocols import (
     Choosing,
@@ -305,7 +307,9 @@ async def _pull(source: Source, wanted: list) -> None:
 # ── binding a row ──────────────────────────────────────────────────────────────
 
 
-def binding_of(row: Any, *, credentials: Optional[ResolvedSecrets] = None, persona: Optional[Persona] = None) -> SourceBinding:
+def binding_of(
+    row: Any, *, credentials: Optional[ResolvedSecrets] = None, persona: Optional[Persona] = None
+) -> SourceBinding:
     credentials = credentials or ResolvedSecrets()
     # A secret the resolver lifted out of the row never also rides in ``config``.
     driver = DRIVERS.get_or_none(str(getattr(row, "provider", "") or ""))
@@ -578,7 +582,9 @@ class DriverRuntime:
             # An idle traversal hands back no new resume point: the position it started from stands.
             carried = (resume or started_at) if cls.durable_cursor else None
             if self.is_object:
-                return await self._files(row, source, items, removed, moved, carried, dict(position.manifest), complete=complete)
+                return await self._files(
+                    row, source, items, removed, moved, carried, dict(position.manifest), complete=complete
+                )
             kept = [item for item in items if floor is None or (_when(item) or floor) >= floor]
             # Inside the session: a provider's media link rarely outlives it (a WhatsApp URL dies in
             # five minutes; a self-hosted gateway may delete the file sooner).
@@ -599,15 +605,19 @@ class DriverRuntime:
             kept = await self._stage(row, source, list(page.items))
             return self._records(row, kept, None, moved_on=False)
 
-    def _records(self, row: Any, items, cursor: Optional[str], *, moved_on: bool, listed: Optional[list] = None) -> Pass:
+    def _records(
+        self, row: Any, items, cursor: Optional[str], *, moved_on: bool, listed: Optional[list] = None
+    ) -> Pass:
         messages, reactions = split_reactions(items)
         kept = sorted(messages, key=lambda item: _when(item) or _EPOCH)
         envelopes = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in kept]
         stamps = [when for when in map(_when, kept) if when is not None]
         every = None
         if listed is not None:
-            every = frozenset(envelope_of(item, data_source_id=str(row.id), provider=self.provider).external_id
-                              for item in split_reactions(listed)[0])
+            every = frozenset(
+                envelope_of(item, data_source_id=str(row.id), provider=self.provider).external_id
+                for item in split_reactions(listed)[0]
+            )
         return Pass(
             listed=every,
             items=envelopes,
@@ -669,7 +679,9 @@ class DriverRuntime:
                 await _write_stream(home, source.open(f))
             except Exception as exc:  # noqa: BLE001 — a lost file keeps its metadata and says why
                 logger.info("[ingest] %s %s: could not copy %s: %s", self.provider, row.id, f.origin.key, exc)
-                return f.model_copy(update={"data": data.model_copy(update={"fetch_error": str(exc) or type(exc).__name__})})
+                return f.model_copy(
+                    update={"data": data.model_copy(update={"fetch_error": str(exc) or type(exc).__name__})}
+                )
         size = data.size if data.size is not None else home.stat().st_size
         return f.model_copy(update={"data": data.model_copy(update={"path": str(home), "size": size})})
 
@@ -684,14 +696,18 @@ class DriverRuntime:
         for i, f in enumerate(data.attachments):
             fd = f.data
             if isinstance(fd, MessageFileData) and fd.path and Path(fd.path).is_file():
-                origin = CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=f"{sent.origin.key}#{i}")
+                origin = CloudOrigin(
+                    kind=sent.origin.kind, namespace=sent.origin.namespace, key=f"{sent.origin.key}#{i}"
+                )
                 home = self._file_home(row, origin, fd.name)
                 await asyncio.to_thread(link_or_copy, Path(fd.path), home)
                 f = f.model_copy(update={"data": fd.model_copy(update={"path": str(home)})})
             kept.append(f)
         return sent.model_copy(update={"data": data.model_copy(update={"attachments": tuple(kept)})})
 
-    async def _files(self, row: Any, source: Source, items, removed, moved, cursor: Optional[str], previous: dict, *, complete: bool) -> Pass:
+    async def _files(
+        self, row: Any, source: Source, items, removed, moved, cursor: Optional[str], previous: dict, *, complete: bool
+    ) -> Pass:
         """A reflecting source's files as refs, diffed against the manifest.
 
         A traversal from the beginning is ``complete``: a key it no longer lists is gone. A delta
@@ -713,14 +729,18 @@ class DriverRuntime:
             refused = [key for key, rel in wanted.items() if cached_path(root, rel) is None]
             if refused:
                 # Never a silent drop: a source that quietly reflected 40 of 45 objects reads as complete.
-                logger.info("[ingest] %s %s: skipped %d object(s) with no usable path", self.provider, row.id, len(refused))
+                logger.info(
+                    "[ingest] %s %s: skipped %d object(s) with no usable path", self.provider, row.id, len(refused)
+                )
             for key in refused:
                 del by_key[key], wanted[key]
             placed = _place_without_collisions(wanted, known)
 
         def ref(key: str, rel: Optional[str] = None) -> Optional[str]:
             if root is None:
-                assert tree is not None, f"{self.provider} reflects but its row names no {self.cls.local_tree_key or 'tree'}"
+                assert tree is not None, (
+                    f"{self.provider} reflects but its row names no {self.cls.local_tree_key or 'tree'}"
+                )
                 return os.path.join(str(tree), key)
             path = cached_path(root, rel if rel is not None else known.get(key, key))
             return str(path) if path is not None else None
@@ -733,7 +753,8 @@ class DriverRuntime:
             current = observed
             live = {entry[1] for entry in current.values() if entry[1]}
             gone = [
-                key for key, entry in previous.items()
+                key
+                for key, entry in previous.items()
                 if key not in current and key not in moved_from and not (entry[1] and entry[1] in live)
             ]
         else:
@@ -839,7 +860,9 @@ class DriverRuntime:
         if to and not getattr(sent.data, "recipients", None):
             # Whom we sent it to is known here even when the provider's answer does not say — a
             # conversation we open is addressed by it.
-            to_whom = UserProfile(origin=CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=to), address=to)
+            to_whom = UserProfile(
+                origin=CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=to), address=to
+            )
             sent = sent.model_copy(update={"data": sent.data.model_copy(update={"recipients": (to_whom,)})})
         drafted = self.cls.sends_may_draft and sent.data.sent_at is None
         recorded = bool(getattr(sent.data, "recorded", False))
@@ -864,7 +887,8 @@ class DriverRuntime:
             return None
         try:
             outcome = await ingest_item(
-                envelope_of(await self._keep_sent(row, sent), data_source_id=str(row.id), provider=self.provider), sent_by_us=True
+                envelope_of(await self._keep_sent(row, sent), data_source_id=str(row.id), provider=self.provider),
+                sent_by_us=True,
             )
         except Exception:  # noqa: BLE001 — the message IS delivered; bookkeeping must not unsend it
             logger.exception("[ingest] %s sent %s but could not record the copy", self.provider, sent.origin.key)
@@ -902,7 +926,9 @@ class DriverRuntime:
     async def _stage_events(self, row: Any, source: Source, events: list) -> list:
         items = [event.item for event in events if event.item is not None]
         staged = iter(await self._stage(row, source, items))
-        return [event.model_copy(update={"item": next(staged)}) if event.item is not None else event for event in events]
+        return [
+            event.model_copy(update={"item": next(staged)}) if event.item is not None else event for event in events
+        ]
 
     async def ingest_events(self, row: Any, events: Any) -> dict:
         """Events a source produced outside a traversal (a webhook, a live call) through the one ingestion
@@ -937,7 +963,17 @@ class DriverRuntime:
             else:
                 await source.react(target, emoji)  # type: ignore[attr-defined]
 
-    async def act(self, row: Any, conversation: CloudOrigin, action: str, text: str = "", *, ended: bool = False) -> Optional[str]:
+    async def attended(self, row: Any, data: Any) -> bool:
+        """Whether a person is handling the conversation of message ``data`` on this channel now (live read)."""
+        if not issubclass(self.cls, MessageSource):
+            return False
+        source = await self.open(row)
+        async with source:
+            return bool(await source.attended(data))  # type: ignore[attr-defined]
+
+    async def act(
+        self, row: Any, conversation: CloudOrigin, action: str, text: str = "", *, ended: bool = False
+    ) -> Optional[str]:
         """Run the channel's ``action`` on ``conversation`` (``ended``: whether it has ended). A message
         the action wrote is recorded as ours, like a sent one (its echo lands on the same row); answers
         that record's ``SourceItem`` id, or ``None`` when the action wrote nothing. A channel without

@@ -11,7 +11,7 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 class HelpdeskAgentSide(str, Enum):
     """Which side of a ticket the agent writes on."""
 
-    #: Makes sure the team has everything it needs from the customer; answers them (as a draft when moderated).
+    #: Makes sure the team has everything it needs from the customer.
     CUSTOMER = "customer"
     #: Writes a first root-cause analysis for a team member to review; never reaches the customer.
     TEAM = "team"
@@ -26,9 +26,6 @@ class HelpdeskAgent(DataSpec):
     side: HelpdeskAgentSide
     #: What it does, in the owner's words; empty takes the side's default.
     instructions: str = ""
-    reply_not_picked_up: bool = True
-    reply_tagged: bool = True
-    moderated: bool = True
     #: Set once it exists.
     agent_id: Optional[str] = None
     agent_name: Optional[str] = None

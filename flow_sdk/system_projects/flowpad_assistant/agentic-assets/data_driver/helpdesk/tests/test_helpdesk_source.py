@@ -91,8 +91,6 @@ class _Hub:
             return {"id": "note-1", "conversation_id": entity_id, "text": payload["text"]}
         if entity_id not in self.tickets:
             raise NotFound("no such ticket")
-        if action == "draft":
-            return {"id": "draft-1", "conversation_id": TEAM, "kind": "ticket_draft", "text": payload["text"]}
         if action == "open_team_conversation":
             return {"id": TEAM}
         if action == "add_message":
@@ -147,7 +145,7 @@ async def test_conformance(check):
             for n in (1, 2, 3)
         ],
     )
-    binding = SourceBinding(config={"desk_project_id": DESK, "moderated": False})
+    binding = SourceBinding(config={"desk_project_id": DESK})
     probe = HelpdeskSource(binding, hub=fake)
     await check.run(
         Subject(
@@ -335,9 +333,7 @@ class TestMapping:
 
 class TestSend:
     async def test_it_picks_the_ticket_up_before_answering_every_time(self, hub):
-        out = await DataDriver.loaded("helpdesk").send(
-            _row(moderated=False), thread_key=TICKET, to=TICKET, text="try restarting it"
-        )
+        out = await DataDriver.loaded("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
         assert [c for c in hub.calls if c[0] == "post"] == [
             ("post", "conversation", TICKET, "pickup"),
             ("post", "conversation", TICKET, "add_message"),
@@ -351,7 +347,7 @@ class TestSend:
         them) lands beside it: the staff reply shows twice."""
         from flow_sdk.builtin.source_item import SourceItem
 
-        row = _row(moderated=False)
+        row = _row()
         out = await DataDriver.loaded("helpdesk").send(row, thread_key=TICKET, to=TICKET, text="try restarting it")
         (item,) = [
             i for i in await SourceItem.get_all({"data_source_id": str(row.id)}) if i.external_id == out.external_id
@@ -377,21 +373,10 @@ class TestSend:
 
 
 class TestHowTheAgentAnswers:
-    """The desk's agent: a draft on the team side by default, notes only on the team side, and quiet once a
-    person has the ticket unless tagged."""
-
-    async def test_a_moderated_answer_is_a_draft_on_the_team_side(self, hub):
-        out = await DataDriver.loaded("helpdesk").send(
-            _row(moderated=True), thread_key=TICKET, to=TICKET, text="try restarting it"
-        )
-        assert [c for c in hub.calls if c[0] == "post"] == [("post", "conversation", TICKET, "draft")]
-        assert out.external_id == "draft-1"
-        assert out.recorded is True, (
-            "the team conversation's copy comes from the hub; recorded here it lands in the ticket"
-        )
+    """The desk's agent: notes only on the team side; whether a person attends the ticket is asked of the driver."""
 
     async def test_a_persons_own_desk_source_answers_the_customer_at_once(self, hub):
-        """No agent settings: the staffer's own source -- a reply they type goes out, never waits as a draft."""
+        """No agent settings: the staffer's own source -- a reply they type goes out, goes out."""
         await DataDriver.loaded("helpdesk").send(_row(), thread_key=TICKET, to=TICKET, text="try restarting it")
         assert [c for c in hub.calls if c[0] == "post"] == [
             ("post", "conversation", TICKET, "pickup"),
@@ -409,21 +394,26 @@ class TestHowTheAgentAnswers:
         ]
 
     @pytest.mark.parametrize(
-        "picked_by, text, config, quiet",
+        "picked_by, attended",
         [
-            ([], "help", {}, False),
-            (["staff-1"], "help", {}, True),
-            ([ME], "help", {}, False),  # its own (unmoderated) answer picked the ticket up: still its to answer
-            (["staff-1"], "@Agent can you look?", {}, False),
-            ([], "help", {"reply_not_picked_up": False}, True),
-            (["staff-1"], "@agent", {"reply_tagged": False}, True),
+            ([], False),
+            (["staff-1"], True),
+            ([ME], False),  # its own answer picked the ticket up: still alone with it
+            ([ME, "staff-1"], True),
         ],
     )
-    async def test_the_agent_answers_an_unpicked_ticket_or_a_tag(self, hub, picked_by, text, config, quiet):
+    async def test_a_person_attends_a_ticket_only_when_someone_other_than_the_agent_picked_it_up(
+        self, hub, picked_by, attended
+    ):
         hub.pool = [{**POOL[0], "picked_up_by": picked_by}]
-        hub.messages = [{**MSG, "text": text}]
-        (item,) = (await DataDriver.loaded("helpdesk").traverse(_row(**config), _view())).items
-        assert item.data.quiet is quiet
+        data = SimpleNamespace(hub_conversation_id=TICKET)
+        assert await DataDriver.loaded("helpdesk").attended(_row(), data) is attended
+
+    async def test_every_ticket_message_is_a_call_for_the_agent_whoever_has_the_ticket(self, hub):
+        hub.pool = [{**POOL[0], "picked_up_by": ["staff-1"]}]
+        hub.messages = [MSG]
+        (item,) = (await DataDriver.loaded("helpdesk").traverse(_row(), _view())).items
+        assert item.data.quiet is False
 
 
 class TestTheAppHub:

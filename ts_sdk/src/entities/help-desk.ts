@@ -11,6 +11,7 @@ import { ActionInfo } from '../models/ActionInfo';
 import { normalizeEmail } from '../utils/utils';
 import { isHubOnly } from '../utils/hub-runtime';
 import type { HelpdeskTicket } from './conversation';
+import type { GuestFileMeta, GuestFileStatus, GuestMessageMeta } from './flow-message';
 
 /** What anyone who may ask a desk knows about it. */
 export interface HelpDeskCard {
@@ -52,6 +53,14 @@ export async function setHelpDeskEnabled(deskId: string, enabled: boolean, displ
   if (enabled) await ensureHelpDeskSources();
 }
 
+/** How many days after a ticket is marked solved it closes by itself, unless somebody writes in it first (0 = never).
+ *  The desk keeps its on/off state: the hub's `enable_helpdesk` is the one action that writes the desk's settings. */
+export async function setHelpDeskAutoCloseDays(deskId: string, enabled: boolean, days: number): Promise<void> {
+  const action = hubAction('enable_helpdesk', 'project', deskId, 'POST');
+  action.bodyParameters = { enabled, auto_close_days: days };
+  await dataManager.callAction(action);
+}
+
 /** Invite a person (a hub user id or an email) to answer on a desk. */
 export async function inviteHelpDeskStaff(deskId: string, idOrEmail: string): Promise<void> {
   const action = hubAction('members', 'project', deskId, 'POST');
@@ -73,7 +82,7 @@ export async function helpDeskCard(deskId: string): Promise<HelpDeskCard> {
 export interface HelpDeskProject {
   id: string;
   name?: string | null;
-  helpdesk?: { enabled?: boolean; display_name?: string | null } | null;
+  helpdesk?: { enabled?: boolean; display_name?: string | null; auto_close_days?: number } | null;
 }
 
 /** A project that is a help desk: on, or off but still named as one. */
@@ -181,20 +190,17 @@ export async function openTeamConversation(ticketId: string, text: string): Prom
 
 /** Which side of a ticket a desk's agent works. Mirrors the backend's `HelpdeskAgentSide`. */
 export enum HelpDeskAgentSide {
-  /** Answers the customer (a draft on the team side while moderated). */
+  /** Answers the customer. */
   CUSTOMER = 'customer',
   /** Writes notes for the team only. */
   TEAM = 'team',
 }
 
-/** One of a desk's optional agents, as the desk's page sets it up: the side it works and when it replies. */
+/** One of a desk's optional agents, as the desk's page sets it up: the side it works. */
 export interface HelpDeskAgent {
   desk_project_id: string;
   side: HelpDeskAgentSide;
   instructions?: string;
-  reply_not_picked_up: boolean;
-  reply_tagged: boolean;
-  moderated: boolean;
   agent_id?: string | null;
   agent_name?: string | null;
 }
@@ -212,4 +218,84 @@ export async function createHelpDeskAgent(agent: HelpDeskAgent, deskName: string
   const action = new ActionInfo('helpdesk-agent', null, null, 'POST');
   action.bodyParameters = { ...agent, desk_name: deskName };
   return (await dataManager.callAction<unknown, HelpDeskAgent>(action))!;
+}
+
+/** What the hub answers when a guest message is queued: the queue item and the reference left in the conversation. */
+export interface GuestMessagePosted {
+  id: string;
+  message_id: string;
+  status: GuestMessageMeta['status'];
+}
+
+/** One file of a held guest message, with how screening went for it. `index` is its place in the message. */
+export interface HeldGuestFile extends GuestFileMeta {
+  index: number;
+  status: GuestFileStatus;
+  reasons?: string[];
+}
+
+/** A held guest message's text and files, shown only to the person who decides it. */
+export interface HeldGuestMessage {
+  id: string;
+  text: string;
+  reasons: string[];
+  files?: HeldGuestFile[];
+}
+
+/** The bytes of one guest-message file, as the hub hands them over (a copy the hub made, never the ticket's file). */
+export interface GuestMessageFile {
+  name: string;
+  mediaType: string;
+  size: number;
+  blob: Blob;
+}
+
+/** The support agent's one way to write to a ticket's team side: a guest message. It waits in the hub's queue, is
+ *  screened, and only then is its text readable there. */
+export async function postGuestMessage(conversationId: string, text: string): Promise<GuestMessagePosted> {
+  const action = hubAction('guest_message', 'conversation', conversationId, 'POST');
+  action.bodyParameters = { text };
+  return (await dataManager.callAction<unknown, GuestMessagePosted>(action))!;
+}
+
+/** Staff-side: a person lets a held guest message through; its text becomes readable. Never an agent. */
+export async function releaseGuestMessage(conversationId: string, guestMessageId: string): Promise<void> {
+  const action = hubAction('guest_message', 'conversation', conversationId, 'POST');
+  action.subpath = [guestMessageId, 'release'];
+  await dataManager.callAction(action);
+}
+
+/** Staff-side: a person rejects a held guest message; its text stays hidden for good. Never an agent. */
+export async function rejectGuestMessage(conversationId: string, guestMessageId: string): Promise<void> {
+  const action = hubAction('guest_message', 'conversation', conversationId, 'POST');
+  action.subpath = [guestMessageId, 'reject'];
+  await dataManager.callAction(action);
+}
+
+/** Staff-side: the text of a held guest message and why it was held, for the person deciding it. */
+export async function getHeldGuestMessage(conversationId: string, guestMessageId: string): Promise<HeldGuestMessage> {
+  const action = hubAction('guest_message', 'conversation', conversationId, 'GET');
+  action.subpath = [guestMessageId];
+  return (await dataManager.callAction<undefined, HeldGuestMessage>(action))!;
+}
+
+/** One file of a guest message: the team's once the message passed, else only the person deciding it. */
+export async function getGuestMessageFile(
+  conversationId: string,
+  guestMessageId: string,
+  index: number,
+): Promise<GuestMessageFile> {
+  const action = hubAction('guest_message', 'conversation', conversationId, 'GET');
+  action.subpath = [guestMessageId, 'file', String(index)];
+  const file = (await dataManager.callAction<
+    undefined,
+    { name: string; media_type: string; size: number; data_base64: string }
+  >(action))!;
+  const bytes = Uint8Array.from(atob(file.data_base64), (c) => c.charCodeAt(0));
+  return {
+    name: file.name,
+    mediaType: file.media_type,
+    size: file.size,
+    blob: new Blob([bytes], { type: file.media_type || 'application/octet-stream' }),
+  };
 }

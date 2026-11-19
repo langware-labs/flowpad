@@ -632,23 +632,6 @@ export async function settleTicket(
   return { conversation_id: row?.id ?? conversationId, status: row!.status };
 }
 
-/** Staff-side: send an agent's draft (from the ticket's team conversation) to the requester, as written or as
- *  edited -- the hub's ``conversation/<ticket>/send_draft``. The sender picks the ticket up. */
-export async function sendTicketDraft(ticketId: string, messageId: string, text?: string): Promise<void> {
-  const action = new ActionInfo('send_draft', Conversation.type, ticketId, 'POST');
-  action.hubReflect = true;
-  action.bodyParameters = { message_id: messageId, ...(text ? { text } : {}) };
-  await dataManager.callAction(action);
-}
-
-/** Staff-side: drop an agent's draft; it never reaches the requester -- the hub's ``discard_draft``. */
-export async function discardTicketDraft(ticketId: string, messageId: string): Promise<void> {
-  const action = new ActionInfo('discard_draft', Conversation.type, ticketId, 'POST');
-  action.hubReflect = true;
-  action.bodyParameters = { message_id: messageId };
-  await dataManager.callAction(action);
-}
-
 /** One row in the staff helpdesk triage queue (lightweight; not a full
  *  Conversation entity). Sourced from the hub via the helpdesk project. */
 export interface HelpdeskTicket {

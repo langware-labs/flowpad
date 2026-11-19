@@ -5,6 +5,7 @@ from . import (  # noqa: F401
     access_action,
     add_translation_action,
     address_book_action,
+    agent_steer_action,
     ask_for_help_action,
     budgets_action,
     context_relations_action,

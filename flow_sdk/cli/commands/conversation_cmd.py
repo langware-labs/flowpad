@@ -462,7 +462,9 @@ def send_message(
     ] = None,
     form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
     on_reply: Annotated[Optional[str], typer.Option("--on-reply", help=_ON_REPLY_HELP)] = None,
-    wait: Annotated[Optional[str], typer.Option("--wait", help="How long to wait for the reply: 30m, 2h, 3d (default 3d).")] = None,
+    wait: Annotated[
+        Optional[str], typer.Option("--wait", help="How long to wait for the reply: 30m, 2h, 3d (default 3d).")
+    ] = None,
 ) -> None:
     cid = _conversation_id(conversation_id)
     if not (message or "").strip():
@@ -573,7 +575,9 @@ def new_conversation(
     title: Annotated[Optional[str], typer.Option("--title", help="Conversation title.")] = None,
     form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
     on_reply: Annotated[Optional[str], typer.Option("--on-reply", help=_ON_REPLY_HELP)] = None,
-    wait: Annotated[Optional[str], typer.Option("--wait", help="How long to wait for the reply: 30m, 2h, 3d (default 3d).")] = None,
+    wait: Annotated[
+        Optional[str], typer.Option("--wait", help="How long to wait for the reply: 30m, 2h, 3d (default 3d).")
+    ] = None,
 ) -> None:
     if not (message or "").strip():
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
@@ -642,6 +646,13 @@ def team_conversation(
     if not (message or "").strip():
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
     port = _discover_port()
+    if _is_deployed_agent_process(port):
+        _fail(
+            EXIT_INVALID_ARG,
+            "USE_GUEST_MESSAGE",
+            "A deployed agent writes to a ticket's team side only as a guest message, which the hub screens first: "
+            f'flow conversation guest {cid} "<text>"',
+        )
     if not _signed_in():
         _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
     data = _post_json(
@@ -650,6 +661,69 @@ def team_conversation(
         timeout=60,
     )
     _ok({"conversation_id": data.get("id"), "title": data.get("title"), "ticket_id": cid})
+
+
+def _is_deployed_agent_process(port: int) -> bool:
+    """Whether this command runs inside a process a DEPLOYMENT started (an agent serving a channel), as opposed to a
+    person's own session or a plain shell. A process the lookup cannot read counts as a person's: the hub's role
+    check is the enforcement, this only points the agent to the right command."""
+    pid = _current_process_id()
+    if not pid:
+        return False
+    try:
+        resp = _local_get(_graph_url(port, f"agentic_process/{pid}"), timeout=15)
+        data = resp.json().get("data") if resp.status_code == 200 else None
+    except (requests.exceptions.RequestException, ValueError):
+        return False
+    return bool(isinstance(data, dict) and data.get("deployment_id"))
+
+
+@conversation_app.command(
+    "guest",
+    help=(
+        "Post a guest message to a help-desk ticket's team side: the support agent's only way to write there. The hub "
+        "screens it before anyone on the team can read it, and answers its status (pending / passed / held)."
+    ),
+)
+def guest_message(
+    ticket_id: Annotated[str, typer.Argument(help="The help-desk ticket (conversation) id.")],
+    message: Annotated[str, typer.Argument(help="The message text, for the team.")],
+) -> None:
+    cid = _conversation_id(ticket_id)
+    if not (message or "").strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
+    port = _discover_port()
+    if not _signed_in():
+        _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
+    data = _post_json(_graph_url(port, f"conversation/{cid}/guest_message"), {"text": message}, timeout=60)
+    _ok({"ticket_id": cid, **{k: data.get(k) for k in ("id", "message_id", "status")}})
+
+
+def _ticket_verdict(ticket_id: str, verdict: str) -> None:
+    cid = _conversation_id(ticket_id)
+    port = _discover_port()
+    if not _signed_in():
+        _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
+    _post_json(_graph_url(port, f"conversation/{cid}/ticket_verdict"), {"verdict": verdict}, timeout=60)
+    _ok({"ticket_id": cid, "verdict": verdict})
+
+
+@conversation_app.command("close", help="Close a help-desk ticket: the customer confirmed they got what they wanted.")
+def close_ticket(ticket_id: Annotated[str, typer.Argument(help="The help-desk ticket (conversation) id.")]) -> None:
+    _ticket_verdict(ticket_id, "closed")
+
+
+@conversation_app.command(
+    "solved",
+    help=(
+        "Say a help-desk ticket looks solved when the customer has not confirmed it. The hub closes it by itself after "
+        "the desk's number of days, unless somebody writes in it first."
+    ),
+)
+def mark_ticket_solved(
+    ticket_id: Annotated[str, typer.Argument(help="The help-desk ticket (conversation) id.")],
+) -> None:
+    _ticket_verdict(ticket_id, "solved")
 
 
 def _entity_typeid_or_none(target: str):

@@ -1,4 +1,12 @@
-import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, TypeId, type AgentVersionState } from '@sdk';
+import {
+  Agent,
+  AgentReplyMode,
+  AGENT_AVATAR_FILE,
+  AGENT_AVATAR_REF,
+  FSRef,
+  TypeId,
+  type AgentVersionState,
+} from '@sdk';
 import { isPublicPlace, useAgentPlaces } from './use-agent-places';
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -30,6 +38,7 @@ import { AgentPlacesColumn } from './AgentPlacesColumn';
 import { NewDeploymentWizard } from './NewDeploymentWizard';
 import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
+import { SegmentedControl } from '@src/components/ui/segmented-control';
 import { AgentAssistantSkillsField } from './AgentAssistantSkillsField';
 import { AgentModelSizeField } from './AgentModelSizeField';
 import { AgentVisibilitySection } from './AgentVisibilitySection';
@@ -727,6 +736,30 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                         onCommit={(v) => void save({ subagents: v ?? [] })}
                       />
                     ) : null}
+                  </div>
+                  <div className="space-y-2 rounded-md border border-border px-3 py-2" data-testid="agent-reply-mode">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm">
+                        <Trans>Reply to the person</Trans>
+                      </span>
+                      <SegmentedControl
+                        testId="agent-reply-mode-control"
+                        ariaLabel={t`Reply to the person`}
+                        value={profile.reply_mode ?? AgentReplyMode.ALWAYS}
+                        onChange={(v) => void save({ reply_mode: v })}
+                        options={[
+                          [AgentReplyMode.ALWAYS, t`Always`],
+                          [AgentReplyMode.AUTO, t`Only while alone`],
+                          [AgentReplyMode.NEVER, t`Never`],
+                        ]}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>
+                        Whether the text the agent ends a turn with is sent to the person. "Only while alone": it is
+                        sent while no one on the team has picked the conversation up.
+                      </Trans>
+                    </p>
                   </div>
                   <div className="space-y-3">
                     <p className="text-xs text-muted-foreground">

@@ -232,15 +232,25 @@ async with workflow("acme-support"):                          # names the durabl
   placement and finds it again after a restart, so no routing table lives in your script.
   `answer(engine, m, process=p)` runs the turn on a live process you already hold instead.
 - **The routing is yours; the gates are not.** `answer` still drops the agent's own echoes,
-  senders the source does not admit, empty and quiet messages (a help desk marks a ticket a person picked up
-  quiet unless the agent is tagged), and leaves a `replies_explicitly` channel to reply by itself. A message it
-  does not answer is acked; a turn
+  senders the source does not admit, empty and quiet messages (a help desk marks the agent's own team-side writes
+  quiet), and leaves a `replies_explicitly` channel to reply by itself. Whether a finished turn's text is SENT is the
+  agent's `reply_mode` (`never | auto | always`, else the channel's default: a help desk says `auto`), decided after
+  the turn, right before the send: `auto` sends it while no person has picked the conversation up
+  (`MessageSource.attended`, read live) and runs the turn without sending once one has. A channel that tracks
+  attendance also counts an agent's turns there while no person attends and holds the message at
+  `UNATTENDED_TURN_CAP` (10) instead of running it. A message it does not answer is acked; a turn
   the process refused is not.
 - **`workflow(name)` is the cursor.** A restart resumes after the last acked message; without it
   the position lives only as long as the loop.
 - **One loop per channel.** A running local deployment of the agent also answers these channels —
   point each source's `answer_place` at the deployment this loop runs as, or don't also run the agent
   here, or two replies go out.
+
+- **A steer is one more turn.** `flow agent steer <agent> <ticket id> "<text>"` (or `Agent.steer` in `ts_sdk`) runs an
+  admin-authored turn in the ticket's session on the one deployment here that answers it (`agent_steer.steer`; the hub
+  reaches the same function through `POST /api/v1/agent-steer/run`). It answers a status (`ran | busy | failed |
+  capped`) and never the agent's words; the turn's text follows the reply mode like any other. A desk's customer text is
+  quoted under a runtime header, an admin's is not, so the customer cannot write one.
 
 ## 7. Run it on this computer — a process per deployment
 

@@ -68,6 +68,23 @@ class MessageSource(RecordSource):
     #: bot); 0 = any number (Slack).
     reactions_per_actor: ClassVar[int] = 0
 
+    #: The ``AgentReplyMode`` value an agent answering this channel has when its own definition names none
+    #: (``"auto"`` for a help desk). ``None``: the agent default, ``always``.
+    default_reply_mode: ClassVar[Optional[str]] = None
+    #: The channel knows whether a person is handling a conversation (``attended``), so an agent's turns there are
+    #: counted against the unattended cap and its ``auto`` reply mode has something to read.
+    tracks_attendance: ClassVar[bool] = False
+    #: One deployment answers a source of this channel: a source that names no ``answer_place`` is answered by its
+    #: agent's deployment only while that is the agent's single serving one (two answering one desk would each reply).
+    single_place: ClassVar[bool] = False
+
+    async def attended(self, data: Any) -> bool:
+        """Whether a person (not the agent) is handling the conversation ``data`` belongs to, right now.
+
+        Asked after a turn, immediately before its text would be sent, so it reads the channel's live state.
+        ``False`` for a channel with no such notion."""
+        return False
+
     @classmethod
     def outbound_spec(cls) -> Optional[type]:
         """The message spec that knows who a reply on this channel is addressed to; ``None`` means email's."""

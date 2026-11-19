@@ -125,10 +125,13 @@ class FlowMessageKind(str, Enum):
     #: A help-desk ticket was closed or reopened: the hub writes this line into the ticket, which is how the other
     #: side learns of it (``metadata.ticket_event`` = ``{status, by}``; the text is the plain fallback).
     TICKET_EVENT = "ticket_event"
-    #: An answer for a ticket's requester, waiting in the ticket's team conversation for a person to send, edit or
-    #: drop it. Hub-written (``metadata.ticket_draft`` = ``{ticket_id, status, by, answer_id, edited}``) and kept
-    #: current by the hub as it is decided; re-derived from that metadata on every arrival (:func:`derive_ticket_draft`).
-    TICKET_DRAFT = "ticket_draft"
+    #: What the support agent (untrusted) writes to a ticket's team side: the hub screens it in a queue and the team
+    #: conversation holds only a reference (``metadata.guest_message`` = ``{id, status, reasons}``) whose text fills in
+    #: once it passed. Hub-written; re-derived from that metadata on every arrival (:func:`derive_guest_message`).
+    GUEST_MESSAGE = "guest_message"
+    #: The internal agent's message into the support agent's ticket process, kept in the team conversation with its
+    #: delivery status (``metadata.steer`` = ``{agent, ticket, status}``); re-derived like the guest message.
+    STEER = "steer"
 
     @classmethod
     def hub_only(cls, value: "str | None") -> bool:
@@ -458,21 +461,30 @@ def derive_it_reply(fm: "FlowMessage", payload: dict) -> None:
         fm.it_request = {k: it.get(k) for k in ("agent_id", "op_id", "send_id")}
 
 
-def derive_ticket_draft(fm: "FlowMessage", payload: dict) -> None:
-    """Carry a team conversation's draft (``metadata.ticket_draft``, hub-written) onto ``ticket_draft``. Idempotent;
-    absent leaves it as is, so a refresh without metadata keeps the last decision the hub sent."""
-    metadata = payload.get("metadata")
-    draft = metadata.get(FlowMessageKind.TICKET_DRAFT.value) if isinstance(metadata, dict) else None
-    if isinstance(draft, dict) and draft.get("ticket_id"):
-        fm.ticket_draft = dict(draft)
-        fm.kind = FlowMessageKind.TICKET_DRAFT
-
-
 def issue_of(payload: dict) -> "dict | None":
     """The ``metadata.issue`` a hub Monitoring message carries (it names ``issue_typeid``), else None."""
     metadata = payload.get("metadata")
     issue = metadata.get("issue") if isinstance(metadata, dict) else None
     return dict(issue) if isinstance(issue, dict) and issue.get("issue_typeid") else None
+
+
+def derive_guest_message(fm: "FlowMessage", payload: dict) -> None:
+    """Carry a guest message's reference (``metadata.guest_message``, hub-written) onto ``guest_message`` and make the
+    message that kind. Idempotent; absent leaves it as is, so a refresh without metadata keeps the last status."""
+    metadata = payload.get("metadata")
+    ref = metadata.get(FlowMessageKind.GUEST_MESSAGE.value) if isinstance(metadata, dict) else None
+    if isinstance(ref, dict) and ref.get("id"):
+        fm.guest_message = dict(ref)
+        fm.kind = FlowMessageKind.GUEST_MESSAGE
+
+
+def derive_steer(fm: "FlowMessage", payload: dict) -> None:
+    """Carry a steer's ``metadata.steer`` (hub-written) onto ``steer`` and make the message that kind. Idempotent."""
+    metadata = payload.get("metadata")
+    steer = metadata.get(FlowMessageKind.STEER.value) if isinstance(metadata, dict) else None
+    if isinstance(steer, dict) and steer.get("ticket"):
+        fm.steer = dict(steer)
+        fm.kind = FlowMessageKind.STEER
 
 
 def derive_issue_reply(fm: "FlowMessage", payload: dict) -> None:
@@ -838,9 +850,10 @@ class FlowMessage(Entity):
     # cause, machine, opened_at, resolved_at}`` (``follow_up`` marks the "Resolved: …" line posted after it).
     # The hub updates the same message as the issue moves (count, status). PRIVATE, re-derived like ``it_reply``.
     issue_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
-    # A ticket draft in a team conversation (``FlowMessageKind.TICKET_DRAFT``): the hub's ``metadata.ticket_draft``.
-    # PRIVATE, re-derived like ``issue_reply``.
-    ticket_draft: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
+    # A guest message's screening reference and a steer's delivery status in a ticket's team conversation: the hub's
+    # ``metadata.guest_message`` / ``metadata.steer``. PRIVATE, re-derived like ``issue_reply``.
+    guest_message: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
+    steer: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)

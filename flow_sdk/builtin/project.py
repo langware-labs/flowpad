@@ -280,7 +280,9 @@ class HelpdeskConfig(BaseModel):
 # role-set grant policy remains authoritative; reject unknown roles up front.
 
 ProjectInviteRole = str
-PROJECT_INVITE_ROLES: tuple[str, ...] = tuple(role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"])
+PROJECT_INVITE_ROLES: tuple[str, ...] = tuple(
+    role for role in ROLE_ORDER if role in ROLE_GRANTS["owner"] and role != "guest"
+)
 PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "reader"
 
 
@@ -388,7 +390,9 @@ def _invite_credentials(invitees: Optional[List["ShareInvitee"]]):
 
     for inv in invitees or []:
         if inv.roles is not None and any(role not in PROJECT_INVITE_ROLES for role in inv.roles):
-            raise ProjectInviteRoleError(f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.roles!r}")
+            raise ProjectInviteRoleError(
+                f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.roles!r}"
+            )
     creds = load_credentials()
     if not creds or not creds.api_key:
         raise RuntimeError("Cloud login required")
@@ -832,7 +836,10 @@ class Project(SetupSkippable, Entity):
                 scan = scan_extension(options.EXTENSION_ID)
                 extension = {
                     **browser_choice.extension_hint(),
-                    "profiles": [{**p.profile.model_dump(), "browser": p.browser, "installed": p.installed} for p in scan.profiles],
+                    "profiles": [
+                        {**p.profile.model_dump(), "browser": p.browser, "installed": p.installed}
+                        for p in scan.profiles
+                    ],
                     "profiles_denied": scan.denied,
                 }
             return agent_status().model_dump(), extension, last_use
@@ -935,7 +942,10 @@ class Project(SetupSkippable, Entity):
             # logged and left for a person to fix; it never fails the update of everything else.
             log.warning(
                 "project %s: %d pulled asset(s) could not be indexed: skipped=%s issues=%s",
-                self.id, len(result.skipped) + len(issues), result.skipped, issues,
+                self.id,
+                len(result.skipped) + len(issues),
+                result.skipped,
+                issues,
             )
         _LOAD_READY.difference_update(key for key in tuple(_LOAD_READY) if key[0] == self.id)
 
@@ -1097,8 +1107,12 @@ class Project(SetupSkippable, Entity):
             if stop:
                 stopped = await coordinator.stop(one)
                 still = [p for p in await webapp_setup.ports(str(one.id)) if p.get("port")]
-                row.update(ok=not still, detail=stopped.detail if not still else
-                           f"{one.name} is still served on port {still[0]['port']} by a program Flowpad did not start")
+                row.update(
+                    ok=not still,
+                    detail=stopped.detail
+                    if not still
+                    else f"{one.name} is still served on port {still[0]['port']} by a program Flowpad did not start",
+                )
                 if still:
                     results.append(row)
                     continue
@@ -1120,12 +1134,14 @@ class Project(SetupSkippable, Entity):
         found = await self._own_apps(app)
         if not found:
             return ApiFailResponse(message=f"This project has no web app named {app!r}", status_code=404)
-        return ApiSuccessResponse(data={"apps": [{"app": one.name, "asset": str(one.typeid), "lifecycle": one.lifecycle}
-                                                 for one in found]})
+        return ApiSuccessResponse(
+            data={"apps": [{"app": one.name, "asset": str(one.typeid), "lifecycle": one.lifecycle} for one in found]}
+        )
 
     @action.post(action_name="app-handling")
-    async def app_handling_action(self, app: str = "", fingerprint: str = "", handling: dict | None = None,
-                                  test: bool = False) -> "ApiResponse":
+    async def app_handling_action(
+        self, app: str = "", fingerprint: str = "", handling: dict | None = None, test: bool = False
+    ) -> "ApiResponse":
         """Add a learned handling to an app (``flow app handling add``), or only test it (``test``): it must match
         the failure ``fingerprint`` names (the app's open failure, or one in its failure log)."""
         from flow_sdk.core.webapp import handling as handlings  # noqa: PLC0415
@@ -1138,17 +1154,29 @@ class Project(SetupSkippable, Entity):
         one = found[0]
         proof = handlings.proof_of(one.asset_ref, fingerprint, record.read(str(one.id)))
         if proof is None:
-            return ApiFailResponse(message=f"No failure with fingerprint {fingerprint!r} for {one.name}", status_code=404)
+            return ApiFailResponse(
+                message=f"No failure with fingerprint {fingerprint!r} for {one.name}", status_code=404
+            )
         try:
             spec = WebappHandlingSpec.model_validate(handling or {})
             if test:
-                return ApiSuccessResponse(data={"matches": handlings.matches(
-                    spec if (spec.fingerprint or spec.pattern) else spec.model_copy(update={"fingerprint": proof.fingerprint}),
-                    proof), "failure": proof.model_dump(mode="json")})
+                return ApiSuccessResponse(
+                    data={
+                        "matches": handlings.matches(
+                            spec
+                            if (spec.fingerprint or spec.pattern)
+                            else spec.model_copy(update={"fingerprint": proof.fingerprint}),
+                            proof,
+                        ),
+                        "failure": proof.model_dump(mode="json"),
+                    }
+                )
             added = handlings.add(one.asset_ref, spec, proof=proof)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=422)
-        return ApiSuccessResponse(data={"added": added.model_dump(mode="json"), "file": str(handlings.file_of(one.asset_ref))})
+        return ApiSuccessResponse(
+            data={"added": added.model_dump(mode="json"), "file": str(handlings.file_of(one.asset_ref))}
+        )
 
     @action.get(action_name="setup-requirements")
     async def setup_requirements_action(self, include_ready: bool = False) -> "ApiResponse":  # noqa: ARG002
@@ -1558,7 +1586,8 @@ class Project(SetupSkippable, Entity):
             QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["fs_storage_mount_path", parents]))
         )
         owners = [
-            p for p in matches
+            p
+            for p in matches
             if p.fs_storage_mount_path and is_valid_project_cwd(p.fs_storage_mount_path, include_temp=True)
         ]
         return sorted(owners, key=lambda p: len(p.fs_storage_mount_path or ""), reverse=True)
@@ -2082,7 +2111,12 @@ class Project(SetupSkippable, Entity):
                 # The hub emails this invite, so its link lands on the project.
                 request = {
                     field: recipient_key,
-                    "invitation_targets": [{"typeid": project_ref, "roles": person.roles if person.roles is not None else [PROJECT_DEFAULT_INVITE_ROLE]}],
+                    "invitation_targets": [
+                        {
+                            "typeid": project_ref,
+                            "roles": person.roles if person.roles is not None else [PROJECT_DEFAULT_INVITE_ROLE],
+                        }
+                    ],
                     # Set on the invitation rather than left to the hub's
                     # fallback, so it holds whichever target the hub picks.
                     "callback_override": project_share_landing_path(self.id),
@@ -2909,8 +2943,7 @@ class Project(SetupSkippable, Entity):
         for owner in await self._enclosing_owners(mount):
             if _counts(owner):
                 raise NestedProjectError(
-                    f"{mount} is inside project {owner.name!r} ({owner.fs_storage_mount_path}); "
-                    "projects do not nest"
+                    f"{mount} is inside project {owner.name!r} ({owner.fs_storage_mount_path}); projects do not nest"
                 )
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
@@ -4057,7 +4090,9 @@ class Project(SetupSkippable, Entity):
                     fav.data = {**data, "entity_id": new_id}
                     await fav.save()
             for (type_name, old_id), new_id in new_ids.items():
-                for ma in await MessageAttachment.get_all({"asset_type": type_name, "installed_asset_id": old_id}) or []:
+                for ma in (
+                    await MessageAttachment.get_all({"asset_type": type_name, "installed_asset_id": old_id}) or []
+                ):
                     ma.installed_asset_id = new_id
                     await ma.save()
         except Exception:  # noqa: BLE001 — a reference that will not save must not undo a finished move

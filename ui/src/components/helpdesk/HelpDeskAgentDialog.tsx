@@ -7,26 +7,13 @@
 import { createHelpDeskAgent, HelpDeskAgentSide, type HelpDeskAgent } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Dialog } from '@src/components/ui/dialog';
 import { SteppedDialogContent } from '@src/components/ui/stepped-dialog';
-import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
-
-function Choice({ label, detail, control }: { label: ReactNode; detail: ReactNode; control: ReactNode }) {
-  return (
-    <label className="flex items-start gap-3 rounded-md border px-3 py-2.5 text-sm">
-      <span className="pt-0.5">{control}</span>
-      <span className="flex flex-col">
-        <span className="font-medium">{label}</span>
-        <span className="text-xs text-muted-foreground">{detail}</span>
-      </span>
-    </label>
-  );
-}
 
 export function HelpDeskAgentDialog({
   deskId,
@@ -44,7 +31,6 @@ export function HelpDeskAgentDialog({
   const { t } = useLingui();
   const [step, setStep] = useState<'what' | 'launch'>('what');
   const [instructions, setInstructions] = useState('');
-  const [moderated, setModerated] = useState(true);
   const [launching, setLaunching] = useState(false);
   const customer = side === HelpDeskAgentSide.CUSTOMER;
   const title = customer ? t`Support agent (customer facing)` : t`Team agent (internal)`;
@@ -70,9 +56,6 @@ export function HelpDeskAgentDialog({
           desk_project_id: deskId,
           side,
           instructions,
-          reply_not_picked_up: true,
-          reply_tagged: true,
-          moderated: customer ? moderated : true,
         },
         deskName,
       );
@@ -145,17 +128,13 @@ export function HelpDeskAgentDialog({
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {customer ? (
-              <Choice
-                label={<Trans>Answers wait for the team</Trans>}
-                detail={<Trans>a team member sends the response to the customer</Trans>}
-                control={<Switch checked={moderated} onCheckedChange={setModerated} />}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
+              {customer ? (
+                <Trans>It answers customers while nobody on the team has picked the ticket up.</Trans>
+              ) : (
                 <Trans>It writes to the team only, never to the customer.</Trans>
-              </p>
-            )}
+              )}
+            </p>
           </div>
         )}
       </SteppedDialogContent>

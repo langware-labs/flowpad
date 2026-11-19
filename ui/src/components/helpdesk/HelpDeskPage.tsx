@@ -17,6 +17,7 @@ import {
   helpDeskTickets,
   inviteHelpDeskStaff,
   myHelpDesks,
+  setHelpDeskAutoCloseDays,
   setHelpDeskEnabled,
   HelpDeskAgentSide,
   type HelpDeskAgent,
@@ -300,6 +301,32 @@ export function HelpDeskPage({ deskId }: { deskId: string }) {
               label={<Trans>Copy</Trans>}
               copiedLabel={<Trans>Copied</Trans>}
             />
+          </div>
+          <div className={row}>
+            <span className="w-32 shrink-0 text-muted-foreground">
+              <Trans>Auto-close</Trans>
+            </span>
+            <span className="flex flex-1 flex-wrap items-center gap-2">
+              <Trans>Close a ticket by itself after</Trans>
+              <Input
+                key={project.helpdesk?.auto_close_days ?? 7}
+                type="number"
+                min={0}
+                max={365}
+                className="h-8 w-16"
+                defaultValue={project.helpdesk?.auto_close_days ?? 7}
+                disabled={busy}
+                aria-label={t`Days until a solved ticket closes by itself`}
+                data-testid="help-desk-auto-close-days"
+                onBlur={(e) => {
+                  const days = Math.min(365, Math.max(0, Math.trunc(Number(e.currentTarget.value) || 0)));
+                  if (days !== (project.helpdesk?.auto_close_days ?? 7)) {
+                    void run(() => setHelpDeskAutoCloseDays(deskId, on, days));
+                  }
+                }}
+              />
+              <Trans>days after it is marked solved, unless the customer writes again. 0 = never.</Trans>
+            </span>
           </div>
           {/* The optional agents run on a computer, so they are set up from the desktop app. */}
           {!isHubOnly() &&

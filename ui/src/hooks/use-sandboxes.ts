@@ -278,8 +278,8 @@ export interface LoginAccess {
   roles: string[];
 }
 
-/** The roles that mean anything on a machine, highest first (the hub's `LOGIN_ROLE_CHOICES`). */
-export const LOGIN_ROLE_CHOICES = ROLE_ORDER.filter(role => role !== 'owner_by_api');
+/** The roles that mean anything on a machine, highest first (the hub's `LOGIN_ROLE_CHOICES`); `guest` only posts guest messages. */
+export const LOGIN_ROLE_CHOICES = ROLE_ORDER.filter((role) => role !== 'owner_by_api' && role !== 'guest');
 
 /** What the hub gives a new box: admin and everything above it. */
 export const DEFAULT_LOGIN_ACCESS: LoginAccess = { allowLogin: true, roles: ['owner', 'admin'] };

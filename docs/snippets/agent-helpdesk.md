@@ -41,20 +41,21 @@ live by `tests/hub_tests/test_helpdesk_source_roundtrip.py`.
 From here the built-in stream inbox runtime does the rest while Flowpad's server runs:
 each poll lists the desk's pool, ingests a ticket's messages onto the hub's own
 ids, projects them into the Agent's stream inbox, and runs the Agent on every inbound
-message it did not write itself. Where its reply goes is the source's own config:
+message it did not write itself. The driver picks the ticket up and answers the
+requester, masked to the desk's brand. Whether a turn's closing text is sent at all is
+the Agent's `reply_mode` (`never | auto | always`): `auto`, which a help desk declares as
+its default, sends it while nobody on the team has picked the ticket up and goes quiet
+once a person has.
 
-- `moderated=True` (what the desk page's Customer agent setup turns on): the reply waits in the ticket's team conversation as a
-  draft; a person on the staff sends it (as written or edited), which picks the ticket up
-  for them, or discards it.
-- `moderated=False` (the default, and a person's own desk source): the driver picks the ticket up and answers the requester directly,
-  masked to the desk's brand.
-- `side="team"`: every word goes to the team conversation as a note; nothing reaches the
-  requester.
-
-The agent answers a ticket nobody has picked up (`reply_not_picked_up`) and one where
-someone wrote `@agent` (`reply_tagged`); once a person has the ticket it stays quiet
-unless tagged. The desk's page sets all of this up from its Customer agent / Team agent
-rows.
+A desk can have two agents with a hard boundary between them. The **support agent** is
+the one above: it talks to the customer, and it is untrusted, so it writes to the team
+side only as *guest messages* (`flow conversation guest <ticket id> "<text>"`) that the hub screens
+before anyone there can read them; it cannot read the team's conversation. The **internal agent**
+owns a `flow_conversation` source over the desk's team conversations: it runs the RCA, works
+with the team and never talks to the customer. It is called by a guest message that passed
+screening, or by a person tagging it; it reaches the support agent only with a *steer*, which
+answers a status and never the support agent's words. The desk's page sets both up from its
+Support agent / Team agent rows.
 
 `create_source(..., allowed_senders=[...])` restricts the desk to those hub user
 ids; leaving it empty keeps the desk open. Pausing the source (the switch on the
