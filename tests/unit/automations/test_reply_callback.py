@@ -100,7 +100,7 @@ async def test_an_unanswered_wait_is_cancelled_with_a_message():
     assert spent.typeid not in (await AgenticProcess.get_by_id(process.id)).shared_context_entities
     note = await Conversation.get_one({"channel": "automations", "channel_source_id": f"trigger-{rule.id}"})
     [said] = await FlowMessage.sent_in(note.id)
-    assert said.automation_result.status == "expired" and said.automation_result.session == str(process.typeid)
+    assert said.card()["status"] == "expired" and said.card()["session"] == str(process.typeid)
     assert said.text == "Nobody replied to “Which plan should we lead with?” within 3 days, so the follow-up was not sent."
     await _arrive(spent, await _message(conv.id, "late answer"))
     assert _queued(process) == []
@@ -147,4 +147,4 @@ async def test_a_wait_says_how_it_ended(how, status):
 
     note = await Conversation.get_one({"channel": "automations", "channel_source_id": f"trigger-{rule.id}"})
     [said] = await FlowMessage.sent_in(note.id)
-    assert said.automation_result.status == status and said.text == said.automation_result.summary
+    assert said.card()["status"] == status and said.text == said.card()["summary"]

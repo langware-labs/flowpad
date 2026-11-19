@@ -185,12 +185,21 @@ session id is one machine's, so no `trigger.json` can say it.
   an agent; quoted or not — fires it, and the session reads the callback line plus the reply. Arming checks the
   conversation once, so a reply that landed while nothing listened still fires. Unanswered at `expires_at`: a
   message in the rule's Automations conversation says so, and it never fires.
-- **What an automation posts is a card.** Every message an automation writes into its conversation carries
-  an `automation.result` (`AutomationResult`, on `FlowMessage.automation_result`): `status` (done · expired ·
-  cancelled · needs\_review · failed), a one-line `summary` (also the message's text) and `details` rows; the
-  conversation shows it as Status / Summary / Details. `post_automation_result` (`app/automation_message.py`)
-  is the one poster: a reply wait's end (answered, expired, cancelled), the Daily usage summary, the message
-  classifier's proposal, and a real run that failed (`post_failure`, once per streak of the same error).
+- **What an automation posts is a card.** Every message an automation writes into its own conversation
+  carries an `automation.result` (`AutomationResult`) as its `card.value.json`: `status` (done · expired ·
+  cancelled · needs\_review · failed), a one-line `summary` (also the message's text) and `details` rows. The
+  conversation draws that file in place with the kind's viewer (`MessageValueCard` → the
+  `automation-result-viewer` asset) — any message carrying a `card.value.json` is drawn by its kind the same
+  way, and its text is the fallback where the file is not on the machine. `post_automation_result`
+  (`app/automation_message.py`) is the one poster: a reply wait's end (answered, expired, cancelled), the
+  Daily usage summary, the message classifier's proposal, and a real run that failed (`post_failure`, once
+  per streak of the same error).
+- **A message rule answers in the message's conversation.** When a real run ends well, `report_run`
+  (called once, in `tag_triggers._run_tag_fire`) posts the last step's answer — an agent's reply, a
+  script's output, its value as `card.value.json` — where the rule reports (`report_to`): `conversation`,
+  the conversation of the message that fired it, as a **private message** the person shares or dismisses
+  (the default whenever the run has a conversation), or `automations`, the rule's own conversation. A test
+  run posts nothing.
 - **Gone with the session.** Deleting a session deletes its waiting callbacks (`drop_callbacks`); a
   fired one stays, as every spent one-shot does.
 

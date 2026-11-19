@@ -399,7 +399,7 @@ def add_message_gate(body: dict) -> "tuple[str | None, bool]":
     ``pending_send`` (queued, not delivered) and flushed once logged in."""
     from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
 
-    if bool(body.get("is_draft")):
+    if bool(body.get("is_draft")) or bool(body.get("private")):
         return None, False
     if _local_mode_share_blocked():
         return LOCAL_MODE_SHARE_MESSAGE, False

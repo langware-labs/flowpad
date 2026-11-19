@@ -25,3 +25,6 @@ class MessageDraftOptions(DataSpec):
     call_prompt: Optional[str] = None
     #: Make the sent message a task as well.
     task: bool = False
+    #: A private message: shown in the conversation to this machine's user only, as a message and not
+    #: as something being typed, until it is shared (sent) or dismissed.
+    private: bool = False

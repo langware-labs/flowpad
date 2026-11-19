@@ -95,8 +95,8 @@ async def test_a_real_run_that_fails_says_so_once_and_a_test_run_never():
     await run_automation(trigger)  # the same failure again: already said
 
     [said] = await FlowMessage.sent_in((await Conversation.get_one(key)).id)
-    assert said.automation_result.status == "failed" and said.text == f"{trigger.name} could not run."
-    assert [(d.label, d.value) for d in said.automation_result.details] == [("Error", "the agent is not set up")]
+    assert said.card()["status"] == "failed" and said.text == f"{trigger.name} could not run."
+    assert said.card()["details"] == [{"label": "Error", "value": "the agent is not set up"}]
 
 
 @async_context

@@ -50,7 +50,7 @@ class AutomationResultDetail(DataSpec):
 
 class AutomationResult(DataSpec):
     """What an automation's message says, as a card: Status, a one-line Summary, Details folded
-    (``FlowMessage.automation_result``; the message's text is the summary)."""
+    (the message's ``card.value.json``, drawn by the ``automation.result`` viewer; its text is the summary)."""
 
     spec_kind: ClassVar[str] = "automation.result"
 

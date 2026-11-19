@@ -63,6 +63,10 @@ def apply_patch(doc: dict[str, Any], patch: dict[str, Any], *, parent_type_id: s
     for key in ("name", "description", "fire_once", "max_fires_per_minute", "message_tags"):
         if key in patch:
             out[key] = patch[key]
+    if "report_to" in patch:
+        out.pop("report_to", None)
+        if patch["report_to"]:
+            out["report_to"] = patch["report_to"]
     if any(k in patch for k in ("tag_pattern", "tag_target", "tag_scope")):
         tag = dict(out.get("tag") or {})
         if "tag_pattern" in patch:

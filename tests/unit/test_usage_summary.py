@@ -46,11 +46,11 @@ async def test_each_run_is_a_message_in_the_automations_one_conversation():
     assert conv.title == "Daily usage summary"
     messages = await conv.messages()
     assert [m.kind for m in messages] == [FlowMessageKind.AUTOMATION_RESULT] * 2
-    assert [m.automation_result.status for m in messages] == ["done", "done"]
-    assert messages[0].text == messages[0].automation_result.summary == "Sun Nov 8: $12.50 across 3 sessions."
+    assert [m.card()["status"] for m in messages] == ["done", "done"]
+    assert messages[0].text == messages[0].card()["summary"] == "Sun Nov 8: $12.50 across 3 sessions."
     assert arrived.await_count == 2, "its arrival is the one notification"
-    [file] = [a for a in messages[0].attachment or [] if a.attachment_type == AttachmentType.FILE]
-    assert file.data.endswith("usage.summary.value.json")
+    card, file = [a for a in messages[0].attachment or [] if a.attachment_type == AttachmentType.FILE]
+    assert card.data.endswith("card.value.json") and file.data.endswith("usage.summary.value.json")
     body = json.loads(open(get_entity_embedded_storage(messages[0].typeid).get_storage_path(file.data)).read())
     assert (body["spec_kind"], body["total_cost_usd"]) == ("usage.summary", 12.5)
 

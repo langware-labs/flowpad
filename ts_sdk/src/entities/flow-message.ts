@@ -95,6 +95,9 @@ export const DIAGNOSIS_FILE = 'diagnosis.value.json';
 /** The file every help request carries -- what marks it as one on every machine (the hub drops ``kind``).
  *  Mirrors flow_sdk.builtin.flow_message.HELP_REQUEST_FILE. Plumbing: never shown as an attachment. */
 export const HELP_REQUEST_FILE = 'help_request.value.json';
+/** The value a message is drawn by, when it carries one: shown in place by its kind's viewer.
+ *  Mirrors flow_sdk.builtin.flow_message.CARD_FILE. */
+export const CARD_FILE = 'card.value.json';
 
 /** Single source of truth for the body filename on the hub blob store.
  *  Must match flow_sdk.builtin.flow_message.BODY_FILENAME exactly — the
@@ -211,6 +214,8 @@ export interface MessageDraftOptions {
    *  had a box: there the draft's text is the prompt. */
   call_prompt?: string | null;
   task?: boolean;
+  /** A private message: shown in the conversation to this machine's user only, until shared or dismissed. */
+  private?: boolean;
 }
 
 /** Named event types emitted by ``Conversation`` and ``FlowMessage``. Use
@@ -398,8 +403,6 @@ export interface IFlowMessage extends IEntity {
    *  exactly the badge rule: no origin, no channel mark. */
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
-  /** What an automation's message says as a card: Status, Summary, Details (`automation.result`). */
-  automation_result?: AutomationResult | null;
   /** A machine's reply in an IT conversation: the hub's `metadata.it` (kept locally as `it_reply`). */
   it_reply?: ItReplyMeta | null;
   /** The owner's request in an IT conversation: its agent, operation and send (kept locally as `it_request`). */
@@ -451,18 +454,6 @@ export interface IMessageReaction {
 // them from the wire — this merge makes them part of the class type.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface FlowMessage extends EntityMerge<IFlowMessage> {}
-
-/** Where the run an automation's message reports stands (`AutomationResultStatus`). */
-export type AutomationResultStatus = 'done' | 'expired' | 'cancelled' | 'needs_review' | 'failed';
-
-/** An automation's message as a card (`automation.result`): its text is `summary`. */
-export interface AutomationResult {
-  status: AutomationResultStatus;
-  summary: string;
-  details: { label: string; value: string }[];
-  /** The session it called back (`agentic_process-<id>`), when there is one. */
-  session?: string | null;
-}
 
 /** The IT reply a hub message's `metadata.it` carries, else null. */
 export function itReplyOf(metadata: Record<string, unknown> | null | undefined): ItReplyMeta | null {
@@ -542,7 +533,6 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   remote_worker_session_id?: string | null;
   origin?: ICloudOrigin | null;
   origin_local?: ICloudOriginLocal | null;
-  automation_result?: AutomationResult | null;
   it_reply?: ItReplyMeta | null;
   it_request?: ItRequestMeta | null;
   issue_reply?: IssueReplyMeta | null;
@@ -669,7 +659,6 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
     this.origin = entity.origin ?? null;
     this.origin_local = entity.origin_local ?? null;
-    this.automation_result = entity.automation_result ?? null;
     this.it_reply = entity.it_reply ?? itReplyOf(entity.metadata);
     this.it_request = entity.it_request ?? itRequestOf(entity.metadata);
     // The hub rewrites `metadata.issue` as the issue moves; a raw hub read's metadata is the newest copy.
@@ -700,6 +689,11 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Written here and not sent yet — the first state of `delivery_status`. */
   get is_draft(): boolean {
     return this.delivery_status === 'draft';
+  }
+
+  /** A private message: a draft the conversation shows to this machine's user only. */
+  get is_private(): boolean {
+    return this.is_draft && !!this.draft_options?.private;
   }
 
   /** Send this draft: the same message, through the send every message takes. `replyToId` names

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
@@ -22,13 +24,12 @@ from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sha
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.schema.data_spec.automation_spec import AutomationResult
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
+from flow_sdk.schema.data_spec.message_draft_spec import MessageDraftOptions
 from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
+from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
-from flow_sdk.schema.data_spec.message_draft_spec import MessageDraftOptions
-from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
 from flow_sdk.tags.envelope import parse_target
@@ -478,6 +479,9 @@ def derive_session_fields(fm: "FlowMessage") -> None:
 
 #: The file a help request carries (a ``help.request`` value): what marks the message as one on every machine.
 HELP_REQUEST_FILE = "help_request.value.json"
+#: The value a message is drawn by, when it carries one: a ``<kind>`` value its kind's viewer shows in place
+#: of the text (``FlowMessage.card``).
+CARD_FILE = "card.value.json"
 
 
 def carrier_attachment(fm: "FlowMessage") -> "Attachment | None":
@@ -870,9 +874,6 @@ class FlowMessage(Entity):
     # A machine's reply in an IT conversation (``ConversationKind.IT``): the hub writes it with
     # ``metadata.it`` = ``{node_typeid, code_last4, state, woke, value, call_id}``. PRIVATE like ``mark``:
     # re-derived from that metadata on every arrival (``derive_it_reply``), never sent back.
-    # What an automation's message says as a card -- Status, Summary, Details (``AutomationResult``); the text is
-    # its summary. PRIVATE: written here by the automation, never sent.
-    automation_result: Optional[AutomationResult] = APIField(None, sharing=Sharing.PRIVATE)
     it_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
     # The owner's request in an IT conversation: ``{agent_id, op_id, send_id}`` from its ``metadata.it``. The
     # conversation draws the replies that name the same ``send_id`` as a table under it. PRIVATE, re-derived
@@ -953,15 +954,25 @@ class FlowMessage(Entity):
     @classmethod
     async def find_composer_draft(cls, conversation_id: str, thread_id: Optional[str] = None) -> Optional["FlowMessage"]:
         """The draft typed in a conversation's composer (``thread_id``: that thread's composer) — at
-        most one. A reply held for review is a draft too, but belongs to its session, not a composer."""
+        most one. A reply held for review is a draft too, but belongs to its session, not a composer; a
+        private message is nobody's typing."""
         rows = await cls.get_all(
             {"match": {"conversation_id": str(conversation_id), "delivery_status": DeliveryStatus.DRAFT.value}}
         )
         for row in rows:
             typed_in = row.draft_options.thread_id if row.draft_options else None
-            if not row.remote_worker_session_id and typed_in == (thread_id or None):
+            if not row.remote_worker_session_id and not row.is_private and typed_in == (thread_id or None):
                 return row
         return None
+
+    @classmethod
+    async def private_unread(cls) -> dict[str, int]:
+        """How many private messages of each conversation are not read yet (``{conversation id: n}``)."""
+        rows = await cls.get_all(
+            {"match": {"delivery_status": DeliveryStatus.DRAFT.value, "draft_options.private": True, "is_read": False}},
+            hydrate=False,
+        )
+        return dict(Counter(str(row.conversation_id) for row in rows if row.conversation_id))
 
     @classmethod
     async def sent_in(cls, conversation_id: str, **match) -> list["FlowMessage"]:
@@ -974,6 +985,11 @@ class FlowMessage(Entity):
     def is_draft(self) -> bool:
         """Written here and not sent yet — ``DeliveryStatus.DRAFT``, the one place that says so."""
         return self.delivery_status == DeliveryStatus.DRAFT.value
+
+    @property
+    def is_private(self) -> bool:
+        """A private message: a draft shown in the conversation to this machine's user only."""
+        return self.is_draft and bool(self.draft_options and self.draft_options.private)
 
     @property
     def owes_delivery(self) -> bool:
@@ -1328,6 +1344,14 @@ class FlowMessage(Entity):
     def asset_typeids(self) -> list[str]:
         """The entities this message carries, as typeid strings (its own two pointers excluded)."""
         return [str(a.data) for a in self._user_attachments() if a.attachment_type == AttachmentType.TYPE_ID]
+
+    def card(self) -> Optional[dict]:
+        """The value this message is drawn by -- its ``card.value.json`` as ``{spec_kind, ...}`` -- or None
+        (it carries none, or its bytes are not on this machine)."""
+        from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
+
+        path = _local_file(get_entity_embedded_storage(self.typeid), f"{FILE_VFS_PREFIX}{CARD_FILE}")
+        return json.loads(Path(path).read_text(encoding="utf-8")) if path else None
 
     def file_names(self) -> list[str]:
         """The names of the files uploaded onto this message (``FILE_VFS_PREFIX`` stripped)."""

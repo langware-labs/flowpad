@@ -43,6 +43,7 @@ import {
   AttachmentType,
   BodyStatus,
   FlowMessageKind,
+  CARD_FILE,
   HELP_REQUEST_FILE,
   forwardMessage,
   isAttachmentMissing,
@@ -63,7 +64,7 @@ import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { AutomationMessageActions } from './AutomationMessageActions';
-import { AutomationResultCard } from './AutomationResultCard';
+import { MessageValueCard } from './MessageValueCard';
 import { DiagnosisCard } from './DiagnosisCard';
 import { IssueReplyLine } from './IssueReplyLine';
 import { ItReplyLine } from './ItReplyLine';
@@ -576,13 +577,16 @@ export function FlowMessageBubble({
   // An issue's message is its card (IssueReplyLine) instead of its text (ConversationView hides the hub's
   // "Resolved: …" follow-up, which the card already shows).
   const issueCard = fm.issue_reply ?? null;
-  // What an automation posted is its card (AutomationResultCard), which says the text as its Summary.
-  const automationResult = fm.kind === FlowMessageKind.AUTOMATION_RESULT ? (fm.automation_result ?? null) : null;
+  // A message that carries a value to be drawn by (`card.value.json`, on this machine) is that value's
+  // card (MessageValueCard) instead of its text, which stays the fallback.
+  const cardPath = dataContext.caps.localFiles
+    ? (attachmentItems.find((i) => i.filename === CARD_FILE && !!i.localPath)?.localPath ?? null)
+    : null;
   const message: ConversationMessage = {
     role,
     content:
       // A help request and a diagnosis are their card (DiagnosisCard), which says the text in a line.
-      isConvIdPointer || issueCard || diagnosisCard || automationResult ? '' : (fm.text ?? ''),
+      isConvIdPointer || issueCard || diagnosisCard || cardPath ? '' : (fm.text ?? ''),
     sender_id: fm.sender_id ?? '',
     timestamp,
   };
@@ -635,7 +639,7 @@ export function FlowMessageBubble({
   // review/install resolve their own target. Images never get a staged row.
   // What the review lists: everything the message carries except a help request's own carrier (plumbing).
   const reviewAttachments = (messageAttachments ?? []).filter((ma) => ma.name !== HELP_REQUEST_FILE);
-  const fileAttachments = reviewAttachments.filter((ma) => ma.asset_type === 'file');
+  const fileAttachments = reviewAttachments.filter((ma) => ma.asset_type === 'file' && !(cardPath && ma.name === CARD_FILE));
   const stagedFileNames = new Set(fileAttachments.map((ma) => ma.name ?? ''));
   // The SENDER's own downloaded files have no staged MA row (staging happens on
   // receive/unpack). Render them ungated so the sender sees their file
@@ -645,7 +649,8 @@ export function FlowMessageBubble({
       i.state === AttachmentChipState.Downloaded &&
       !localImageItems.includes(i) &&
       !stagedFileNames.has(i.filename) &&
-      i.filename !== HELP_REQUEST_FILE,
+      i.filename !== HELP_REQUEST_FILE &&
+      i.filename !== CARD_FILE,
   );
   // A value of a kind (`*.value.json`) is the same chip on both ends: the sender's own is not a file card.
   const isLocalValue = (i: (typeof attachmentItems)[number]) =>
@@ -855,7 +860,7 @@ export function FlowMessageBubble({
       {issueCard && <IssueReplyLine reply={issueCard} />}
       {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {diagnosisCard && <DiagnosisCard conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
-      {automationResult && <AutomationResultCard result={automationResult} />}
+      {cardPath && <MessageValueCard localPath={cardPath} fallback={fm.text ?? ''} />}
       {fm.kind === FlowMessageKind.AUTOMATION_RESULT && (
         <AutomationMessageActions conversationId={fm.conversation_id ?? ''} entities={entities} />
       )}
