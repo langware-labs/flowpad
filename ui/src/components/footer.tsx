@@ -13,7 +13,7 @@ import { VersionPopover } from '@src/components/version-popover';
 import { HubReleaseLabel } from '@src/components/version-popover/hub-release-label';
 import { AdvancedOnly } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
-import { SubAgent, TypeId } from '@sdk';
+import { dataContext, SubAgent, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 import { useParams } from 'react-router';
@@ -77,7 +77,7 @@ export function Footer({ className = '' }: FooterProps) {
         <div className="flex w-full min-w-0 items-center justify-end gap-1 overflow-hidden sm:ms-auto sm:w-auto sm:flex-none sm:gap-2">
           {!isHubOnly() && <LiveSessionsChip />}
           {!isHubOnly() && <BrowserChip />}
-          {!isHubOnly() && <SecretManagerChip />}
+          {dataContext.caps.localFiles && <SecretManagerChip />}
           <PendingActionsChip />
           <AdvancedOnly reserve={false}>
             <IndexerStatusPill />
