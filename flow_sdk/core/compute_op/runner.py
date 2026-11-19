@@ -775,7 +775,7 @@ async def _call_and_check(
     elif reason:
         detail = f"{spec.display_label}: {reason}"
     elif after.detail and _check_in_process(spec):
-        # A check answered in this backend says WHY in its own words ("WAHA refused the API key"); a
+        # A check answered in this backend says WHY in its own words ("Bridge refused the API key"); a
         # process's exit code cannot, which is all the sentence below has to go on.
         detail = f"{spec.display_label}: {after.detail}"
     else:

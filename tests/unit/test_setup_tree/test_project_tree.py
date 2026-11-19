@@ -68,28 +68,28 @@ def _stage_op(name):
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     root = tmp_path / "proj"
-    driver_folder = root / "agentic-assets" / "data_driver" / "waha"
+    driver_folder = root / "agentic-assets" / "data_driver" / "bridge"
     reqs = [
         SetupRequirementSpec(kind="pack", name="stripe", vars=[SetupVarSpec(env_var="STRIPE_KEY", present=True)],
                              used_by=["project"], satisfied=True),
         SetupRequirementSpec(kind="pack", credential_kind="oauth", name="google", provider="google", scopes=["drive"], used_by=["drive"]),
         SetupRequirementSpec(kind="gap", name="MYSTERY", used_by=["drive"], note="nobody declares it"),
     ]
-    sources = [FakeSource("d1", "drive", "gdrive"), FakeSource("w1", "waha", "waha", owner="agent-a")]
+    sources = [FakeSource("d1", "drive", "gdrive"), FakeSource("w1", "bridge", "bridge", owner="agent-a")]
     drivers = {
         "gdrive": SimpleNamespace(setup_wizards=[]),
-        "waha": SimpleNamespace(folder=driver_folder, setup_wizards=[
-            SetupStageSpec(stage="server", wizard="waha-server-stage"),
-            SetupStageSpec(stage="pair", wizard="waha-pair-stage"),
+        "bridge": SimpleNamespace(folder=driver_folder, setup_wizards=[
+            SetupStageSpec(stage="server", wizard="bridge-server-stage"),
+            SetupStageSpec(stage="pair", wizard="bridge-pair-stage"),
         ]),
     }
     wizards = {
-        "waha-server-stage": FakeWizard("waha-server-stage", [{"id": "s", "kind": "compute", "ref": "server-op"}]),
-        "waha-pair-stage": FakeWizard("waha-pair-stage", [{"id": "p", "kind": "compute", "ref": "pair-op"}]),
-        "waha-container": FakeWizard("waha-container", [{"id": "c", "kind": "compute", "ref": "container-op"}]),
+        "bridge-server-stage": FakeWizard("bridge-server-stage", [{"id": "s", "kind": "compute", "ref": "server-op"}]),
+        "bridge-pair-stage": FakeWizard("bridge-pair-stage", [{"id": "p", "kind": "compute", "ref": "pair-op"}]),
+        "bridge-container": FakeWizard("bridge-container", [{"id": "c", "kind": "compute", "ref": "container-op"}]),
     }
-    declared = AssetSetup(name="waha-container", asset_ref=str(driver_folder / "agentic-assets" / "asset_setup" / "waha-container"))
-    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="waha-container", label="WAHA container", run="waha-container"))
+    declared = AssetSetup(name="bridge-container", asset_ref=str(driver_folder / "agentic-assets" / "asset_setup" / "bridge-container"))
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="bridge-container", label="Bridge container", run="bridge-container"))
     monkeypatch.setattr(AssetSetup, "is_system", lambda self: False)
 
     async def collect(_p, *_a):
@@ -137,19 +137,19 @@ async def test_the_tree_puts_each_need_under_the_asset_that_needs_it(project):
         "a source with no stages still verifies — else the tree calls a source in setup done"
     )
     assert node["data_source-w1"].run is None, "a source with stages verifies in its last stage"
-    assert node["data_source-w1"].children == ("stage:w1:waha-pair-stage",)
-    assert node["stage:w1:waha-pair-stage"].children == ("stage:w1:waha-server-stage",), "a stage follows the one before"
-    assert node["stage:w1:waha-server-stage"].children == ("asset_setup:waha-container",), (
+    assert node["data_source-w1"].children == ("stage:w1:bridge-pair-stage",)
+    assert node["stage:w1:bridge-pair-stage"].children == ("stage:w1:bridge-server-stage",), "a stage follows the one before"
+    assert node["stage:w1:bridge-server-stage"].children == ("asset_setup:bridge-container",), (
         "what the source needs comes up before its FIRST stage, never beside it"
     )
-    assert dict(node["stage:w1:waha-server-stage"].inputs) == {"source": "w1", "owner": "agent-a"}
+    assert dict(node["stage:w1:bridge-server-stage"].inputs) == {"source": "w1", "owner": "agent-a"}
     assert [g.name for g in tree.gaps] == ["MYSTERY"] and "gap:MYSTERY" not in node
-    assert node["asset_setup:waha-container"].trusted is False, "a connector's own wizard is not ours"
+    assert node["asset_setup:bridge-container"].trusted is False, "a connector's own wizard is not ours"
     assert node["micro_app-a1"].run is None, "a web app has no separate setup: its one step brings it up"
     assert [s.ref for s in node["micro_app-a1"].on_load.steps] == ["micro_app-a1:up"]
     up = tree.ops["micro_app-a1:up"]
     assert up.completion_check.webapp_step == "up" and up.attempts == []  # recovery is the coordinator's
-    assert node["asset_setup:waha-container"].on_load is None, "a declared node loads only what it declares"
+    assert node["asset_setup:bridge-container"].on_load is None, "a declared node loads only what it declares"
 
 
 @pytest.mark.asyncio
@@ -198,7 +198,7 @@ async def test_the_whole_project_comes_up_leaf_first(project, monkeypatch, tmp_p
 
     assert result.ok, result.detail
     assert ran == ["container-op", "server-op", "pair-op"], "setup does not execute operational on_load"
-    assert recorded == [("waha-server-stage", "data_source-w1", True), ("waha-pair-stage", "data_source-w1", True)]
+    assert recorded == [("bridge-server-stage", "data_source-w1", True), ("bridge-pair-stage", "data_source-w1", True)]
 
 
 def _recorder(into, name, target):
@@ -217,18 +217,18 @@ async def test_without_approval_a_connectors_own_wizard_is_refused(project, tmp_
 
     result = await setup_tree(tree.root, resolve_node=tree.resolve_node, resolve_op=tree.resolve_op,
                               workdir=tmp_path, shell=shell, platform="linux", activity_path=f"setup-u-{tmp_path.name}")
-    assert result.state is SetupState.REFUSED and "waha-container" in result.detail
+    assert result.state is SetupState.REFUSED and "bridge-container" in result.detail
 
 
 @pytest.mark.asyncio
 async def test_a_declared_node_naming_a_missing_wizard_is_a_problem_not_a_pass(project, monkeypatch):
-    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="waha-container", run="no-such-wizard"))
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="bridge-container", run="no-such-wizard"))
     tree = await ProjectTree(project).load()
-    assert tree.nodes["asset_setup:waha-container"].problem == "waha-container names the wizard 'no-such-wizard', which is not here"
+    assert tree.nodes["asset_setup:bridge-container"].problem == "bridge-container names the wizard 'no-such-wizard', which is not here"
 
 
 def test_a_declared_setup_belongs_to_the_asset_folder_that_holds_it():
-    assert _holder("/p/agentic-assets/data_driver/waha/agentic-assets/asset_setup/c") == "data_driver:waha"
+    assert _holder("/p/agentic-assets/data_driver/bridge/agentic-assets/asset_setup/c") == "data_driver:bridge"
     assert _holder("/p/agentic-assets/data_source/feed/asset_setup/c") == "data_source:feed"
     assert _holder("/p/agentic-assets/webapp/site/agentic-assets/asset_setup/c") == "webapp:site"
     assert _holder(str(Path("/p/agentic-assets/asset_setup/c"))) == "project"
@@ -253,38 +253,38 @@ async def test_a_setup_declared_inside_a_web_app_is_what_opening_that_app_needs(
 
 @pytest.mark.asyncio
 async def test_a_declared_load_wizard_resolves_like_the_other_two(project, monkeypatch):
-    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="waha-container", run="waha-container", on_load="waha-container"))
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="bridge-container", run="bridge-container", on_load="bridge-container"))
     tree = await ProjectTree(project).load()
-    assert tree.nodes["asset_setup:waha-container"].on_load.name == "waha-container"
+    assert tree.nodes["asset_setup:bridge-container"].on_load.name == "bridge-container"
 
 
 @pytest.mark.asyncio
 async def test_a_declared_load_wizard_that_is_missing_is_a_problem_too(project, monkeypatch):
-    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="waha-container", on_load="no-such-warmer"))
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(name="bridge-container", on_load="no-such-warmer"))
     tree = await ProjectTree(project).load()
-    assert tree.nodes["asset_setup:waha-container"].problem == "waha-container names the wizard 'no-such-warmer', which is not here"
+    assert tree.nodes["asset_setup:bridge-container"].problem == "bridge-container names the wizard 'no-such-warmer', which is not here"
 
 
 @pytest.mark.asyncio
 async def test_an_app_load_includes_project_and_attached_declarations(project, monkeypatch):
     monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(
-        name="home-load", subject="micro_app-a1", on_load="waha-container"))
+        name="home-load", subject="micro_app-a1", on_load="bridge-container"))
     app = SimpleNamespace(id="a1", name="site", typeid="micro_app-a1", asset_ref="/p/site", setup_skipped=None,
                           get_type=lambda: "micro_app")
     tree = await ProjectTree(project).load_one(app)
     assert "project-p1" in tree.nodes
     assert tree.nodes["micro_app-a1"].children == ("asset_setup:home-load",)
-    assert tree.nodes["asset_setup:home-load"].on_load.name == "waha-container"
+    assert tree.nodes["asset_setup:home-load"].on_load.name == "bridge-container"
 
 
 async def test_two_projects_shipping_one_wizard_name_resolve_to_the_nearer_copy(monkeypatch):
-    """A dependency's own asset_setup runs ITS ``waha-setup``, not the same-named wizard a driver elsewhere ships."""
+    """A dependency's own asset_setup runs ITS ``bridge-setup``, not the same-named wizard a driver elsewhere ships."""
     from types import SimpleNamespace
 
     from flow_sdk.builtin import shipped_lookup
 
-    ours = SimpleNamespace(asset_ref="/w/waha-service/agentic-assets/wizard/waha-setup", id=1)
-    theirs = SimpleNamespace(asset_ref="/x/waha/agentic-assets/data_driver/waha/agentic-assets/wizard/waha-setup", id=2)
+    ours = SimpleNamespace(asset_ref="/w/bridge-service/agentic-assets/wizard/bridge-setup", id=1)
+    theirs = SimpleNamespace(asset_ref="/x/bridge/agentic-assets/data_driver/bridge/agentic-assets/wizard/bridge-setup", id=2)
 
     class Rows:
         @staticmethod
@@ -292,8 +292,8 @@ async def test_two_projects_shipping_one_wizard_name_resolve_to_the_nearer_copy(
             return [theirs, ours]
 
     monkeypatch.setattr(shipped_lookup, "is_running_install_path", lambda _: False)
-    near = "/w/waha-service/agentic-assets/asset_setup/waha-service"
-    assert await shipped_lookup.by_name_preferring_this_install(Rows, "waha-setup", near=near) is ours
+    near = "/w/bridge-service/agentic-assets/asset_setup/bridge-service"
+    assert await shipped_lookup.by_name_preferring_this_install(Rows, "bridge-setup", near=near) is ours
 
 
 @pytest.mark.asyncio

@@ -16,7 +16,7 @@ places that answered these questions one at a time cannot disagree:
 
 A declared ``asset_setup`` attaches to the node it is for: its ``subject`` (a node id, or
 ``data_driver:<name>`` for every source of that driver), else the asset whose folder holds it — so a
-connector ships the setup of what it needs (WAHA's container) inside its own folder.
+connector ships the setup of what it needs (a bridge's container) inside its own folder.
 """
 
 from __future__ import annotations

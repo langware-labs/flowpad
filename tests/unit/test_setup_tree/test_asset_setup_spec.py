@@ -21,16 +21,16 @@ def test_the_kinds_are_registered():
 
 
 def test_a_hand_written_document_reads_back_and_ignores_stray_keys(tmp_path):
-    folder = tmp_path / "agentic-assets" / "asset_setup" / "waha"
+    folder = tmp_path / "agentic-assets" / "asset_setup" / "bridge"
     folder.mkdir(parents=True)
     (folder / "asset_setup.json").write_text(json.dumps({
-        "name": "waha", "label": "WhatsApp (WAHA)", "children": ["asset_setup:waha-container"],
-        "run": "waha-setup", "note": "a stray key a person left",
+        "name": "bridge", "label": "WhatsApp (bridge)", "children": ["asset_setup:bridge-container"],
+        "run": "bridge-setup", "note": "a stray key a person left",
     }))
 
-    spec = AssetSetup(name="waha", asset_ref=str(folder)).spec()
+    spec = AssetSetup(name="bridge", asset_ref=str(folder)).spec()
 
-    assert spec == AssetSetupSpec(name="waha", label="WhatsApp (WAHA)", children=["asset_setup:waha-container"], run="waha-setup")
+    assert spec == AssetSetupSpec(name="bridge", label="WhatsApp (bridge)", children=["asset_setup:bridge-container"], run="bridge-setup")
 
 
 def test_a_broken_document_is_no_node_not_a_crash(tmp_path):

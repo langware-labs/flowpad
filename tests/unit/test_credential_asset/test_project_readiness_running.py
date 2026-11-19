@@ -38,14 +38,14 @@ def running(monkeypatch):
 
 
 async def test_a_source_in_setup_and_a_dead_site_make_the_project_not_ready(project, running):
-    running.sources = [SimpleNamespace(name="WhatsApp (WAHA)", provider="no-such-driver", status="setup", setup_detail="WAHA does not answer", typeid="data_source-s1", asset_ref="/p/agentic-assets/data_source/waha", setup_skipped=None)]
+    running.sources = [SimpleNamespace(name="WhatsApp (bridge)", provider="no-such-driver", status="setup", setup_detail="Bridge does not answer", typeid="data_source-s1", asset_ref="/p/agentic-assets/data_source/bridge", setup_skipped=None)]
     running.apps = [SimpleNamespace(id="a1", name="site", asset_ref="/p/site", typeid="micro_app-a1", setup_skipped=None)]
 
     readiness = await project_setup.readiness_of(project)
 
     assert not readiness.ready
     left = {(r.kind, r.name): r.note for r in readiness.to_do}
-    assert left == {(REQUIREMENT_SOURCE, "WhatsApp (WAHA)"): "WAHA does not answer", (REQUIREMENT_WEBAPP, "site"): "site is not running"}
+    assert left == {(REQUIREMENT_SOURCE, "WhatsApp (bridge)"): "Bridge does not answer", (REQUIREMENT_WEBAPP, "site"): "site is not running"}
 
 
 async def test_an_active_source_and_a_running_site_leave_it_ready(project, running):

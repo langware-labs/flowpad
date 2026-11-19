@@ -60,7 +60,7 @@ const OPTIONS: Record<OnboardingChannel, Option[]> = {
   whatsapp: [
     { id: 'flowpad_bot', method: 'flowpad', title: 'Flow WhatsApp bot', hint: 'Message our number from your phone.' },
     { id: 'meta_api', method: 'own', title: 'Meta API', hint: 'Your own WhatsApp Business number on Meta Cloud API.' },
-    { id: 'custom_api', method: 'own', title: 'Custom API', hint: 'Any Meta-compatible API, e.g. WAHA.' },
+    { id: 'custom_api', method: 'own', title: 'Custom API', hint: 'Any Meta-compatible API.' },
   ],
   telegram: [
     { id: 'flowpad_bot', method: 'flowpad', title: 'Flow bot', hint: 'Open our bot and press Start.' },

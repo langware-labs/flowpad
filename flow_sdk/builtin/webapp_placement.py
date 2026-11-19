@@ -929,8 +929,8 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
     its process runs on (or will), and the app is brought up the one way an app
     comes up here (``core/webapp/coordinator.bring_up``): what it stands on first —
     its declared ``asset_setup``, a dependency's install — then install → build →
-    start, with recovery. A bare start of the command missed all of that (a WAHA
-    bridge's start command ran before its runtime was installed, died, and stayed
+    start, with recovery. A bare start of the command missed all of that (a bridge's
+    start command ran before its runtime was installed, died, and stayed
     dead). Not waited for: the hub reads the endpoints' health afterwards, and a
     run already going is joined, so a second call does not start a second server.
     A service the app brings along (``services``) is an endpoint of its own. The

@@ -626,7 +626,7 @@ async def test_the_double_carries_files_quotes_and_reactions_both_ways(monkeypat
 
 
 # ── groups (Meta's Groups API) ───────────────────────────────────────────────
-# Held to Meta's own samples (``meta_groups/``, copied from waha-service's ``tests/meta_samples/groups``): a group
+# Held to Meta's own samples (``meta_groups/``): a group
 # is a conversation whose sender is still a person; what we send, reply and react there goes to
 # ``recipient_type: group``; a group source is one group of its number, claimed on the hub under the number's
 # account, and everyone in it may write.

@@ -299,8 +299,8 @@ async def test_a_dependency_projects_apps_come_up_on_the_deployed_projects_place
 async def test_an_exposed_app_is_installed_before_it_is_started(client, tmp_path):
     """A box brings an app up the one way an app comes up: what it needs installed first, then its start.
 
-    The WAHA bridge's start command names the runtime its install makes. Exposing ran the bare start
-    command — ``/bin/sh: ../../../.flow/waha-runtime/venv/bin/python: not found`` — and the admin page
+    The bridge's start command names the runtime its install makes. Exposing ran the bare start
+    command — ``/bin/sh: ../../../.flow/bridge-runtime/venv/bin/python: not found`` — and the admin page
     stayed down until somebody opened it by hand."""
     from flow_sdk.builtin import webapp_setup
 
