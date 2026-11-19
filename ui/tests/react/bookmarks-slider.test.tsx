@@ -118,6 +118,8 @@ vi.mock('@src/components/browseable-tree/adapters/useFavoritesRoots', () => ({
   useFavoritesProjectRoots: () => ({
     roots: [],
     currentBucketId: 'favproject:p1',
+    currentBucketLabel: 'P1',
+    rowsUnder: () => [],
     addParentFor: () => null,
   }),
 }));
@@ -126,10 +128,9 @@ vi.mock('@src/components/browseable-tree/adapters/useFavoritesRoots', () => ({
 vi.mock('@src/components/browseable-tree/BrowseableTree', async () => {
   const { createElement } = await import('react');
   return {
-    BrowseableTree: (props: { onNavigate?: (p: unknown) => void; hoverExpandMs?: number }) =>
+    BrowseableTree: (props: { onNavigate?: (p: unknown) => void }) =>
       createElement('button', {
         'data-testid': 'tree-row',
-        'data-hover-expand-ms': props.hoverExpandMs,
         onClick: () => props.onNavigate?.('PTR'),
       }),
   };
@@ -148,16 +149,14 @@ describe('BookmarksSlider', () => {
   });
   afterEach(cleanup);
 
-  it('renders the tree menu with hover-expand, and NO scope filter in the header', () => {
+  it('renders the level menu under a breadcrumb header, with NO scope filter', async () => {
     render(<BookmarksSlider open onOpenChange={() => {}} hoverProps={noHover} />);
-    // The scope selector is gone: the tree groups by project instead, so the
-    // header carries only the title and the close button.
+    expect(await screen.findByTestId('tree-row')).toBeInTheDocument();
+    // The header is the breadcrumb (the menu draws it there) and the close
+    // button: which project is a level you enter, not a scope you set.
+    expect(screen.getByRole('dialog', { name: 'Bookmarks' })).toContainElement(screen.getByTestId('bookmarks-breadcrumb'));
     expect(screen.queryByTestId('scope-bar')).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/scope/i)).not.toBeInTheDocument();
-    const tree = screen.getByTestId('tree-row');
-    expect(tree).toBeInTheDocument();
-    // Hover-expand is opt-in per surface; the menu is the one that opts in.
-    expect(tree).toHaveAttribute('data-hover-expand-ms', '150');
   });
 
   it('closes the slider when navigation changes the dock (any favorite click arm)', () => {

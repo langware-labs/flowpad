@@ -63,52 +63,6 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('BrowseableTree hover-expand', () => {
-  it('does nothing on hover when hoverExpandMs is unset — the default for every other navigator', () => {
-    const listChildren = vi.fn(() => Promise.resolve([] as Browseable[]));
-    render(<BrowseableTree roots={[root({ listChildren })]} activePointer={null} />);
-
-    hover('Folder');
-    act(() => void vi.advanceTimersByTime(2000));
-
-    expect(listChildren).not.toHaveBeenCalled();
-  });
-
-  it('expands after the dwell when hoverExpandMs is set', () => {
-    const listChildren = vi.fn(() => Promise.resolve([] as Browseable[]));
-    render(<BrowseableTree roots={[root({ listChildren })]} activePointer={null} hoverExpandMs={150} />);
-
-    hover('Folder');
-    act(() => void vi.advanceTimersByTime(149));
-    expect(listChildren).not.toHaveBeenCalled();
-
-    act(() => void vi.advanceTimersByTime(1));
-    expect(listChildren).toHaveBeenCalled();
-  });
-
-  it('leaving before the dwell cancels the expand', () => {
-    const listChildren = vi.fn(() => Promise.resolve([] as Browseable[]));
-    render(<BrowseableTree roots={[root({ listChildren })]} activePointer={null} hoverExpandMs={150} />);
-
-    hover('Folder');
-    act(() => void vi.advanceTimersByTime(100));
-    unhover('Folder');
-    act(() => void vi.advanceTimersByTime(2000));
-
-    expect(listChildren).not.toHaveBeenCalled();
-  });
-
-  it('ignores touch — a tap must not expand', () => {
-    const listChildren = vi.fn(() => Promise.resolve([] as Browseable[]));
-    render(<BrowseableTree roots={[root({ listChildren })]} activePointer={null} hoverExpandMs={150} />);
-
-    hover('Folder', 'touch');
-    act(() => void vi.advanceTimersByTime(2000));
-
-    expect(listChildren).not.toHaveBeenCalled();
-  });
-});
-
 describe('BrowseableTree hover-seen', () => {
   it('does nothing on hover when hoverSeenMs is unset — the default for every other navigator', () => {
     const onHoverSeen = vi.fn();
@@ -177,7 +131,7 @@ describe('BrowseableTree hover never opens', () => {
     const onOpen = vi.fn();
     const onNavigate = vi.fn();
     render(
-      <BrowseableTree roots={[leaf({ onOpen })]} activePointer={null} onNavigate={onNavigate} hoverExpandMs={150} />,
+      <BrowseableTree roots={[leaf({ onOpen })]} activePointer={null} onNavigate={onNavigate} />,
     );
 
     hover('Welcome');
@@ -191,7 +145,7 @@ describe('BrowseableTree hover never opens', () => {
     const onOpen = vi.fn();
     const onNavigate = vi.fn();
     render(
-      <BrowseableTree roots={[leaf({ onOpen })]} activePointer={null} onNavigate={onNavigate} hoverExpandMs={150} />,
+      <BrowseableTree roots={[leaf({ onOpen })]} activePointer={null} onNavigate={onNavigate} />,
     );
 
     fireEvent.click(screen.getByText('Welcome'));

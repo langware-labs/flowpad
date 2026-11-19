@@ -62,6 +62,7 @@ export function AnchoredMenu({
   open,
   onOpenChange,
   title,
+  label,
   headerRight,
   width = 320,
   anchorTop = ANCHOR_FALLBACK_TOP,
@@ -74,6 +75,8 @@ export function AnchoredMenu({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title?: ReactNode;
+  /** The dialog's accessible name when `title` is not plain text. */
+  label?: string;
   headerRight?: ReactNode;
   /** Maximum width. The menu sizes to its content and stops here. */
   width?: number;
@@ -151,7 +154,7 @@ export function AnchoredMenu({
     <div
       ref={panelRef}
       role="dialog"
-      aria-label={typeof title === 'string' ? title : undefined}
+      aria-label={label ?? (typeof title === 'string' ? title : undefined)}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       style={{
@@ -192,8 +195,8 @@ export function AnchoredMenu({
       )}
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        {title != null && <div className="text-sm font-semibold text-foreground">{title}</div>}
-        <div className="ms-auto flex items-center gap-1">
+        {title != null && <div className="min-w-0 text-sm font-semibold text-foreground">{title}</div>}
+        <div className="ms-auto flex shrink-0 items-center gap-1">
           {headerRight}
           <button
             type="button"
