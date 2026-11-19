@@ -5,7 +5,7 @@ and the hub booting a machine — so the dialog showed a spinner for minutes wit
 it. The contract pinned here: the desktop ACCEPTS (200, naming its activity) before the machine is
 placed, and every step arrives over the WebSocket as a block of that activity,
 addressed to the agent, until the run ends. Model funding is a warning, not a gate: a deploy whose
-token allocation has nothing to spend is still accepted, and its readiness step says so.
+token allocation has nothing to spend is still accepted, and the answer says so.
 
 Nothing is mocked. A live, launcher-owned instance signed in to a hub that offers ``gcp_vm``
 deploys a throwaway agent onto a REAL GCP VM, and the test listens on the same ``progress_report``
@@ -52,8 +52,8 @@ TOKEN_SOURCE_ENV_KEY: str = "FLOWPAD_DEPLOY_E2E_TOKEN_SOURCE"
 PROVIDER: str = "gcp_vm"
 #: The deploy's activity, and its blocks in the order they run.
 DEPLOY_ACTIVITY: str = "deploy"
-STEPS: tuple[str, ...] = ("publish", "dependencies", "plan", "values", "readiness", "machine")
-#: How the readiness step says the placement has no model funding.
+STEPS: tuple[str, ...] = ("publish", "dependencies", "plan", "readiness", "machine")
+#: How the accepted answer says the placement has no model funding.
 NO_FUNDING_WARNING: str = "No LLM funding for"
 #: Creating and enrolling a GCP VM, then cloning and signing in, is the hub's own live-test budget
 #: (1200s); a deploy still running after this is broken, and the last frame says where it stopped.
@@ -238,13 +238,6 @@ async def test_deploy_is_accepted_and_streams_its_steps(instance: LiveE2EInstanc
 
 
 # A real GCP VM is created, then deleted. Do not increase without approval.
-# flowpad:capsule tag
-# version: 1
-# data:
-#   tags:
-#     breadcrumb.test.agent_box_login.rules: FAILING? an agent box that never signs
-#       in reads no mail and refuses its allocation - read this tag's rules first
-# flowpad:endcapsule tag
 @pytest.mark.timeout(DEPLOY_LIMIT_S * 2 + 60)
 async def test_an_unfunded_deploy_is_still_accepted_with_a_warning(
     instance: LiveE2EInstance, mock_agent: tuple[str, str], unfunded_allocation: JsonObject
@@ -261,8 +254,8 @@ async def test_an_unfunded_deploy_is_still_accepted_with_a_warning(
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["data"]["activity"]["path"] == DEPLOY_ACTIVITY
     assert accepted.json()["data"]["activity"]["subject_entity"].startswith("project-")
-    # A warning, not a gate: the deploy runs to the end without funding, and its readiness step says so.
+    warnings: list[str] = accepted.json()["data"].get("warnings") or []
+    assert any(w.lower().startswith(NO_FUNDING_WARNING.lower()) for w in warnings), warnings
+    # A warning, not a gate: the deploy runs to the end without funding.
     final: JsonObject = snapshots[-1]
     assert final["state"] == "completed", f"{final['state']}: {final.get('message')}"
-    readiness: JsonObject = next(block for block in final["children"] if block["name"] == "readiness")
-    assert (readiness.get("message") or "").lower().startswith(NO_FUNDING_WARNING.lower()), readiness

@@ -15,7 +15,6 @@ import {
   HOST_PROJECT_ID,
   sendFollowUp,
   sendOpeningPrompt,
-  openSessionCard,
   sessionCards,
   setupLiveConversation,
   shot,
@@ -43,7 +42,7 @@ test('browser stress: 10 rapid follow-ups + 3 thread prompts join the one open s
     await expect(sessionCards(alice.page).first()).toHaveAttribute('data-status', 'active', { timeout: 5_000 });
 
     // fire 10 follow-ups back-to-back from the session view, no waiting
-    await openSessionCard(sessionCards(alice.page).first());
+    await sessionCards(alice.page).first().click();
     await alice.page.waitForURL(/\/dock\/live_session\//, { timeout: 5_000 });
     for (let i = 1; i <= FOLLOW_UPS; i++) {
       await sendFollowUp(alice.page, `Reply with exactly the text ${m(i)} and nothing else.`);
@@ -70,7 +69,7 @@ test('browser stress: 10 rapid follow-ups + 3 thread prompts join the one open s
     expect(threadTexts.filter((t) => t.includes('SX-')).length).toBe(0);
 
     // first session view: replies in send order, one per prompt
-    await openSessionCard(first);
+    await first.click();
     await alice.page.waitForURL(/\/dock\/live_session\//, { timeout: 5_000 });
     const replies = alice.page.getByTestId('live-session-reply');
     await expect(replies).toHaveCount(TURNS, { timeout: 5_000 });

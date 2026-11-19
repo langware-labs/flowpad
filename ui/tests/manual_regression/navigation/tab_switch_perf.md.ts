@@ -569,10 +569,9 @@ test(
               page
                 .locator(`[data-session-id="agentic_process-${chat.processId}"] [data-testid="execution-message"]`)
                 .count(),
-            { timeout: adjusted(30_000), message: 'a long chat never rendered its recent window' },
+            { timeout: adjusted(30_000), message: 'a long chat never rendered its history' },
           )
-          // A long chat opens on its recent turns (useRecentWindow's RECENT_WINDOW = 40), not every row.
-          .toBeGreaterThanOrEqual(40);
+          .toBeGreaterThan(300);
       }
       await networkQuiet(page);
 

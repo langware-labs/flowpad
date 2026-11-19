@@ -320,7 +320,7 @@ async def _sync_until_message(
 # measured ~40s end to end on SentFromAI. Cap raised 30s → 50s with the user's explicit
 # approval (2026-10-02). Do not increase further without approval.
 @pytest.mark.timeout(50)
-async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server, tmp_path):
+async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
     """The public SDK snippet: Gmail → Agent mailbox → real Agent → Gmail."""
     gmail_address = str(os.environ.get("GMAIL_ADDRESS") or "").strip().lower()
     if not gmail_address or not os.environ.get("GMAIL_APP_PASSWORD"):
@@ -336,13 +336,6 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server, 
         poll_interval_seconds=60,
     )
     await gmail.save()
-    # The gmail driver never reads the app password from the process env: it comes
-    # from the `gmail` credential or a store bound to the row. Bind one of its own.
-    from flow_sdk.secrets import SecretStore  # noqa: PLC0415
-
-    store = await SecretStore.get("env_file", {"env_file_path": str(tmp_path / ".env")})
-    await store.save({"GMAIL_ADDRESS": gmail_address, "GMAIL_APP_PASSWORD": os.environ["GMAIL_APP_PASSWORD"]})
-    await gmail.set_secret_store(store)
     pirate = Agent(
         name=f"pirate-{uuid.uuid4().hex[:8]}",
         worker_type="claude",

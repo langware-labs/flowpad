@@ -1,6 +1,6 @@
 /** Shared setup for the live-session specs: a fresh conversation between
  * alice (GUEST) and bob (HOST) whose host side is project-mapped. */
-import { expect, type Browser, type Locator, type Page } from '@playwright/test';
+import { expect, type Browser, type Page } from '@playwright/test';
 
 import { ALICE, BOB, gotoConversation, openInstance, startConversationViaUi } from './helpers';
 
@@ -10,14 +10,6 @@ export const SCREENSHOT_DIR = process.env.LIVE_SESSION_SHOTS || '';
 
 export function sessionCards(page: Page) {
   return page.locator('[data-testid="session-card"]');
-}
-
-/** Open a session from its card the way a person does: on the row's leading edge (its title side).
- * The card's centre holds each side's permission chip (FLOWPAD-2246), a button of its own, so a
- * centre click opens the chip, not the session. */
-export async function openSessionCard(card: Locator) {
-  const box = await card.boundingBox();
-  await card.click({ position: { x: 12, y: Math.max(2, Math.floor((box?.height ?? 24) / 2)) } });
 }
 
 /** Same write the host's project picker performs: ``conv.project_id = X; conv.save()``. */

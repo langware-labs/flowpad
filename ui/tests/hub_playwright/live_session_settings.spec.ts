@@ -18,7 +18,6 @@ import {
   HOST_PROJECT_ID,
   sendFollowUp,
   sendOpeningPrompt,
-  openSessionCard,
   sessionCards,
   setupLiveConversation,
   shot,
@@ -45,7 +44,7 @@ test('live session settings: follow-up, review policy, every session approved by
 
     // ── follow-up lives in the session view only ───────────────────────────
     const threadBubblesBefore = await alice.page.locator('[data-testid^="message-bubble-"]').count();
-    await openSessionCard(sessionCards(alice.page).first());
+    await sessionCards(alice.page).first().click();
     await alice.page.waitForURL(/\/dock\/live_session\//, { timeout: 5_000 });
     await expect(alice.page.getByTestId('live-session-reply')).toHaveCount(1, { timeout: 3_000 });
     const m2 = `S1B-${Date.now()}`;
@@ -62,12 +61,12 @@ test('live session settings: follow-up, review policy, every session approved by
     });
 
     // ── review policy: the host drafts, then sends from the session ────────
-    await openSessionCard(sessionCards(bob.page).first());
+    await sessionCards(bob.page).first().click();
     await bob.page.waitForURL(/\/dock\/live_session\//, { timeout: 5_000 });
     await bob.page.getByTestId('live-session-reply-policy').click();
     await bob.page.getByRole('option', { name: /reviews/ }).click();
     await shot(bob.page, 'settings-03-bob-session-view-review-policy');
-    await openSessionCard(sessionCards(alice.page).first());
+    await sessionCards(alice.page).first().click();
     await alice.page.waitForURL(/\/dock\/live_session\//, { timeout: 5_000 });
     await expect(alice.page.getByTestId('live-session-reply-policy')).toContainText(/reviews/, { timeout: 5_000 });
     const m3 = `S1C-${Date.now()}`;
@@ -92,9 +91,6 @@ test('live session settings: follow-up, review policy, every session approved by
     const m4 = `S2-${Date.now()}`;
     await sendOpeningPrompt(alice.page, `Reply with exactly the text ${m4} and nothing else.`);
     await expect(sessionCards(alice.page)).toHaveCount(2, { timeout: 3_000 });
-    // bob is still in the first session's view (review step): back to the thread, where the cards live
-    await bob.page.goBack();
-    await bob.page.locator('textarea[placeholder^="Reply to sender"]').waitFor({ state: 'visible' });
     const bobSecond = sessionCards(bob.page).nth(1);
     await expect(bobSecond).toHaveAttribute('data-status', 'pending', { timeout: 5_000 });
     await bobSecond.getByTestId('session-card-approve').click();

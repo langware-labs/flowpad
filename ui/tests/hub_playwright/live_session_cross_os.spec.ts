@@ -17,7 +17,7 @@ import { execSync } from 'node:child_process';
 import { expect, test, type Page } from '@playwright/test';
 
 import { ALICE, BOB, gotoConversation, openInstance, startConversationViaUi } from './helpers';
-import { BOB_EMAIL, openSessionCard } from './_live_session_setup';
+import { BOB_EMAIL } from './_live_session_setup';
 
 const SHOTS = process.env.CROSSOS_SHOTS || '/tmp';
 const GUEST_RESTART = process.env.GUEST_RESTART || '';
@@ -139,7 +139,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
 
   // 04 — burst: 10 rapid follow-ups from the view + 3 prompts from the chat, all in the one session
   await gotoConversation(alice, convId);
-  await openSessionCard(alice.getByTestId('session-card').last());
+  await alice.getByTestId('session-card').last().click();
   await alice.waitForURL(/\/dock\/live_session\//);
   for (let i = 1; i <= 10; i++) await sendInView(alice, ask(`b${i}`));
   await gotoConversation(alice, convId);
@@ -163,7 +163,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await gotoConversation(alice, convId);
   await expect(alice.getByTestId('session-card')).toHaveCount(2);
   await both(alice, bob, convId, '04-burst-one-line');
-  await openSessionCard(alice.getByTestId('session-card').last());
+  await alice.getByTestId('session-card').last().click();
   await alice.waitForURL(/\/dock\/live_session\//);
   // The view lists every burst reply, in send order (wait for them to render first).
   const burstReplies = alice.getByTestId('live-session-reply').filter({ hasText: /XOb\d+-/ });
@@ -183,7 +183,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
 
   // 06 — a file comes back from the host
   await gotoConversation(alice, convId);
-  await openSessionCard(alice.getByTestId('session-card').last());
+  await alice.getByTestId('session-card').last().click();
   await alice.waitForURL(/\/dock\/live_session\//);
   const fname = `crossos-${T}.txt`;
   await sendInView(
@@ -214,7 +214,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
     });
   expect((await put(BAD_WORKDIR)).ok).toBe(true);
   await gotoConversation(alice, convId);
-  await openSessionCard(alice.getByTestId('session-card').last());
+  await alice.getByTestId('session-card').last().click();
   await alice.waitForURL(/\/dock\/live_session\//);
   await sendInView(alice, ask('fail'));
   await until('the prompt fails on the host', async () => (await latest(BOB.backendUrl, convId))?.status === 'error');
@@ -230,7 +230,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await both(alice, bob, convId, '07-after-retry');
 
   // 08 — host backend restarts with prompts queued: each runs exactly once after
-  await openSessionCard(alice.getByTestId('session-card').last());
+  await alice.getByTestId('session-card').last().click();
   await alice.waitForURL(/\/dock\/live_session\//);
   for (const k of ['h1', 'h2', 'h3']) await sendInView(alice, ask(k));
   restart(HOST_RESTART, 'host');
@@ -248,7 +248,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
 
   // 09 — guest backend restarts mid-turn: the reply still lands on the guest
   await gotoConversation(alice, convId);
-  await openSessionCard(alice.getByTestId('session-card').last());
+  await alice.getByTestId('session-card').last().click();
   await alice.waitForURL(/\/dock\/live_session\//);
   await sendInView(alice, ask('g1'));
   restart(GUEST_RESTART, 'guest');
@@ -262,7 +262,7 @@ test('live session cross-OS: every edge case', async ({ browser }) => {
   await both(alice, bob, convId, '09-after-guest-restart');
 
   // 10 — host Disconnect mid-turn: ended on both
-  await openSessionCard(alice.getByTestId('session-card').last());
+  await alice.getByTestId('session-card').last().click();
   await alice.waitForURL(/\/dock\/live_session\//);
   await sendInView(alice, 'Count slowly from 1 to 30, one number per line, then reply END.');
   await until('the turn is running', async () => (await latest(BOB.backendUrl, convId))?.status === 'running', 120_000);
