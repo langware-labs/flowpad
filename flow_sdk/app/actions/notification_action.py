@@ -34,6 +34,7 @@ from flow_sdk.builtin.user import User
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.schema.data_spec.automation_spec import AutomationResult
     from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.cloud_client.hub_proxy import HubProxy
@@ -976,6 +977,7 @@ async def handle_add_message(
     pending_send: bool = False,
     origin_process: Optional[str] = None,
     draft: Optional["FlowMessage"] = None,
+    automation_result: Optional["AutomationResult"] = None,
 ) -> ApiResponse:
     """Append a message to a Conversation — the single message-send handler.
 
@@ -1212,6 +1214,8 @@ async def handle_add_message(
             reply_to_id=reply_to_id,
             thread_root_id=thread_root_id,
         )
+    if automation_result is not None:  # an automation's own message: its card -- an argument, never the request body
+        reply_fm.automation_result = automation_result
     if origin_process:
         # Link the writing session BEFORE the message is announced: a session's `--on-reply` wait
         # tells its own sends from replies by this link, and the check runs on the save's event.

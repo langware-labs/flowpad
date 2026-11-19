@@ -16,7 +16,7 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.conversation_channel import AUTOMATIONS
 from flow_sdk.builtin.flow_message import FlowMessageKind
 from flow_sdk.responses.response import ApiSuccessResponse
-from flow_sdk.schema.data_spec.automation_spec import AutomationRef
+from flow_sdk.schema.data_spec.automation_spec import AutomationRef, AutomationResult
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ async def post_message(
     someone: str,
     files: Optional[dict[str, bytes]] = None,
     asset_references: Optional[list[str]] = None,
+    automation_result: Optional[AutomationResult] = None,
 ) -> Optional[str]:
     """Write Flowpad's message into the conversation and raise its arrival; the new message's id."""
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
@@ -61,7 +62,7 @@ async def post_message(
     }
     if asset_references:
         body["asset_references"] = list(asset_references)
-    added = await handle_add_message(body, someone)
+    added = await handle_add_message(body, someone, automation_result=automation_result)
     message_id = (added.data or {}).get("id") if isinstance(added, ApiSuccessResponse) else None
     if message_id:
         await notify_message_arrival(conversation_id, message_id, sender_name=sender_name, text=text)
@@ -80,19 +81,37 @@ async def automation_conversation(automation: AutomationRef, someone: str) -> Co
     return await conv.save(someone)
 
 
-async def post_automation_result(automation: AutomationRef, text: str, value: Any, *,
-                                 asset_references: Optional[list[str]] = None) -> Optional[str]:
-    """Post what an automation found into its conversation: ``text`` the headline, ``value`` the details
-    (``<kind>.value.json``). Answers the message id."""
+async def post_automation_result(automation: AutomationRef, result: AutomationResult, value: Any = None, *,
+                                 asset_references: Optional[list[str]] = None,
+                                 conversation: Optional[Conversation] = None) -> Optional[str]:
+    """Post what an automation did into its conversation, as a card: ``result`` its Status, Summary and
+    Details (the message's text is the summary), ``value`` what it found (``<kind>.value.json``), when it
+    found something. Answers the message id."""
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
     someone = (await get_or_create_local_user()).typeid
-    conv = await automation_conversation(automation, someone)
+    conv = conversation or await automation_conversation(automation, someone)
     return await post_message(
-        conv.id, text,
+        conv.id, result.summary,
         kind=FlowMessageKind.AUTOMATION_RESULT,
         sender_name=automation.name or "Automation",
         someone=someone,
-        files={f"{value.spec_kind}.value.json": value_json(value)},
+        files={f"{value.spec_kind}.value.json": value_json(value)} if value is not None else None,
         asset_references=asset_references,
+        automation_result=result,
     )
+
+
+async def post_failure(automation: AutomationRef, error: str) -> Optional[str]:
+    """A real run failed: say so in the automation's conversation -- once per streak. A rule that keeps
+    failing the same way has already said it, so its newest message is left to stand."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+    conv = await automation_conversation(automation, (await get_or_create_local_user()).typeid)
+    newest = conv.latest_message_ref()  # one row read, however long the conversation is
+    last = await FlowMessage.get_by_id(newest.id) if newest else None
+    result = AutomationResult.of("failed", f"{automation.name or 'The automation'} could not run.", {"Error": error})
+    if last is not None and last.automation_result == result:
+        return None
+    return await post_automation_result(automation, result, conversation=conv)

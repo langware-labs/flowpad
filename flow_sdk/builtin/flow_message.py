@@ -22,6 +22,7 @@ from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sha
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.automation_spec import AutomationResult
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
@@ -869,6 +870,9 @@ class FlowMessage(Entity):
     # A machine's reply in an IT conversation (``ConversationKind.IT``): the hub writes it with
     # ``metadata.it`` = ``{node_typeid, code_last4, state, woke, value, call_id}``. PRIVATE like ``mark``:
     # re-derived from that metadata on every arrival (``derive_it_reply``), never sent back.
+    # What an automation's message says as a card -- Status, Summary, Details (``AutomationResult``); the text is
+    # its summary. PRIVATE: written here by the automation, never sent.
+    automation_result: Optional[AutomationResult] = APIField(None, sharing=Sharing.PRIVATE)
     it_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
     # The owner's request in an IT conversation: ``{agent_id, op_id, send_id}`` from its ``metadata.it``. The
     # conversation draws the replies that name the same ``send_id`` as a table under it. PRIVATE, re-derived

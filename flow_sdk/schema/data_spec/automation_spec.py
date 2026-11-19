@@ -35,6 +35,39 @@ class AutomationRef(DataSpec):
     name: str = ""
 
 
+#: Where the run a message reports stands — the Status chip of the message's card.
+AutomationResultStatus = Literal["done", "expired", "cancelled", "needs_review", "failed"]
+
+
+class AutomationResultDetail(DataSpec):
+    """One row under Details: a short label and its text."""
+
+    spec_kind: ClassVar[str] = "automation.result.detail"
+
+    label: str
+    value: str
+
+
+class AutomationResult(DataSpec):
+    """What an automation's message says, as a card: Status, a one-line Summary, Details folded
+    (``FlowMessage.automation_result``; the message's text is the summary)."""
+
+    spec_kind: ClassVar[str] = "automation.result"
+
+    status: AutomationResultStatus
+    summary: str
+    details: list[AutomationResultDetail] = Field(default_factory=list)
+    #: The session it called back (``agentic_process-<id>``): one click away from the card.
+    session: Optional[str] = None
+
+    @classmethod
+    def of(cls, status: AutomationResultStatus, summary: str, details: Optional[dict[str, Any]] = None,
+           session: Optional[str] = None) -> "AutomationResult":
+        """From ``{label: text}``; a row with no text is left out."""
+        rows = [AutomationResultDetail(label=k, value=str(v)) for k, v in (details or {}).items() if v not in (None, "")]
+        return cls(status=status, summary=summary, details=rows, session=session)
+
+
 class RunOnceStarted(DataSpec):
     """What *Run once now* answers: the run began (or finished, for a quick rule).
 

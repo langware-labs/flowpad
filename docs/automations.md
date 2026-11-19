@@ -175,7 +175,7 @@ session id is one machine's, so no `trigger.json` can say it.
 - **Runs, end and status — every kind** (`automations/lifecycle.py`). `max_runs` (`fire_once` = 1, a `date`
   one-shot = 1) and `expires_at` bound a rule's life; `lifecycle.end(rule, reason)` is the one way it ends
   (`ended_at`, `ended_reason` max\_runs | expired | cancelled): disarmed, taken off the session's chip (the rule keeps its session — `Trigger.leave_process`),
-  `trigger.ended` emitted, a reply wait's "cancelled" message posted. `enabled` stays the person's switch.
+  `trigger.ended` emitted, a reply wait's end message posted. `enabled` stays the person's switch.
   `status` (active · off · done · expired · cancelled), `max_runs`, `runs_left`, `until` ride on every
   `AutomationSummary`; `POST trigger/<id>/cancel` (`flow process unschedule`) ends one now.
 - **Or when a message is answered.** `flow conversation send|new … --on-reply "<prompt>" [--wait 2h]` makes the
@@ -184,7 +184,13 @@ session id is one machine's, so no `trigger.json` can say it.
   `fire_once`, `expires_at` (default 3 days). The first later message written by a person — not a session, not
   an agent; quoted or not — fires it, and the session reads the callback line plus the reply. Arming checks the
   conversation once, so a reply that landed while nothing listened still fires. Unanswered at `expires_at`: a
-  "Prompt handling cancelled" message in the rule's Automations conversation, and it never fires.
+  message in the rule's Automations conversation says so, and it never fires.
+- **What an automation posts is a card.** Every message an automation writes into its conversation carries
+  an `automation.result` (`AutomationResult`, on `FlowMessage.automation_result`): `status` (done · expired ·
+  cancelled · needs\_review · failed), a one-line `summary` (also the message's text) and `details` rows; the
+  conversation shows it as Status / Summary / Details. `post_automation_result` (`app/automation_message.py`)
+  is the one poster: a reply wait's end (answered, expired, cancelled), the Daily usage summary, the message
+  classifier's proposal, and a real run that failed (`post_failure`, once per streak of the same error).
 - **Gone with the session.** Deleting a session deletes its waiting callbacks (`drop_callbacks`); a
   fired one stays, as every spent one-shot does.
 

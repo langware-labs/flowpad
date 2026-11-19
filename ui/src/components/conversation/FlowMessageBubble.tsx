@@ -63,6 +63,7 @@ import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { AutomationMessageActions } from './AutomationMessageActions';
+import { AutomationResultCard } from './AutomationResultCard';
 import { DiagnosisCard } from './DiagnosisCard';
 import { IssueReplyLine } from './IssueReplyLine';
 import { ItReplyLine } from './ItReplyLine';
@@ -575,11 +576,13 @@ export function FlowMessageBubble({
   // An issue's message is its card (IssueReplyLine) instead of its text (ConversationView hides the hub's
   // "Resolved: …" follow-up, which the card already shows).
   const issueCard = fm.issue_reply ?? null;
+  // What an automation posted is its card (AutomationResultCard), which says the text as its Summary.
+  const automationResult = fm.kind === FlowMessageKind.AUTOMATION_RESULT ? (fm.automation_result ?? null) : null;
   const message: ConversationMessage = {
     role,
     content:
       // A help request and a diagnosis are their card (DiagnosisCard), which says the text in a line.
-      isConvIdPointer || issueCard || diagnosisCard ? '' : (fm.text ?? ''),
+      isConvIdPointer || issueCard || diagnosisCard || automationResult ? '' : (fm.text ?? ''),
     sender_id: fm.sender_id ?? '',
     timestamp,
   };
@@ -852,6 +855,7 @@ export function FlowMessageBubble({
       {issueCard && <IssueReplyLine reply={issueCard} />}
       {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {diagnosisCard && <DiagnosisCard conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
+      {automationResult && <AutomationResultCard result={automationResult} />}
       {fm.kind === FlowMessageKind.AUTOMATION_RESULT && (
         <AutomationMessageActions conversationId={fm.conversation_id ?? ''} entities={entities} />
       )}
