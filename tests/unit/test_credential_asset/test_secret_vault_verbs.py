@@ -205,18 +205,46 @@ async def test_active_vault_most_specific_scope_wins(home, project, pid, monkeyp
         svc.set_global_vault({"manager": "no-such-manager"})
 
 
-async def test_read_secrets_env_first_then_the_active_vault_and_saves_nothing(home, project, pid, monkeypatch):
-    from flow_sdk.secrets import active
+async def test_a_vault_read_answers_values_refuses_a_sealed_vault_and_saves_nothing(home, project, pid, monkeypatch):
+    from flow_sdk.secrets import active, managers
     from flow_sdk.secrets.errors import MissingSecrets
 
-    monkeypatch.setenv("FROM_ENV", "e")
-    assert {k: v.get_secret_value() for k, v in (await active.read_secrets(["FROM_ENV"], project)).items()} == {"FROM_ENV": "e"}
     with pytest.raises(active.NoActiveVault):
-        await active.read_secrets(["STRIPE_API_KEY"], project)
+        await active.read_from_vault(["STRIPE_API_KEY"], project)
     await _vault(pid, "team")
     VAULTS["v-team"] = {"STRIPE_API_KEY": "from-vault"}
-    held = await active.read_secrets(["FROM_ENV", "STRIPE_API_KEY"], project)
-    assert held["STRIPE_API_KEY"].get_secret_value() == "from-vault"
+    assert (await svc.vault_read(pid, ["STRIPE_API_KEY"]))["values"] == {"STRIPE_API_KEY": "from-vault"}
     with pytest.raises(MissingSecrets):
-        await active.read_secrets(["NOPE"], project)
+        await active.read_from_vault(["NOPE"], project)
+    sealed = managers.SecretManagerSpec.model_validate({"name": "memvault", "check": "true", "status": "false"})
+    monkeypatch.setattr(managers, "get_manager", lambda n: sealed)
+    with pytest.raises(svc.CredentialError) as refused:
+        await svc.vault_read(pid, ["STRIPE_API_KEY"])
+    assert refused.value.code == "sealed", "refused before the manager is asked: asked while sealed, it prompts"
     assert not (Path(project.fs_storage_mount_path) / ".env.local").exists()
+
+
+async def test_vault_access_status_open_close(home, project, pid, monkeypatch, tmp_path):
+    """A manager's ``status`` / ``login`` / ``close`` are its access API: sealed → open → sealed, by its own commands."""
+    from flow_sdk.secrets import managers
+
+    flag = tmp_path / "open"
+    sh = lambda body: f"sh -c '{body}'"  # noqa: E731
+    fake = managers.SecretManagerSpec.model_validate({
+        "name": "memvault", "check": "true", "status": sh(f"test -f {flag}"), "close": sh(f"rm -f {flag}"),
+        "login": {os_name: sh(f"touch {flag}") for os_name in managers.OSES},
+    })
+    monkeypatch.setattr(managers, "get_manager", lambda n: fake)
+    await _vault(pid, "team")
+    sealed = await svc.vault_access(pid, "team")
+    assert (sealed["state"], sealed["can_open"], sealed["can_close"]) == ("sealed", True, False)
+    opened = await svc.vault_access(pid, "team", change="open")
+    assert (opened["state"], opened["can_open"], opened["can_close"]) == ("open", False, True)
+    assert (await svc.vault_access(pid)) == {**opened, "vault": "team"}, "no name: the vault in use"
+    assert (await svc.vault_access(pid, "team", change="close"))["state"] == "sealed"
+    monkeypatch.setattr(managers, "get_manager", lambda n: fake.model_copy(update={"status": "", "close": ""}))
+    unknown = await svc.vault_access(pid, "team", change="close")
+    assert (unknown["state"], unknown["can_close"]) == ("unknown", False) and "no close" in unknown["detail"]
+    for bad in ({"scope": "global"}, {"scope": "nope"}, {"change": "nope"}):
+        with pytest.raises(svc.CredentialError):
+            await svc.vault_access(pid, "team", **bad)

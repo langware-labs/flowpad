@@ -149,7 +149,7 @@ async def credentials_action() -> ApiResponse:
                 from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
 
                 return ApiSuccessResponse(data=await svc.test_credential(payload.get("name") or "", payload.get("project_id") or ""))
-            if sub_path in ("publish", "fetch", "vault-check", "vault-setup", "grant", "vault-set", "vault-remove", "vault-default", "vault-open", "vault-global"):
+            if sub_path in ("publish", "fetch", "vault-check", "vault-setup", "grant", "vault-set", "vault-remove", "vault-default", "vault-link", "vault-access", "vault-global", "vault-read"):
                 from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
 
                 pid, vault = payload.get("project_id") or "", payload.get("vault") or ""
@@ -172,8 +172,14 @@ async def credentials_action() -> ApiResponse:
                     return ApiSuccessResponse(data=await svc.set_default_vault(pid, payload.get("name") or ""))
                 if sub_path == "vault-global":
                     return ApiSuccessResponse(data=svc.set_global_vault(payload.get("spec")))
-                if sub_path == "vault-open":
-                    return ApiSuccessResponse(data=await svc.vault_open(pid, vault))
+                # The one route that answers VALUES: `flow secrets run` asks the backend to read, because the
+                # backend holds the manager's access (``credential_service.vault_read``). Everything else: names.
+                if sub_path == "vault-read":
+                    return ApiSuccessResponse(data=await svc.vault_read(pid, list(payload.get("names") or [])))
+                if sub_path == "vault-link":
+                    return ApiSuccessResponse(data=await svc.vault_link(pid, vault, payload.get("scope") or ""))
+                if sub_path == "vault-access":
+                    return ApiSuccessResponse(data=await svc.vault_access(pid, vault, payload.get("scope") or "", payload.get("change") or ""))
                 spec = payload.get("spec") if sub_path == "vault-set" else None
                 return ApiSuccessResponse(data=await svc.set_vault(pid, payload.get("name") or "", spec))
             if sub_path == "audit":

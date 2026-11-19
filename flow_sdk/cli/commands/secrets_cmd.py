@@ -9,6 +9,7 @@
     flow secrets fetch [cred]                               — the vaults into this computer's store
     flow secrets grant <vault> <email>                      — give a teammate read access
     flow secrets active                                     — the vault in use here, and how its manager behaves
+    flow secrets status|open|close [vault]                  — is its access open here; open it; seal it
     flow secrets vault default <name>                       — make a vault the project's default
     flow secrets run NAME[,NAME] -- <command>               — run a command with values read from the active vault
 
@@ -18,7 +19,6 @@ command's environment and saves nothing. Every command prints names, never a val
 """
 from __future__ import annotations
 
-import asyncio
 import os
 from typing import Any, Optional
 
@@ -26,7 +26,7 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import discover_port, fail, get_graph_json, ok, parse_config_pairs, post_graph_json
-from flow_sdk.cli.commands.credentials_cmd import EXIT_NOT_YET, _here, _project, _project_id, _refused, _status, _url
+from flow_sdk.cli.commands.credentials_cmd import EXIT_NOT_YET, _here, _project_id, _status, _url
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 secrets_app = typer.Typer(
@@ -39,6 +39,16 @@ vault_app = typer.Typer(name="vault", help="List, add and remove the project's v
 secrets_app.add_typer(vault_app, name="vault")
 
 _ProjectOpt = Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")]
+
+
+def _refuse(code: str, message: str) -> None:
+    """Exit on a refusal; a sealed vault names the command that opens it."""
+    sealed = code == "sealed"
+    fail(EXIT_NOT_YET, code or "REFUSED", message, {"remediation": ["flow secrets open"]} if sealed else None)
+
+
+def _refused(status: int, body: dict) -> None:
+    _refuse(str((body.get("data") or {}).get("error_code") or ""), str(body.get("message") or f"HTTP {status}"))
 
 
 def _call(verb: str, payload: dict, *, needs_project: bool = True, get: bool = False) -> Any:
@@ -70,6 +80,10 @@ def _call(verb: str, payload: dict, *, needs_project: bool = True, get: bool = F
                 return await svc.set_default_vault(pid, payload["name"])
             if verb == "active":
                 return await svc.active_vault(pid)
+            if verb == "vault-access":
+                return await svc.vault_access(pid, vault, payload.get("scope") or "", payload.get("change") or "")
+            if verb == "vault-read":
+                return await svc.vault_read(pid, payload["names"])
             if verb == "vault-check":
                 return await svc.vault_check(pid, vault)
             if verb == "publish":
@@ -79,7 +93,7 @@ def _call(verb: str, payload: dict, *, needs_project: bool = True, get: bool = F
             if verb == "grant":
                 return await svc.grant(pid, vault, payload["email"])
         except svc.CredentialError as e:
-            fail(EXIT_NOT_YET, e.code or "REFUSED", str(e))
+            _refuse(e.code, str(e))
         raise ValueError(f"unknown secrets verb {verb!r}")
 
     return _here(here())
@@ -135,6 +149,38 @@ def active_cmd(project: _ProjectOpt = None) -> None:
     ok(_call("active", {"project_id": pid}, needs_project=False, get=True))
 
 
+def _access(vault: Optional[str], project: Optional[str], change: str) -> None:
+    """``vault``'s access (default: the vault in use here), after ``change``. Exit 1 unless it ends where asked."""
+    from flow_sdk.secrets.managers import VaultAccess  # noqa: PLC0415
+
+    pid = _project_id(discover_port(required=False), project) or ""
+    result = _call("vault-access", {"project_id": pid, "vault": vault or "", "change": change}, needs_project=False)
+    ok(result)
+    if result.get("state") != (VaultAccess.SEALED if change == "close" else VaultAccess.OPEN):
+        raise typer.Exit(EXIT_NOT_YET)
+
+
+_VaultArg = Annotated[Optional[str], typer.Argument(help="The vault (default: the one in use here).")]
+
+
+@secrets_app.command("status")
+def status_cmd(vault: _VaultArg = None, project: _ProjectOpt = None) -> None:
+    """Is VAULT's access open on this computer (open / sealed / not_installed / unknown)? Asks nothing of the person."""
+    _access(vault, project, "")
+
+
+@secrets_app.command("open")
+def open_cmd(vault: _VaultArg = None, project: _ProjectOpt = None) -> None:
+    """Open VAULT's access on this computer: its manager's sign-in, which may ask the person in its app or browser."""
+    _access(vault, project, "open")
+
+
+@secrets_app.command("close")
+def close_cmd(vault: _VaultArg = None, project: _ProjectOpt = None) -> None:
+    """Seal VAULT's access on this computer, when its manager can. Exit 1 when it is still open."""
+    _access(vault, project, "close")
+
+
 @secrets_app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def run_cmd(
     names: Annotated[str, typer.Argument(help="The variables the command needs, comma-separated (STRIPE_API_KEY,DATABASE_URL).")],
@@ -143,25 +189,14 @@ def run_cmd(
 ) -> None:
     """Run COMMAND with NAMES in its environment: each from this environment when it is there, else read from
     the active vault. Nothing is printed and nothing is saved; the command's own exit code is returned."""
-    values = asyncio.run(_read_for_run([n.strip() for n in names.split(",") if n.strip()], project))
+    wanted = [n.strip() for n in names.split(",") if n.strip() and not os.environ.get(n.strip())]
+    # Read by the backend when one runs: it holds the manager's access, and this process is a session of its own.
+    pid = _project_id(discover_port(required=False), project) or ""
+    values = (_call("vault-read", {"project_id": pid, "names": wanted}, needs_project=False) or {}).get("values") or {} if wanted else {}
     try:
         os.execvpe(command[0], command, {**os.environ, **values})
     except OSError as e:
         fail(int(ExitCode.NOT_FOUND), "NO_COMMAND", f"cannot run {command[0]!r}: {e}")
-
-
-async def _read_for_run(names: list[str], project_id: Optional[str]) -> dict[str, str]:
-    """``active.read_secrets`` for the project here; a refusal exits with its code — never a value."""
-    from flow_sdk.builtin.credential_service import CredentialError, store_errors  # noqa: PLC0415
-    from flow_sdk.secrets.active import read_secrets  # noqa: PLC0415
-    from flow_sdk.secrets.errors import SecretStoreError  # noqa: PLC0415
-
-    try:
-        with store_errors():
-            held = await read_secrets(names, await _project(project_id))
-    except (CredentialError, SecretStoreError) as e:
-        fail(EXIT_NOT_YET, str(e.code or "REFUSED"), str(e))
-    return {name: value.get_secret_value() for name, value in held.items()}
 
 
 @secrets_app.command("check")
@@ -235,8 +270,6 @@ def setup_cmd(vault: Annotated[str, typer.Argument(help="The vault to set up (e.
 
 
 async def _setup(vault_name: str, project_id: Optional[str]) -> int:
-    import os  # noqa: PLC0415
-
     from flow_sdk.builtin.credential_store import vaults_of  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.cli.commands.project_cmd import _terminal_answers  # noqa: PLC0415

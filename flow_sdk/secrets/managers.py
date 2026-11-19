@@ -25,9 +25,10 @@ import shlex
 import shutil
 import subprocess
 import sys
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Mapping, Optional, Union
+from typing import Any, ClassVar, Mapping, Optional, Union
 
 from pydantic import Field
 
@@ -43,7 +44,7 @@ SHIPPED_ROOT = Path(__file__).resolve().parents[1] / "system_projects" / "flowpa
 MANIFEST_FILE = "secret_manager.json"
 STORE_FILE = "store.py"
 PACKAGE_PREFIX = "flowpad_secret_manager_"
-OPS = ("install", "login", "check", "grant")
+OPS = ("install", "login", "check", "grant", "status", "close")
 OSES = ("darwin", "linux", "win32")
 
 
@@ -77,11 +78,47 @@ class SecretManagerSpec(AssetDocumentSpec):
     check: str = ""
     #: Gives ``{email}`` read access to the vault.
     grant: str = ""
+    #: Exits 0 while access is open on this machine (signed in, unlocked). Must never prompt: it is run to
+    #: show a state. Empty: the state is not known without asking for a value.
+    status: str = ""
+    #: Seals access on this machine (sign out, lock); ``login`` opens it again. Empty: it cannot be closed.
+    close: str = ""
     #: Environment for every command, filled like a command (``{"OP_ACCOUNT": "{account}"}``); a
     #: variable whose placeholder the vault's config does not fill is left out.
     env: dict[str, str] = Field(default_factory=dict)
     #: What the person does when sign-in fails (a desktop-app setting, an approval): shown by the setup wizard.
     login_help: str = ""
+
+
+class VaultAccess(StrEnum):
+    """Whether this machine can read a vault right now."""
+
+    OPEN = "open"
+    SEALED = "sealed"
+    NOT_INSTALLED = "not_installed"
+    #: The manager declares no ``status``: only a read tells.
+    UNKNOWN = "unknown"
+
+
+class AccessChange(StrEnum):
+    """What a person asks of a vault's access."""
+
+    OPEN = "open"
+    CLOSE = "close"
+
+
+class VaultAccessSpec(DataSpec):
+    """A vault's access on this machine, and what can be done about it. Never a value."""
+
+    spec_kind: ClassVar[str] = "secrets.vault_access"
+
+    state: VaultAccess
+    #: It is not open and the manager has a sign-in to run (``login`` on this OS).
+    can_open: bool = False
+    #: It is open and the manager can seal it (``close``).
+    can_close: bool = False
+    #: Why an open or a close did not work — the tool's last line, or the manager's own sign-in help.
+    detail: str = ""
 
 
 class UnknownSecretManager(SecretStoreError, KeyError):
@@ -267,6 +304,45 @@ async def run_check(vault: Any) -> bool:
     return code == 0
 
 
+def _access(vault: Any, state: VaultAccess, detail: str = "") -> VaultAccessSpec:
+    """``state`` with what can be done from it: open what is not open, close what is."""
+    try:
+        spec, _ = _prepared(vault)
+    except UnknownSecretManager:
+        return VaultAccessSpec(state=VaultAccess.NOT_INSTALLED, detail=detail)
+    return VaultAccessSpec(
+        state=state, detail=detail,
+        can_open=state in (VaultAccess.SEALED, VaultAccess.UNKNOWN) and bool(cli_command(spec, "login")),
+        can_close=state == VaultAccess.OPEN and bool(spec.close),
+    )
+
+
+async def access_of(vault: Any, *, detail: str = "") -> VaultAccessSpec:
+    """Is ``vault`` open on this machine? Runs the manager's ``status`` — nothing that prompts."""
+    if missing_tool(vault):
+        return _access(vault, VaultAccess.NOT_INSTALLED, detail)
+    spec, values = _prepared(vault)
+    if not spec.status:
+        return _access(vault, VaultAccess.UNKNOWN, detail)
+    code, _ = await _run(spec.status, values, spec.env)
+    return _access(vault, VaultAccess.OPEN if code == 0 else VaultAccess.SEALED, detail)
+
+
+async def change_access(vault: Any, change: AccessChange) -> VaultAccessSpec:
+    """Open ``vault``'s access on this machine (the manager's ``login``: it may ask the person in its own app
+    or browser) or seal it (its ``close``), and answer the state after. A change that worked IS the state; one
+    that did not asks the manager where it stands."""
+    spec, values = _prepared(vault)
+    op = "login" if change == AccessChange.OPEN else "close"
+    template = cli_command(spec, op)
+    if not template:
+        return await access_of(vault, detail=f"{spec.title or spec.name} has no {change.value} on this machine")
+    code, err = await _run(template, values, spec.env)
+    if code == 0:
+        return _access(vault, VaultAccess.OPEN if change == AccessChange.OPEN else VaultAccess.SEALED)
+    return await access_of(vault, detail=(spec.login_help if change == AccessChange.OPEN else "") or err or "failed")
+
+
 async def run_grant(vault: Any, email: str) -> None:
     """Give ``email`` read access to the vault; raises ``SecretStoreError`` with the tool's last line."""
     spec, values = _prepared(vault)
@@ -325,6 +401,7 @@ def _vault_name(vault: Any, config: Mapping[str, Any]) -> str:
 
 
 __all__ = [
-    "OSES", "SecretManagerSpec", "UnknownSecretManager", "cli_command", "get_manager", "instructions_for", "list_managers",
+    "OSES", "AccessChange", "SecretManagerSpec", "UnknownSecretManager", "VaultAccess", "VaultAccessSpec", "access_of",
+    "change_access", "cli_command", "get_manager", "instructions_for", "list_managers",
     "load_managers", "missing_tool", "run_check", "run_grant", "shell_line", "store_class", "store_for", "title_of", "tool_missing", "vault_command",
 ]

@@ -60,8 +60,9 @@ async def _spawn(command: str, *, cwd: str, env: dict, platform: str):
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         stdin=asyncio.subprocess.DEVNULL,
-        # Own process GROUP so a timeout can kill the whole tree.
-        start_new_session=CAN_KILLPG,
+        # Its own process GROUP, so a timeout can kill the whole tree — and never its own SESSION: a tool
+        # that grants a sign-in to the session that asked (1Password's CLI) would ask again on every command.
+        **({"process_group": 0} if CAN_KILLPG else {}),
     )
 
 

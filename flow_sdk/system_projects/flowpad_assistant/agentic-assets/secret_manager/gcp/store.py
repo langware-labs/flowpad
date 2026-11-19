@@ -45,12 +45,13 @@ _PAGE_SIZE = 250
 _CONCURRENCY = 8
 
 async def gcloud_token() -> Optional[str]:
-    """An access token for the account signed in to ``gcloud`` on this machine, or None (no CLI, or
-    nobody signed in). The token is never logged."""
+    """An access token for this machine's Google application default credentials (``gcloud auth
+    application-default login``), or None (no CLI, or not signed in). Those and not the person's own
+    ``gcloud`` login: closing the vault revokes them and leaves every other terminal signed in. Never logged."""
     if shutil.which("gcloud") is None:
         return None
     proc = await asyncio.create_subprocess_exec(
-        "gcloud", "auth", "print-access-token",
+        "gcloud", "auth", "application-default", "print-access-token",
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
     )
     out, _ = await proc.communicate()
@@ -61,7 +62,7 @@ async def gcloud_token() -> Optional[str]:
 def gcloud_not_signed_in(store: str, providers: list[str]) -> StoreNeedsConnection:
     """No bound connection and nobody signed in to ``gcloud`` here: what the person does next."""
     error = StoreNeedsConnection(store, providers)
-    SecretStoreError.__init__(error, "GCP needs a sign-in: run `gcloud auth login` (or bind a google connection)")
+    SecretStoreError.__init__(error, "GCP needs a sign-in: run `gcloud auth application-default login` (or bind a google connection)")
     return error
 
 
