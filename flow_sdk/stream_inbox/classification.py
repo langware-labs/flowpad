@@ -42,7 +42,11 @@ async def _apply_change(change: TagTreeChange, rules: list) -> str:
     from flow_sdk.stream_inbox.message_tags import retag_as_classification  # noqa: PLC0415
 
     if change.op == "added":
-        if await _tag(change.tag) is not None:
+        existing = await _tag(change.tag)
+        if existing is not None:
+            if change.color and not existing.color:   # made before colours were picked: take the one shown
+                existing.color = change.color
+                await existing.save()
             return "already"
         await Tag(name=change.tag, title=change.tag.rsplit(".", 1)[-1], description=change.meaning,
                   color=change.color, stream_inbox=True).save()
@@ -114,7 +118,7 @@ async def submit(value: StreamInboxClassification) -> str:
     message (its arrival is the one notification). Answers the value's reference -- what the run returns,
     since the value itself is bigger than a block may return."""
     from flow_sdk.app.automation_message import post_automation_result  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.automation_spec import AutomationRef  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.automation_spec import AutomationRef, AutomationResult  # noqa: PLC0415
     from flow_sdk.stream_inbox.message_tags import classifier  # noqa: PLC0415
     from flow_sdk.values import save_value  # noqa: PLC0415
 
@@ -123,7 +127,10 @@ async def submit(value: StreamInboxClassification) -> str:
     if rule is not None:
         changing = sum(row.action != "keep" for row in value.conversations)
         line = f"Classified {len(value.conversations)} conversations: {changing} would change, {len(value.tree_changes)} tag changes. Nothing is applied yet."
-        await post_automation_result(AutomationRef(trigger_id=str(rule.id), name=rule.name or ""), line, value)
+        result = AutomationResult.of("needs_review", line, {
+            "Conversations read": len(value.conversations), "Would change": changing,
+            "Tag changes": len(value.tree_changes), "Applied": "Nothing yet. Open the classification to review and apply it."})
+        await post_automation_result(AutomationRef(trigger_id=str(rule.id), name=rule.name or ""), result, value)
     return ref
 
 

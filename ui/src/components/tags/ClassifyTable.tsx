@@ -3,15 +3,22 @@ import { ChartBar, Check, GitCompareArrows, Loader2, Tag as TagIcon, X } from 'l
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery } from '@tanstack/react-query';
 import { Conversation, FlowMessage, tagIsWithin, TypeId } from '@sdk';
-import type { ClassificationRun, ConversationTagging, StreamInboxClassification, TagTreeChange } from '@sdk/entities/flow-message';
+import type {
+  ClassificationRun,
+  ConversationTagging,
+  StreamInboxClassification,
+  TagTreeChange,
+} from '@sdk/entities/flow-message';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
+import { unusedPaletteColors } from '@src/lib/color-palette';
 import { cn } from '@src/lib/utils';
 import { MessageTags, treeRows, useTagColors, useTagDefinitions } from './MessageTags';
 import { TagOffIcon } from './TagOffIcon';
@@ -20,7 +27,8 @@ import { TagChip } from './tag-chip';
 /** How often a run still at work is read again. */
 const READ_EVERY_MS = 2000;
 const OPS = ['added', 'updated', 'moved', 'removed'] as const;
-const countOf = (changes: TagTreeChange[], op: TagTreeChange['op']) => changes.filter((change) => change.op === op).length;
+const countOf = (changes: TagTreeChange[], op: TagTreeChange['op']) =>
+  changes.filter((change) => change.op === op).length;
 const CHANGE_COLOR: Record<TagTreeChange['op'], string> = {
   added: 'hsl(142 70% 45%)',
   updated: 'hsl(var(--primary))',
@@ -40,10 +48,33 @@ export function useClassifyRun() {
     start: (conversations: string[]) => {
       void FlowMessage.classifyConversations(conversations).then(
         (run) => set(run.call_id),
-        (e: unknown) => notify.error({ title: t`Could not start the classification`, message: errorMessage(e, t`It did not work`), forceToast: true }),
+        (e: unknown) =>
+          notify.error({
+            title: t`Could not start the classification`,
+            message: errorMessage(e, t`It did not work`),
+            forceToast: true,
+          }),
       );
     },
     close: () => set(null),
+  };
+}
+
+/** A new tag that came with no colour gets one from the contrast-tested palette, one the tree does not use
+ *  yet; a tag already applied keeps the colour it was given. What is applied is the colour the table showed. */
+function withColors(
+  value: StreamInboxClassification,
+  tree: Map<string, string | null | undefined>,
+): StreamInboxClassification {
+  const free = unusedPaletteColors(tree.values());
+  let next = 0;
+  return {
+    ...value,
+    tree_changes: value.tree_changes.map((change) =>
+      change.op === 'added' && !change.color
+        ? { ...change, color: tree.get(change.tag) || free[next++ % free.length] }
+        : change,
+    ),
   };
 }
 
@@ -53,15 +84,26 @@ const same = (a: string[], b: string[]) => a.length === b.length && a.every((tag
  *  until a person applies a row, a selection, or all of it — and applying starts no automation. */
 export function ClassifyDialog({ callId, onClose }: { callId: string; onClose: () => void }) {
   const { t } = useLingui();
-  const colors = useTagColors();
+  const treeColors = useTagColors();
   const { data: run, error: readError } = useQuery<ClassificationRun>({
     queryKey: ['tags', 'classification-run', callId],
     queryFn: () => FlowMessage.classificationRun(callId),
     retry: false,
     // Read again while it is at work; a run that cannot be read (a stale id in the URL) is not asked again.
-    refetchInterval: ({ state }) => (state.status !== 'error' && (!state.data || state.data.state === 'running') ? READ_EVERY_MS : false),
+    refetchInterval: ({ state }) =>
+      state.status !== 'error' && (!state.data || state.data.state === 'running') ? READ_EVERY_MS : false,
   });
-  const value = run?.state === 'completed' && run.result?.exit_code === 0 ? (run.result.value ?? null) : null;
+  const proposal = run?.state === 'completed' && run.result?.exit_code === 0 ? (run.result.value ?? null) : null;
+  const value = useMemo(() => (proposal ? withColors(proposal, treeColors) : null), [proposal, treeColors]);
+  // The chips' colours: the tree's, and a new tag's as it will be once applied.
+  const colors = useMemo(
+    () =>
+      new Map([
+        ...treeColors,
+        ...(value?.tree_changes ?? []).filter((c) => c.color).map((c) => [c.tag, c.color] as const),
+      ]),
+    [treeColors, value],
+  );
   const asked = (run?.input as { conversations?: string[] } | null | undefined)?.conversations ?? [];
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [rejected, setRejected] = useState<Set<string>>(new Set());
@@ -113,14 +155,21 @@ export function ClassifyDialog({ callId, onClose }: { callId: string; onClose: (
           </DialogTitle>
           <DialogDescription>
             {value ? (
-              <Trans>A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth.</Trans>
+              <Trans>
+                A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth.
+              </Trans>
             ) : (
-              <Trans>One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval.</Trans>
+              <Trans>
+                One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval.
+              </Trans>
             )}
           </DialogDescription>
         </DialogHeader>
         {ticked.size > 0 && (
-          <div className="flex items-center gap-1 rounded-md border border-border px-2 py-1" data-testid="classify-selection-bar">
+          <div
+            className="flex items-center gap-1 rounded-md border border-border px-2 py-1"
+            data-testid="classify-selection-bar"
+          >
             <span className="me-1 text-xs text-muted-foreground">
               <Trans>{ticked.size} selected</Trans>
             </span>
@@ -135,73 +184,75 @@ export function ClassifyDialog({ callId, onClose }: { callId: string; onClose: (
               <Check className="me-1 h-3.5 w-3.5" />
               <Trans>Apply</Trans>
             </Button>
-            <Button variant="ghost" size="icon" className="ms-auto h-7 w-7" title={t`Clear selection`} onClick={() => setTicked(new Set())}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ms-auto h-7 w-7"
+              title={t`Clear selection`}
+              onClick={() => setTicked(new Set())}
+            >
               <X className="h-3.5 w-3.5" />
             </Button>
           </div>
         )}
-        <div className="relative">
-          <div className="max-h-[60vh] overflow-auto rounded-md border border-border">
-            <Table data-testid="classify-table">
-              <TableHeader>
-                <TableRow className="text-xs hover:bg-transparent">
-                  <TableHead className="h-9 w-7 ps-3">
-                    {value && (
-                      <Checkbox
-                        checked={allTicked ? true : ticked.size > 0 ? 'indeterminate' : false}
-                        onCheckedChange={() => setTicked(allTicked ? new Set() : new Set(open.map((row) => row.conversation_id)))}
-                        aria-label={t`Select all`}
-                        className="h-3.5 w-3.5 border-muted-foreground"
-                      />
-                    )}
-                  </TableHead>
-                  <TableHead className="h-9 px-3">
-                    <Trans>Conversation</Trans>
-                  </TableHead>
-                  <TableHead className="h-9 px-3">
-                    <Trans>Current</Trans>
-                  </TableHead>
-                  <TableHead className="h-9 px-3">
-                    <Trans>Proposed</Trans>
-                  </TableHead>
-                  <TableHead className="h-9" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {value
-                  ? rows.map((row) => (
-                      <ProposedRow
-                        key={row.conversation_id}
-                        row={row}
-                        root={value.root}
-                        colors={colors}
-                        added={value.tree_changes.some((c) => c.op === 'added' && row.proposed.includes(c.tag))}
-                        ticked={ticked.has(row.conversation_id)}
-                        rejected={rejected.has(row.conversation_id)}
-                        opened={opened === row.conversation_id}
-                        busy={busy}
-                        onApplied={(on) => setApplied((all) => (all[row.conversation_id] === on ? all : { ...all, [row.conversation_id]: on }))}
-                        onTick={() => setTicked(toggle(ticked, row.conversation_id))}
-                        onReject={() => {
-                          setRejected(toggle(rejected, row.conversation_id));
-                          setTicked((all) => new Set([...all].filter((id) => id !== row.conversation_id)));
-                        }}
-                        onApply={() => void apply([row.conversation_id], false)}
-                        onWhy={() => setOpened(opened === row.conversation_id ? null : row.conversation_id)}
-                      />
-                    ))
-                  : asked.map((id) => <WaitingRow key={id} id={id} failed={!!failure} />)}
-              </TableBody>
-            </Table>
-          </div>
-          {tree && value && (
-            <TreeChanges
-              value={value}
-              done={treeDone}
-              busy={busy}
-              onApply={() => void apply([], true)}
-            />
-          )}
+        <div className="max-h-[60vh] overflow-auto rounded-md border border-border">
+          <Table data-testid="classify-table">
+            <TableHeader>
+              <TableRow className="text-xs hover:bg-transparent">
+                <TableHead className="h-9 w-7 ps-3">
+                  {value && (
+                    <Checkbox
+                      checked={allTicked ? true : ticked.size > 0 ? 'indeterminate' : false}
+                      onCheckedChange={() =>
+                        setTicked(allTicked ? new Set() : new Set(open.map((row) => row.conversation_id)))
+                      }
+                      aria-label={t`Select all`}
+                      className="h-3.5 w-3.5 border-muted-foreground"
+                    />
+                  )}
+                </TableHead>
+                <TableHead className="h-9 px-3">
+                  <Trans>Conversation</Trans>
+                </TableHead>
+                <TableHead className="h-9 px-3">
+                  <Trans>Current</Trans>
+                </TableHead>
+                <TableHead className="h-9 px-3">
+                  <Trans>Proposed</Trans>
+                </TableHead>
+                <TableHead className="h-9" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {value
+                ? rows.map((row) => (
+                    <ProposedRow
+                      key={row.conversation_id}
+                      row={row}
+                      root={value.root}
+                      colors={colors}
+                      added={value.tree_changes.some((c) => c.op === 'added' && row.proposed.includes(c.tag))}
+                      ticked={ticked.has(row.conversation_id)}
+                      rejected={rejected.has(row.conversation_id)}
+                      opened={opened === row.conversation_id}
+                      busy={busy}
+                      onApplied={(on) =>
+                        setApplied((all) =>
+                          all[row.conversation_id] === on ? all : { ...all, [row.conversation_id]: on },
+                        )
+                      }
+                      onTick={() => setTicked(toggle(ticked, row.conversation_id))}
+                      onReject={() => {
+                        setRejected(toggle(rejected, row.conversation_id));
+                        setTicked((all) => new Set([...all].filter((id) => id !== row.conversation_id)));
+                      }}
+                      onApply={() => void apply([row.conversation_id], false)}
+                      onWhy={() => setOpened(opened === row.conversation_id ? null : row.conversation_id)}
+                    />
+                  ))
+                : asked.map((id) => <WaitingRow key={id} id={id} failed={!!failure} />)}
+            </TableBody>
+          </Table>
         </div>
         {(error || failure) && (
           <p role="alert" className="text-xs text-destructive" data-testid="classify-error">
@@ -220,32 +271,60 @@ export function ClassifyDialog({ callId, onClose }: { callId: string; onClose: (
           </span>
           <div className="flex items-center gap-2">
             {value && value.tree_changes.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn('gap-1.5', tree && 'bg-accent')}
-                onClick={() => setTree(!tree)}
-                data-testid="classify-tree-changes"
-              >
-                <GitCompareArrows className="size-3.5" />
-                <Trans>Tag changes</Trans>
-                {OPS.map((op) => {
-                  const count = countOf(value.tree_changes, op);
-                  return count ? (
-                    <span key={op} className="text-[11px] font-medium" style={{ color: CHANGE_COLOR[op] }} title={op}>
-                      {CHANGE_MARK[op]}
-                      {count}
-                    </span>
-                  ) : null;
-                })}
-              </Button>
+              <Popover open={tree} onOpenChange={setTree}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn('gap-1.5', tree && 'bg-accent')}
+                    data-testid="classify-tree-changes"
+                  >
+                    <GitCompareArrows className="size-3.5" />
+                    <Trans>Tag changes</Trans>
+                    {OPS.map((op) => {
+                      const count = countOf(value.tree_changes, op);
+                      return count ? (
+                        <span
+                          key={op}
+                          className="text-[11px] font-medium"
+                          style={{ color: CHANGE_COLOR[op] }}
+                          title={op}
+                        >
+                          {CHANGE_MARK[op]}
+                          {count}
+                        </span>
+                      ) : null;
+                    })}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="end"
+                  className="max-h-[52vh] w-96 p-3"
+                  data-testid="classify-tree-panel"
+                >
+                  <TreeChanges
+                    value={value}
+                    colors={colors}
+                    done={treeDone}
+                    busy={busy}
+                    onApply={() => void apply([], true)}
+                    onClose={() => setTree(false)}
+                  />
+                </PopoverContent>
+              </Popover>
             )}
             {value && open.length > 0 && (
               <Button
                 size="sm"
                 disabled={busy}
                 title={t`Apply every row you did not reject, with the tag changes they need`}
-                onClick={() => void apply(open.map((row) => row.conversation_id), true)}
+                onClick={() =>
+                  void apply(
+                    open.map((row) => row.conversation_id),
+                    true,
+                  )
+                }
                 data-testid="classify-apply-all"
               >
                 <Trans>Apply all</Trans>
@@ -315,7 +394,10 @@ function ProposedRow({
 }) {
   const { t } = useLingui();
   const message = useEntity<FlowMessage>(new TypeId(FlowMessage.type, row.message_id)).data;
-  const current = useMemo(() => (message?.tags ?? []).filter((tag) => tagIsWithin(tag, root) && tag !== root), [message?.tags, root]);
+  const current = useMemo(
+    () => (message?.tags ?? []).filter((tag) => tagIsWithin(tag, root) && tag !== root),
+    [message?.tags, root],
+  );
   // Applied = the message carries the proposal. Read from the message, so a tag a person picks counts too.
   const applied = !!message && same(current, row.proposed);
   useEffect(() => onApplied(applied), [applied, !!message]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -325,7 +407,12 @@ function ProposedRow({
       <TableRow className={cn(ticked && 'bg-primary/10')} data-testid={`classify-row-${row.conversation_id}`}>
         <TableCell className="w-7 ps-3">
           {!applied && !rejected && (
-            <Checkbox checked={ticked} onCheckedChange={onTick} aria-label={t`Select conversation`} className="h-3.5 w-3.5 border-muted-foreground" />
+            <Checkbox
+              checked={ticked}
+              onCheckedChange={onTick}
+              aria-label={t`Select conversation`}
+              className="h-3.5 w-3.5 border-muted-foreground"
+            />
           )}
         </TableCell>
         <TableCell className="max-w-md px-3">
@@ -338,7 +425,10 @@ function ProposedRow({
           </div>
         </TableCell>
         <TableCell className="px-3">
-          <div className={cn('flex items-center gap-1.5 whitespace-nowrap', rejected && 'opacity-60')} data-testid="classify-row-new">
+          <div
+            className={cn('flex items-center gap-1.5 whitespace-nowrap', rejected && 'opacity-60')}
+            data-testid="classify-row-new"
+          >
             <span className={cn('inline-flex items-center gap-1', rejected && 'line-through')}>
               {row.proposed.length ? (
                 row.proposed.map((tag) => <TagChip key={tag} name={tag} color={colors.get(tag)} />)
@@ -361,7 +451,9 @@ function ProposedRow({
                 <Trans>rejected</Trans>
               </span>
             ) : (
-              <span className="text-[11px] font-medium text-primary">{added ? <Trans>new tag</Trans> : <Trans>changed</Trans>}</span>
+              <span className="text-[11px] font-medium text-primary">
+                {added ? <Trans>new tag</Trans> : <Trans>changed</Trans>}
+              </span>
             )}
             {!applied && !rejected && (
               <button
@@ -407,7 +499,10 @@ function ProposedRow({
       {opened && (
         <TableRow className="bg-muted/20 hover:bg-muted/20">
           <TableCell colSpan={5} className="p-4">
-            <div className="grid grid-cols-[7.5rem_1fr] items-baseline gap-x-4 gap-y-2 text-sm" data-testid="classify-row-trace">
+            <div
+              className="grid grid-cols-[7.5rem_1fr] items-baseline gap-x-4 gap-y-2 text-sm"
+              data-testid="classify-row-trace"
+            >
               <div className="text-xs text-muted-foreground">
                 <Trans>Agent</Trans>
               </div>
@@ -418,7 +513,10 @@ function ProposedRow({
                     <Trans>Asked for</Trans>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-foreground/60 px-2 text-[11px]" title={row.asked.tag}>
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full border border-dashed border-foreground/60 px-2 text-[11px]"
+                      title={row.asked.tag}
+                    >
                       <TagIcon className="size-3" />
                       {row.asked.tag.split('.').at(-1)}
                     </span>
@@ -449,36 +547,74 @@ function ProposedRow({
 }
 
 /** The tag tree as the run would leave it: every changed tag says what happened to it, where it happened. */
-function TreeChanges({ value, done, busy, onApply }: { value: StreamInboxClassification; done: boolean; busy: boolean; onApply: () => void }) {
+function TreeChanges({
+  value,
+  colors,
+  done,
+  busy,
+  onApply,
+  onClose,
+}: {
+  value: StreamInboxClassification;
+  colors: Map<string, string | null | undefined>;
+  done: boolean;
+  busy: boolean;
+  onApply: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useLingui();
   const definitions = useTagDefinitions();
-  const colors = useTagColors();
   const byTag = useMemo(() => new Map(value.tree_changes.map((change) => [change.tag, change])), [value.tree_changes]);
+  // The root first, as the tag editor draws it, then the tree as the run would leave it.
   const rows = useMemo(() => {
     const movedFrom = new Set(value.tree_changes.filter((c) => c.op === 'moved').map((c) => c.was));
     const names = definitions.filter((tag) => !tag.deprecated && !movedFrom.has(tag.name)).map((tag) => tag.name ?? '');
-    return treeRows([...new Set([...names, ...value.tree_changes.map((c) => c.tag)])], value.root);
+    const under = treeRows([...new Set([...names, ...value.tree_changes.map((c) => c.tag)])], value.root);
+    return [{ name: value.root, depth: 0 }, ...under.map((row) => ({ ...row, depth: row.depth + 1 }))];
   }, [definitions, value]);
   const counts = OPS.map((op) => `${countOf(value.tree_changes, op)} ${op}`).join(' · ');
   return (
-    <div
-      className="absolute bottom-2 end-2 z-10 max-h-[52vh] w-96 overflow-auto rounded-md border bg-popover p-3 text-popover-foreground shadow-md"
-      data-testid="classify-tree-panel"
-    >
-      <div className="mb-2 flex items-baseline justify-between gap-2">
+    <>
+      <div className="mb-2 flex items-baseline gap-2">
         <span className="text-sm font-medium">
           <Trans>Tag tree</Trans>
         </span>
-        <span className="text-[11px] text-muted-foreground">{counts}</span>
+        <span className="ms-auto text-[11px] text-muted-foreground">{counts}</span>
+        <button
+          type="button"
+          aria-label={t`Close the tag tree`}
+          onClick={onClose}
+          data-testid="classify-tree-close"
+          className="self-center rounded p-0.5 text-muted-foreground hover:bg-muted"
+        >
+          <X className="size-3.5" />
+        </button>
       </div>
       {rows.map(({ name, depth }) => {
         const change = byTag.get(name);
         return (
-          <div key={name} style={{ marginInlineStart: depth * 16 }} data-testid={`classify-tree-row-${name}`} data-change={change?.op}>
+          <div
+            key={name}
+            style={{ marginInlineStart: depth * 16 }}
+            data-testid={`classify-tree-row-${name}`}
+            data-change={change?.op}
+          >
             <div className="flex items-center gap-1.5 px-2 py-1 text-sm">
-              <TagIcon className="size-3.5 shrink-0" style={{ color: change?.color ?? colors.get(name) ?? undefined }} />
-              <span className={cn('truncate', change?.op === 'removed' && 'text-muted-foreground line-through')}>{name.split('.').at(-1)}</span>
+              <TagIcon className="size-3.5 shrink-0" style={{ color: colors.get(name) ?? undefined }} />
+              <span
+                className={cn(
+                  'truncate',
+                  change?.op === 'removed' && 'text-muted-foreground line-through',
+                  name === value.root && 'italic text-muted-foreground',
+                )}
+              >
+                {name === value.root ? name : name.split('.').at(-1)}
+              </span>
               {change && (
-                <span className="shrink-0 whitespace-nowrap text-[11px] font-medium" style={{ color: CHANGE_COLOR[change.op] }}>
+                <span
+                  className="shrink-0 whitespace-nowrap text-[11px] font-medium"
+                  style={{ color: CHANGE_COLOR[change.op] }}
+                >
                   {change.op}
                 </span>
               )}
@@ -486,9 +622,13 @@ function TreeChanges({ value, done, busy, onApply }: { value: StreamInboxClassif
             {change && (
               <div className="pb-1 text-[11px] text-muted-foreground" style={{ marginInlineStart: 30 }}>
                 {change.op === 'updated' && <div className="line-through">{change.was}</div>}
-                {(change.op === 'added' || change.op === 'updated') && <div className="text-foreground">{change.meaning}</div>}
+                {(change.op === 'added' || change.op === 'updated') && (
+                  <div className="text-foreground">{change.meaning}</div>
+                )}
                 {change.op === 'moved' && <Trans>was {change.was}</Trans>}
-                {change.op === 'removed' && change.merged_into && <Trans>its conversations go to {change.merged_into.split('.').at(-1)}</Trans>}
+                {change.op === 'removed' && change.merged_into && (
+                  <Trans>its conversations go to {change.merged_into.split('.').at(-1)}</Trans>
+                )}
                 <div>{change.reason}</div>
               </div>
             )}
@@ -507,6 +647,6 @@ function TreeChanges({ value, done, busy, onApply }: { value: StreamInboxClassif
           </Button>
         )}
       </div>
-    </div>
+    </>
   );
 }

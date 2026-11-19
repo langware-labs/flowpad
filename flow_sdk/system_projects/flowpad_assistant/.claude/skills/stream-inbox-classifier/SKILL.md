@@ -46,6 +46,9 @@ A tag is ONE at most per conversation; none is a valid answer. Settle the reques
 
 - **Approve** a new tag only when it names something no existing tag means AND more than one conversation
   asks for it or would fit it. Approving records `{"op": "added", "tag", "meaning", "reason", "asked_by": n}`.
+- **Give the tree its shape.** A new tag goes UNDER the broader tag it is a kind of — an existing one, or one you
+  approve in this run (`stream_inbox.engineering.ci`, not a second root tag beside `engineering`). A root-level tag
+  is for a new family only. A flat list of unrelated roots is a sign you skipped this.
 - **Answer "use X"** otherwise: an existing tag, or a tag you approved earlier in this run with the same
   meaning (two agents asking for `refund` and `money-back` get ONE tag). The row then carries
   `"asked": {"tag", "meaning", "answer": "use_existing", "use": "X"}` and proposes X.

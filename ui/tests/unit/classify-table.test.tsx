@@ -24,6 +24,8 @@ const VALUE = {
     { op: 'removed', tag: 'stream_inbox.demo', merged_into: 'stream_inbox.sales.intro', reason: 'same as intro' },
   ],
 };
+// What is applied: the proposal, its new tag in the palette's first colour the tree does not use.
+const COLORED = { ...VALUE, tree_changes: [{ ...VALUE.tree_changes[0], color: '#dc2626' }, ...VALUE.tree_changes.slice(1)] };
 const { classificationRun, applyStreamInboxClassification } = vi.hoisted(() => ({
   classificationRun: vi.fn(),
   applyStreamInboxClassification: vi.fn(),
@@ -82,12 +84,12 @@ describe('ClassifyDialog', () => {
     expect(screen.getByTestId('classify-row-trace').textContent).toContain('Wants a charge returned');
 
     fireEvent.click(cell('a', 'classify-row-apply')!);
-    await waitFor(() => expect(applyStreamInboxClassification).toHaveBeenCalledWith(VALUE, { conversations: ['ca'], tree: false }));
+    await waitFor(() => expect(applyStreamInboxClassification).toHaveBeenCalledWith(COLORED, { conversations: ['ca'], tree: false }));
 
     fireEvent.click(cell('c', 'classify-row-reject')!);
     expect(cell('c', 'classify-row-new')!.textContent).toContain('rejected');
     fireEvent.click(screen.getByTestId('classify-apply-all'));
-    await waitFor(() => expect(applyStreamInboxClassification).toHaveBeenLastCalledWith(VALUE, { conversations: ['ca'], tree: true }));
+    await waitFor(() => expect(applyStreamInboxClassification).toHaveBeenLastCalledWith(COLORED, { conversations: ['ca'], tree: true }));
   });
 
   it('draws every tag change on the tree, where it happened', async () => {
@@ -98,6 +100,9 @@ describe('ClassifyDialog', () => {
     expect(['stream_inbox.refund', 'stream_inbox.urgent', 'stream_inbox.sales.intro', 'stream_inbox.demo'].map(change)).toEqual(['added', 'updated', 'moved', 'removed']);
     expect(screen.queryByTestId('classify-tree-row-stream_inbox.intro')).toBeNull(); // the moved tag's old place is gone
     expect(screen.getByTestId('classify-tree-panel').textContent).toContain('1 added · 1 updated · 1 moved · 1 removed');
+    expect(screen.getByTestId('classify-tree-row-stream_inbox').textContent).toBe('stream_inbox'); // the root, first
+    fireEvent.click(screen.getByTestId('classify-tree-close'));
+    expect(screen.queryByTestId('classify-tree-panel')).toBeNull();
   });
 
   it('says why when the run did not finish, and shows the conversations it was reading', async () => {
