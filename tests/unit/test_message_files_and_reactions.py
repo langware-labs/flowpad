@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.blocks.delivery import Delivered
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
@@ -22,7 +23,7 @@ from flow_sdk.ingest.sync import sync_source
 from flow_sdk.sources.errors import Rejected
 from flow_sdk.stream_inbox.projection import project_source_item
 from flow_sdk.stream_inbox.reactions import OURS
-from tests.utils.fake_source import scripted_provider
+from tests.utils.fake_source import ScriptedSource, scripted_provider
 
 pytestmark = [
     pytest.mark.timeout(30),  # do not increase timeout without approval
@@ -118,6 +119,43 @@ async def test_we_react_replace_and_take_it_back_and_an_emoji_the_channel_cannot
 
     assert script.reacted == [("m1", "👀", False), ("m1", "✅", False), ("m1", "", True)]
     assert stored.reactions == []
+
+
+async def _delivered(script, src):
+    """Dana's message as the deployment loop hands it out."""
+    row, _ = await _photo_from_dana(script, src)
+    return Delivered(row, position=None, row=row, source_id=str(src.id))
+
+
+async def test_a_message_shows_it_was_received_then_seen_and_the_answer_takes_ours_back():
+    with scripted_provider(PROVIDER, projected=True) as script:
+        message = await _delivered(script, await _source())
+
+        assert await message.react_received() == "👍"
+        assert await message.react_seen() == "👀"
+        await message.unreact_seen()
+
+    assert script.reacted == [("m1", "👍", False), ("m1", "👀", False), ("m1", "", True)]
+
+
+async def test_a_driver_names_the_emoji_its_channel_can_show(monkeypatch):
+    monkeypatch.setattr(ScriptedSource, "seen_reaction", "✅")
+    with scripted_provider(PROVIDER, projected=True) as script:
+        message = await _delivered(script, await _source())
+
+        assert await message.react_seen() == "✅"
+
+    assert script.reacted == [("m1", "✅", False)]
+
+
+async def test_a_channel_without_reactions_shows_nothing_and_nothing_fails(monkeypatch):
+    monkeypatch.delattr(ScriptedSource, "react")
+    with scripted_provider(PROVIDER, projected=True) as script:
+        message = await _delivered(script, await _source())
+
+        assert await message.react_seen() is None
+
+    assert script.reacted == []
 
 
 async def test_a_send_quotes_the_chosen_message_and_its_files_fan_out_with_the_body_as_the_first_caption(tmp_path):

@@ -43,8 +43,18 @@ class RecordSource(Source):
     family: ClassVar[Family] = Family.RECORD
 
 
+#: What a person sees on their message once it reached this machine, and while an agent works on it.
+RECEIVED_REACTION = "👍"
+SEEN_REACTION = "👀"
+
+
 class MessageSource(RecordSource):
     family: ClassVar[Family] = Family.MESSAGE
+
+    #: The emoji ``Delivered.react_received`` / ``react_seen`` put on a person's message, on a channel that reacts.
+    #: A driver whose channel shows only some emoji (a Telegram bot's fixed list) names ones it can show.
+    received_reaction: ClassVar[str] = RECEIVED_REACTION
+    seen_reaction: ClassVar[str] = SEEN_REACTION
 
     #: An empty allowlist admits everyone: strangers are the point of this channel (a help desk), or something
     #: upstream already admits only who may write (a hub claim's proven sender).
@@ -93,4 +103,4 @@ class MessageSource(RecordSource):
         return ""
 
 
-__all__ = ["MessageSource", "ObjectSource", "RecordSource"]
+__all__ = ["RECEIVED_REACTION", "SEEN_REACTION", "MessageSource", "ObjectSource", "RecordSource"]

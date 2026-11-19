@@ -62,6 +62,9 @@ class _Message:
     async def reply(self, spec):
         self._sent.append(f"{spec} (quoting {self.body})")
 
+    async def react_seen(self):
+        return None  # a channel without reactions
+
 
 async def test_messages_arriving_together_each_get_their_own_turn(monkeypatch):
     worker, sent = _Worker(), []

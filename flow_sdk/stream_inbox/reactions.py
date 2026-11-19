@@ -143,12 +143,46 @@ async def react(message: Any, emoji: str) -> list[MessageReaction]:
     On a channel that keeps one per person (``reactions_per_actor == 1``) it replaces ours."""
     if not emoji:
         raise ValueError("an emoji is required; unreact takes a reaction back")
-    source, driver, item = await _resolve(message)
+    return await _put_reaction(await _resolve(message), emoji)
+
+
+async def _put_reaction(resolved: tuple, emoji: str) -> list[MessageReaction]:
+    source, driver, item = resolved
     await driver.react(source, item.origin, emoji)
     one = getattr(driver.cls, "reactions_per_actor", 0) == 1
     folded = fold(item.reactions or [], OURS, (emoji,), ReactionMode.SET if one else ReactionMode.ADD, ours=True)
     await _store(item, folded)
     return folded
+
+
+async def try_react_stage(message: Any, stage: str) -> Optional[str]:
+    """Put the channel's own emoji for ``stage`` — ``"received_reaction"`` or ``"seen_reaction"``, a
+    ``MessageSource`` attribute each driver may override — on a channel message, when its driver reacts.
+    Answers the emoji put, or None: the channel has no reactions, or it refused. A stage reaction is the
+    person's feedback, never a reason for the caller to fail."""
+    from flow_sdk.sources.protocols import Reacting  # noqa: PLC0415
+
+    try:
+        resolved = await _resolve(message)
+        cls = resolved[1].cls
+        emoji = str(getattr(cls, stage, "") or "") if issubclass(cls, Reacting) else ""
+        if not emoji:
+            return None
+        await _put_reaction(resolved, emoji)
+    except Exception as exc:  # noqa: BLE001 — feedback only; the message is handled either way
+        logger.warning("no %s on message %s: %s", stage, getattr(message, "id", "?"), exc)
+        return None
+    return emoji
+
+
+async def try_unreact_ours(message: Any) -> Optional[list[MessageReaction]]:
+    """Take back all of our reactions from a channel message. Answers its reactions after, or None when the
+    channel refused — feedback only, never a reason for the caller to fail."""
+    try:
+        return await unreact(message)
+    except Exception as exc:  # noqa: BLE001 — feedback only; the answer is out either way
+        logger.warning("our reactions stay on message %s: %s", getattr(message, "id", "?"), exc)
+        return None
 
 
 async def unreact(message: Any, emoji: str = "") -> list[MessageReaction]:
@@ -164,4 +198,14 @@ async def unreact(message: Any, emoji: str = "") -> list[MessageReaction]:
     return folded
 
 
-__all__ = ["OURS", "apply_reactions", "channel_of_source", "fold", "react", "source_item_of", "unreact"]
+__all__ = [
+    "OURS",
+    "apply_reactions",
+    "channel_of_source",
+    "fold",
+    "react",
+    "source_item_of",
+    "try_react_stage",
+    "try_unreact_ours",
+    "unreact",
+]

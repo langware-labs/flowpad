@@ -1,7 +1,8 @@
-"""While the agent works on a channel message, the person sees 👀 on it; once the answer is out, it is gone.
+"""While the agent works on a channel message, the person sees it has been seen; once the answer is out, it is gone.
 
-``answer_one`` puts the reaction on before the turn runs and takes ours back after it — on a channel whose
-driver reacts (``Reacting``). On any other channel the message is answered exactly as before.
+``answer_one`` asks the message to show it is seen (``react_seen``) before the turn runs, and takes ours back
+(``unreact_seen``) after the reply — only when a reaction was put: a channel without reactions shows nothing.
+Which emoji, and whether the channel reacts at all, is the message's and its driver's (test_message_files_and_reactions).
 """
 
 from types import SimpleNamespace
@@ -16,29 +17,25 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]  # do not increase t
 SOURCE = SimpleNamespace(id="ds-1", channel="telegram", provider="telegram")
 
 
-class _ReactingDriver:
-    async def react(self, target, emoji: str) -> None: ...
-
-    async def unreact(self, target, emoji: str = "") -> None: ...
-
-
-class _PlainDriver:
+class _Driver:
     pass
 
 
 class _Message:
-    """A channel message that records, in order, what Flowpad does to it."""
+    """A channel message that records, in order, what Flowpad does to it. ``seen`` is what its channel shows."""
 
-    def __init__(self, body: str = "Hello, whats our status"):
+    def __init__(self, seen: "str | None", body: str = "Hello, whats our status"):
         self.data_source_id, self.external_id = "ds-1", "<m-1>"
         self.author_external_id, self.author_display, self.body = "tg-42", "Dana", body
-        self.calls: list[tuple[str, str]] = []
+        self.seen = seen
+        self.calls: list = []
 
-    async def react(self, emoji: str):
-        self.calls.append(("react", emoji))
+    async def react_seen(self):
+        self.calls.append("react_seen")
+        return self.seen
 
-    async def unreact(self, emoji: str = ""):
-        self.calls.append(("unreact", emoji))
+    async def unreact_seen(self):
+        self.calls.append("unreact_seen")
 
     async def reply_spec(self, *, body, files=()):
         return body
@@ -65,22 +62,21 @@ def engine(monkeypatch):
     monkeypatch.setattr(agent_serve, "is_own_outgoing", lambda *_: False)
     monkeypatch.setattr(agent_serve, "admits", lambda *_: True)
     monkeypatch.setattr(agent_serve, "conversation_of", lambda *_: _async("conv-1"))
+    monkeypatch.setattr(agent_serve, "_driver_cls", lambda _source: _Driver)
     return engine
 
 
-async def test_the_message_shows_eyes_while_the_agent_answers_it(engine, monkeypatch):
-    monkeypatch.setattr(agent_serve, "_driver_cls", lambda _source: _ReactingDriver)
-    message = _Message()
+async def test_the_message_shows_seen_while_the_agent_answers_it(engine):
+    message = _Message(seen="👀")
 
     assert await answer_one(engine, message, source=SOURCE) is True
 
-    assert message.calls == [("react", "👀"), ("reply", "re: Hello, whats our status"), ("unreact", "")]
+    assert message.calls == ["react_seen", ("reply", "re: Hello, whats our status"), "unreact_seen"]
 
 
-async def test_a_channel_without_reactions_is_answered_without_them(engine, monkeypatch):
-    monkeypatch.setattr(agent_serve, "_driver_cls", lambda _source: _PlainDriver)
-    message = _Message()
+async def test_a_channel_without_reactions_is_answered_without_taking_any_back(engine):
+    message = _Message(seen=None)
 
     assert await answer_one(engine, message, source=SOURCE) is True
 
-    assert message.calls == [("reply", "re: Hello, whats our status")]
+    assert message.calls == ["react_seen", ("reply", "re: Hello, whats our status")]
