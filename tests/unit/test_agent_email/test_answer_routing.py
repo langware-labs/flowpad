@@ -159,10 +159,3 @@ async def test_agent_prompt_has_sender_and_conversation_context():
     assert "Ishay Sela" in agent_prompt and "tg-42" in agent_prompt
     assert "conv-1" in agent_prompt
     assert "forwarded to the user automatically" in agent_prompt
-
-
-async def test_agent_prompt_says_how_to_reply_when_the_turn_text_is_not_sent():
-    agent_prompt = turn_body(_channel_message(), conversation_id="conv-1", forwarded=False)
-
-    assert "flow conversation reply conv-1" in agent_prompt
-    assert "forwarded to the user automatically" not in agent_prompt

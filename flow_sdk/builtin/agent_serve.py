@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.blocks.delivery import Delivered
+    from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
     from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
@@ -974,7 +975,14 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
     return answered
 
 
-async def answer_one(engine: TurnEngine, message, *, source=None, session: Optional[str] = None, process=None) -> bool:
+async def answer_one(
+    engine: TurnEngine,
+    message: Delivered[SourceItemSpec],
+    *,
+    source: Optional[DataSource] = None,
+    session: Optional[str] = None,
+    process=None,
+) -> bool:
     """One channel message: gate it, run it in its conversation, reply on its channel.
 
     Answers whether a reply went out. Every refusal — our own outgoing copy, a
@@ -1196,13 +1204,9 @@ def generate_conversation_source_context_prompt(
         parts.append(f"flowpad conversation: {conversation_id}")
     parts.append("reply in a format suitable for the message.")
     if forwarded:
-        how = "Your reply will be forwarded to the user automatically via flowpad."
-    else:
-        how = (
-            "Your reply is not sent to the user by itself: to answer them, run "
-            f'`flow conversation reply {conversation_id or "<conversation id>"} "<your answer>"`.'
-        )
-    return f"<flowpad>{', '.join(parts)} {how}</flowpad>"
+        parts.append("Your reply will be forwarded to the user automatically via flowpad.")
+    
+    return f"<flowpad>{', '.join(parts)} </flowpad>"
 
 
 def turn_body(
