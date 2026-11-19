@@ -963,7 +963,14 @@ async def _keep_attention(sources) -> None:
         await asyncio.sleep(ATTENTION_RENEW_SECONDS)
 
 
-async def answer(engine: TurnEngine, message, *, source=None, session: Optional[str] = None, process=None) -> bool:
+async def answer(
+    engine: TurnEngine,
+    message: Delivered[SourceItemSpec],
+    *,
+    source: Optional[DataSource] = None,
+    session: Optional[str] = None,
+    process=None,
+) -> bool:
     """One channel message: :func:`answer_one`, and once a turn on the deployment is answered again, the
     messages held while its turns failed (:func:`answer_held`)."""
     answered = await answer_one(engine, message, source=source, session=session, process=process)
