@@ -1639,13 +1639,13 @@ export function StreamInboxView({
             <SquarePen />
             <Trans>New conversation</Trans>
           </Button>
-          {desktopStreamInbox && <ProjectUploadMessageButton variant="outline" size="default" />}
+          <OpenTasksButton />
           {/* Contacts (people, groups, help desks) is the same on the hub page and the desktop. */}
           <Button variant="outline" onClick={() => setShowContacts(true)} data-testid="stream-inbox-contacts-button">
             <BookUser />
             <Trans>Contacts</Trans>
           </Button>
-          <OpenTasksButton />
+          {desktopStreamInbox && <ProjectUploadMessageButton variant="outline" size="default" />}
           <div className="ms-auto flex min-w-0 items-center gap-2">{channelButtons}</div>
         </div>
       )}
