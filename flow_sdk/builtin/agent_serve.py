@@ -1215,15 +1215,14 @@ def turn_body(
     lines = []
     source = getattr(message, "provider", None)
     if source:
-        lines.append(
-            generate_conversation_source_context_prompt(
-                source,
-                sender=str(getattr(message, "author_display", "") or ""),
-                sender_id=str(getattr(message, "author_external_id", "") or ""),
-                conversation_id=str(conversation_id or ""),
-                forwarded=forwarded,
-            )
+        context_prompt = generate_conversation_source_context_prompt(
+            source,
+            sender=str(getattr(message, "author_display", "") or ""),
+            sender_id=str(getattr(message, "author_external_id", "") or ""),
+            conversation_id=str(conversation_id or ""),
+            forwarded=forwarded,
         )
+        lines.append(context_prompt)
 
     quoted = getattr(message, "reply_to", None)
     if quoted is not None:
