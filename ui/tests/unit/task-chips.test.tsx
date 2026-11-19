@@ -5,6 +5,7 @@
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const guard = vi.hoisted(() => ({ allow: true }));
@@ -35,8 +36,13 @@ const people: TaskPeople = {
   ],
 };
 
+// The owner chip's ContactPicker opens a team page (useOrgRoute), so it needs a router.
 function show(task: Task, who: TaskPeople = people) {
-  return render(<TaskChips task={task} onOpen={vi.fn()} people={who} />);
+  return render(
+    <MemoryRouter>
+      <TaskChips task={task} onOpen={vi.fn()} people={who} />
+    </MemoryRouter>,
+  );
 }
 
 beforeEach(() => {
