@@ -6,10 +6,13 @@ import type { Agent, Deployment, Issue } from '@sdk';
 import {
   buildAgentTiles,
   buildAppTiles,
+  buildHubAgentTiles,
   deploymentCount,
   pageOf,
   resolveSelection,
+  standsForItself,
   tileIsLocal,
+  TILES_PAGE_SIZE,
 } from '@src/components/home-tiles/home-tiles-model';
 import type { ProjectApp } from '@src/components/top-nav-bar/use-project-apps';
 import { describe, expect, it } from 'vitest';
@@ -57,7 +60,7 @@ describe('agent icons', () => {
     expect(tiles.map(deploymentCount)).toEqual([0, 2, 1, 2, 0]);
     expect(tiles.map((tile) => tile.issueCount)).toEqual([0, 2, 0, 1, 0]);
     expect([...byKey['agent-busy'].deploymentIssues]).toEqual([['b1', 1]]);
-    expect(tiles.map(tileIsLocal)).toEqual([true, true, true, false, true]);
+    expect(tiles.map((tile) => tileIsLocal(tile))).toEqual([true, true, true, false, true]);
   });
 
   it('selects the agent when it is yours, and lists its deployments', () => {
@@ -87,6 +90,32 @@ describe('agent icons', () => {
   });
 });
 
+describe('hub agent icons', () => {
+  const mine = agent('mine', ['OWNER']);
+  const busy = agent('busy', ['OWNER']);
+  const sharedIdle = agent('idle', ['READER']);
+  const sharedBusy = agent('shared', ['READER']);
+  const system = { ...agent('assistant', ['OWNER']), scope: 'system' } as unknown as Agent;
+  const local = deployment('l1', 'busy', { local: true });
+  const deployments = [deployment('b1', 'busy'), deployment('s1', 'shared'), local];
+  const tiles = buildHubAgentTiles([sharedIdle, system, busy, sharedBusy, mine], deployments, []);
+
+  it('shows every agent you can reach: yours by name, then those with deployments, then the rest shared', () => {
+    expect(tiles.map((tile) => tile.key)).toEqual(['agent-busy', 'agent-mine', 'agent-shared', 'agent-idle']);
+    expect(tiles.map((tile) => tile.own)).toEqual([true, true, false, false]);
+  });
+
+  it('lets a shared agent with nothing deployed stand for itself', () => {
+    expect(tiles.map(standsForItself)).toEqual([true, true, false, true]);
+    expect(resolveSelection(tiles, 'agent-idle', null)).toMatchObject({ deployment: null, listed: [], subView: false });
+  });
+
+  it('puts what is yours in the cloud, not on this machine', () => {
+    expect(tiles.map((tile) => tileIsLocal(tile, false))).toEqual([false, false, false, false]);
+    expect(tileIsLocal({ ...tiles[0], deployments: [local] }, false)).toBe(true);
+  });
+});
+
 describe('app icons', () => {
   it('lists the deployments of the app project, without its own placement on this machine', () => {
     const app = { id: 'a', name: 'board', displayName: 'Board', project_id: 'p', typeId: typeId('micro_app-a') };
@@ -99,14 +128,31 @@ describe('app icons', () => {
     expect(tiles[0]).toMatchObject({ key: 'micro_app-a', kind: 'app', label: 'Board', own: true, issueCount: 1 });
     expect(tiles[0].deployments.map((d) => d.id)).toEqual(['cloud']);
   });
+
+  it('puts no deployment count on an app: every app of the project would show the same one', () => {
+    const app = (id: string) => ({ id, name: id, displayName: id, project_id: 'p', typeId: typeId(`micro_app-${id}`) });
+    const tiles = buildAppTiles(
+      [app('a'), app('b')].map((entry) => ({ app: entry, providerProjectId: 'p' }) as unknown as ProjectApp),
+      [deployment('c1', null, { project: 'p' }), deployment('c2', null, { project: 'p' })],
+      [],
+    );
+    expect(tiles.map((tile) => tile.deployments.length)).toEqual([2, 2]);
+    expect(tiles.map(deploymentCount)).toEqual([0, 0]);
+  });
 });
 
 describe('deployment pages', () => {
   it('shows ten at a time and clamps the page', () => {
     const items = Array.from({ length: 25 }, (_, i) => i);
-    expect(pageOf(items, 0)).toEqual({ rows: items.slice(0, 10), first: 1, pages: 3 });
+    expect(pageOf(items, 0)).toEqual({ rows: items.slice(0, 10), first: 1, pages: 3, page: 0 });
     expect(pageOf(items, 2)).toMatchObject({ rows: [20, 21, 22, 23, 24], first: 21 });
-    expect(pageOf(items, 9)).toMatchObject({ rows: [20, 21, 22, 23, 24], first: 21 });
-    expect(pageOf([], 0)).toEqual({ rows: [], first: 1, pages: 1 });
+    expect(pageOf(items, 9)).toMatchObject({ rows: [20, 21, 22, 23, 24], first: 21, page: 2 });
+    expect(pageOf([], 0)).toEqual({ rows: [], first: 1, pages: 1, page: 0 });
+  });
+
+  it('pages icons 25 at a time', () => {
+    const items = Array.from({ length: 48 }, (_, i) => i);
+    expect(pageOf(items, 0, TILES_PAGE_SIZE)).toMatchObject({ first: 1, pages: 2, page: 0 });
+    expect(pageOf(items, 1, TILES_PAGE_SIZE).rows).toEqual(items.slice(25));
   });
 });

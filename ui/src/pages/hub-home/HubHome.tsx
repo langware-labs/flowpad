@@ -32,7 +32,8 @@ import { ConnectMachineDialog } from './ConnectMachineDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
-import { HubItemsSection } from './HubItemsSection';
+import { HomeTiles, useHubHomeTiles } from '@src/components/home-tiles/HomeTiles';
+import { HomePropertiesPanel } from '@src/components/home-tiles/HomePropertiesPanel';
 import { hubProjectAssetDock } from '@src/lib/hub-page-url';
 import { FirstAgentCard } from './first-agent/FirstAgentCard';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -324,6 +325,15 @@ function BulkActionConfirm({
  */
 /** `machines` renders only the Machines page (/dock/hub/machines); the default is the home. */
 export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
+  // `relative`: the home's side panel sits on this edge and does not scroll with the page.
+  return (
+    <div className="relative h-full">
+      <HubHomePage view={view} />
+    </div>
+  );
+}
+
+function HubHomePage({ view }: { view: 'home' | 'machines' }) {
   const showMachines = view === 'machines';
   const { t } = useLingui();
   const { currentUser } = useAuth();
@@ -379,7 +389,6 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
   // name what it is about to destroy.
 
   // Active hides machines the provider no longer has (Not found).
-  const firstAgentRef = useRef<HTMLDivElement>(null);
   const [wizardActive, setWizardActive] = useState(false);
   const [machineFilter, setMachineFilter] = useState<'active' | 'all'>('active');
   const activeSandboxes = sandboxes.filter((d) => details[d.id]?.status !== ExecutionEnvironmentStatus.NOT_FOUND);
@@ -489,7 +498,7 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
             </div>
 
             {/* First agent: describe → its own sandbox + a channel → it answers. */}
-            <div ref={firstAgentRef} className="w-full">
+            <div className="w-full">
               <FirstAgentCard onActiveChange={setWizardActive} />
             </div>
 
@@ -499,10 +508,8 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
                 {/* Projects — the Vibe home's project strip, reused as-is (ProjectActionsRow). */}
                 <ProjectActionsRow className="w-full self-start" />
 
-                {/* The counters as tabs over the items they count. */}
-                <HubItemsSection
-                  onCreate={() => firstAgentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-                />
+                {/* One icon per agent: a click selects it into the side panel, a double click opens it. */}
+                <HubTiles />
               </>
             )}
           </>
@@ -1039,6 +1046,17 @@ export function HubHome({ view = 'home' }: { view?: 'home' | 'machines' }) {
       {/* Deleting a project is not undoable and it is shared — the people it was
           shared with lose it too — so it asks first, unlike the sandbox rows. */}
     </div>
+  );
+}
+
+/** The hub home's agent icons and the side panel of the one selected. */
+function HubTiles() {
+  const home = useHubHomeTiles();
+  return (
+    <>
+      <HomeTiles home={home} className="w-full self-start" />
+      <HomePropertiesPanel home={home} />
+    </>
   );
 }
 

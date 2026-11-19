@@ -5,6 +5,8 @@ import type { ProjectApp } from '@src/components/top-nav-bar/use-project-apps';
 
 /** How many deployments the panel lists before paging. */
 const DEPLOYMENTS_PAGE_SIZE = 10;
+/** How many icons a row shows before paging. */
+export const TILES_PAGE_SIZE = 25;
 
 /**
  * One icon on the home: an agent or an app. It stands for the thing itself when it is yours (`own`),
@@ -95,6 +97,25 @@ export function buildAgentTiles(
 }
 
 /**
+ * The hub home's agent icons: every agent you can reach, as the hub's Agents list had them. The hub has no
+ * current project: the agents you own stand for themselves, then those reached through deployments, then
+ * those shared with you that have none (the agent itself is what is selected).
+ */
+export function buildHubAgentTiles(knownAgents: Agent[], deployments: Deployment[], issues: Issue[]): HomeTile[] {
+  const reachable = knownAgents.filter(isUserAgent).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  const mine = reachable.filter((agent) => roleOf(agent) === 'owner');
+  const tiles = buildAgentTiles(mine, knownAgents, deployments, issues);
+  const shown = new Set(tiles.map((tile) => tile.key));
+  const open = openIssuesByTypeid(issues);
+  for (const agent of reachable) {
+    const key = agent.typeId.toString();
+    if (shown.has(key)) continue;
+    tiles.push(tileOf({ key, kind: 'agent', label: agent.displayName, agent, own: false }, [], open));
+  }
+  return tiles;
+}
+
+/**
  * The app icons. An app runs wherever its project is deployed, so its deployments are its project's —
  * except the project's own placement on this machine, which is the app itself.
  */
@@ -107,6 +128,11 @@ export function buildAppTiles(apps: ProjectApp[], deployments: Deployment[], iss
     const placed = ((app.project_id && byProject.get(app.project_id)) || []).filter((d) => !d.isLocal);
     return tileOf({ key, kind: 'app', label: app.displayName ?? app.name, app: entry, own: true }, placed, open);
   });
+}
+
+/** The icon is the agent / app itself: yours, or reachable with no deployment to pick. */
+export function standsForItself(tile: HomeTile): boolean {
+  return tile.own || !tile.deployments.length;
 }
 
 /** The one deployment an icon IS: something that is not yours, reachable through a single deployment. */
@@ -131,19 +157,34 @@ export function resolveSelection(
   return { tile, deployment, listed: deployment ? [] : tile.deployments, subView: !!deployment };
 }
 
-/** The count on the icon: how many deployments a click lists. A lone deployment that IS the selection has none. */
+/**
+ * The count on the icon: how many deployments a click lists. A lone deployment that IS the selection has none,
+ * and neither has an app: its deployments are its project's, the same number on every app of that project.
+ */
 export function deploymentCount(tile: HomeTile): number {
-  return loneDeployment(tile) ? 0 : tile.deployments.length;
+  return tile.kind === 'app' || loneDeployment(tile) ? 0 : tile.deployments.length;
 }
 
-/** Whether the icon reads as "this machine": the thing itself is here, or every deployment of it is. */
-export function tileIsLocal(tile: HomeTile): boolean {
-  return tile.own || tile.deployments.every((d) => d.isLocal);
+/**
+ * Whether the icon reads as "this machine": the thing itself is here, or every deployment of it is.
+ * `ownIsLocal` is false on the hub, where what is yours lives in the cloud.
+ */
+export function tileIsLocal(tile: HomeTile, ownIsLocal = true): boolean {
+  if (tile.own && ownIsLocal) return true;
+  return tile.deployments.length > 0 && tile.deployments.every((d) => d.isLocal);
 }
 
-/** One page of a list: its rows, the 1-based position of the first, and how many pages there are. */
-export function pageOf<T>(items: T[], page: number): { rows: T[]; first: number; pages: number } {
-  const pages = Math.max(1, Math.ceil(items.length / DEPLOYMENTS_PAGE_SIZE));
-  const at = Math.min(Math.max(page, 0), pages - 1) * DEPLOYMENTS_PAGE_SIZE;
-  return { rows: items.slice(at, at + DEPLOYMENTS_PAGE_SIZE), first: at + 1, pages };
+/** One page of a list: its rows, the 1-based position of the first, how many pages, and which one (clamped). */
+export interface PageSlice<T> {
+  rows: T[];
+  first: number;
+  pages: number;
+  page: number;
+}
+
+export function pageOf<T>(items: T[], page: number, size = DEPLOYMENTS_PAGE_SIZE): PageSlice<T> {
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  const shown = Math.min(Math.max(page, 0), pages - 1);
+  const at = shown * size;
+  return { rows: items.slice(at, at + size), first: at + 1, pages, page: shown };
 }
