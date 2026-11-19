@@ -124,6 +124,10 @@ def test_a_browsers_own_reads_pass_but_a_page_cannot_use_them_to_act():
 
     assert client.get("/api/v1/thing", headers=navigate).status_code == 200  # a page in a frame, a login redirect
     assert client.get("/api/v1/thing", headers=passive).status_code == 200  # an <img>, a classic <script>
+    module = {"sec-fetch-mode": "cors", "sec-fetch-dest": "script", "sec-fetch-site": "same-origin"}
+    assert client.get("/api/v1/thing", headers=module).status_code == 200  # an app's own `import './repo.js'`
+    assert client.get("/api/v1/thing", headers={**module, "sec-fetch-site": "cross-site"}).status_code == 403
+    assert client.post("/api/v1/thing", headers=module).status_code == 403
     assert client.post("/api/v1/thing", headers=navigate).status_code == 403  # a form a page submits
     assert client.get("/api/v1/thing", headers={"sec-fetch-mode": "cors"}).status_code == 403  # fetch / XHR
 
