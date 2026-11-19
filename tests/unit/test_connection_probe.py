@@ -117,6 +117,9 @@ async def test_an_admitted_probe_is_answered_and_the_reply_goes_back_to_it(chann
     async def react_seen():
         return None
 
+    async def react_received():
+        return None
+
     async def reply(spec):
         replies.append((message.author_external_id, spec.body))
 
@@ -125,7 +128,7 @@ async def test_an_admitted_probe_is_answered_and_the_reply_goes_back_to_it(chann
 
     message = SimpleNamespace(author_external_id="probe-n1", body="ping", files=(), data=None, reply_to=None,
                               data_source_id=SOURCE_ID, external_id="wamid.P", author_display="",
-                              reply_spec=reply_spec, reply=reply, react_seen=react_seen)
+                              reply_spec=reply_spec, reply=reply, react_seen=react_seen, react_received=react_received)
     engine = SimpleNamespace(agent=SimpleNamespace(name="Concierge", id="a1"), deployment=None, run=run)
     monkeypatch.setattr(agent_serve, "is_own_outgoing", lambda source, author: False)
     assert await agent_serve.answer(engine, message, source=channel.row, session="conversation-x")
