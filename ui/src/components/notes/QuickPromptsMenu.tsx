@@ -65,7 +65,12 @@ export function QuickPromptsMenu({
           />
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-80 p-0" data-testid="quick-prompts-popover">
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-max min-w-80 max-w-[70vw] p-0"
+        data-testid="quick-prompts-popover"
+      >
         <div className="flex items-center gap-1.5 border-b border-border px-3 py-2">
           <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
             <Trans>Quick prompts</Trans>
@@ -133,7 +138,7 @@ export function QuickPromptsMenu({
                   type="button"
                   onClick={() => saveMine(last)}
                   data-testid="quick-prompt-last"
-                  className="mt-1 flex w-full items-center gap-1.5 rounded px-1.5 py-1.5 text-start text-xs text-muted-foreground hover:bg-muted"
+                  className="mt-1 flex w-0 min-w-full items-center gap-1.5 rounded px-1.5 py-1.5 text-start text-xs text-muted-foreground hover:bg-muted"
                 >
                   <Plus className="h-3 w-3 shrink-0" />
                   <span className="shrink-0">
