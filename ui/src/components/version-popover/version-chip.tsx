@@ -3,13 +3,13 @@ import { forwardRef, type ComponentPropsWithoutRef } from 'react';
 
 interface VersionChipProps extends ComponentPropsWithoutRef<'button'> {
   version: string;
-  /** Shows the amber "update available" dot. */
-  updateAvailable?: boolean;
+  /** The dot: an update is downloaded and ready to install, or a newer release is available. */
+  update?: 'ready' | 'available' | false | null;
 }
 
 /** The footer's `v<version>` chip — one look for the desktop and the hub popovers. */
 export const VersionChip = forwardRef<HTMLButtonElement, VersionChipProps>(function VersionChip(
-  { version, updateAvailable, ...props },
+  { version, update, ...props },
   ref,
 ) {
   const { t } = useLingui();
@@ -24,7 +24,12 @@ export const VersionChip = forwardRef<HTMLButtonElement, VersionChipProps>(funct
       {...props}
     >
       <span>v{version}</span>
-      {updateAvailable && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label={t`Update available`} />}
+      {update && (
+        <span
+          className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+          aria-label={update === 'ready' ? t`Update ready` : t`Update available`}
+        />
+      )}
     </button>
   );
 });
