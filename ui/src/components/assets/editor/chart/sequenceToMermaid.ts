@@ -53,13 +53,13 @@ function seqText(value: unknown, lineBreak = ' '): string {
   return text.replaceAll(';', ',').replaceAll('#', '');
 }
 
-function seqId(value: unknown): string {
+export function seqId(value: unknown): string {
   return Array.from(String(value), (ch) => (/[\p{L}\p{N}_]/u.test(ch) ? ch : '_')).join('');
 }
 
 const scalar = (v: unknown): string => (typeof v === 'string' || typeof v === 'number' ? String(v) : '');
 
-const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+export const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const optStr = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
 /** A participant's card lines: the label's first line, then an explicit sublabel or the legacy "label\nsecond" line. */

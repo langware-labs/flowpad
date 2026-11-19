@@ -124,6 +124,13 @@ def verify_cookie(presented: HTTPConnection | str) -> bool:
     return any(c and secrets.compare_digest(c, token) for c in candidates)
 
 
+def verify_machine(conn: HTTPConnection) -> bool:
+    """Whether ``conn`` presents the token as a HEADER — a machine caller (the CLI, a worker, Electron's
+    main process), never a browser page, which carries the token only as a cookie or a first-contact query."""
+    token, presented = _token(), conn.headers.get(_HEADER_NAME)
+    return bool(token and presented and secrets.compare_digest(presented, token))
+
+
 def get_header() -> GateHeader | None:
     """The header a machine caller sends to this machine's backend, or ``None``
     without a token. Send it to a loopback host only (``is_loopback``)."""

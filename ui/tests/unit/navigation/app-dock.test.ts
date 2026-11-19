@@ -56,6 +56,10 @@ describe('appDockAddress', () => {
     expect(addr?.runtime).toBe('served');
   });
 
+  it('keeps the state key out of the app\'s input — it is the frame\'s address, not what the app acts on', () => {
+    expect(appDockAddress(assetDock({ source: 'abc', stateKey: 'k'.repeat(32) }))?.options).toEqual({ source: 'abc' });
+  });
+
   it('reads a bare dev server by its endpoint', () => {
     // `flow show webapp --port N` registered an endpoint; the endpoint IS the address.
     expect(appDockAddress(endpointDock({ runtime: 'dev' }))).toEqual({

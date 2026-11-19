@@ -3,7 +3,7 @@ import { ExternalLink } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { Capability, TypeId } from '@sdk';
 import { useCapability, useEntity } from '@sdk/react/hooks';
-import { RowProcess } from '@src/components/capabilities-view/CapabilitiesView';
+import { ProcessRunLineById } from '@src/components/agentic-progress/shared/process-run-line';
 
 import type { JourneyActSpec } from '@sdk';
 
@@ -29,7 +29,7 @@ function SetupProgress({ kind }: { kind: string }) {
   if (!processId) return null;
   return (
     <div className="mt-1">
-      <RowProcess processId={processId} />
+      <ProcessRunLineById processId={processId} />
     </div>
   );
 }

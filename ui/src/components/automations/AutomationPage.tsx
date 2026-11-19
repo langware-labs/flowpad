@@ -49,6 +49,7 @@ import { isMove, type RunsOn } from '@src/components/assets/editor/agent-profile
 import { useAgentPlaces } from '@src/components/assets/editor/agent-profile/use-agent-places';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useContext } from '@src/hooks/useContext';
+import { ContextEntityChip } from '@src/components/conversation/EntityChip';
 import { canSwitch } from './AutomationRow';
 import { recipeById } from './automation-recipes';
 import { sentenceText, useAutomationWords } from './automation-words';
@@ -60,6 +61,7 @@ import { RunDetail } from './RunDetail';
 import { RunsList } from './RunsList';
 import { TestPanel } from './TestPanel';
 import { definitionFile, useAutomationOpen } from './use-automation-open';
+import { ClassifierPage } from './ClassifierPage';
 import { MessageRulePage } from './MessageRulePage';
 import { ThenLine, ThenSteps } from './ThenSteps';
 
@@ -68,6 +70,8 @@ import { ThenLine, ThenSteps } from './ThenSteps';
 export function AutomationPage({ route }: { route: AutomationsRoute }) {
   const triggerId = route.trigger ?? null;
   const triggerQuery = useAutomationTrigger(triggerId);
+  // The message classifier is Flowpad's own rule, with a page that only switches it and opens the tag tree.
+  if (triggerId && triggerQuery.data?.isMessageClassifier) return <ClassifierPage triggerId={triggerId} />;
   // A rule on messages arriving has its own two-box screen (docs/snippets/stream-inbox-automations.md).
   if (route.creating === 'message' || triggerQuery.data?.isMessageRule) return <MessageRulePage route={route} />;
   if (triggerId && triggerQuery.data === undefined && !triggerQuery.error) {
@@ -127,6 +131,10 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
   const [jsonError, setJsonError] = useState<string | null>(null);
 
   const readOnly = !!automation?.read_only;
+  // The session that set this rule (a callback) — it stays in the rule's context after the rule ends.
+  const createdThrough = (triggerQuery.data?.sharedContextEntities ?? []).filter(
+    (tid) => tid.type === 'agentic_process',
+  );
   const isRuleFolder = !!(triggerQuery.data as ITrigger | undefined)?.path && automation?.kind === 'agent_hook';
   const tab = route.tab ?? 'setup';
   const runs = useAutomationRuns({ triggerId, limit: 100 }, { enabled: !!triggerId && tab === 'runs' });
@@ -261,6 +269,17 @@ function GeneralAutomationPage({ route }: { route: AutomationsRoute }) {
             <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
               <Lock className="size-3" aria-hidden />
               <Trans>Built into Flowpad</Trans>
+            </span>
+          )}
+          {createdThrough.length > 0 && (
+            <span
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+              data-testid="automation-created-through"
+            >
+              <Trans>Created through</Trans>
+              {createdThrough.map((tid) => (
+                <ContextEntityChip key={String(tid)} typeId={tid} />
+              ))}
             </span>
           )}
           <span className="flex-1" />

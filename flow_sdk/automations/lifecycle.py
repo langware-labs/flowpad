@@ -4,8 +4,8 @@ Every kind, one seam (docs/automations.md "Runs, end and status"):
 
 - ``max_runs`` — it ends after that many real runs (``fire_once`` is ``max_runs`` 1);
 - ``expires_at`` — it ends at that time, run or not;
-- ``end(rule, reason)`` — the one way it ends: stamped ``ended_at`` / ``ended_reason``, disarmed, unlinked from
-  the session it calls back, and its kind's last word said (a reply wait posts that it was cancelled).
+- ``end(rule, reason)`` — the one way it ends: stamped ``ended_at`` / ``ended_reason``, disarmed, taken off
+  the session it calls back (the rule keeps that session in its own context), and its kind's last word said (a reply wait posts that it was cancelled).
   ``enabled`` is never touched: off is the person's switch, ended is the rule's own life;
 - ``status(rule)`` — ``active`` · ``off`` · ``done`` · ``expired`` · ``cancelled``, for any screen to show.
 """
@@ -101,7 +101,7 @@ async def end(rule: Any, reason: EndReason) -> None:
     await disarm_trigger(str(rule.id))
     _drop_end_job(str(rule.id))
     try:
-        await rule.link_process(on=False)  # the session's chip shows only rules that still run
+        await rule.leave_process()  # the session's chip shows only rules that still run
     except Exception:  # noqa: BLE001 — an end never fails over a chip
         logger.debug("unlink on end failed for %s", rule.id, exc_info=True)
     _emit_ended(rule, reason)

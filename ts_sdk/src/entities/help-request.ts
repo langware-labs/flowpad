@@ -132,6 +132,11 @@ export async function helpRequestReport(
 
 /** What a request's diagnosis message offers: its verdict, and whether (and to whom) a report is offered. */
 export interface HelpRequestDiagnosis {
+  /** Where the request stands — what its status chip says. */
+  state: 'diagnosing' | 'open' | 'fixing' | 'fixed' | 'help_requested' | 'ok' | 'done';
+  /** The request in one line, and in full. */
+  issue: string;
+  request: string;
   diagnosing: boolean;
   diagnosis: import('../diagnose/types').DiagnosisSpec | null;
   reportable: boolean;
@@ -144,6 +149,14 @@ export interface HelpRequestDiagnosis {
   pass_on: string;
   /** The context worker that ran the diagnosis on this machine; '' when none. */
   worker_process_id: string;
+  worker_process_name: string;
+}
+
+/** Fix: the session that diagnosed it applies the fix it suggested (offered when `diagnosis.local_fix`). */
+export async function helpRequestFix(conversationId: string): Promise<void> {
+  const action = new ActionInfo('help-request-fix', 'conversation', conversationId, 'POST');
+  action.bodyParameters = {};
+  await dataManager.callAction(action);
 }
 
 export async function helpRequestDiagnosis(conversationId: string): Promise<HelpRequestDiagnosis> {
@@ -152,6 +165,9 @@ export async function helpRequestDiagnosis(conversationId: string): Promise<Help
   const res = await dataManager.callAction<unknown, HelpRequestDiagnosis>(action);
   return (
     res ?? {
+      state: 'open',
+      issue: '',
+      request: '',
       diagnosing: false,
       diagnosis: null,
       reportable: false,
@@ -160,6 +176,7 @@ export async function helpRequestDiagnosis(conversationId: string): Promise<Help
       desk: '',
       pass_on: '',
       worker_process_id: '',
+      worker_process_name: '',
     }
   );
 }

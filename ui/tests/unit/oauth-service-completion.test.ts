@@ -137,7 +137,7 @@ describe('OAuthService terminal completion', () => {
       status: OAuthStatus.SUCCESS,
       attachSuccess: true,
     });
-    expect(test).toHaveBeenCalledWith('slack');
+    expect(test).toHaveBeenCalledWith('slack', undefined, undefined);
     expect(attach).toHaveBeenCalledWith('slack', TARGET, 'SLACK_TOKEN');
     expect(test.mock.invocationCallOrder[0]).toBeLessThan(attach.mock.invocationCallOrder[0]);
   });

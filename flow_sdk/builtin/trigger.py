@@ -27,7 +27,7 @@ from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
-from flow_sdk.schema.data_spec.trigger_types import TriggerType
+from flow_sdk.schema.data_spec.trigger_types import MESSAGE_CLASSIFIER, TriggerType
 
 if TYPE_CHECKING:
     from flow_sdk.schema.data_spec.automation_spec import AutomationRun
@@ -311,10 +311,15 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         _FIRING.discard(trigger_id)
 
 
+def callback_ids(process: Any) -> list[str]:
+    """Ids of the rules linked to ``process`` — the callbacks it set that still run."""
+    return [tid.id for tid in getattr(process, "shared_context_entities", None) or []
+            if tid.type == BuiltinEntityType.TRIGGER.value]
+
+
 async def pending_callbacks(process: Any) -> list["Trigger"]:
     """The callbacks ``process`` set that have not fired yet — found through its context links."""
-    ids = [tid.id for tid in getattr(process, "private_context_entities_", None) or []
-           if tid.type == BuiltinEntityType.TRIGGER.value]
+    ids = callback_ids(process)
     if not ids:
         return []
     from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
@@ -422,8 +427,14 @@ class Trigger(ProjectedFields, Entity):
     @property
     def switchable(self) -> bool:
         """A person may turn it on or off here: every rule but Flowpad's own -- except the ones Flowpad ships
-        off (a ``trigger.json`` that is not ``recommended``, the Daily usage summary): those are an offer."""
-        return not self.is_builtin or (self.is_file_backed and not self.recommended)
+        off (a ``trigger.json`` that is not ``recommended``, the Daily usage summary): those are an offer --
+        and the message classifier, whose switch is the person's."""
+        return not self.is_builtin or (self.is_file_backed and not self.recommended) or self.is_message_classifier
+
+    @property
+    def is_message_classifier(self) -> bool:
+        """The seeded rule that stands for the message classifier (``stream_inbox/message_tags.py``)."""
+        return str(getattr(self, "uname", "") or "") == MESSAGE_CLASSIFIER
 
     #: RUNTIME STATE. `Persist.TRUE` puts these in the SHADOW record (under flow
     #: home, never the asset folder, never git) rather than leaving them to the
@@ -732,18 +743,26 @@ class Trigger(ProjectedFields, Entity):
         """Every delete leaves nothing behind: no link on the session it calls back, no live subscription."""
         from flow_sdk.builtin.trigger_arming import disarm_trigger  # noqa: PLC0415
 
-        await self.link_process(on=False)
+        await self.leave_process()
         if self.id:
             await disarm_trigger(str(self.id))
         return await super().delete()
 
-    async def link_process(self, *, on: bool = True) -> None:
-        """Link this rule and the session it calls back into each other's context (or undo it)."""
-        from flow_sdk.core.entity.cross_link import cross_link_entities, uncross_link_entities  # noqa: PLC0415
+    async def link_process(self) -> None:
+        """Put this rule and the session it calls back in each other's shared context. The rule's side
+        is what its page shows as "Created through"."""
+        from flow_sdk.core.entity.cross_link import cross_link_entities  # noqa: PLC0415
 
         process = await self.target_process()
-        if process is not None:
-            await (cross_link_entities if on else uncross_link_entities)(self, process)
+        if process is not None and await cross_link_entities(self, process, shared=True):
+            await process.notify_updated()
+
+    async def leave_process(self) -> None:
+        """An ended rule leaves its session's context — the session's chip shows only rules that still
+        run — and keeps the session in its own: where it came from stays true."""
+        process = await self.target_process()
+        if process is not None and process.remove_shared_context_entities(self.typeid):
+            await process.save()
             await process.notify_updated()
 
     # ── Hook trigger logic ────────────────────────────────────────────────────
@@ -1135,6 +1154,17 @@ class Trigger(ProjectedFields, Entity):
             else:
                 out.append({"state": state.model_dump(mode="json"), "verdict": verdicts[sid].model_dump(mode="json"),
                             "decided_at": None, "agentic_process_id": None})
+        if self.message_tags:
+            # A tag rule is decided by the message's tags: the try list shows them, not a confidence.
+            from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
+
+            ids = [row["state"].get("message_id") for row in out if row["state"].get("message_id")]
+            found = await FlowMessage.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])), hydrate=False) if ids else []
+            tags = {str(m.id): list(m.tags or []) for m in found}
+            for row in out:
+                row["tags"] = tags.get(row["state"].get("message_id") or "", [])
         return out
 
     @classmethod

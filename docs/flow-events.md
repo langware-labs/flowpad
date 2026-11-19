@@ -728,3 +728,15 @@ the row files, so any write by anyone moves it) rides on every event and on `GET
 `onRowsChanged` asks `GET rows-version` when its socket reconnects — one small read — and calls the
 handler once with `{op: sync, keys: [], count: 0, version}` only when the version is one it neither
 heard nor its dataset instance read. The event is enough: no timer, no re-read on focus.
+
+## `sentry_info.changed` — a box's browser error-reporting config changed  ✅ (2026-11-18)
+
+| site | tag | target | data |
+|---|---|---|---|
+| `instance_settings/sentry_info.py` `_announce`, after a sync changed the EFFECTIVE value (set, replaced or cleared) | `sentry_info.changed` | `sentry_info:local` | `{sentry_info: {dsn, environment} \| null}` — the same public fields the bootstrap carries |
+
+Forwarded to the app (`FORWARDED_TAG_PATTERNS`); the UI listener (`ts_sdk/src/services/sentry_info.ts`) mirrors it into
+`bootstrapInfo.sentry_info`, which the Sentry lifecycle follows. A sync that only re-confirms the value emits nothing, and
+an expiry is not announced (it takes effect on the next bootstrap). Not stored and not replayed (laws 4 and 5): a page
+that missed it reads the right value from its next bootstrap. It replaces a `sentry_info_msg` WebSocket type that was
+never released, so no migration is needed.

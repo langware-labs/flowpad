@@ -254,7 +254,7 @@ async def test_hub_side_delete_drops_stale_pointer():
     [
         {"delivery_status": "created", "remote": False},  # pre-accept local send
         {"kind": "invitation", "remote": True},  # invitation placeholder
-        {"is_draft": True, "remote": True},  # local draft
+        {"delivery_status": "draft", "remote": True},  # local draft
         {"remote": False},  # no confirmed hub twin
     ],
     ids=["created", "invitation", "draft", "not-remote"],

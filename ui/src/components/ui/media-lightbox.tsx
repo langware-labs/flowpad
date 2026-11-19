@@ -3,6 +3,7 @@ import { Check, Copy, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { isImagePath } from '@sdk';
+import { withStateKey } from '@sdk/page-state';
 import { notify } from '@src/notifications';
 
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'm4v', 'webm', 'ogv', 'ogg']);
@@ -44,7 +45,8 @@ export function videoSource(url: string, name: string) {
 // The clipboard only reliably takes PNG, so anything else is re-encoded
 // through a canvas first.
 async function imageAsPng(url: string): Promise<Blob> {
-  const blob = await (await fetch(url)).blob();
+  // A script's own read of a served file carries the key this window holds: it cannot send a header here.
+  const blob = await (await fetch(withStateKey(url))).blob();
   if (blob.type === 'image/png') return blob;
   const bitmap = await createImageBitmap(blob);
   const canvas = document.createElement('canvas');

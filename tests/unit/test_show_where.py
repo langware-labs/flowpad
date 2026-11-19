@@ -1,4 +1,5 @@
 """`flow show` never switches the person's view, so its answer says where the target went."""
+
 import pytest
 
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -26,3 +27,13 @@ async def test_an_app_from_another_project_opens_beside_the_session(tmp_path):
     answer = await show_target(await resolve_display_target(typeid=str(app.typeid)), process=process)
     assert answer.delivered
     assert str(app.project_id) not in answer.detail and "not switched" in answer.detail
+
+
+async def test_a_folder_shown_by_path_says_it_is_a_folder(tmp_path):
+    """Shown as a file it opened empty with its PARENT listed beside it (Nir, 2026-11-17)."""
+    folder = tmp_path / "Langware legal"
+    folder.mkdir()
+    (folder / "terms.docx").write_text("x")
+    shown = await resolve_display_target(path=str(folder))
+    assert shown["kind"] == "vfs" and shown["is_dir"] is True
+    assert "is_dir" not in await resolve_display_target(path=str(folder / "terms.docx"))

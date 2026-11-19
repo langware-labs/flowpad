@@ -30,6 +30,7 @@ import {
   RestApiMessage,
 } from '../websocket';
 import { FlowData, FlowDataAttribute, FlowDataSource } from '../flow_processing';
+import { STATE_HEADER, stateKey } from '../page-state';
 import { toplog } from '../services/toplog';
 import { getUtmParams } from '../utils/utm';
 import { emitEntityTag } from './entity.onTag';
@@ -1748,19 +1749,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // A FormData body (files riding along) sets its own multipart Content-Type.
     const payload = actionInfo.bodyParameters;
     const body = payload instanceof FormData ? payload : JSON.stringify(payload);
-    const headers = {
+    const pageKey = stateKey();
+    const headers: Record<string, string> = {
       ...(typeof body === 'string' ? { 'Content-Type': 'application/json' } : {}),
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
       // A hub-owned stream (an agent's Chat API) is forwarded by the desktop, as the non-streaming path does.
       ...(actionInfo.hubReflect && !isHubOnly() ? { 'Hub-Reflect': 'true' } : {}),
+      // The local server answers nothing without the key this window or page was opened with.
+      ...(pageKey ? { [STATE_HEADER]: pageKey } : {}),
     };
     // @ts-ignore
     if (apiClient.testUserToken) {
       // @ts-ignore
       headers['Authorization'] = `Bearer ${apiClient.testUserToken}`;
     }
-
     const response = await fetch(fullUrl, {
       method: actionInfo.method,
       headers: headers,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, Download, Loader2, Lock, MessageSquarePlus, Send, X } from 'lucide-react';
+import { AlertTriangle, Check, Download, FolderOpen, Loader2, Lock, MessageSquarePlus, Send, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Conversation,
@@ -10,6 +10,7 @@ import {
   hasSomethingToSend,
   mintInviteLink,
   credentialsService,
+  FSRef,
   normalizeEmail,
   TypeId,
   type Project,
@@ -29,6 +30,7 @@ import { SecretVaultPicker } from '@src/components/credentials/SecretVaultPicker
 import { usePreShare } from '@src/hooks/use-pre-share';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { errorMessage } from '@src/lib/error-message';
+import { notify } from '@src/notifications';
 import { useAuth } from '@sdk/react/hooks';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useSendToConversation, type SendTarget } from '@src/hooks/use-send-to-conversation';
@@ -443,6 +445,13 @@ export function ShareToConversationDialog({
     setStep('secret-vault');
   }, [preShare.answer, shareValues, valuesRoute, preShareFinished, publishToVault]);
   const [fixBusy, setFixBusy] = useState(false);
+  const revealChangedPath = useCallback(() => {
+    const path = preflight.path;
+    if (!path) return;
+    void new FSRef(path, new TypeId('compute_node', '@local'))
+      .open({ select: true })
+      .catch((error) => notify.error({ title: t`Could not open in Finder`, message: errorMessage(error, path) }));
+  }, [preflight.path, t]);
   const commitChanges = useCallback(async () => {
     const ref = source.gitPreflightRef;
     if (!ref || !preflight.fix) return;
@@ -794,6 +803,32 @@ export function ShareToConversationDialog({
               <Trans>
                 <span className="font-medium">{source.label}</span> has changes. Commit before share?
               </Trans>
+              {preflight.path && (
+                <span
+                  className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                  data-testid="share-changes-path"
+                >
+                  <span className="min-w-0 truncate font-mono" dir="ltr" title={preflight.path}>
+                    {preflight.path}
+                  </span>
+                  <CopyButton
+                    value={preflight.path}
+                    title={t`Copy path`}
+                    className="shrink-0 hover:text-foreground"
+                    testId="share-changes-path-copy"
+                  />
+                  <button
+                    type="button"
+                    className="shrink-0 hover:text-foreground"
+                    title={t`Reveal in Finder/Explorer`}
+                    aria-label={t`Reveal in Finder/Explorer`}
+                    onClick={revealChangedPath}
+                    data-testid="share-changes-path-reveal"
+                  >
+                    <FolderOpen className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
             </p>
             {shownError && <p className="text-xs text-destructive">{shownError}</p>}
             <div className="flex items-center justify-end gap-3">

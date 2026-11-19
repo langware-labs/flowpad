@@ -8,6 +8,7 @@ import {
   CircleCheck,
   Clock,
   LifeBuoy,
+  Star,
   Trash2,
   UserCheck,
   Wrench,
@@ -195,14 +196,14 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
 }
 
 // ── Recency sort — shared by StreamInboxView + RecentConversationsStrip ────────────
-// Newest `updated_date` first, with a STABLE `id` tiebreaker. Without the
-// tiebreaker, rows with equal or missing `updated_date` fall back to the input
+// Newest message first (`Conversation.recency`), with a STABLE `id` tiebreaker. Without the
+// tiebreaker, rows with equal or missing times fall back to the input
 // order — which is the server's non-deterministic result order — so the list
 // re-shuffled between fetches (i.e. on every stream inbox open). The tiebreaker makes
 // the sort a total order, so equal-timestamp rows keep a fixed position.
 export function compareConversationsByRecency(a: Conversation, b: Conversation): number {
-  const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
-  const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
+  const ta = a.recency ? new Date(a.recency).getTime() : 0;
+  const tb = b.recency ? new Date(b.recency).getTime() : 0;
   if (tb !== ta) return tb - ta;
   return (a.id ?? '').localeCompare(b.id ?? '');
 }
@@ -286,6 +287,8 @@ export interface ActionSpec {
   text?: string;
   tone?: ActionTone;
   disabled?: boolean;
+  /** A toggle that is on (a starred row's star): the icon is drawn filled. */
+  active?: boolean;
   testId?: string;
 }
 
@@ -296,6 +299,9 @@ export interface RowActionContext {
   accepting?: boolean;
   /** Resolved up-front so the delete tooltip distinguishes delete/leave/decline. */
   deleteLabel: string;
+  /** The conversation is a favorite; absent `onToggleFavorite` = the row offers no star. */
+  isFavorited?: boolean;
+  onToggleFavorite?: () => void;
   onAccept: () => void;
   onDecline: () => void;
   onToggleRead: () => void;
@@ -331,7 +337,21 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
     return specs;
   }
 
+  const star: ActionSpec[] = ctx.onToggleFavorite
+    ? [
+        {
+          key: 'favorite',
+          kind: 'icon',
+          icon: Star,
+          active: !!ctx.isFavorited,
+          label: ctx.isFavorited ? t`Unstar` : t`Star`,
+          onClick: ctx.onToggleFavorite,
+          testId: 'stream-inbox-row-favorite',
+        },
+      ]
+    : [];
   return [
+    ...star,
     {
       key: 'toggle-read',
       kind: 'icon',

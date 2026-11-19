@@ -88,6 +88,8 @@ def append_entry(rule_name: str, entry_dict: dict[str, Any]) -> None:
         "cause_event_id": entry_dict.get("cause_event_id"),
         "cause_tag": entry_dict.get("cause_tag"),
         "cause_target": entry_dict.get("cause_target"),
+        # A message rule's run: the tag the message was given that queued the rule.
+        "message_tag": entry_dict.get("message_tag"),
         "actor": entry_dict.get("actor"),
         "trigger_id": entry_dict.get("trigger_id"),
         "trigger_type": entry_dict.get("trigger_type"),

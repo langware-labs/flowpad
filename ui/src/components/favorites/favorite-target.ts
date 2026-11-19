@@ -74,3 +74,14 @@ export function messageFavoriteRef(
     nav: { parent_type_id: new TypeId(Conversation.type, conversationId).toString() },
   };
 }
+
+/** What "star THIS conversation" saves — the key the navigation bar's star writes on an open
+ *  conversation (`favoriteTargetForDock`), so a row's star and that one toggle the same bookmark. */
+export function conversationFavoriteRef(conversation: Conversation): FavoriteRef | null {
+  if (!conversation.id) return null;
+  return {
+    entityType: Conversation.type,
+    entityId: conversation.id,
+    title: conversation.displayName?.trim() || `Conversation ${conversation.id.slice(0, 8)}`,
+  };
+}

@@ -255,6 +255,15 @@ def state_of(fm: Any, self_ids: set[str], *, allow_foreign_agents: bool = False)
         or (sender is not None and sender.kind is SenderKind.USER and str(sender.id or "") in self_ids)
     ):
         raise NotCaught("own message")
+    return message_state(fm)
+
+
+def message_state(fm: Any) -> MessageState:
+    """The state of any ``FlowMessage``, with no refusal: for a person asking about one message by hand.
+    What starts automations goes through ``state_of``."""
+    from flow_sdk.schema.data_spec.message_sender_spec import SenderKind  # noqa: PLC0415
+
+    sender = getattr(fm, "sender", None)
     envelope = getattr(fm, "envelope", None)
     who = ""
     if envelope is not None and envelope.sender is not None:

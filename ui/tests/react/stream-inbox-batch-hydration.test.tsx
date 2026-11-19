@@ -16,6 +16,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Conversation, FlowMessage, QueryRequest, dataManager } from '@sdk';
 import { TooltipProvider } from '@src/components/ui/tooltip';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@src/i18n-init';
 import { i18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
@@ -150,9 +151,11 @@ describe('Stream Inbox batch FlowMessage hydration (X2)', () => {
 
     render(
       <I18nProvider i18n={i18n}>
-        <TooltipProvider>
-          <StreamInboxView />
-        </TooltipProvider>
+        <QueryClientProvider client={new QueryClient()}>
+          <TooltipProvider>
+            <StreamInboxView />
+          </TooltipProvider>
+        </QueryClientProvider>
       </I18nProvider>,
     );
 
@@ -224,9 +227,11 @@ describe('Stream Inbox batch FlowMessage hydration (X2)', () => {
 
     render(
       <I18nProvider i18n={i18n}>
-        <TooltipProvider>
-          <StreamInboxView />
-        </TooltipProvider>
+        <QueryClientProvider client={new QueryClient()}>
+          <TooltipProvider>
+            <StreamInboxView />
+          </TooltipProvider>
+        </QueryClientProvider>
       </I18nProvider>,
     );
 

@@ -81,6 +81,8 @@ class SetupVarSpec(DataSpec):
     #: oauth: the provider whose sign-in this way is, and the scopes its grant must cover.
     provider: str = ""
     scopes: list[str] = []
+    #: oauth: the provider's scope group the grant is (``gmail``); empty — the default.
+    group: str = ""
     #: ONE_OF: the way this value belongs to (``CredentialVarSpec.way``); empty = its own name.
     way: str = ""
 

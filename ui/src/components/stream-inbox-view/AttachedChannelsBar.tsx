@@ -107,7 +107,7 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
   );
   const forAgent = owner?.type === Agent.type;
   const offers = useMemo(
-    // Offered by default to an agent only (its own mailbox); a person's stream inbox offers channels in its empty list.
+    // Offered by default to an agent only (its own mailbox); a person's Stream Inbox offers channels in its empty list.
     () => (ownerKey && forAgent ? channelOffers(specs, rows, forAgent) : NO_OFFERS),
     [specs, rows, ownerKey, forAgent],
   );
@@ -483,11 +483,11 @@ function AddChannelDialog({
   onClose: () => void;
 }) {
   const { specs } = useSourceSpecs();
-  const channelKeys = useMemo(
+  const offered = useMemo(
     () => new Set(messageChannelChoices(specs, owner.type === Agent.type).map((c) => c.key)),
     [specs, owner],
   );
-  const only = useCallback((spec: DataDriver) => channelKeys.has(choiceKey(spec)), [channelKeys]);
+  const only = useCallback((spec: DataDriver) => offered.has(choiceKey(spec)), [offered]);
   return (
     <DataSourceDialog
       open

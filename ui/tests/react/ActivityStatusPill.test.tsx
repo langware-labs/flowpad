@@ -12,11 +12,13 @@ vi.mock('@sdk/activity', async () => {
   const actual = await vi.importActual<typeof import('@sdk/activity')>('@sdk/activity');
   return { ...actual, listActivities: () => Promise.resolve([]) };
 });
+const openDock = vi.fn();
+vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: { openDock } }) }));
 
 import { __resetActivityStoreForTest, handleActivitySnapshot } from '@src/store/activity-store';
 import { ActivityStatusPill } from '@src/components/footer/ActivityStatusPill';
 import { ActivityDetailsModalRoot } from '@src/components/footer/ActivityDetailsModal';
-import { useActivityDetailsStore } from '@src/store/use-activity-details-store';
+import { showActivityDetails, useActivityDetailsStore } from '@src/store/use-activity-details-store';
 import { activitySpec, qaTree } from '../support/activity-spec';
 
 function renderBar() {
@@ -79,6 +81,21 @@ describe('activity bar', () => {
     expect(within(modal).getByText('expected 1 to be 2')).toBeTruthy();
     expect(within(modal).getByText('ws_manager.py')).toBeTruthy();
     expect(within(modal).getByText('1 failing · 2 passed')).toBeTruthy();
+  });
+
+  it("links an automation's run to the automation and to its runs", async () => {
+    const trigger = 'trigger-0da18a36-9528-44f3-9e1a-2162670c5f68';
+    renderBar();
+    act(() => handleActivitySnapshot(activitySpec({ path: 'automation/x', subject_entity: trigger })));
+    act(() => showActivityDetails({ path: 'automation/x', subject_entity: trigger }));
+
+    fireEvent.click(await screen.findByTestId('activity-details-open-subject'));
+    expect(openDock.mock.lastCall?.[0].toUrl()).toContain('trigger=0da18a36-9528-44f3-9e1a-2162670c5f68');
+    expect(useActivityDetailsStore.getState().open).toBe(false);
+
+    act(() => showActivityDetails({ path: 'automation/x', subject_entity: trigger }));
+    fireEvent.click(await screen.findByTestId('activity-details-open-runs'));
+    expect(openDock.mock.lastCall?.[0].toUrl()).toContain('/automations/runs');
   });
 
   it('keeps a clean receipt after the root ends, in the bar and the open modal, until dismissed', async () => {

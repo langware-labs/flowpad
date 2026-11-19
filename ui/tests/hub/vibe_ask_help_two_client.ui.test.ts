@@ -181,7 +181,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     await submit.click();
     // The wizard closes itself on success and the conversation opens.
     await submit.waitFor({ state: 'detached', timeout: adjusted(25_000) });
-    await page.getByTestId('help-request-chip').first().waitFor({ state: 'visible', timeout: adjusted(25_000) });
+    await page.getByTestId('diagnosis-card').first().waitFor({ state: 'visible', timeout: adjusted(25_000) });
   }, adjusted(90_000));
 
   it('the task exists on alice, assigned to bob', async () => {
@@ -328,7 +328,7 @@ describe('the help desk (preselected): it is just a conversation', () => {
     await page.getByTestId('ask-for-help-desks').waitFor({ state: 'visible', timeout: 10_000 });
     await page.getByTestId('vibe-assign-submit').click();
 
-    await page.getByTestId('help-request-chip').first().waitFor({ state: 'visible', timeout: 25_000 });
+    await page.getByTestId('diagnosis-card').first().waitFor({ state: 'visible', timeout: 25_000 });
     expect(await page.getByText('Waiting for pickup').count(), 'no queue state on the asker side').toBe(0);
     expect(await page.getByText('Close ticket').count(), 'nothing to settle on the asker side').toBe(0);
     await page.screenshot({ path: path.join(os.tmpdir(), `ask-help-desk-${token}.png`) });

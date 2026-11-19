@@ -4083,7 +4083,9 @@ class AgenticProcess(Entity):
             return turn_task is not None and turn_task.done() and not prompt_worker_active(self.id)
 
         def _unfinished_turn() -> RuntimeError:
-            return RuntimeError(getattr(self, "start_failure", None) or "the worker exited without finishing its turn")
+            # The worker's own error line (a refusal, a 429) is the reason every caller needs.
+            said = getattr(self, "start_failure", None) or self._worker_status_detail(_WS.ERROR)
+            return RuntimeError(getattr(said, "text", said) or "the worker exited without finishing its turn")
 
         transcript_path: Path | None = None
         while transcript_path is None:
@@ -7056,8 +7058,10 @@ class AgenticProcess(Entity):
     @classmethod
     async def delete_by_id(cls, eid: str):
         """The HTTP delete route comes here and bypasses the instance ``delete()``."""
+        from flow_sdk.builtin.trigger import callback_ids  # noqa: PLC0415
+
         row = await cls.get_by_id(eid)
-        if row is not None and any(t.type == BuiltinEntityType.TRIGGER.value for t in row.private_context_entities_):
+        if row is not None and callback_ids(row):
             await row._drop_callbacks()
         return await super().delete_by_id(eid)
 

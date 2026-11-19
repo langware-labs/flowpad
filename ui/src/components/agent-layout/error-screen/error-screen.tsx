@@ -4,7 +4,7 @@ import { Button } from '@src/components/ui/button';
 import { ChevronDown, ChevronUp, Home } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useRouteError } from 'react-router';
-import { isBackendUnreachable, toplog } from '@sdk';
+import { isBackendUnreachable, isStaleBuildError, toplog } from '@sdk';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { errorStatus } from '@src/lib/error-message';
 import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
@@ -57,6 +57,26 @@ const ErrorScreen = () => {
   const isServiceUnavailable = isBackendUnreachable(error);
 
   const [dismissed, setDismissed] = useState(false);
+
+  // 0. Did the app get upgraded under this page? Its code chunk is gone, the
+  // backend is fine — only a reload onto the new build helps.
+  if (isStaleBuildError(error)) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-lg bg-background/95 p-8 text-center shadow-xl">
+          <h1 className="mb-2 text-2xl font-bold">
+            <Trans>Flowpad was updated</Trans>
+          </h1>
+          <p className="mb-6 text-muted-foreground">
+            <Trans>This page is from the previous version. Reload to continue.</Trans>
+          </p>
+          <Button onClick={() => window.location.reload()} className="w-full">
+            <Trans>Reload</Trans>
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isServiceUnavailable && !dismissed) {
     return (

@@ -58,6 +58,7 @@ from flow_sdk.stream_inbox.agent_scope import (
     resolve_local_stream_inbox_scope,
 )
 from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_adds_attachments, hub_created_drift
+from flow_sdk.stream_inbox.reads import write_back
 from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
@@ -2347,12 +2348,15 @@ async def handle_stream_inbox_update(fm_id: str, patch: dict, someone_typeid: st
     fm = await FlowMessage.get_one({"id": fm_id})
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    marked = "is_read" in patch and bool(patch["is_read"]) != bool(fm.is_read)
     if "is_read" in patch:
         fm.is_read = bool(patch["is_read"])
     if "is_archived" in patch:
         fm.is_archived = bool(patch["is_archived"])
     await fm.save(someone_typeid)
     stream_inbox.touch("stream-inbox-update")
+    if marked:
+        write_back([fm])
     return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
 
 
@@ -2423,6 +2427,7 @@ async def stream_inbox_search() -> ApiResponse:
                 hydrate=False,
             ),
         )
+        native = [m for m in native if not m.is_draft]  # an unsent draft is not a message to find
         conversation_ids: set[str] = {str(m.conversation_id) for m in apply_tag_filter(native, selected_tags) if m.conversation_id}
         if items:
             refs = await FlowMessage.get_all(
@@ -2581,126 +2586,6 @@ async def mark_received_action() -> ApiResponse:
         return ApiFailResponse(message=f"mark_received failed: {str(e)}")
 
 
-async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
-    """Promote a draft FlowMessage to a real reply.
-
-    1. Validate `is_draft=True`.
-    2. Append a pointer to `conversation.jsonl` and bump
-       `Conversation.message_ids` / `message_count`.
-    3. Flip `is_draft=False`; save.
-    4. Notify the UI; the hub-side header is created by
-       ``_send_conversation_message_header`` when the conversation is remote.
-    """
-    from flow_sdk.app.actions.notification_action import (
-        _append_message_to_conversation,
-        _send_conversation_message_header,
-    )
-    from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
-    from flow_sdk.cli.auth.hub_login import is_logged_in
-
-    fm = await FlowMessage.get_one({"id": fm_id})
-    if not fm:
-        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
-    if not fm.is_draft:
-        return ApiFailResponse(message="FlowMessage is not a draft")
-    if not fm.conversation_id:
-        return ApiFailResponse(message="Draft has no conversation_id")
-
-    conv = await Conversation.get_one({"id": fm.conversation_id})
-    if not conv:
-        return ApiFailResponse(message=f"Conversation not found: {fm.conversation_id}")
-
-    fm.is_draft = False
-    # Sent from here: the outbox's "mine" from now on.
-    fm.outbound = True
-
-    # For remote conversations, attempt the hub send BEFORE committing any
-    # local state. ``_send_conversation_message_header`` answers WHY on any
-    # failure; in that case we abort cleanly — the FM row stays as a
-    # draft in DB (the in-memory ``is_draft=False`` is discarded), no
-    # pointer is appended, and the user can retry. This prevents the
-    # phantom "local says sent, hub doesn't know" state and avoids
-    # orphaning a pointer to a still-draft row.
-    is_remote_send = bool(getattr(conv, "remote", False)) and is_logged_in()
-    if is_remote_send and fm.has_body():
-        # A body-bearing draft (a session reply carries its prompt_completion
-        # attachment + the session carrier) must announce UPLOADING so the hub
-        # gates receivers until the bundle lands — exactly as a fresh send does.
-        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
-
-        fm.body_status = BodyStatus.UPLOADING
-    if is_remote_send:
-        failure = await _send_conversation_message_header(conv, fm)
-        if failure is not None:
-            return ApiFailResponse(
-                message=f"Hub send failed; draft preserved for retry: {failure.message}",
-                status_code=503,
-                data={"error_code": failure.kind.value, "hub_status": failure.status},
-            )
-        # Hub confirmed. Mark the local row as a hub mirror so re-sync
-        # treats it as a refreshable counterpart (same as received messages).
-        fm.remote = True
-        fm.delivery_status = DeliveryStatus.SENT.value
-
-    # Persist the finalised FM (is_draft=False, possibly remote=True) BEFORE
-    # appending the pointer, so the pointer projection sees the sent state
-    # instead of the still-draft state.
-    fm = await fm.save(someone_typeid)
-
-    conv = await _append_message_to_conversation(
-        conv=conv,
-        fm_id=fm.id,
-        someone_typeid=someone_typeid,
-    )
-
-    if is_remote_send:
-        conv.kick_delivery()  # the body, if it has one — owed on the row until the hub has it
-
-    # A drafted STARTING prompt sat at DRAFT on the sender's session row;
-    # sending it is the request for access.
-    sid = getattr(fm, "remote_worker_session_id", None)
-    if sid:
-        from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
-            RemoteWorkerSession,
-            RemoteWorkerSessionStatus,
-        )
-
-        session = await RemoteWorkerSession.resolve_state(sid)
-        if session is not None and session.status == RemoteWorkerSessionStatus.DRAFT:
-            session.mark_activity(RemoteWorkerSessionStatus.PENDING)
-            await session.save(someone_typeid)
-
-    return ApiSuccessResponse(
-        data={
-            "flow_message_id": fm.id,
-            "conversation_id": conv.id,
-            "message_count": conv.message_count,
-        }
-    )
-
-
-@action.post(action_name="send-draft", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def send_draft() -> ApiResponse:
-    """Promote a draft FlowMessage to a real reply (jsonl pointer + hub push)."""
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info found")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required")
-        from flow_sdk.cli.auth.hub_login import is_logged_in
-
-        if not is_logged_in():
-            return ApiFailResponse(message="Cloud login required to send messages")
-        return await handle_send_draft(
-            fm_id=str(request_info.target_entity_typeid.id),
-            someone_typeid=request_info.someone_typeid,
-        )
-    except Exception as e:
-        logger.error("[flow_message_action] send-draft error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Send draft failed: {str(e)}")
-
-
 async def handle_stream_inbox_bulk_update(
     patch: dict,
     someone_typeid: str,
@@ -2715,9 +2600,12 @@ async def handle_stream_inbox_bulk_update(
     if allowed_flow_message_ids is not None:
         messages = [message for message in messages if message.id in allowed_flow_message_ids]
     count = 0
+    marked = []
     for fm in messages:
         changed = False
         if "is_read" in patch:
+            if bool(fm.is_read) != bool(patch["is_read"]):
+                marked.append(fm)
             fm.is_read = bool(patch["is_read"])
             changed = True
         if "is_archived" in patch:
@@ -2727,6 +2615,7 @@ async def handle_stream_inbox_bulk_update(
             await fm.save(someone_typeid)
             count += 1
     stream_inbox.touch("stream-inbox-bulk-update")
+    write_back(marked)
     return ApiSuccessResponse(data={"updated": count})
 
 
@@ -5051,22 +4940,87 @@ async def invitation_accept() -> ApiResponse:
 
 @action.all(action_name="classification-settings", types=["flow_message"], methods=["get", "post"])
 async def message_classification_settings() -> ApiResponse:
-    """Instance-owned incoming-message policy; omitted settings retain their value."""
-    from flow_sdk.stream_inbox.message_tags import save_settings, settings
+    """Instance-owned incoming-message policy; omitted settings retain their value. ``enabled`` is the
+    classifier automation's own switch, read and moved here for the tag screens."""
+    from flow_sdk.builtin.trigger import set_trigger_on
+    from flow_sdk.stream_inbox.message_tags import classifier, save_settings, settings
 
     info = get_current_request_info()
     if info is None:
         return ApiFailResponse(message="No request context available", status_code=400)
-    current = settings()
+    current, rule = settings(), await classifier()
     if info.request.method.upper() == "POST":
         body = await info.get_post_data()
-        if not isinstance(body, dict) or set(body) - {"enabled", "include_flow_tags"}:
-            return ApiFailResponse(message="Expected enabled and/or include_flow_tags settings", status_code=400)
+        if not isinstance(body, dict) or set(body) - {"enabled", "include_flow_tags", "root"}:
+            return ApiFailResponse(message="Expected enabled, include_flow_tags and/or root settings", status_code=400)
+        if not isinstance(body.get("enabled", False), bool):
+            return ApiFailResponse(message="enabled must be true or false", status_code=400)
+        if "enabled" in body and rule is not None:
+            await set_trigger_on(rule, body["enabled"])
         try:
-            current = save_settings({**current.model_dump(mode="json"), **body})
+            current = save_settings({**current.model_dump(mode="json"),
+                                     **{k: v for k, v in body.items() if k != "enabled"}})
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-    return ApiSuccessResponse(data=current.model_dump(mode="json"))
+    return ApiSuccessResponse(data={**current.model_dump(mode="json"), "enabled": rule is None or bool(rule.enabled),
+                                    "trigger_id": str(rule.id) if rule is not None else None})
+
+
+@action.post(action_name="classify", types=["flow_message"])
+async def message_classify(self: FlowMessage) -> ApiResponse:
+    """Dry run: where this message lands in the classification tree. Writes nothing."""
+    from flow_sdk.stream_inbox.message_subject import message_state
+    from flow_sdk.stream_inbox.message_tags import classify, ontology
+
+    # A person asked about this message, so it answers even for one they sent themselves.
+    answer = await classify(message_state(self), await ontology())
+    run = answer.run.model_dump(mode="json", exclude_none=True) if answer.run is not None else None
+    return ApiSuccessResponse(data={**answer.model_dump(mode="json"), "run": run})
+
+
+def _tag_state(message) -> dict:
+    processing = message.message_processing
+    return {"tags": list(message.tags or []),
+            "message_processing": processing.model_dump(mode="json") if processing is not None else None}
+
+
+@action.post(action_name="classify-now", types=["flow_message"])
+async def message_classify_now(self: FlowMessage) -> ApiResponse:
+    """A person asks for this message to be classified now, whatever the classifier's switch says."""
+    from flow_sdk.stream_inbox.message_tags import classify_now
+
+    return ApiSuccessResponse(data=_tag_state(await classify_now(str(self.id))))
+
+
+@action.post(action_name="apply-classification", types=["flow_message"])
+async def message_apply_classification(self: FlowMessage) -> ApiResponse:
+    """A person makes a dry run's answer this message's classification. No automation starts."""
+    from flow_sdk.stream_inbox.message_tags import apply_classification
+
+    info = get_current_request_info()
+    body = await info.get_post_data() if info is not None else None
+    if not isinstance(body, dict) or not isinstance(body.get("tag"), str):
+        return ApiFailResponse(message="Expected the tag to apply", status_code=400)
+    try:
+        message = await apply_classification(str(self.id), body["tag"])
+    except ValueError as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+    return ApiSuccessResponse(data=_tag_state(message))
+
+
+@action.post(action_name="rerun-automation", types=["flow_message"])
+async def message_rerun_automation(self: FlowMessage) -> ApiResponse:
+    """A person asks for one failed or interrupted automation of this message's queue to run again."""
+    from flow_sdk.stream_inbox.message_tags import run_again
+
+    info = get_current_request_info()
+    body = await info.get_post_data() if info is not None else None
+    if not isinstance(body, dict) or not isinstance(body.get("entry"), str):
+        return ApiFailResponse(message="Expected the queue entry's id", status_code=400)
+    message = await run_again(str(self.id), body["entry"])
+    if message is None:
+        return ApiFailResponse(message="Only a failed or interrupted automation can run again.", status_code=409)
+    return ApiSuccessResponse(data=_tag_state(message))
 
 
 @action.post(action_name="set-tags", types=["flow_message"])
@@ -5084,7 +5038,4 @@ async def message_set_tags(self: FlowMessage) -> ApiResponse:
         await self.set_tags(body["tags"])
     except ValueError as exc:
         return ApiFailResponse(message=str(exc), status_code=400)
-    return ApiSuccessResponse(data={
-        "tags": self.tags,
-        "message_processing": self.message_processing.model_dump(mode="json") if self.message_processing else None,
-    })
+    return ApiSuccessResponse(data=_tag_state(self))

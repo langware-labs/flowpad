@@ -1,11 +1,11 @@
 import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { CHART_SOURCE_FILE, chartFormatOf, dataContext, isUnknownChartFormat, type Chart, type FSRef } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { EditorWithSidePanel } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { useDocChanges } from '@src/components/assets/editor/changes/useDocChanges';
 import { useDocChangeList } from '@src/components/assets/editor/changes/use-doc-changes-store';
+import { ChartLoading } from './chartBase';
 import { ChangeWholeChart, type ChartChanges } from './chartControls';
 import { notify } from '@src/notifications';
 import { convertChartToExcalidraw } from './convertToExcalidraw';
@@ -16,11 +16,12 @@ const SequenceChartView = lazy(() => import('./SequenceChartView'));
 const MermaidChartView = lazy(() => import('./MermaidChartView'));
 const C4ChartView = lazy(() => import('./C4ChartView'));
 const ArchitectureChartView = lazy(() => import('./ArchitectureChartView'));
+const FlowchartChartView = lazy(() => import('./FlowchartChartView'));
 
 /**
  * The chart editor: one asset type, one view per format. CHART.md's `format` picks the
  * view — `excalidraw` (board.json), `sequence` (chart.json), `c4` (c4.json), `architecture`
- * (architecture.json) or `mermaid`
+ * (architecture.json), `flowchart` (flowchart.json) or `mermaid`
  * (the block in CHART.md). Sequence and mermaid charts can be converted to an Excalidraw board. A format this build does not know says so instead of opening as a board.
  *
  * Every chart has a Changes side tab, the same one a doc has: pick an element (or the whole chart),
@@ -82,13 +83,6 @@ export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart
     }
   }, [format, fsRef, chart, t]);
 
-  const fallback = (
-    <div data-testid="chart-loading" className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-      <Trans>Loading chart…</Trans>
-    </div>
-  );
-
   const convertButton = (
     <Button
       size="sm"
@@ -104,7 +98,7 @@ export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart
   return (
     <div className="h-full min-h-0" data-testid="chart-editor" data-format={format}>
       <EditorWithSidePanel target={doc} extraTabs={changesTab ? [changesTab] : []}>
-      <Suspense fallback={fallback} key={reloadKey}>
+      <Suspense fallback={<ChartLoading />} key={reloadKey}>
         {!converted && isUnknownChartFormat(chart?.format) ? (
           <div
             data-testid="chart-unknown-format"
@@ -118,6 +112,8 @@ export function ChartAssetEditor({ fsRef, chart }: { fsRef: FSRef; chart?: Chart
           <C4ChartView fsRef={fsRef} chart={chart} projectId={projectId} changes={changes} />
         ) : format === 'architecture' ? (
           <ArchitectureChartView fsRef={fsRef} chart={chart} projectId={projectId} changes={changes} />
+        ) : format === 'flowchart' ? (
+          <FlowchartChartView fsRef={fsRef} chart={chart} projectId={projectId} changes={changes} />
         ) : format === 'mermaid' ? (
           <MermaidChartView
             fsRef={fsRef}

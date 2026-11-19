@@ -19,6 +19,7 @@ export * from './entities/index';
 export * from './flow_processing/index';
 export * from './FlowSync/index';
 export * from './main';
+export { htmlPage, type HtmlPage } from './page-state';
 export * from './IEntity';
 export * from './IResource';
 export * from './main';

@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { ContentPanel } from '@src/pages/flow-page/content-panel/content-panel';
-import { afterEach, expect, it, vi } from 'vitest';
+import { apiClient } from '@sdk';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 /**
  * Regression: in vibe mode, an HTML page in the display did not show the agent's edit ("make the
@@ -53,10 +54,19 @@ vi.mock('@src/tabs/use-tab-manager', async (orig) => ({
   useTabLifecycle: () => undefined,
 }));
 
+// The local server asks for no page key in this tier, so the page runs without the Allow card.
+beforeEach(() => {
+  vi.spyOn(apiClient, 'get').mockImplementation(async (url: string) => {
+    if (url === '/api/v1/page-state') return { enforced: false, state: null, probed: null };
+    throw new Error('no backend in this tier');
+  });
+});
+
 // This test's own frame, by its url: other files leave frames of their own in the shared document.
 const pageFrames = () => [...document.querySelectorAll<HTMLIFrameElement>('iframe[src*="/proj/rca.html"]')];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   cleanup();
   // The iframe registry parks its frames in the document body, outside the React tree, so
   // `cleanup` leaves them: take ours out so no other test sees a second `html-preview` frame.

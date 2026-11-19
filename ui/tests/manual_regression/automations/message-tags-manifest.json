@@ -319,7 +319,7 @@
           "id": "flow",
           "label": "Flowpad tags",
           "does": "Flowpad tags",
-          "to": "flow-tags",
+          "to": "tags",
           "when": "Inspect optional Flowpad vocabulary"
         }
       ]
@@ -333,7 +333,7 @@
           "id": "save",
           "label": "Create tag",
           "does": "Create tag",
-          "to": "tag-created",
+          "to": "tags",
           "when": null
         },
         {
@@ -341,20 +341,6 @@
           "label": "Cancel",
           "does": "Cancel",
           "to": "tags",
-          "when": null
-        }
-      ]
-    },
-    {
-      "id": "tag-created",
-      "title": "Tags · created",
-      "scenario": "The new billing.review tag appears in the existing taxonomy tree and becomes available in the message tag picker.",
-      "actions": [
-        {
-          "id": "back",
-          "label": "Back to tag",
-          "does": "Back to tag",
-          "to": "tag-view",
           "when": null
         }
       ]
@@ -368,27 +354,13 @@
           "id": "save",
           "label": "Save changes",
           "does": "Save changes",
-          "to": "tag-edited",
+          "to": "tags",
           "when": null
         },
         {
           "id": "cancel",
           "label": "Cancel",
           "does": "Cancel",
-          "to": "tags",
-          "when": null
-        }
-      ]
-    },
-    {
-      "id": "tag-edited",
-      "title": "Tags · changes saved",
-      "scenario": "The new name billing.refund-request is shown; the previous billing.refund name resolves to it. Existing messages and automations remain associated. The chip preview reflects its name and blue color. The chip preview reflects its name and blue color. The chip preview reflects its name and blue color.",
-      "actions": [
-        {
-          "id": "back",
-          "label": "Back to tags",
-          "does": "Back to tags",
           "to": "tags",
           "when": null
         }
@@ -403,41 +375,13 @@
           "id": "delete",
           "label": "Delete tag",
           "does": "Delete tag",
-          "to": "tag-deleted",
+          "to": "tags",
           "when": null
         },
         {
           "id": "cancel",
           "label": "Cancel",
           "does": "Cancel",
-          "to": "tags",
-          "when": null
-        }
-      ]
-    },
-    {
-      "id": "tag-deleted",
-      "title": "Tags · deleted",
-      "scenario": "The legacy tag is gone, its messages are retained, and the affected automation is disabled.",
-      "actions": [
-        {
-          "id": "back",
-          "label": "Back to tags",
-          "does": "Back to tags",
-          "to": "tags",
-          "when": null
-        }
-      ]
-    },
-    {
-      "id": "flow-tags",
-      "title": "Tags · optional Flowpad vocabulary",
-      "scenario": "Flowpad-supplied message tags appear separately from the user ontology. Enable their use in classification without renaming or copying them into the user namespace.",
-      "actions": [
-        {
-          "id": "save",
-          "label": "Save preferences",
-          "does": "Save preferences",
           "to": "tags",
           "when": null
         }

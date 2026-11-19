@@ -306,7 +306,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   [ViewType.TAG]: {
     title: msg`Tag Graph`,
-    iconName: 'Hash',
+    iconName: 'Tag',
     tabLocation: 'dedicated',
     canAddAsTab: false,
     // <tag> in the pointer is in-view focus navigation — every focused

@@ -64,9 +64,10 @@ class CredentialVarStatusSpec(DataSpec):
     #: A value exists in that store (cli: its check passed on this computer; oauth: the grant is held and
     #: covers ``scopes``).
     present: bool = False
-    #: oauth: the provider whose grant this way is, and the scopes it must cover.
+    #: oauth: the provider whose grant this way is, the scopes it must cover, and its scope group.
     provider: str = ""
     scopes: list[str] = []
+    group: str = ""
     #: cli: the command a person runs on this computer to sign in.
     login: str = ""
     #: cli: the declaration's own ``login`` / ``check`` (every OS) — what an edit of the credential sends back.

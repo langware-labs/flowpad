@@ -26,6 +26,7 @@ from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
+from flow_sdk.schema.data_spec.message_draft_spec import MessageDraftOptions
 from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
@@ -156,6 +157,11 @@ class DeliveryStatus(str, Enum):
     """Delivery-receipt lifecycle of a FlowMessage. Monotonic. Single source of
     truth — imported by both the client (here) and the hub.
 
+    DRAFT     — written here and not sent: nobody asked to send it yet. A whole
+                  message (text, files, quote, thread) that only this machine holds,
+                  out of the conversation's pointers, counts and outbox. Sending moves
+                  the SAME row on to PENDING_SEND / CREATED. Outside ``DELIVERY_ORDER``
+                  like PENDING_SEND.
     PENDING_SEND — composed locally while cloud login was unavailable; the user
                   asked to send but we could not even attempt the hub push, so
                   it is queued for a later (manual) re-send. Strictly more local
@@ -167,10 +173,11 @@ class DeliveryStatus(str, Enum):
     DELIVERED — recipient's client pulled it (✓✓).
     RECEIVED  — recipient read it (✓✓ blue).
 
-    The hub never stores PENDING_SEND / CREATED — those are purely client-local
-    pre-accept states.
+    The hub never stores DRAFT / PENDING_SEND / CREATED — those are purely
+    client-local pre-accept states.
     """
 
+    DRAFT = "draft"
     PENDING_SEND = "pending_send"
     CREATED = "created"
     SENT = "sent"
@@ -322,9 +329,6 @@ def carried_value(attachments, kind: str) -> "tuple[str, dict] | None":
     a carrier whose preview is missing or not a JSON object reads as none."""
     import json as _json  # noqa: PLC0415
 
-    def _get(a, key):
-        return a.get(key) if isinstance(a, dict) else getattr(a, key, None)
-
     prefix = f"{kind}-"
     for a in attachments or []:
         if _get(a, "attachment_type") != AttachmentType.TYPE_ID:
@@ -346,6 +350,63 @@ def value_attachment(kind: str, value_id: str, payload: dict) -> dict:
     import json as _json  # noqa: PLC0415
 
     return {"attachment_type": "type_id", "data": f"{kind}-{value_id}", "prompt_preview": _json.dumps(payload)}
+
+
+#: Typed values a message carries that every door checks: ``<prefix>-<id>`` → the kind of its
+#: ``prompt_preview``. A new message type is a schema registered here plus a renderer — never
+#: an endpoint. A schema may add ``check_in(value, find) -> list[str]`` for rules that need the
+#: conversation (answers must fit their form).
+VALUE_KINDS: dict[str, str] = {"message_form": "message.form", "form_answers": "message.form_answers"}
+
+
+def check_values(attachments, *, find) -> list[str]:
+    """Problems with the typed values ``attachments`` carry, one line each — ``[]`` when they fit.
+    ``find(prefix, id)`` returns another value carried in the same conversation, or ``None``.
+    Called by both doors (the desktop's ``handle_add_message``, the hub's ``add_message``)."""
+    from flow_sdk.schema.data_spec._kinds import register_builtin_kinds, resolve_kind  # noqa: PLC0415
+
+    problems: list[str] = []
+    for prefix, kind in VALUE_KINDS.items():
+        if not any(str(_get(a, "data") or "").startswith(f"{prefix}-") for a in attachments or []):
+            continue
+        found = carried_value(attachments, prefix)
+        if found is None:
+            problems.append(f"{prefix}: its value is missing or not a JSON object")
+            continue
+        schema = resolve_kind(kind)
+        if schema is Any:
+            register_builtin_kinds()
+            schema = resolve_kind(kind)
+        try:
+            value = schema.model_validate(found[1])
+        except ValueError as exc:
+            problems.append(f"{prefix}: {exc}")
+            continue
+        check_in = getattr(schema, "check_in", None)
+        if check_in is not None:
+            problems.extend(check_in(value, find))
+    return problems
+
+
+async def check_sent_values(attachments, load_messages) -> list[str]:
+    """``check_values`` at a door: ``load_messages()`` (awaited only when a typed value rides the
+    send) returns the conversation's messages, whose carried values ``find`` reads."""
+    if not any(str(_get(a, "data") or "").split("-", 1)[0] in VALUE_KINDS for a in attachments or []):
+        return []
+    sent = await load_messages() or []
+
+    def find(prefix: str, value_id: str):
+        for fm in sent:
+            found = carried_value(fm.attachment, prefix)
+            if found is not None and found[0] == value_id:
+                return found[1]
+        return None
+
+    return check_values(attachments, find=find)
+
+
+def _get(a, key):
+    return a.get(key) if isinstance(a, dict) else getattr(a, key, None)
 
 
 def carrier_marker(attachments) -> "dict | None":
@@ -611,7 +672,7 @@ class MessageEnvelope(DataSpec):
 class FlowMessage(Entity):
     # A FlowMessage owns its body/download and read state locally — see the
     # ``Sharing.HUB_WRITE`` declarations on those fields below (`body_status`,
-    # `is_read`, `is_archived`, `received_at`, `is_draft`, `prompt_auto_handled`):
+    # `is_read`, `is_archived`, `received_at`, `prompt_auto_handled`):
     # they travel outward, but a hub metadata refresh must never reset them.
     # This used to be a ``LOCAL_ONLY_FIELDS`` union of the base set, which a
     # subclass could silently drop by forgetting to union.
@@ -837,7 +898,7 @@ class FlowMessage(Entity):
     #: EVENT time — when the human sent this, on its original channel. Stamped
     #: (and convergently re-stamped) ONLY by the stream inbox projection, from
     #: ``SourceItem.occurred_at``; every other lane leaves it None and falls
-    #: through ``event_time`` to the clocks it already trusts. PRIVATE like
+    #: through ``occurred_at`` to ``created_date``. PRIVATE like
     #: ``source_item_id``: hub sync's LWW refresh rebuilds the row from the
     #: hub's schema, which does not carry this field — a SHARED classification
     #: would blank it on every pass (the ``parent_type_id`` trap below).
@@ -845,7 +906,12 @@ class FlowMessage(Entity):
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
     # unified ``context_entities`` on the base ``Entity``. Read via
     # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.
-    is_draft: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
+    # What a draft remembers beyond the message itself (``DeliveryStatus.DRAFT``): which thread's
+    # composer it is typed in, and the choices made for its send. None on every sent message.
+    draft_options: Optional[MessageDraftOptions] = EntityField(
+        default=None, sharing=Sharing.PRIVATE, persist=Persist.TRUE,
+        description="A draft's composer thread and send choices; None once sent.",
+    )
     # Discriminator for special message kinds. "user" is a normal message
     # (the default for everything the user or hub produces). "invitation"
     # marks a local-only placeholder FlowMessage that represents a pending
@@ -879,6 +945,31 @@ class FlowMessage(Entity):
     # Both PRIVATE: facts about this machine's sending, meaningless anywhere else.
     outbound: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     delivery_failure: Optional[HubFailure] = APIField(default=None, sharing=Sharing.PRIVATE)
+
+    @classmethod
+    async def find_composer_draft(cls, conversation_id: str, thread_id: Optional[str] = None) -> Optional["FlowMessage"]:
+        """The draft typed in a conversation's composer (``thread_id``: that thread's composer) — at
+        most one. A reply held for review is a draft too, but belongs to its session, not a composer."""
+        rows = await cls.get_all(
+            {"match": {"conversation_id": str(conversation_id), "delivery_status": DeliveryStatus.DRAFT.value}}
+        )
+        for row in rows:
+            typed_in = row.draft_options.thread_id if row.draft_options else None
+            if not row.remote_worker_session_id and typed_in == (thread_id or None):
+                return row
+        return None
+
+    @classmethod
+    async def sent_in(cls, conversation_id: str, **match) -> list["FlowMessage"]:
+        """The messages of a conversation — what was sent or received, never a draft: a draft is
+        not in the conversation until it is sent. THE read for "this conversation's messages"."""
+        rows = await cls.get_all({"match": {"conversation_id": str(conversation_id), **match}})
+        return [row for row in rows if row.delivery_status != DeliveryStatus.DRAFT.value]
+
+    @property
+    def is_draft(self) -> bool:
+        """Written here and not sent yet — ``DeliveryStatus.DRAFT``, the one place that says so."""
+        return self.delivery_status == DeliveryStatus.DRAFT.value
 
     @property
     def owes_delivery(self) -> bool:
@@ -1151,15 +1242,9 @@ class FlowMessage(Entity):
         pack_bundle).
         Body-free:      URL, inline PROMPT (text only).
         """
-        for att in self.attachment or []:
-            t = att.attachment_type
-            if t == AttachmentType.FILE:
-                return True
-            if t == AttachmentType.TYPE_ID:
-                return True
-            if t == AttachmentType.PROMPT and (att.data or "").startswith(PROMPT_FILE_VFS_PREFIX):
-                return True
-        return False
+        from flow_sdk.builtin.message_template import requires_body  # noqa: PLC0415
+
+        return requires_body(self.attachment or [])
 
     def has_downloadable_body(self) -> bool:
         """Receive-side: is there a body bundle to pull for this message?
@@ -1186,29 +1271,19 @@ class FlowMessage(Entity):
     @property
     def occurred_at(self) -> Optional[datetime]:
         """WHEN THIS MESSAGE ENTERED THE CONVERSATION — its position in the
-        feed and the time on its bubble. Read this for anything about WHERE a
-        message sits in the timeline, never ``event_time``.
+        feed, the time on its bubble, and (for the newest one) the time its
+        conversation shows in the Stream Inbox.
 
         ``sent_at`` pins a channel-projected message (a Slack/email backfill)
         to when the human actually sent it; otherwise ``created_date`` is the
         birth time, hub-stamped for a received message and compose time for
         one of ours. ``updated_date`` is deliberately excluded: it is a
-        PROCESSING clock, and a message's place is fixed when it is sent.
+        PROCESSING clock — the hub re-saves a message on a read receipt, a
+        body transfer, a status change — and a message's place is fixed when
+        it is sent.
         ``project_pointers_to_entity`` documents the two-clock split and the
         incident that forced it."""
         return self.sent_at or self.created_date
-
-    @property
-    def event_time(self) -> Optional[datetime]:
-        """WHEN THIS MESSAGE LAST CHANGED — the conversation's recency clock,
-        i.e. the stream inbox's "Xm ago". Read this for anything about ACTIVITY;
-        for a message's place in the feed read ``occurred_at`` instead.
-
-        Here ``updated_date`` is correct and load-bearing: a genuine edit is
-        new activity and must float the conversation. It is kept honest at the
-        other end by ``FlowMessage.is_stale``, which refuses to advance the
-        local clock for a bare touch."""
-        return self.sent_at or self.updated_date or self.created_date
 
     def attachments(self) -> list[Attachment]:
         """Return the underlying attachment list (not a copy).
@@ -1245,6 +1320,16 @@ class FlowMessage(Entity):
         n = len(self._user_attachments())
         suffix = f" (+{n} attachment{'s' if n != 1 else ''})" if n else ""
         return f"[{self.delivery_status}] {sender}: {preview}{suffix}"
+
+    def asset_typeids(self) -> list[str]:
+        """The entities this message carries, as typeid strings (its own two pointers excluded)."""
+        return [str(a.data) for a in self._user_attachments() if a.attachment_type == AttachmentType.TYPE_ID]
+
+    def file_names(self) -> list[str]:
+        """The names of the files uploaded onto this message (``FILE_VFS_PREFIX`` stripped)."""
+        return [
+            str(a.data)[len(FILE_VFS_PREFIX):] for a in (self.attachment or []) if a.attachment_type == AttachmentType.FILE
+        ]
 
     def _user_attachments(self) -> list[Attachment]:
         """The message's attachments minus the two structural self-pointers
@@ -1330,49 +1415,21 @@ class FlowMessage(Entity):
         The clone is a NEW entity: fresh id (``allocate_id`` → ``mint_uuid``),
         fresh timestamps and delivery/read/body state (model defaults), the
         forwarder as sender, and ``cloned_from_id`` pointing back at this
-        message. Content (text, instruction, content attachments) is
-        deep-copied; the per-message transport attachments and shared context
-        (``conversation-<id>`` / ``flow_message-<id>``) are rewritten to the
-        target conversation and the clone's id. FILE / PROMPT-file bytes are
+        message. The content is copied and re-tied to the target by the one
+        templating rule (``message_template.template_from`` → ``instantiate``). FILE / PROMPT-file bytes are
         NOT copied here — embedded storage is keyed by entity id, so the
         caller copies those subpaths into the clone's storage.
         """
-        drop = {
-            f"conversation-{self.conversation_id}",
-            f"flow_message-{self.id}",
-        }
-        content_atts = [
-            att.model_copy(deep=True)
-            for att in (self.attachment or [])
-            if not (att.attachment_type == AttachmentType.TYPE_ID and att.data in drop)
-        ]
-        carried_ctx = [str(c) for c in (self.shared_context_entities or []) if str(c) not in drop]
-        clone = FlowMessage.model_validate(
-            {
-                "text": self.text,
-                "instruction": self.instruction,
-                "shared_context_entities": [f"conversation-{conversation_id}", *carried_ctx],
-                "attachment": [],
-                "sender_id": sender_id,
-                "sender_name": sender_name,
-                "conversation_id": conversation_id,
-                "cloned_from_id": self.id,
-                "cloned_from_sender_id": self.sender_id,
-            }
+        from flow_sdk.builtin.message_template import instantiate, template_from  # noqa: PLC0415
+
+        fields = instantiate(
+            template_from(self),
+            conversation_id=conversation_id,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            message_id=FlowMessage.allocate_id({}),
         )
-        clone.id = FlowMessage.allocate_id(clone.model_dump())
-        clone.attachment = [
-            Attachment(
-                attachment_type=AttachmentType.TYPE_ID,
-                data=f"conversation-{conversation_id}",
-            ),
-            Attachment(
-                attachment_type=AttachmentType.TYPE_ID,
-                data=f"flow_message-{clone.id}",
-            ),
-            *content_atts,
-        ]
-        return clone
+        return FlowMessage.model_validate({**fields, "cloned_from_id": self.id, "cloned_from_sender_id": self.sender_id})
 
     async def upload_body(
         self,

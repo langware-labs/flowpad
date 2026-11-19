@@ -314,7 +314,8 @@ async def _on_server_startup():
     await _lift_this_computer_placement()
     await _boot_lift("migration_2026_11_project_deployments", "Project deployments")
     await _boot_lift("migration_2026_11_attachment_count", "Conversation attachment counts")
-    await _boot_lift("migration_2026_11_offset_recency", "Conversation recency (sender offsets)")
+    await _boot_lift("migration_2026_11_draft_status", "Draft message status")
+    await _boot_lift("migration_2026_11_offset_recency", "Conversation recency")
     await _boot_lift("migration_2026_11_context_relationships", "Context relationships")
     await _lift_credential_stores()
     await _lift_place_settings()
@@ -1222,7 +1223,7 @@ async def _spa_fallback(request: _Request, full_path: str):
             # Inject the runtime API origin so deep links (e.g. /dock/shell/…)
             # hit the serving backend, not the bundle's baked URL.
             # encoding= on purpose: the shell is UTF-8, the host codepage is not.
-            return serve_index_html(candidate.read_text(encoding="utf-8"))
+            return serve_index_html(candidate.read_text(encoding="utf-8"), request)
     return _HTMLResponse(content="UI not found", status_code=404)
 
 

@@ -74,6 +74,7 @@ class AssetEditor(StrEnum):
     VIDEO = "video"
     AUDIO = "audio"
     PDF = "pdf"
+    DOCX = "docx"  # a .docx, rendered read-only to HTML by mammoth
     ARCHIVE = "archive"  # a .zip, browsed as the folder it extracts to (a temp copy)
     VALUE = "value"  # a .value.json: one DataSpec value, shown by its kind's viewer
 
@@ -120,6 +121,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.VIDEO: [],
     AssetEditor.AUDIO: [],
     AssetEditor.PDF: [],
+    AssetEditor.DOCX: [],
     AssetEditor.ARCHIVE: [],
     AssetEditor.VALUE: [],
 }

@@ -126,7 +126,7 @@ describe('anchorSessionItems', () => {
 
   it('hides a host draft reply that belongs to a session', () => {
     const start = sess(SID_A, { attachment: [promptAtt] } as Partial<FlowMessage>);
-    const draft = sess(SID_A, { is_draft: true, attachment: [resultAtt] } as Partial<FlowMessage>);
+    const draft = sess(SID_A, { delivery_status: 'draft', attachment: [resultAtt] } as Partial<FlowMessage>);
     const { items: pointerOnly, getFm } = pointerItems([start]);
     const items = [...pointerOnly, ...buildConversationItems([], [draft])];
     const out = anchorSessionItems(items, getFm, new Map([[SID_A, start.id]]));

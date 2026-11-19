@@ -27,8 +27,10 @@ async def cross_link_entities(
     a_data: dict | None = None,
     b_data: dict | None = None,
     save: bool = True,
+    shared: bool = False,
 ) -> bool:
-    """Mutually link ``a`` and ``b`` via their private context entities.
+    """Mutually link ``a`` and ``b`` via their private context entities
+    (their shared ones when ``shared``).
 
     Adds ``b`` to ``a``'s private context (with optional per-entry ``a_data``)
     and ``a`` to ``b``'s (with optional ``b_data``). Both adds dedup by
@@ -42,8 +44,12 @@ async def cross_link_entities(
     """
     if a is None or b is None:
         return False
-    changed_a = a.add_private_context_entities(b.typeid, data=a_data)
-    changed_b = b.add_private_context_entities(a.typeid, data=b_data)
+    if shared:
+        changed_a = a.add_shared_context_entities(b.typeid, data=a_data)
+        changed_b = b.add_shared_context_entities(a.typeid, data=b_data)
+    else:
+        changed_a = a.add_private_context_entities(b.typeid, data=a_data)
+        changed_b = b.add_private_context_entities(a.typeid, data=b_data)
     if save:
         if changed_a:
             await a.save()

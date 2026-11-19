@@ -12,8 +12,8 @@ import { formatTimeAgoShort } from '@src/utils/format-time-ago';
  *  passes none and the diagnostics block simply doesn't render. */
 export interface AttachmentDownloadInfo {
   /** When the message was sent — the SAME clock the bubble's header renders,
-   *  never `eventTime`: that falls back to `updated_date`, which every
-   *  unrelated touch of the row moves, so it would contradict the header. */
+   *  never `updated_date`, which every unrelated touch of the row moves, so it would contradict
+   *  the header. */
   messageTime?: string | Date | null;
   /** Hub receipt clock, when the message carries one. */
   deliveredAt?: string | Date | null;

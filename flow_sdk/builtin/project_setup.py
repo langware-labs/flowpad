@@ -235,7 +235,7 @@ def _setup_var(env_var: str, var: Any, *, login: str, present: bool = False) -> 
     return SetupVarSpec(
         env_var=env_var, label=var.label, hint=var.hint, help_url=var.help_url, placeholder=var.placeholder,
         pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE, present=present,
-        required=var.required, kind=var.kind, login=login, provider=var.provider, scopes=list(var.scopes), way=var.way,
+        required=var.required, kind=var.kind, login=login, provider=var.provider, scopes=list(var.scopes), group=var.group, way=var.way,
     )
 
 
@@ -485,7 +485,7 @@ def _ask_prompt(req: SetupRequirementSpec, var: SetupVarSpec) -> str:
 def _var_choice(var: SetupVarSpec) -> dict[str, Any]:
     return {"value": var.env_var, "label": var.label or var.env_var, "hint": var.hint, "help_url": var.help_url,
             "placeholder": var.placeholder, "secret": var.secret, "file": var.file, "command": var.login, "provider": var.provider,
-            "scopes": list(var.scopes)}
+            "scopes": list(var.scopes), "group": var.group}
 
 
 def _way_choice(way: str, members: list[SetupVarSpec], offer: Optional[CredentialWaySpec] = None) -> dict[str, Any]:

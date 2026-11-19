@@ -101,7 +101,9 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.message_reaction_spec  # noqa: F401  — registers ``message.reaction``
     import flow_sdk.schema.data_spec.message_sender_spec  # noqa: F401  — registers ``message.sender``
     import flow_sdk.schema.data_spec.message_state_spec  # noqa: F401  — registers ``stream_inbox.message.state``
+    import flow_sdk.schema.data_spec.tag_classification_spec  # noqa: F401  — registers ``tags.classification`` / ``stream_inbox.message.context``
     import flow_sdk.schema.data_spec.navigator_spec  # noqa: F401  — registers ``navigator.route`` / ``navigator.target``
+    import flow_sdk.schema.data_spec.page_state_spec  # noqa: F401  — registers ``page.state``
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
     import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
     import flow_sdk.schema.data_spec.process_call_spec  # noqa: F401  — registers ``process.call``

@@ -172,6 +172,7 @@ function AskChoiceSignIn({ choice, busy, onAnswer }: { choice: AskChoice; busy?:
   const { t } = useLingui();
   const [refused, setRefused] = useState('');
   const { connecting, signIn } = useProviderSignIn(choice.provider ?? '', {
+    group: choice.group,
     onGranted: () => onAnswer(choice.value),
     onNotFinished: () => setRefused(t`The sign-in did not finish.`),
     onError: (e) => setRefused(errorMessage(e, t`Could not start the sign-in.`)),

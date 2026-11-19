@@ -4,6 +4,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import type { ProcessCall, ReturnedValue } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
+import { PromptToRunDialog } from './PromptToRunDialog';
 import { callOutcome, decideProcessCall, type CallDecision, type CallOutcome } from './process-call';
 
 // SessionCard's own vocabulary: the same tones, dots and action buttons as a live session.
@@ -41,8 +42,8 @@ interface PromptCallCardProps {
 }
 
 /**
- * A one-shot prompt riding a message: the receiver approves it (every time — no standing grant),
- * it runs once on their machine, and both sides see its outcome here. The sender sees the status
+ * A one-shot prompt riding a message: the receiver runs it (asked every time — no standing grant),
+ * once, on their machine, and both sides see its outcome here. Review opens the whole prompt first. The sender sees the status
  * and one sentence, never the output.
  */
 export function PromptCallCard({
@@ -57,10 +58,12 @@ export function PromptCallCard({
   const { t } = useLingui();
   const [started, setStarted] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const prompt = call.exe?.prompt ?? '';
 
   const decide = async (decision: CallDecision) => {
     if (busy) return;
+    setReviewing(false);
     setBusy(true);
     try {
       await decideProcessCall(conversationId, messageId, decision);
@@ -85,6 +88,20 @@ export function PromptCallCard({
     declined: t`declined`,
   };
   const look = LOOK[state];
+  // The same two answers on the card and in the window Review opens.
+  const answerButton = (decision: CallDecision, label: string, primary = false) => (
+    <button
+      type="button"
+      className={primary ? PRIMARY : BUTTON}
+      disabled={busy}
+      onClick={() => void decide(decision)}
+      data-testid={`prompt-call-${decision}`}
+    >
+      {label}
+    </button>
+  );
+  const run = answerButton('approve', t`Run`, true);
+  const decline = answerButton('decline', t`Decline`);
 
   return (
     <div
@@ -113,24 +130,30 @@ export function PromptCallCard({
         <div className="flex items-center gap-1.5 py-0.5">
           {state === 'waiting' ? (
             <>
-              <button
-                type="button"
-                className={PRIMARY}
-                disabled={busy}
-                onClick={() => void decide('approve')}
-                data-testid="prompt-call-approve"
-              >
-                <Trans>Approve once</Trans>
-              </button>
+              {run}
               <button
                 type="button"
                 className={BUTTON}
-                disabled={busy}
-                onClick={() => void decide('decline')}
-                data-testid="prompt-call-decline"
+                onClick={() => setReviewing(true)}
+                title={t`Read the full prompt`}
+                data-testid="prompt-call-review"
               >
-                <Trans>Decline</Trans>
+                <Trans>Review</Trans>
               </button>
+              {decline}
+              {reviewing && (
+                <PromptToRunDialog
+                  open
+                  onOpenChange={setReviewing}
+                  parts={[{ kind: 'text', text: prompt }]}
+                  footer={
+                    <>
+                      {run}
+                      {decline}
+                    </>
+                  }
+                />
+              )}
             </>
           ) : (
             <button

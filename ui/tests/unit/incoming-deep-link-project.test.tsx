@@ -34,7 +34,7 @@ vi.mock('@src/store/use-incoming-project-store', () => ({
   isSetupDeclined: () => false,
 }));
 
-import { Project } from '@sdk';
+import { apiClient, Project } from '@sdk';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
 
 const PID = '55555555-5555-4555-8555-555555555555';
@@ -128,6 +128,8 @@ describe('IncomingDeepLink — the email set-up link with no local row', () => {
   beforeEach(() => {
     h.setPendingProject.mockReset();
     window.sessionStorage.clear();
+    // The local server asks for no key in this tier, so the link runs without the Allow question.
+    vi.spyOn(apiClient, 'get').mockResolvedValue({ enforced: false, state: null, probed: null });
   });
   afterEach(() => {
     cleanup();

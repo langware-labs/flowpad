@@ -46,7 +46,12 @@ export interface UserWarning {
   /** Optional callback to execute when the warning is clicked (in addition to navigation) */
   onClick?: () => void;
   /** Optional button drawn inside the warning, for the one thing a person can do about it. */
-  action?: { label: string; onClick: () => void };
+  action?: {
+    label: string;
+    onClick: () => void | Promise<void>;
+    /** The action starts a background run found by this target: the warning stays to show the run. */
+    runTarget?: string;
+  };
   /**
    * False for an informational warning where nothing is broken (its click is the fix): the entry
    * offers Review, which does the same as clicking it, instead of Diagnose & fix, and is not counted.

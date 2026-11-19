@@ -51,10 +51,13 @@ _REASONS: dict[str, str] = {
 }
 
 
-def _result(code: str | None, git_origin: dict | None = None) -> dict:
-    """Build the preflight payload from a reason code (None ⇒ available)."""
+def _result(code: str | None, git_origin: dict | None = None, path: str | None = None) -> dict:
+    """Build the preflight payload from a reason code (None ⇒ available).
+
+    ``path`` is the on-disk root that was probed, when one resolved — the
+    sender sees it under the "has changes" question."""
     if code is None:
-        return {"available": True, "reason": None, "code": None, "fix": None, "git_origin": git_origin}
+        return {"available": True, "reason": None, "code": None, "fix": None, "git_origin": git_origin, "path": path}
     # The origin rides along on the failure branch too when we managed to derive
     # one. "Can't share yet" and "has no repo" are different states, and a
     # caller that only wants to NAME the repo (a header chip) shouldn't have to
@@ -65,6 +68,7 @@ def _result(code: str | None, git_origin: dict | None = None) -> dict:
         "code": code,
         "fix": FIXES.get(code),
         "git_origin": git_origin,
+        "path": path,
     }
 
 
@@ -208,19 +212,19 @@ async def git_share_preflight(entity_type: str, entity_id: str) -> dict:
     repo_cache: dict = {}
     repo_root = await asyncio.to_thread(find_project_root, src_root)
     if not repo_root:
-        return _result("not-in-repo")
+        return _result("not-in-repo", path=src_root)
 
     origin = await asyncio.to_thread(GitOrigin.for_asset_path, src_root, repo_cache)
     if origin is None:
         # In a repo but ``for_asset_path`` couldn't build an origin: no usable
         # remote (missing) vs a remote it can't parse/place (unsupported).
         remote = await asyncio.to_thread(git_remote_url, repo_root)
-        return _result("missing-remote" if not remote else "unsupported-origin")
+        return _result("missing-remote" if not remote else "unsupported-origin", path=src_root)
 
     blocking = await asyncio.to_thread(_repo_share_status, repo_root, origin, src_root)
     if blocking is not None:
-        return _result(blocking, git_origin=origin.model_dump(mode="python"))
-    return _result(None, git_origin=origin.model_dump(mode="python"))
+        return _result(blocking, git_origin=origin.model_dump(mode="python"), path=src_root)
+    return _result(None, git_origin=origin.model_dump(mode="python"), path=src_root)
 
 
 @action.get(action_name="git_share_preflight", types="all")

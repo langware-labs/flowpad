@@ -234,6 +234,8 @@ export default defineConfig(({ mode }) => {
             '/signup.html': { target, changeOrigin: true },
             '/assets': { target, changeOrigin: true },
             '/sdk': { target, changeOrigin: true },
+            // Icon artwork (brand marks) is the backend's: `icon_packs` name it under `/icons`.
+            '/icons': { target, changeOrigin: true },
           }).map(([k, v]) => [k, guard(v as Record<string, unknown>)]),
         );
       })(),

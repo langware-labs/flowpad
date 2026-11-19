@@ -18,13 +18,13 @@ interface FormAnswersCardProps {
 export function FormAnswersCard({ entry, form, answererName, canChange }: FormAnswersCardProps) {
   const { t } = useLingui();
   const { answers, previous } = entry;
-  const changed = new Set(answers.changed ?? []);
+  const changed = new Set(entry.changed);
   const rows = form
-    ? form.fields.filter((f) => f.id in answers.values).map((f) => ({ id: f.id, label: f.label }))
+    ? form.fields.filter((f) => f.id in answers.values || changed.has(f.id)).map((f) => ({ id: f.id, label: f.label }))
     : Object.keys(answers.values).map((id) => ({ id, label: id }));
   const yes = t`Yes`;
   const no = t`No`;
-  const updated = !!answers.supersedes;
+  const updated = !!previous;
   return (
     <div
       className="mt-1 max-w-[640px] rounded-lg border border-border bg-muted px-3 py-2.5 text-sm"

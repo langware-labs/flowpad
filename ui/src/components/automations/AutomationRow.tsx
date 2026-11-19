@@ -30,11 +30,12 @@ export const canSwitch = (a: Pick<AutomationSummary, 'read_only' | 'switchable'>
 
 export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy, project }: AutomationRowProps) {
   const { t } = useLingui();
-  const sentence = sentenceOf(useAutomationWords(), a.when, a.then);
+  const sentence = sentenceOf(useAutomationWords(), a.when, a.then, a.classifier);
   return (
     <LineShell
       testId={`automation-row-${a.id}`}
       id={a.id}
+      classifier={a.classifier}
       title={a.description || a.name}
       on={a.enabled}
       onOpen={onOpen}
@@ -51,7 +52,8 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
         )
       }
       action={
-        <RunNow
+        // The classifier runs on a message arriving; there is nothing to run now.
+        a.classifier ? null : <RunNow
           busy={busy}
           onClick={onRunOnce}
           testId={`automation-run-once-${a.id}`}
@@ -110,6 +112,7 @@ function Problem({ automation: a }: { automation: AutomationSummary }) {
 export function LineShell({
   testId,
   id,
+  classifier,
   title,
   on,
   onOpen,
@@ -119,6 +122,7 @@ export function LineShell({
 }: {
   testId: string;
   id?: string;
+  classifier?: boolean;
   title?: string;
   on: boolean;
   onOpen?: () => void;
@@ -133,6 +137,7 @@ export function LineShell({
       tabIndex={onOpen ? 0 : undefined}
       data-testid={testId}
       data-automation-id={id}
+      data-classifier={classifier ? 'true' : undefined}
       title={title}
       onClick={onOpen}
       onKeyDown={(e) => {

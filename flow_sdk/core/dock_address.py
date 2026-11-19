@@ -686,7 +686,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
         provides=("entity",),
         open_forms=(("agent", "<id>/stream_inbox", "stream inbox"),),
     ),
-    ViewType.STREAM_INBOX: _m(_NONE, label="Stream Inbox", aliases=("messages",)),
+    ViewType.STREAM_INBOX: _m(_NONE, label="Stream Inbox", aliases=("messages",), pages=("desk", "hub")),
     ViewType.CONVERSATION: _m(_REQ, folds_sub_pointer=True, label="Conversation", pages=("desk", "hub"), provides=("entity",)),
     ViewType.SPEC: _m(_REQ, label="Spec"),
     ViewType.GRAPH_CONTEXT: _m(_REQ, label="Context", aliases=("frozen context",)),

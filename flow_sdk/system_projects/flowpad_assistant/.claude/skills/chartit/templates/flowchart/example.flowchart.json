@@ -1,0 +1,68 @@
+{
+ "title": "Where an order goes",
+ "nodes": [
+  {
+   "id": "start",
+   "kind": "start",
+   "label": "Customer places an order"
+  },
+  {
+   "id": "paid",
+   "kind": "question",
+   "label": "Payment accepted?",
+   "state": "The charge's status at the payment provider",
+   "note": "A declined card is retried once before this is asked"
+  },
+  {
+   "id": "stock",
+   "kind": "question",
+   "label": "In stock?",
+   "state": "The item's count in the warehouse table"
+  },
+  {
+   "id": "ship",
+   "kind": "outcome",
+   "label": "Ship it",
+   "ref": "order-shipping"
+  },
+  {
+   "id": "back",
+   "kind": "outcome",
+   "label": "Put on back order"
+  },
+  {
+   "id": "cancel",
+   "kind": "outcome",
+   "label": "Cancel the order"
+  }
+ ],
+ "edges": [
+  {
+   "from": "start",
+   "to": "paid"
+  },
+  {
+   "from": "paid",
+   "to": "stock",
+   "label": "yes"
+  },
+  {
+   "from": "paid",
+   "to": "cancel",
+   "label": "no"
+  },
+  {
+   "from": "stock",
+   "to": "ship",
+   "label": "yes"
+  },
+  {
+   "from": "stock",
+   "to": "back",
+   "label": "no"
+  }
+ ],
+ "notes": [
+  "Every order is saved before any question is asked"
+ ]
+}

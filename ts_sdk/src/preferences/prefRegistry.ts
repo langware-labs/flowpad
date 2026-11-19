@@ -85,6 +85,8 @@ export enum PrefKey {
   HISTORY_ALL_PROJECTS = 'preferences.terminal.history_all_projects',
   LAST_OPENER = 'preferences.terminal.last_opener',
   LAST_OPENER_MODE = 'preferences.terminal.last_opener_mode',
+  /** Pages the user chose to always allow to run in Flowpad (`PageAllowGate`): one `<view>|<pointer>` each. */
+  PAGE_TRUST = 'preferences.pages.trusted',
   PINNED_OPENERS = 'preferences.terminal.pinned_openers',
   COMMAND_LINK_MODE = 'preferences.terminal.command_link_mode',
   COMMAND_LINK_BROWSER = 'preferences.terminal.command_link_browser',
@@ -657,6 +659,13 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     label: 'Last terminal opener',
     dataType: PrefDataType.JSON,
     defaultValue: null,
+  },
+  [PrefKey.PAGE_TRUST]: {
+    key: PrefKey.PAGE_TRUST,
+    category: 'general',
+    label: 'Pages always allowed to run',
+    dataType: PrefDataType.JSON,
+    defaultValue: [],
   },
   [PrefKey.LAST_OPENER_MODE]: {
     key: PrefKey.LAST_OPENER_MODE,
