@@ -7,7 +7,7 @@ import { ProfileLabel } from '@src/components/links/BrowserProfileItems';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
-import { AppWindow, Check, Chrome } from 'lucide-react';
+import { Globe, Check, Chrome } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 /** Claude in Chrome on the Chrome Web Store. */
@@ -192,7 +192,7 @@ function AddBrowserDialog({
         {step === 'kind' && (
           <div>
             {kind(<Chrome className="h-3.5 w-3.5" />, <Trans>Your Chrome</Trans>, <Trans>extension</Trans>, () => setStep('connect'), 'add-browser-extension')}
-            {kind(<AppWindow className="h-3.5 w-3.5" />, <Trans>Agent browser</Trans>, <Trans>always ready</Trans>, () => setStep('done'), 'add-browser-agent')}
+            {kind(<Globe className="h-3.5 w-3.5" />, <Trans>Agent browser</Trans>, <Trans>always ready</Trans>, () => setStep('done'), 'add-browser-agent')}
             {kind(<Chrome className="h-3.5 w-3.5" />, <Trans>Edge / Brave / Arc</Trans>, <Trans>soon</Trans>)}
           </div>
         )}
@@ -276,7 +276,7 @@ export function BrowserChip() {
     await refresh();
   };
   const label = usingExtension ? t`Your Chrome` : t`Agent browser`;
-  const Icon = usingExtension ? Chrome : AppWindow;
+  const Icon = usingExtension ? Chrome : Globe;
 
   return (
     <>
@@ -313,7 +313,7 @@ export function BrowserChip() {
           </div>
           <Row
             testId="browser-row-agent"
-            icon={<AppWindow className="h-3.5 w-3.5" />}
+            icon={<Globe className="h-3.5 w-3.5" />}
             name={<Trans>Agent browser</Trans>}
             note={status.agent.up ? <Trans>running</Trans> : <Trans>ready</Trans>}
             tone="ok"
