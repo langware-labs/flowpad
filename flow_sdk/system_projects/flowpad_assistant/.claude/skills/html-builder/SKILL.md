@@ -139,11 +139,8 @@ Three additions:
 - **Dark mode.** The sheet defines light on `:root` and dark under `.dark`. A page
   served in the Flowpad display receives `?theme=light|dark` — apply it to
   `<html>` before first paint so there is no flash.
-- **Data.** `import * as sdk from '/sdk/flowpad-sdk.js'` reads and writes real
-  entities. The rules that are easy to get wrong — always saving with the project
-  scope, and that `watchQuery` resolves to an *unsubscribe function* rather than
-  the rows — are written up once in `web-app-builder/template-flowpad/README.md`;
-  read it before the first entity call rather than rediscovering them.
+- **Data.** Load the **flow-js** skill before the first SDK call: import, init order,
+  project scope, the page-state key for frames and child windows, and how to test.
 
 ## Not this skill
 

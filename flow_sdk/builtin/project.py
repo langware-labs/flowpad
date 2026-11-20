@@ -199,6 +199,11 @@ class NestedProjectError(ValueError):
     """A project was about to be created inside another project's folder, or around one."""
 
 
+class UnloadableProjectPathError(ValueError):
+    """A project was about to live where Flowpad never loads a project from (``~/.flow`` and other internal state):
+    it would save, and its kinds would work until the next restart, which skips it (``ensure_project_namespace``)."""
+
+
 class DuplicateProjectNameError(ValueError):
     """A project was about to take a name another visible project already has.
     ``existing`` is that other project."""
@@ -2659,6 +2664,7 @@ class Project(SetupSkippable, Entity):
         was_create = not self.exist_in_db
         await self._refuse_duplicate_name()
         if was_create:
+            self._refuse_unloadable_mount()
             await self._refuse_nested_mount()
             await self._warn_if_mount_owned_elsewhere()
             self._ensure_mount_dir()
@@ -2914,6 +2920,22 @@ class Project(SetupSkippable, Entity):
             if link is not None:
                 links.append(link)
         return links
+
+    def _refuse_unloadable_mount(self) -> None:
+        """Refuse a folder the startup sweep never loads (``is_valid_project_cwd``, the same test
+        ``ensure_project_namespace`` applies), instead of a project that silently loses its kinds on restart."""
+        mount = self.fs_storage_mount_path
+        if self.remote or self.system or self.hidden or not mount:
+            return
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        flow_home = get_instance_settings().flow_home
+        under_state = flow_home and Path(canonical_posix_path(mount)).is_relative_to(canonical_posix_path(flow_home))
+        if under_state and not is_valid_project_cwd(mount, include_temp=True):
+            raise UnloadableProjectPathError(
+                f"{mount} is inside Flowpad's own state, which is never loaded as a project; "
+                "put the project in the workspace or another folder of yours"
+            )
 
     async def _refuse_nested_mount(self) -> None:
         """Projects do not nest: a new one may not sit inside a project's folder, nor

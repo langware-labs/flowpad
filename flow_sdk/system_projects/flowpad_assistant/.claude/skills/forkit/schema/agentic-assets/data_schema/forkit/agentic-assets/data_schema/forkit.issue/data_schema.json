@@ -1,0 +1,14 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "run": {"shape": "string", "description": "The forkit run this issue belongs to (its slug)."},
+    "id": {"shape": "string", "description": "The issue's own id, as the list shows it: 60, D-12."},
+    "title": {"shape": "string", "description": "One line: what is wrong."},
+    "desc": {"shape": "?string", "description": "Two or three lines saying what the issue is about."},
+    "prompt": {"shape": "string", "description": "The instruction the issue's fork starts with."},
+    "root": {"shape": "string", "description": "The agentic process every fork of this run is forked from."},
+    "order": {"shape": "int", "description": "Position in the list."},
+    "status": {"shape": "enum:open|done", "description": "open: being worked; done: finished, its fork closed."},
+    "process_id": {"shape": "?string", "description": "The live fork working this issue; empty until it is first opened."}
+  }
+}

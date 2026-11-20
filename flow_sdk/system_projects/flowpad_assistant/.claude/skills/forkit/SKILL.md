@@ -1,0 +1,56 @@
+---
+id: 1f2756ca-8822-4ee1-87c0-7e100fbf8882
+name: forkit
+description: Works a list of issues in parallel — one fork of a root session per issue
+  — from one small app. The issues on the left (Open / Done / All, a short description
+  behind ⓘ, ✓ Done / ↺ Open per row), the selected issue's live fork terminal in the
+  centre. Use for "forkit these issues", "fork a session per issue", "work this list
+  in parallel forks", or after a review / pentest / triage produced a list to work
+  through. NOT for spawning unrelated subagents (Agent tool), a task ledger (task-management),
+  or a mock of a UI (mockify).
+---
+
+# forkit — one fork per issue, one screen to work them
+
+The root session already knows the issues (it found them). forkit forks it once per issue, so every fork
+starts with that whole context and one instruction: work this issue only. The list and each issue's status are
+data (`forkit.issue` rows), so the app, another window or an agent all see the same state.
+
+## Behaviour
+
+- A fork is made the **first time an issue is opened** (`agentic_process/<root>/fork`, then `/open` with the
+  issue's prompt). Two clicks never make two forks.
+- **✓ Done** closes the fork (`/close`) and marks the issue done. **↺ Open** reopens it; opening it again makes a
+  new fork from the root.
+- The centre is the fork's own terminal (`/win/shell/agentic_process-<id>`), live; type into it.
+- Works on any worker: the forks run where the root runs. A root on another machine (`hub_route`) is refused —
+  run forkit on the machine that runs it.
+
+## Run it
+
+1. Write `issues.json` (in your scratch folder):
+   ```json
+   {"root": "<agentic_process id>", "title": "pentest 2026-11-20",
+    "issues": [{"id": "60", "title": "Admin can raise a public-deployment cap",
+                "desc": "Two or three lines: what is wrong, where.", "prompt": "optional — the fork's first instruction"}]}
+   ```
+   - `root`: the session to fork — usually YOUR process:
+     `python3 -c 'import json,os;print(json.loads(os.environ["FLOWPAD_EXECUTION_SCOPE"])[0]["id"])'`.
+   - `desc`: what the issue is about, in plain words; it is what the person reads behind ⓘ.
+   - `prompt`: leave it out for the default ("work ONLY issue #N … propose the fix"). Write one when the issue
+     needs a specific first step (its failing test, the file to start in).
+2. `"$FLOWPAD_PYTHON" -I <this skill>/scripts/forkit.py issues.json` → `{ok, slug, typeid, app_url}`.
+   Re-running the same title keeps every issue's status and fork; issues no longer listed are removed.
+3. `flow show entity <typeid>`.
+
+Reply with: how many issues, the root, that a fork starts when an issue is first opened, and that ✓ Done closes it.
+
+Page code follows the **flow-js** skill (the terminal frame carries the page-state key).
+
+## Where things are
+
+- The forkit project: `<workspace root>/forkit` (`~/Flowpad workspace/forkit`; `FORKIT_HOME` overrides — never under
+  `~/.flow`, which Flowpad never loads as a project, so the kind would vanish on restart), namespace `forkit_runs`, dataset `issues`
+  (every run; key `<slug>--<issue id>`), the app per run in `agentic-assets/webapp/forkit-<slug>/`.
+- Rows: read or fix with the data-management skill's `dm_ctl` (`ds-rows <home>/agentic-assets/dataset/issues
+  --match '{"input.run": "<slug>"}'`); never edit row files by hand.

@@ -77,6 +77,9 @@ result looks designed rather than defaulted), then write the files in the projec
 directory. This is the one row for every no-build HTML deliverable; what changes is only
 how you show it.
 
+**Any page that talks to Flowpad** (imports `/sdk/flowpad-sdk.js`, frames a terminal or a served file) → also
+the **flow-js** skill, before the first SDK call.
+
 **The default is `flow show file <abs-path-to-the-entry-page>.html`** — no `http.server`,
 no port, no fetch check. Take this path unless the page needs one of the two things
 below.
