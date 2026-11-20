@@ -518,13 +518,44 @@ export function getOrCreateLocalMemberId(): string {
   }
 }
 
-export type SessionBrowser = 'agent' | 'extension';
+/** A browser driver's name (`agentic-assets/browser_driver/<name>/`). */
+export type SessionBrowser = string;
+
+/** One word for a driver's availability to this worker, decided on the backend (`browser_drivers.state_of`). */
+export type BrowserDriverState = 'ready' | 'running' | 'connected' | 'not_connected' | 'not_installed' | 'unsupported';
+
+/** One browser driver as the backend lists it (`BrowserDriverSpec`), with this machine's view of it. */
+export interface BrowserDriverInfo {
+  name: SessionBrowser;
+  title: string;
+  icon: string;
+  description: string;
+  /** Flowpad starts and owns the window, on a profile of its own. */
+  managed: boolean;
+  probe: 'cdp' | 'extension';
+  tool_prefixes: string[];
+  install_url: string;
+  state: BrowserDriverState;
+  /** What to set up for this session's worker; "" when nothing. */
+  setup: string;
+  /** This machine's settings for the driver (app, profile, port). */
+  config: Record<string, string>;
+}
 
 export interface BrowserStatus {
+  /** What the project recommends. */
   setting: SessionBrowser;
+  /** The person's own pick for this project on this computer; "" when none. */
+  pick: SessionBrowser;
+  /** The browser in use: for a session what it resolves to, else what a new session here gets. */
   effective: SessionBrowser;
-  supports_extension: boolean;
-  agent: { up: boolean; pid: number | null; port: number | null; browser: string };
+  /** Which rung decided `effective`. */
+  source: 'pick' | 'session' | 'project' | 'default';
+  /** The driver that was asked for but this worker cannot use; "" when the choice stood. */
+  requested: SessionBrowser;
+  /** This session's worker, by vendor key. */
+  worker: string;
+  drivers: BrowserDriverInfo[];
   extension: {
     installed: boolean;
     device: string;
@@ -1256,8 +1287,8 @@ export class Project extends APIEntity<Project> {
     return this.post<{ env_files: string[] }>('set-env-files', { paths });
   }
 
-  /** The browser this project's agent sessions use — `agent` (Flowpad's own Chrome window)
-   *  or `extension` (the user's Chrome through Claude in Chrome). Written into the manifest. */
+  /** The person's own browser for this project on this computer — a browser driver's name, or ""
+   *  to go back to what the project recommends. Saved on this instance, never in the project. */
   async setBrowser(browser: SessionBrowser): Promise<{ browser: SessionBrowser }> {
     return this.post<{ browser: SessionBrowser }>('set-browser', { browser });
   }

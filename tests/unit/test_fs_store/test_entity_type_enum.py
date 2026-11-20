@@ -213,6 +213,8 @@ EXPECTED = {
     # members, no existing value changed.
     "DATA_SOURCE": "data_source",
     "CREDENTIAL": "credential",
+    "SECRET_MANAGER": "secret_manager",
+    "BROWSER_DRIVER": "browser_driver",
     "DATA_DRIVER": "data_driver",
     "DATA_SCHEMA": "data_schema",
     "SOURCE_ITEM": "source_item",

@@ -1,0 +1,7 @@
+{
+  "name": "editor",
+  "title": "Google Cloud Secret Manager — editor",
+  "description": "The Google Cloud Secret Manager vaults of this project and this instance: where each one is, and its access here.",
+  "kind": "application.web.editor",
+  "build": "."
+}

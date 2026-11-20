@@ -1052,7 +1052,7 @@ async def list_vaults(project_id: str) -> dict[str, Any]:
     from flow_sdk.secrets import active  # noqa: PLC0415
 
     rows = active.project_vaults(await _project_of(project_id))
-    shared, used = active.global_vault(), active.active_among(rows)
+    shared, used = active.global_vault(), active.active_among(rows, pick=active.vault_pick(project_id))
     return {
         "vaults": {row.name: row.vault.model_dump(mode="json") for row in rows},
         "rows": [row.model_dump(mode="json") for row in rows],
@@ -1071,6 +1071,19 @@ async def set_default_vault(project_id: str, name: str) -> dict[str, Any]:
     except ManifestError as e:
         raise CredentialError(str(e), code="unknown_vault") from e
     await project._reindex_manifest()
+    return await list_vaults(project_id)
+
+
+async def set_vault_pick(project_id: str, name: str) -> dict[str, Any]:
+    """The person's own vault for the project on this computer — a project vault's name, ``global``, or ""
+    to go back to the project's default. Saved on this instance, never in the project; answers :func:`list_vaults`."""
+    from flow_sdk.secrets import active  # noqa: PLC0415
+
+    project = await _project_of(project_id)
+    known = {row.name for row in active.project_vaults(project)} | {active.PICK_GLOBAL, ""}
+    if name not in known:
+        raise CredentialError(f"no vault named {name!r} in this project", code="unknown_vault")
+    active.set_vault_pick(project.id, name)
     return await list_vaults(project_id)
 
 

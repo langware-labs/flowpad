@@ -6,6 +6,7 @@
 The most specific scope wins (:class:`SecretScope`):
 
 ==========  ======================================================================================
+``pick``    the person's own choice for this project on THIS computer (:func:`set_vault_pick`)
 ``entity``  the target's own ``secret_vault()`` — a project vault's name, or a vault of its own
 ``project`` its project's ``default_secret_vault``, else the first of ``secret_vaults`` by name
 ``global``  this instance's vault (``preferences.json``, :data:`PREF_GLOBAL_VAULT`)
@@ -28,6 +29,10 @@ from flow_sdk.secrets.errors import MissingSecrets, SecretStoreError
 
 #: This instance's vault, used where no project or entity names one: ``{manager, config}``.
 PREF_GLOBAL_VAULT = "preferences.secrets.vault"
+#: The person's pick per project, on this computer only: ``{<project id>: <vault name> | "global"}``.
+PREF_VAULT_PICK = "preferences.secrets.vault_pick"
+#: The pick that names this instance's vault rather than one of the project's.
+PICK_GLOBAL = "global"
 
 
 class SecretScope(StrEnum):
@@ -53,6 +58,8 @@ class ActiveVaultSpec(DataSpec):
     usable: bool = True
     #: A project vault: it is the project's default.
     is_default: bool = False
+    #: The person chose it for this project on this computer — it wins over every other scope.
+    picked: bool = False
 
 
 class NoActiveVault(SecretStoreError, LookupError):
@@ -111,8 +118,34 @@ def project_vaults(project: Any) -> list[ActiveVaultSpec]:
             for name in sorted(vaults, key=lambda n: (n != default, n))]
 
 
-def active_among(rows: list[ActiveVaultSpec], chosen: Any = None, *, entity_name: str = "") -> Optional[ActiveVaultSpec]:
-    """The vault in use given a project's ``rows`` and an entity's own choice (a row's name, a vault, or None)."""
+def vault_pick(project_id: Any) -> str:
+    """The person's pick for the project on this computer: a project vault's name, ``global``, or ""."""
+    from flow_sdk.preferences import read_project_pick  # noqa: PLC0415
+
+    return read_project_pick(PREF_VAULT_PICK, project_id)
+
+
+def set_vault_pick(project_id: Any, name: str) -> None:
+    """Pick the project's vault on this computer (a project vault's name or ``global``); "" clears the pick."""
+    from flow_sdk.preferences import write_project_pick  # noqa: PLC0415
+
+    write_project_pick(PREF_VAULT_PICK, project_id, name)
+
+
+def _picked(rows: list[ActiveVaultSpec], pick: str) -> Optional[ActiveVaultSpec]:
+    """The vault a pick names; None when it names nothing that is still there."""
+    found = global_vault() if pick == PICK_GLOBAL else next((row for row in rows if pick and row.name == pick), None)
+    return found.model_copy(update={"picked": True}) if found is not None else None
+
+
+def active_among(
+    rows: list[ActiveVaultSpec], chosen: Any = None, *, entity_name: str = "", pick: str = "",
+) -> Optional[ActiveVaultSpec]:
+    """The vault in use given a project's ``rows``, the person's ``pick`` and an entity's own choice (a row's
+    name, a vault, or None). The pick wins: the person has the final word on their own computer."""
+    picked = _picked(rows, pick)
+    if picked is not None:
+        return picked
     if isinstance(chosen, SecretVaultSpec):
         return describe(SecretScope.ENTITY, entity_name, chosen)
     own = next((row for row in rows if chosen and row.name == chosen), None)
@@ -130,7 +163,10 @@ async def active_vault_of(target: Any = None) -> Optional[ActiveVaultSpec]:
         return global_vault()
     project = target if isinstance(target, Project) else await owning_project(target)
     own = getattr(target, "secret_vault", None)
-    return active_among(project_vaults(project), own() if callable(own) else None, entity_name=str(getattr(target, "name", "") or ""))
+    return active_among(
+        project_vaults(project), own() if callable(own) else None,
+        entity_name=str(getattr(target, "name", "") or ""), pick=vault_pick(getattr(project, "id", None)),
+    )
 
 
 async def read_from_vault(names: Iterable[str], target: Any = None) -> dict[str, SecretStr]:
@@ -155,6 +191,7 @@ async def read_from_vault(names: Iterable[str], target: Any = None) -> dict[str,
 
 
 __all__ = [
-    "PREF_GLOBAL_VAULT", "ActiveVaultSpec", "NoActiveVault", "SecretScope", "VaultSealed", "active_among", "active_vault_of",
-    "describe", "global_vault", "project_vaults", "read_from_vault", "set_global_vault",
+    "PICK_GLOBAL", "PREF_GLOBAL_VAULT", "PREF_VAULT_PICK", "ActiveVaultSpec", "NoActiveVault", "SecretScope", "VaultSealed",
+    "active_among", "active_vault_of", "describe", "global_vault", "project_vaults", "read_from_vault", "set_global_vault",
+    "set_vault_pick", "vault_pick",
 ]

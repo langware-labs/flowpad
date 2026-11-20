@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { BrowserStatus, SessionBrowser } from '@sdk';
+import type { BrowserDriverInfo, BrowserDriverState, BrowserStatus, SessionBrowser } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useProjectLocation } from '@src/hooks/use-project-location';
@@ -7,25 +7,17 @@ import { ProfileLabel } from '@src/components/links/BrowserProfileItems';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
-import { Globe, Check, Chrome } from 'lucide-react';
+import { lucideByName } from '@src/lib/lucide-by-name';
+import { Check } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
-/** Claude in Chrome on the Chrome Web Store. */
-const EXTENSION_URL = 'https://chromewebstore.google.com/detail/claude/fcoeoabgfenejglbffodgkkbkcdhcgfn';
+/** The driver in use. */
+export function effectiveDriver(s: BrowserStatus): BrowserDriverInfo | undefined {
+  return s.drivers.find((d) => d.name === s.effective);
+}
 const POLL_MS = 5000;
 /** A browser call this recent counts as "in use". */
 const LIVE_MS = 15000;
-
-type ExtensionState = 'not_installed' | 'not_connected' | 'connected';
-
-/** What the chip knows about the extension. Connected is only proven by a session's own
- *  browser call; the install flag is Claude Code's cached hint. */
-export function extensionState(s: BrowserStatus): ExtensionState {
-  const ok = !s.last_use?.failed;
-  if (ok && s.last_use?.family === 'extension') return 'connected';
-  if (!s.extension.installed) return 'not_installed';
-  return ok && s.effective === 'extension' ? 'connected' : 'not_connected';
-}
 
 /** The profile the extension lives in, by its real name; null when none is known. */
 export function extensionProfile(s: BrowserStatus): string | null {
@@ -37,10 +29,15 @@ export type ChipState = 'idle' | 'live' | 'dropped';
 
 export function chipState(s: BrowserStatus, now: number): ChipState {
   const use = s.last_use;
-  if (!use || use.family !== (s.effective === 'extension' ? 'extension' : 'agent')) return 'idle';
+  if (!use || use.family !== s.effective) return 'idle';
   if (use.failed) return 'dropped';
   const at = use.at ? Date.parse(use.at) : NaN;
   return Number.isFinite(at) && now - at < LIVE_MS ? 'live' : 'idle';
+}
+
+/** A driver a session of this worker can pick right now. */
+export function usable(d: BrowserDriverInfo): boolean {
+  return d.state !== 'unsupported' && d.state !== 'not_installed';
 }
 
 function useBrowserStatus() {
@@ -134,17 +131,54 @@ export function Row({
   );
 }
 
-const EXT_ROW: Record<ExtensionState, { note: React.ReactNode; tone: 'ok' | 'warn' | 'muted' }> = {
-  connected: { note: <Trans>connected</Trans>, tone: 'ok' },
-  not_connected: { note: <Trans>not connected</Trans>, tone: 'warn' },
-  not_installed: { note: <Trans>not installed</Trans>, tone: 'muted' },
+type Tone = 'ok' | 'warn' | 'muted';
+
+/** The backend's state word as a menu shows it. The word is decided once, on the backend. */
+function StateNote({ state }: { state: BrowserDriverState }) {
+  switch (state) {
+    case 'running':
+      return <Trans>running</Trans>;
+    case 'ready':
+      return <Trans>ready</Trans>;
+    case 'connected':
+      return <Trans>connected</Trans>;
+    case 'not_connected':
+      return <Trans>not connected</Trans>;
+    case 'not_installed':
+      return <Trans>not installed</Trans>;
+    default:
+      return <Trans>not for this worker</Trans>;
+  }
+}
+
+const TONE: Record<BrowserDriverState, Tone> = {
+  running: 'ok',
+  ready: 'ok',
+  connected: 'ok',
+  not_connected: 'warn',
+  not_installed: 'muted',
+  unsupported: 'muted',
 };
 
 export const smallBtn = 'rounded px-2 py-0.5 text-[11px] border hover:bg-accent';
 const primaryBtn = 'rounded px-2 py-0.5 text-[11px] bg-primary text-primary-foreground';
 
-/** Add browser: pick a kind → connect checks → done. v1 kinds: the extension (your Chrome)
- *  and the agent browser (always there); the rest are shown, not offered yet. */
+/** Which profile a driver runs on: Flowpad's own (a managed window), or the one the worker's
+ *  extension was found in. */
+function useProfileNote(status: BrowserStatus | null) {
+  const found = status ? extensionProfile(status) : null;
+  return (d: BrowserDriverInfo): React.ReactNode =>
+    d.managed ? (
+      <Trans>Profile: {d.config.profile || 'default'}</Trans>
+    ) : found ? (
+      <Trans>Profile: {found}</Trans>
+    ) : (
+      <Trans>Profile not found</Trans>
+    );
+}
+
+/** Add browser: every browser this Flowpad ships, what it needs for this session's worker, and
+ *  "Use it". Nothing here knows a browser by name: each one describes itself. */
 function AddBrowserDialog({
   open,
   onOpenChange,
@@ -158,125 +192,132 @@ function AddBrowserDialog({
   onRefresh: () => Promise<void>;
   onUse: (b: SessionBrowser) => void;
 }) {
-  const [step, setStep] = useState<'kind' | 'connect' | 'done'>('kind');
-  useEffect(() => {
-    if (open) setStep('kind');
-  }, [open]);
-  const ext = extensionState(status);
-  const check = (label: React.ReactNode, ok: boolean, waiting: React.ReactNode) => (
-    <div className="flex items-center gap-2 py-1 text-xs">
-      <span className={ok ? 'text-green-500' : 'text-amber-500'}>●</span>
-      {label}
-      <span className={cn('ms-auto text-[11px]', ok ? 'text-green-500' : 'text-amber-500')}>{ok ? '✓' : waiting}</span>
-    </div>
-  );
-  const kind = (icon: React.ReactNode, name: React.ReactNode, note: React.ReactNode, onClick?: () => void, testId?: string) => (
-    <button
-      type="button"
-      data-testid={testId}
-      disabled={!onClick}
-      onClick={onClick}
-      className="mt-1.5 flex w-full items-center gap-2 whitespace-nowrap rounded-md border px-2.5 py-2 text-xs hover:bg-accent disabled:opacity-50"
-    >
-      {icon}
-      <span className="font-semibold">{name}</span>
-      <span className="text-[11px] text-muted-foreground">· {note}</span>
-    </button>
-  );
+  const profileNote = useProfileNote(status);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[380px] p-4" data-testid="add-browser-dialog">
+      <DialogContent className="w-[420px] p-4" data-testid="add-browser-dialog">
         <DialogTitle className="text-sm">
           <Trans>Add browser</Trans>
         </DialogTitle>
-        {step === 'kind' && (
-          <div>
-            {kind(<Chrome className="h-3.5 w-3.5" />, <Trans>Your Chrome</Trans>, <Trans>extension</Trans>, () => setStep('connect'), 'add-browser-extension')}
-            {kind(<Globe className="h-3.5 w-3.5" />, <Trans>Agent browser</Trans>, <Trans>always ready</Trans>, () => setStep('done'), 'add-browser-agent')}
-            {kind(<Chrome className="h-3.5 w-3.5" />, <Trans>Edge / Brave / Arc</Trans>, <Trans>soon</Trans>)}
-          </div>
-        )}
-        {step === 'connect' && (
-          <div data-testid="add-browser-checks">
-            <div className="mb-1 text-[11px] text-muted-foreground">
-              <Trans>Chrome profiles on this computer</Trans>
-            </div>
-            {(status.extension.profiles ?? []).map((p) => (
-              <div key={`${p.browser}/${p.name}`} className="flex items-center gap-2 py-1 text-xs" data-testid="add-browser-profile">
-                <Chrome className="h-3.5 w-3.5" />
-                <ProfileLabel profile={p} />
-                <span className={cn('ms-auto text-[11px]', p.installed ? 'text-green-500' : 'text-muted-foreground')}>
-                  {p.installed ? <Trans>extension ✓</Trans> : <Trans>no extension</Trans>}
+        {status.drivers.map((d) => {
+          const Glyph = lucideByName(d.icon);
+          return (
+            <div key={d.name} className="mt-2 rounded-md border px-2.5 py-2 text-xs" data-testid={`add-browser-${d.name}`} data-state={d.state}>
+              <div className="flex items-center gap-2">
+                <Glyph className="h-3.5 w-3.5" />
+                <span className="font-semibold">{d.title}</span>
+                <span
+                  className={cn(
+                    'text-[11px]',
+                    TONE[d.state] === 'ok' && 'text-green-600 dark:text-green-400',
+                    TONE[d.state] === 'warn' && 'text-amber-600 dark:text-amber-400',
+                    TONE[d.state] === 'muted' && 'text-muted-foreground',
+                  )}
+                >
+                  · <StateNote state={d.state} />
                 </span>
+                <span className="ms-auto text-[11px] text-muted-foreground">{usable(d) && profileNote(d)}</span>
               </div>
-            ))}
-            {status.extension.profiles_denied && (
-              <div className="py-1 text-xs text-muted-foreground" data-testid="add-browser-profile-denied">
-                <Trans>Profile not found</Trans>
+              <div className="mt-1 text-[11px] text-muted-foreground">{d.description}</div>
+              {d.setup && <div className="mt-1 text-[11px]">{d.setup}</div>}
+              {d.probe === 'extension' &&
+                (status.extension.profiles ?? []).map((p) => (
+                  <div key={`${p.browser}/${p.name}`} className="flex items-center gap-2 pt-1" data-testid="add-browser-profile">
+                    <ProfileLabel profile={p} />
+                    <span className={cn('ms-auto text-[11px]', p.installed ? 'text-green-500' : 'text-muted-foreground')}>
+                      {p.installed ? <Trans>extension ✓</Trans> : <Trans>no extension</Trans>}
+                    </span>
+                  </div>
+                ))}
+              <div className="mt-2 flex justify-end gap-1.5">
+                {d.install_url && d.state === 'not_installed' && (
+                  <a className={smallBtn} href={d.install_url} target="_blank" rel="noreferrer">
+                    <Trans>Install</Trans>
+                  </a>
+                )}
+                <button type="button" className={smallBtn} onClick={() => void onRefresh()}>
+                  <Trans>Check again</Trans>
+                </button>
+                <button
+                  type="button"
+                  className={primaryBtn}
+                  disabled={!usable(d) || d.name === status.effective}
+                  onClick={() => {
+                    onUse(d.name);
+                    onOpenChange(false);
+                  }}
+                  data-testid={`add-browser-use-${d.name}`}
+                >
+                  <Trans>Use it</Trans>
+                </button>
               </div>
-            )}
-            {check(<Trans>Extension installed</Trans>, ext !== 'not_installed', <Trans>missing</Trans>)}
-            {check(<Trans>Connected</Trans>, ext === 'connected', <Trans>on first browser step</Trans>)}
-            <div className="mt-2 flex gap-1.5">
-              <a className={smallBtn} href={EXTENSION_URL} target="_blank" rel="noreferrer">
-                <Trans>Open Chrome Web Store</Trans>
-              </a>
-              <button type="button" className={smallBtn} onClick={() => void onRefresh()}>
-                <Trans>Check again</Trans>
-              </button>
             </div>
-            <div className="mt-3 flex justify-end gap-1.5">
-              <button type="button" className={smallBtn} onClick={() => setStep('kind')}>
-                <Trans>Back</Trans>
-              </button>
-              <button
-                type="button"
-                className={primaryBtn}
-                disabled={ext === 'not_installed'}
-                onClick={() => {
-                  onUse('extension');
-                  setStep('done');
-                }}
-                data-testid="add-browser-use-extension"
-              >
-                <Trans>Use it</Trans>
-              </button>
-            </div>
-          </div>
-        )}
-        {step === 'done' && (
-          <div className="flex items-center justify-between text-xs" data-testid="add-browser-done">
-            <Trans>Added</Trans>
-            <button type="button" className={primaryBtn} onClick={() => onOpenChange(false)}>
-              <Trans>Done</Trans>
-            </button>
-          </div>
-        )}
+          );
+        })}
       </DialogContent>
     </Dialog>
   );
 }
 
-/** Footer chip: the browser this session (or, outside a session, the project) uses,
- *  whether it is available, and a picker. The setting lives in the project manifest;
- *  a session picks it up at its next launch. */
+/** Footer chip: the browser this session (or, outside a session, a new session of the project)
+ *  uses, whether it is available, why it is that one, and a picker. Picking is the person's own
+ *  choice for this project on this computer; a session picks it up at its next launch. */
 export function BrowserChip() {
   const { t } = useLingui();
   const { project, status, refresh } = useBrowserStatus();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
+  const profileNote = useProfileNote(status);
   if (!project || !status) return null;
 
-  const ext = extensionState(status);
-  const profileName = extensionProfile(status);
   const state = chipState(status, Date.now());
-  const usingExtension = status.effective === 'extension';
+  const inUse = effectiveDriver(status);
   const choose = async (browser: SessionBrowser) => {
     await project.setBrowser(browser);
     await refresh();
   };
-  const label = usingExtension ? t`Your Chrome` : t`Agent browser`;
-  const Icon = usingExtension ? Chrome : Globe;
+  const label = inUse?.title ?? status.effective;
+  const Icon = lucideByName(inUse?.icon);
+  const asked = status.drivers.find((d) => d.name === status.requested);
+  const why = asked
+    ? t`${asked.title} is not for this worker`
+    : status.source === 'pick'
+      ? t`Your pick on this computer`
+      : status.source === 'session'
+        ? t`Set for this session`
+        : status.source === 'project'
+          ? t`Recommended by this project`
+          : t`Default`;
+  const row = (d: BrowserDriverInfo) => {
+    const Glyph = lucideByName(d.icon);
+    return (
+      <Row
+        key={d.name}
+        testId={`browser-row-${d.name}`}
+        icon={<Glyph className="h-3.5 w-3.5" />}
+        name={d.title}
+        note={<StateNote state={d.state} />}
+        tone={TONE[d.state]}
+        profile={usable(d) ? profileNote(d) : undefined}
+        selected={d.name === status.effective}
+        disabled={!usable(d)}
+        onSelect={() => void choose(d.name)}
+        action={
+          d.state === 'not_installed' && d.install_url ? (
+            <a className={smallBtn} href={d.install_url} target="_blank" rel="noreferrer">
+              <Trans>Install</Trans>
+            </a>
+          ) : d.state === 'not_connected' ? (
+            <button type="button" className={primaryBtn} onClick={() => void refresh()}>
+              <Trans>Reconnect</Trans>
+            </button>
+          ) : null
+        }
+      />
+    );
+  };
+  // Where a dropped browser can fall back to: the first other one this worker can use.
+  const fallback = status.drivers.find((d) => d.name !== status.effective && usable(d));
 
   return (
     <>
@@ -307,50 +348,32 @@ export function BrowserChip() {
             </span>
           </button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-80 p-0" data-testid="browser-picker">
-          <div className="px-3 py-2 text-xs font-semibold">
-            <Trans>Browser</Trans>
+        <PopoverContent align="end" className="w-96 p-0" data-testid="browser-picker">
+          <div className="flex items-baseline justify-between gap-2 px-3 py-2 text-xs">
+            <span className="font-semibold">
+              <Trans>Browser</Trans>
+            </span>
+            <span className="text-[11px] text-muted-foreground" data-testid="browser-source" data-source={status.source}>
+              {why}
+            </span>
           </div>
-          <Row
-            testId="browser-row-agent"
-            icon={<Globe className="h-3.5 w-3.5" />}
-            name={<Trans>Agent browser</Trans>}
-            note={status.agent.up ? <Trans>running</Trans> : <Trans>ready</Trans>}
-            tone="ok"
-            profile={<Trans>Profile: not available</Trans>}
-            selected={!usingExtension}
-            onSelect={() => void choose('agent')}
-          />
-          {status.supports_extension && (
-            <Row
-              testId="browser-row-extension"
-              icon={<Chrome className="h-3.5 w-3.5" />}
-              name={<Trans>Your Chrome</Trans>}
-              note={EXT_ROW[ext].note}
-              tone={EXT_ROW[ext].tone}
-              profile={profileName ? <Trans>Profile: {profileName}</Trans> : <Trans>Profile not found</Trans>}
-              selected={usingExtension}
-              disabled={ext === 'not_installed'}
-              onSelect={() => void choose('extension')}
-              action={
-                ext === 'not_installed' ? (
-                  <a className={smallBtn} href={EXTENSION_URL} target="_blank" rel="noreferrer">
-                    <Trans>Install</Trans>
-                  </a>
-                ) : ext === 'not_connected' ? (
-                  <button type="button" className={primaryBtn} onClick={() => void refresh()}>
-                    <Trans>Reconnect</Trans>
-                  </button>
-                ) : null
-              }
-            />
-          )}
-          {state === 'dropped' && usingExtension && (
+          {status.drivers.map(row)}
+          {state === 'dropped' && fallback && (
             <div className="flex gap-1.5 border-t px-3 py-1.5" data-testid="browser-dropped">
-              <button type="button" className={smallBtn} onClick={() => void choose('agent')}>
-                <Trans>Use Agent browser</Trans>
+              <button type="button" className={smallBtn} onClick={() => void choose(fallback.name)}>
+                <Trans>Use {fallback.title}</Trans>
               </button>
             </div>
+          )}
+          {status.pick && (
+            <button
+              type="button"
+              data-testid="browser-unpick"
+              onClick={() => void choose('')}
+              className="flex w-full border-t px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+            >
+              <Trans>Use the project's choice</Trans>
+            </button>
           )}
           <button
             type="button"

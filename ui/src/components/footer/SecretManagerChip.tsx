@@ -90,8 +90,9 @@ function VaultRow({ projectId, row, selected, children }: { projectId: string; r
   );
 }
 
-/** Footer chip: the secret manager in use here — the project's default vault, else this instance's —
- *  with the project's vaults and the global one. It renders `useSecretManager` and calls actions. */
+/** Footer chip: the secret manager in use here — the person's pick, else the project's default vault, else
+ *  this instance's — with the project's vaults and the global one. The check mark is the one in use; "Use
+ *  here" picks another for this computer only. It renders `useSecretManager` and calls actions. */
 export function SecretManagerChip() {
   const { t } = useLingui();
   const { project } = useProjectLocation();
@@ -117,6 +118,20 @@ export function SecretManagerChip() {
     await write;
     await refresh();
   };
+  const globalActive = active?.scope === SecretScope.GLOBAL;
+  /** Pick `name` for this computer, or — on the picked row — go back to the project's own choice. */
+  const pickButton = (name: string, isActive: boolean) =>
+    isActive && !active?.picked ? null : (
+      <button
+        type="button"
+        className={smallBtn}
+        onClick={() => void change(credentialsService.setVaultPick(projectId, isActive ? '' : name))}
+        title={isActive ? t`Go back to the project's default` : t`Use this vault on this computer`}
+        data-testid={isActive ? 'secret-manager-unpick' : `secret-manager-pick-${name}`}
+      >
+        {isActive ? <Trans>Reset</Trans> : <Trans>Use here</Trans>}
+      </button>
+    );
 
   return (
     <>
@@ -146,7 +161,8 @@ export function SecretManagerChip() {
             <Trans>Secret manager</Trans>
           </div>
           {rows.map((row) => (
-            <VaultRow key={row.name} projectId={projectId} row={row} selected={row.is_default}>
+            <VaultRow key={row.name} projectId={projectId} row={row} selected={!globalActive && active?.name === row.name}>
+              {pickButton(row.name, !globalActive && active?.name === row.name)}
               {!row.is_default && (
                 <button
                   type="button"
@@ -160,7 +176,8 @@ export function SecretManagerChip() {
             </VaultRow>
           ))}
           {data.global ? (
-            <VaultRow projectId={projectId} row={data.global} selected={active?.scope === SecretScope.GLOBAL}>
+            <VaultRow projectId={projectId} row={data.global} selected={globalActive}>
+              {pickButton('global', globalActive)}
               <button type="button" className={smallBtn} onClick={() => void change(credentialsService.setGlobalVault(null))}>
                 <Trans>Remove</Trans>
               </button>

@@ -149,7 +149,7 @@ async def credentials_action() -> ApiResponse:
                 from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
 
                 return ApiSuccessResponse(data=await svc.test_credential(payload.get("name") or "", payload.get("project_id") or ""))
-            if sub_path in ("publish", "fetch", "vault-check", "vault-setup", "grant", "vault-set", "vault-remove", "vault-default", "vault-link", "vault-access", "vault-global", "vault-read"):
+            if sub_path in ("publish", "fetch", "vault-check", "vault-setup", "grant", "vault-set", "vault-remove", "vault-default", "vault-pick", "vault-link", "vault-access", "vault-global", "vault-read"):
                 from flow_sdk.builtin import credential_service as svc  # noqa: PLC0415
 
                 pid, vault = payload.get("project_id") or "", payload.get("vault") or ""
@@ -170,6 +170,8 @@ async def credentials_action() -> ApiResponse:
                     return ApiSuccessResponse(data=await svc.grant(pid, vault, payload.get("email") or ""))
                 if sub_path == "vault-default":
                     return ApiSuccessResponse(data=await svc.set_default_vault(pid, payload.get("name") or ""))
+                if sub_path == "vault-pick":
+                    return ApiSuccessResponse(data=await svc.set_vault_pick(pid, payload.get("name") or ""))
                 if sub_path == "vault-global":
                     return ApiSuccessResponse(data=svc.set_global_vault(payload.get("spec")))
                 # The one route that answers VALUES: `flow secrets run` asks the backend to read, because the

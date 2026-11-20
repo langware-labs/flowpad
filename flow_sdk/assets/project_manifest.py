@@ -339,11 +339,12 @@ def read_browser(root: Path) -> str:
 
 
 def set_browser(root: Path, browser: str) -> ProjectManifestSpec:
-    """Set the project's browser; ``agent`` (the default) clears the declaration."""
-    from flow_sdk.schema.data_spec.project_manifest_spec import BROWSERS  # noqa: PLC0415
+    """Set the browser the project recommends; ``agent`` (the default) clears the declaration."""
+    from flow_sdk.schema.data_spec.project_manifest_spec import browser_names  # noqa: PLC0415
 
-    if browser not in BROWSERS:
-        raise ManifestError(f"browser {browser!r} must be one of {', '.join(BROWSERS)}")
+    known = browser_names()
+    if browser not in known:
+        raise ManifestError(f"browser {browser!r} must be one of {', '.join(known)}")
     return _set_field(root, "browser", browser, clears=browser == "agent")
 
 
