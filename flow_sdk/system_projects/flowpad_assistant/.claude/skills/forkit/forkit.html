@@ -37,6 +37,12 @@ ul { list-style: none; margin: 0; padding: 4px; }
 main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 main.empty { align-items: center; justify-content: center; color: hsl(var(--muted-foreground)); }
 main iframe { flex: 1; border: 0; width: 100%; }
+.ask { display: grid; gap: 8px; width: min(560px, 80%); color: hsl(var(--foreground)); font-size: 13px; }
+.ask label { color: hsl(var(--muted-foreground)); font-size: 12px; }
+.ask textarea { font: inherit; padding: 8px; border-radius: 6px; border: 1px solid hsl(var(--border));
+  background: hsl(var(--background)); color: inherit; resize: vertical; }
+.ask button { justify-self: start; border: 0; border-radius: 6px; padding: 7px 14px; font-weight: 600; cursor: pointer;
+  background: #2da44e; color: #fff; }
 .th { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid hsl(var(--border)); font-size: 13px; }
 .th span { color: hsl(var(--muted-foreground)); flex: 1; }
 .err { color: #cf222e; font-size: 12px; padding: 8px 12px; }
@@ -57,7 +63,7 @@ main iframe { flex: 1; border: 0; width: 100%; }
     <ul id="list"></ul>
     <p class="err" id="err" hidden></p>
   </aside>
-  <main id="main" class="empty"><div id="hint">Pick an issue to start its fork.</div></main>
+  <main id="main" class="empty"><div id="hint">Pick an issue.</div></main>
 </div>
 <script>window.FORKIT = /*FORKIT_CONFIG*/{};</script>
 <script type="module">
@@ -65,8 +71,8 @@ main iframe { flex: 1; border: 0; width: 100%; }
  * forkit — a list of issues on the left, the live fork working the selected one in the centre.
  *
  * The rows (forkit.issue, one dataset) are the only state: status and the fork's process id live there,
- * so another window, an agent or a reload sees the same thing. A fork is made the first time an issue
- * is opened (agentic_process/<root>/fork, then /open with the issue's prompt); ✓ Done closes it.
+ * so another window, an agent or a reload sees the same thing. A fork is made when the person
+ * approves the issue's first message (agentic_process/<root>/fork, then /open with it); ✓ Done closes it.
  */
 import * as sdk from '/sdk/flowpad-sdk.js';
 
@@ -94,14 +100,14 @@ async function load() {
 }
 
 /** The fork for an issue: made once, on first open. Two clicks never make two forks. */
-async function ensureFork(row) {
+async function startFork(row, message) {
   if (row.input.process_id || row.input.status === 'done' || state.busy.has(row.key)) return;
   state.busy.add(row.key);
   render();
   try {
     const made = await post(`/graph/agentic_process/${row.input.root}/fork`, { visible: false });
     if (!made?.id) throw new Error('the fork returned no process id');
-    await post(`/graph/agentic_process/${made.id}/open`, { instruction: row.input.prompt });
+    await post(`/graph/agentic_process/${made.id}/open`, { instruction: message });
     await state.ds.put(row.key, { input: { ...row.input, process_id: made.id } }, { expected: row.version });
   } catch (e) {
     fail(`Could not fork #${row.input.id}: ${e?.message || e}`);
@@ -126,8 +132,7 @@ async function setStatus(row, status) {
 function select(key) {
   state.sel = key;
   const row = state.rows.find((r) => r.key === key);
-  render();
-  if (row) ensureFork(row);
+  render();   // an issue with no fork shows its first message and waits for Start — nothing starts by itself
 }
 
 function renderMain() {
@@ -137,11 +142,23 @@ function renderMain() {
   const want = pid ? `/win/shell/agentic_process-${pid}` : null;
   const frame = main.querySelector('iframe');
   if (want && frame?.dataset.src === want) return;   // keep the live terminal; never reload it on a render
+  const asking = row && !want && row.input.status !== 'done' && !state.busy.has(row.key);
+  if (asking && main.dataset.ask === row.key) return;   // keep the message being edited
+  delete main.dataset.ask;
   main.className = want ? '' : 'empty';
+  if (asking) {
+    // The fork starts only when the person approves its first message.
+    main.dataset.ask = row.key;
+    main.innerHTML = `<div class="ask"><b>#${esc(row.input.id)} · ${esc(row.input.title)}</b>`
+      + `<label for="first">The fork starts with this message:</label>`
+      + `<textarea id="first" rows="3">${esc(row.input.prompt)}</textarea>`
+      + `<button id="start">Start fork</button></div>`;
+    return;
+  }
   if (!want) {
-    const msg = !row ? 'Pick an issue to start its fork.'
-      : row.input.status === 'done' ? `#${esc(row.input.id)} is done. ↺ Open starts a new fork.`
-        : state.busy.has(row.key) ? `Forking #${esc(row.input.id)} from the root…` : 'Starting…';
+    const msg = !row ? 'Pick an issue.'
+      : row.input.status === 'done' ? `#${esc(row.input.id)} is done. ↺ Open returns it to the list.`
+        : `Forking #${esc(row.input.id)} from the root…`;
     main.innerHTML = `<div>${msg}</div>`;
     return;
   }
@@ -183,6 +200,12 @@ $('list').addEventListener('click', (ev) => {
   const st = ev.target.closest('[data-status]');
   if (st) { setStatus(row, st.dataset.status); return; }
   select(row.key);
+});
+$('main').addEventListener('click', (ev) => {
+  if (ev.target.id !== 'start') return;
+  const row = state.rows.find((r) => r.key === state.sel);
+  const message = $('first').value.trim();
+  if (row && message) startFork(row, message);
 });
 $('filter').addEventListener('click', (ev) => {
   if (ev.target.dataset.f) { state.filter = ev.target.dataset.f; render(); }

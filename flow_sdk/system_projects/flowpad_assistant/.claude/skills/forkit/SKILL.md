@@ -18,8 +18,9 @@ data (`forkit.issue` rows), so the app, another window or an agent all see the s
 
 ## Behaviour
 
-- A fork is made the **first time an issue is opened** (`agentic_process/<root>/fork`, then `/open` with the
-  issue's prompt). Two clicks never make two forks.
+- Picking an issue starts nothing. The centre shows the fork's **first message** — `Lets focus on issue:<id>` — which
+  the person may edit, and **Start fork**. On Start the fork is made (`agentic_process/<root>/fork`, then `/open`
+  with that message) and goes straight to work on that issue. Two clicks never make two forks.
 - **✓ Done** closes the fork (`/close`) and marks the issue done. **↺ Open** reopens it; opening it again makes a
   new fork from the root.
 - The centre is the fork's own terminal (`/win/shell/agentic_process-<id>`), live; type into it.
@@ -37,13 +38,13 @@ data (`forkit.issue` rows), so the app, another window or an agent all see the s
    - `root`: the session to fork — usually YOUR process:
      `python3 -c 'import json,os;print(json.loads(os.environ["FLOWPAD_EXECUTION_SCOPE"])[0]["id"])'`.
    - `desc`: what the issue is about, in plain words; it is what the person reads behind ⓘ.
-   - `prompt`: leave it out for the default ("work ONLY issue #N … propose the fix"). Write one when the issue
-     needs a specific first step (its failing test, the file to start in).
+   - `prompt`: leave it out for the default first message, `Lets focus on issue:<id>` (the fork already holds the
+     whole conversation). Write one only when the issue needs a specific first step.
 2. `"$FLOWPAD_PYTHON" -I <this skill>/scripts/forkit.py issues.json` → `{ok, slug, issues, page}`.
    Re-running the same title keeps every issue's status and fork; issues no longer listed are removed.
 3. `flow show file <page>`.
 
-Reply with: how many issues, the root, that a fork starts when an issue is first opened, and that ✓ Done closes it.
+Reply with: how many issues, the root, that a fork starts when the person approves its first message, and that ✓ Done closes it.
 
 Page code follows the **flow-js** skill (the terminal frame carries the page-state key).
 

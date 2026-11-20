@@ -9,7 +9,7 @@ issues.json: {"root": "<agentic_process id>", "title": "...", "slug"?: "...",
   (default ``<workspace root>/forkit``); key ``<slug>--<issue id>``.
 - Re-running a slug keeps each issue's status and fork; issues no longer listed are removed.
 - The page is ``<home>/forkit-<slug>.html`` (the skill's ``forkit.html`` with the run filled in); prints ``{ok, page}``.
-Forks are NOT made here: the page makes one the first time an issue is opened.
+Forks are NOT made here: the page makes one when the person approves the issue's first message.
 """
 
 import json
@@ -76,10 +76,8 @@ def ensure_project(home: Path) -> None:
 
 
 def prompt_for(issue: dict) -> str:
-    return (issue.get("prompt") or
-            f"forkit: work ONLY issue #{issue['id']}: {issue['title']}.\n{issue.get('desc') or ''}\n"
-            "You are a fork of the session that found it; everything you know about it is in this conversation. "
-            "Diagnose it and propose the fix; follow the project's rules on what needs the user's approval.").strip()
+    """The fork's first message, shown to the person for approval: the fork already holds the whole conversation."""
+    return (issue.get("prompt") or f"Lets focus on issue:{issue['id']}").strip()
 
 
 def main() -> None:
