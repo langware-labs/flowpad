@@ -8,7 +8,8 @@ EndpointCallFailure = Literal[
     "invalid_request",  # the request does not fit the capability, or the vendor refused its shape
     "no_endpoint",  # nothing this user may call serves the kind, or no dialect speaks its vendor
     "auth",
-    "rate_limited",
+    "rate_limited",  # too many requests this minute: a moment later it works
+    "budget_used",  # the endpoint's own budget for the day, week, month or in total is spent
     "billing",  # the vendor account is out of credit
     "unavailable",  # the hub or the vendor could not be reached
     "bad_response",  # an answer that is not the vendor's documented shape
@@ -33,6 +34,8 @@ def reason_for(status: int, body: Any = None) -> EndpointCallFailure:
     """The hub's own refusals for an ``invoke`` and a vendor's statuses, folded into one word."""
     if isinstance(body, dict) and body.get("error") == "kind_not_served":
         return "no_endpoint"
+    if isinstance(body, dict) and body.get("error") == "budget_used":
+        return "budget_used"
     if status in (401, 403):
         return "auth"
     if status == 429:

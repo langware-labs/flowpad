@@ -504,3 +504,53 @@ async def test_an_invite_box_calls_its_sealed_endpoint_with_the_key_the_hub_plac
     assert Path(image.files[0]).read_bytes() == PNG
     assert image.endpoint == "api_endpoint-0f0e0d0c-aaaa-bbbb-cccc-000000000001"
     assert not_served.value.reason == "no_endpoint", "a kind the budget does not serve is not asked for"
+
+
+# ── why a block did not produce its value, as a field ────────────────────────
+
+
+async def test_a_failed_endpoint_op_says_why_in_a_field_not_only_a_sentence(hub, tmp_path: Path):
+    hub["created"] = httpx.Response(200, json=kie_record("waiting"))
+    hub["records"] = [kie_record("fail", failMsg="content policy")]
+    failed = await run_op(_op(VIDEO_GENERATE), trusted=True, workdir=tmp_path, input=VideoRequest(prompt="x"))
+    assert failed.exit_code == ExitCode.NOT_YET and failed.reason == "failed" and failed.job_id == "task1234567890ab"
+    assert failed.model_dump(mode="json")["reason"] == "failed", "what `flow op run` prints"
+
+    spent = {"error": "budget_used", "message": "limit 'requests_per_day' exceeded on endpoint x"}
+    hub["image"] = httpx.Response(429, json=spent)
+    out = await run_op(_op(IMAGE_GENERATE), trusted=True, workdir=tmp_path, input=ImageRequest(prompt="x"))
+    assert out.reason == "budget_used" and not out.ran, "a spent budget is not a busy minute"
+    hub["image"] = httpx.Response(429, json={"error": "rate_limited", "message": "limit 'requests_per_minute'"})
+    busy = await run_op(_op(IMAGE_GENERATE), trusted=True, workdir=tmp_path, input=ImageRequest(prompt="x"))
+    assert busy.reason == "rate_limited"
+
+
+async def test_a_sealed_key_that_is_refused_is_read_again_once(hub, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """A reset machine is given a new key; a process that memoised the old one must not keep failing."""
+    from flow_sdk.instance_settings import api_endpoint as listing
+
+    hub["rows"] = []
+    monkeypatch.setenv(
+        listing.SEALED_URL_VAR, "https://hub.test/api/v1/graph/api_endpoint/0f0e0d0c-aaaa-bbbb-cccc-000000000001/invoke"
+    )
+    monkeypatch.setenv(listing.SEALED_KEY_VAR, "fp_old_key")
+    monkeypatch.setenv(listing.SEALED_SERVES_VAR, json.dumps({IMAGE_GENERATE: "aiplatform.googleapis.com"}))
+    listing.invalidate_api_endpoint_listing()
+    keys: list[str] = []
+
+    def hub_side(request: httpx.Request) -> httpx.Response:
+        keys.append(request.headers["authorization"])
+        if request.headers["authorization"] != "Bearer fp_new_key":
+            monkeypatch.setenv(listing.SEALED_KEY_VAR, "fp_new_key")  # the hub placed a new one meanwhile
+            return httpx.Response(401, json={"message": "Forbidden access"})
+        return httpx.Response(200, json=vertex_answer(PNG))
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(hub_side), **kwargs)
+    )
+    try:
+        image = await call(IMAGE_GENERATE, ImageRequest(prompt="a red ball"), out_dir=tmp_path)
+    finally:
+        listing.invalidate_api_endpoint_listing()
+    assert keys == ["Bearer fp_old_key", "Bearer fp_new_key"] and Path(image.files[0]).is_file()

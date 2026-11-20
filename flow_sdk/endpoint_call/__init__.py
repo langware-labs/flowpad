@@ -31,6 +31,7 @@ from flow_sdk.external_apis.decision.errors import DecisionError
 from flow_sdk.instance_settings.api_endpoint import (
     KIND_HEADER,
     endpoints_serving,
+    invalidate_api_endpoint_listing,
     sealed_endpoint,
 )
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
@@ -128,15 +129,28 @@ class Transport:
 
     @staticmethod
     async def _send_sealed(sealed, method, sub_path, json, params, headers, timeout) -> httpx.Response:
-        """This machine's own API budget: its allocation's origin, with the key the hub placed here."""
-        headers = {**headers, "Authorization": f"Bearer {sealed.key}"}
+        """This machine's own API budget: its allocation's invoke URL, with the key the hub placed here.
+        A refused key is read again once: a reset machine is given a new one, and a memo may hold the old."""
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                return await client.request(
-                    method, f"{sealed.url}/{sub_path.lstrip('/')}", json=json, params=params, headers=headers
-                )
+                for attempt in (1, 2):
+                    resp = await client.request(
+                        method,
+                        f"{sealed.url}/{sub_path.lstrip('/')}",
+                        json=json,
+                        params=params,
+                        headers={**headers, "Authorization": f"Bearer {sealed.key}"},
+                    )
+                    if resp.status_code not in (401, 403) or attempt == 2:
+                        return resp
+                    invalidate_api_endpoint_listing()
+                    fresh = await sealed_endpoint()
+                    if fresh is None or fresh.key == sealed.key:
+                        return resp
+                    sealed = fresh
         except httpx.HTTPError as exc:
             raise EndpointCallError("unavailable", f"The hub could not be reached: {type(exc).__name__}") from exc
+        return resp
 
     async def download(self, url: str, dest: Path) -> Path:
         """A finished file at the vendor's own public URL, straight to disk (no key is involved)."""
