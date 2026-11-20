@@ -458,3 +458,46 @@ async def test_a_decision_is_one_more_kind_the_same_endpoint_can_serve(hub, monk
     assert decided.answers["is_billing"].probability == through_call.answers["is_billing"].probability == 0.93
     assert decided.endpoint == through_call.endpoint == f"api_endpoint-{MINE}"
     assert sent == [(f"{MINE}/invoke/v1/systemone", DECISION)] * 2
+
+
+# ── a machine with no hub login: its own sealed API budget ───────────────────
+
+
+async def test_an_invite_box_calls_its_sealed_endpoint_with_the_key_the_hub_placed(
+    hub, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A signed-out box lists nothing on the hub. What the hub placed on it (origin, invoke-only key,
+    what it serves) is the endpoint, and the call goes to that origin with the key -- never a login."""
+    from flow_sdk.instance_settings import api_endpoint as listing
+
+    hub["rows"] = []  # nothing this machine may list
+    monkeypatch.setenv(listing.SEALED_URL_VAR, "https://0f0e0d0c-aaaa-bbbb-cccc-000000000001.hub.test")
+    monkeypatch.setenv(listing.SEALED_KEY_VAR, "fp_box_key")
+    monkeypatch.setenv(listing.SEALED_SERVES_VAR, json.dumps({IMAGE_GENERATE: "aiplatform.googleapis.com"}))
+    listing.invalidate_api_endpoint_listing()
+    seen: list[httpx.Request] = []
+
+    def vendor(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=vertex_answer(PNG))
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(vendor), **kwargs)
+    )
+    try:
+        image = await call(IMAGE_GENERATE, ImageRequest(prompt="a red ball"), out_dir=tmp_path)
+        with pytest.raises(EndpointCallError) as not_served:
+            await call(VIDEO_GENERATE, VideoRequest(prompt="it rolls"), out_dir=tmp_path)
+    finally:
+        listing.invalidate_api_endpoint_listing()
+
+    (request,) = seen
+    assert request.url.host == "0f0e0d0c-aaaa-bbbb-cccc-000000000001.hub.test"
+    assert request.url.path.endswith(":generateContent")
+    assert request.headers["authorization"] == "Bearer fp_box_key"
+    assert request.headers[KIND_HEADER] == IMAGE_GENERATE
+    assert hub["sent"] == [], "nothing went through the hub login"
+    assert Path(image.files[0]).read_bytes() == PNG
+    assert image.endpoint == "api_endpoint-0f0e0d0c-aaaa-bbbb-cccc-000000000001"
+    assert not_served.value.reason == "no_endpoint", "a kind the budget does not serve is not asked for"

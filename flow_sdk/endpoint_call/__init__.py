@@ -28,7 +28,12 @@ import httpx
 
 from flow_sdk.endpoint_call.errors import EndpointCallError, EndpointCallFailure, detail_of, reason_for
 from flow_sdk.external_apis.decision.errors import DecisionError
-from flow_sdk.instance_settings.api_endpoint import DECISION_KIND, KIND_HEADER, endpoints_serving
+from flow_sdk.instance_settings.api_endpoint import (
+    DECISION_KIND,
+    KIND_HEADER,
+    endpoints_serving,
+    sealed_endpoint,
+)
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import DecisionResult, DecisionSpec
 from flow_sdk.schema.data_spec.media_spec import (
@@ -93,20 +98,12 @@ class Transport:
     ) -> Any:
         """One vendor request through the hub; the parsed JSON body of a 2xx, else ``EndpointCallError``.
         ``kind`` names another root of the same endpoint for this one request (a vendor's file store)."""
-        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-        from flow_sdk.cloud_client.transport.hub_http import hub_graph_url  # noqa: PLC0415
-
-        url = hub_graph_url("api_endpoint", self.offer.id, "invoke", sub_path)
-        if url is None:
-            raise EndpointCallError("unavailable", "No hub is configured (offline or Local privacy mode)")
-        try:
-            resp = await HubProxy.send(
-                method, url, json=json, params=params, headers={KIND_HEADER: kind or self.kind}, timeout=timeout
-            )
-        except HubError as exc:
-            reason: EndpointCallFailure = "auth" if exc.status_code == 401 else "unavailable"
-            raise EndpointCallError(reason, f"The hub could not be reached: {exc}", status=exc.status_code) from exc
+        headers = {KIND_HEADER: kind or self.kind}
+        sealed = await sealed_endpoint()
+        if sealed is not None and sealed.offer.id == self.offer.id:
+            resp = await self._send_sealed(sealed, method, sub_path, json, params, headers, timeout)
+        else:
+            resp = await self._send_as_user(method, sub_path, json, params, headers, timeout)
         try:
             body = resp.json()
         except ValueError:
@@ -118,6 +115,32 @@ class Transport:
                 status=resp.status_code,
             )
         return body
+
+    async def _send_as_user(self, method, sub_path, json, params, headers, timeout) -> httpx.Response:
+        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_graph_url  # noqa: PLC0415
+
+        url = hub_graph_url("api_endpoint", self.offer.id, "invoke", sub_path)
+        if url is None:
+            raise EndpointCallError("unavailable", "No hub is configured (offline or Local privacy mode)")
+        try:
+            return await HubProxy.send(method, url, json=json, params=params, headers=headers, timeout=timeout)
+        except HubError as exc:
+            reason: EndpointCallFailure = "auth" if exc.status_code == 401 else "unavailable"
+            raise EndpointCallError(reason, f"The hub could not be reached: {exc}", status=exc.status_code) from exc
+
+    @staticmethod
+    async def _send_sealed(sealed, method, sub_path, json, params, headers, timeout) -> httpx.Response:
+        """This machine's own API budget: its allocation's origin, with the key the hub placed here."""
+        headers = {**headers, "Authorization": f"Bearer {sealed.key}"}
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                return await client.request(
+                    method, f"{sealed.url}/{sub_path.lstrip('/')}", json=json, params=params, headers=headers
+                )
+        except httpx.HTTPError as exc:
+            raise EndpointCallError("unavailable", f"The hub could not be reached: {type(exc).__name__}") from exc
 
     async def download(self, url: str, dest: Path) -> Path:
         """A finished file at the vendor's own public URL, straight to disk (no key is involved)."""

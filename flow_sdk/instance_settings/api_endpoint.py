@@ -14,13 +14,20 @@ rule here is its rule, for the same reason:
 
 Finding a DECISION endpoint is then a filter on ``kinds``, not a hub query: the hub stores
 the tag, the caller keeps the kinds it needs.
+
+A machine with no hub login (an invite box) lists nothing. It may still hold a SEALED endpoint:
+the hub placed its own allocation's origin, a key that can only invoke it, and what it serves
+(``sealed_endpoint``). That one is offered last, and called with the key instead of a login.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import time
+from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 from flow_sdk.instance_settings import get_instance_settings
@@ -38,9 +45,65 @@ _list_cache: dict[str, tuple[float, list[APIEndpointOffer]]] = {}
 _serves_cache: dict[str, tuple[float, dict[str, str]]] = {}
 
 
+#: What the hub places on a machine it gives an API budget to (hub ``agent_visitor_deployment``).
+SEALED_URL_VAR = "FLOWPAD_API_ENDPOINT_URL"
+SEALED_KEY_VAR = "FLOWPAD_API_ENDPOINT_KEY"
+SEALED_SERVES_VAR = "FLOWPAD_API_ENDPOINT_SERVES"
+_SEALED_VARS = (SEALED_URL_VAR, SEALED_KEY_VAR, SEALED_SERVES_VAR)
+#: (fetched_at, the sealed endpoint or None). A reset machine gets a new key: never kept for long.
+_sealed_cache: tuple[float, "SealedEndpoint | None"] | None = None
+
+
+@dataclass(frozen=True)
+class SealedEndpoint:
+    """This machine's own API budget: called at ``url`` with ``key``, never through a hub login."""
+
+    offer: APIEndpointOffer
+    url: str
+    key: str = field(repr=False)
+    serves: dict[str, str] = field(default_factory=dict)
+
+
+async def _placed(names: tuple[str, ...]) -> dict[str, str]:
+    """``names`` from the environment, else from where the hub places a machine's values."""
+    found = {name: os.environ[name] for name in names if os.environ.get(name)}
+    if len(found) == len(names):
+        return found
+    try:
+        from flow_sdk.builtin.credential_resolver import resolve_project_secrets  # noqa: PLC0415
+
+        placed = await resolve_project_secrets(None, only=names)
+    except Exception as exc:  # noqa: BLE001 -- a machine with no store simply has no sealed endpoint
+        logger.debug("sealed endpoint: could not read placed values: %s", type(exc).__name__)
+        placed = {}
+    return {**{name: value.get_secret_value() for name, value in placed.items()}, **found}
+
+
+async def sealed_endpoint() -> SealedEndpoint | None:
+    global _sealed_cache  # noqa: PLW0603 -- a module memo, like the listing's
+    if _sealed_cache is not None and (time.monotonic() - _sealed_cache[0]) < _LIST_TTL_SECONDS:
+        return _sealed_cache[1]
+    values = await _placed(_SEALED_VARS)
+    url, key = values.get(SEALED_URL_VAR, "").rstrip("/"), values.get(SEALED_KEY_VAR, "")
+    sealed = None
+    if url and key:
+        try:
+            serves = json.loads(values.get(SEALED_SERVES_VAR) or "{}")
+        except ValueError:
+            serves = {}
+        serves = {str(k): str(v) for k, v in serves.items()} if isinstance(serves, dict) else {}
+        endpoint_id = (urlparse(url).hostname or "").split(".")[0]
+        offer = APIEndpointOffer(id=endpoint_id, name="this machine's API budget", kinds=sorted(serves))
+        sealed = SealedEndpoint(offer=offer, url=url, key=key, serves=serves)
+    _sealed_cache = (time.monotonic(), sealed)
+    return sealed
+
+
 def invalidate_api_endpoint_listing() -> None:
+    global _sealed_cache  # noqa: PLW0603
     _list_cache.pop(get_instance_settings().instance_name, None)
     _serves_cache.clear()
+    _sealed_cache = None
 
 
 def _rows(body) -> list | None:
@@ -142,14 +205,20 @@ async def endpoints_serving(
         if offer.enabled and (not only or offer.id == only)
     ]
     hosts = await asyncio.gather(*(host_of(offer) for offer in offers))
-    return [(offer, host) for offer, host in zip(offers, hosts) if host]
+    found = [(offer, host) for offer, host in zip(offers, hosts) if host]
+    sealed = None if cached_only and _sealed_cache is None else await sealed_endpoint()
+    if sealed is not None and kind in sealed.serves and (not only or sealed.offer.id == only):
+        found.append((sealed.offer, sealed.serves[kind]))
+    return found
 
 
 __all__ = [
     "DECISION_KIND",
     "KIND_HEADER",
+    "SealedEndpoint",
     "decision_endpoints",
     "endpoints_serving",
     "fetch_hub_api_endpoints",
     "invalidate_api_endpoint_listing",
+    "sealed_endpoint",
 ]
