@@ -22,7 +22,9 @@ data (`forkit.issue` rows), so the app, another window or an agent all see the s
   comes from the run's template in the header — default `lets focus on issue {identifier}`, editable there — and
   can still be edited per issue before Start. On Start the fork is made (`agentic_process/<root>/fork`, then `/open`
   with that message) and goes straight to work on that issue. Two clicks never make two forks.
-- **✓ Done** closes the fork (`/close`) and marks the issue done. **↺ Open** reopens it; opening it again makes a
+- **✓ Done** closes the fork (`/close`) and marks the issue done. With the header's optional **done message** set
+  (e.g. `commit your work and summarize`), Done sends it to the fork instead, marks the issue done at once
+  (`finishing…`), and closes the fork when it has finished that turn. **↺ Open** reopens it; opening it again makes a
   new fork from the root.
 - The centre is the fork's own terminal (`/win/shell/agentic_process-<id>`), live; type into it.
 - Works on any worker: the forks run where the root runs. A root on another machine (`hub_route`) is refused —

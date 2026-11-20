@@ -59,6 +59,8 @@ main iframe { flex: 1; border: 0; width: 100%; }
       <span>root: <code id="root"></code></span>
       <label class="tpl" title="The first message every fork starts with. {identifier} is the issue's id.">first message
         <input id="tpl" spellcheck="false" placeholder="lets focus on issue {identifier}"></label>
+      <label class="tpl" title="Optional. ✓ Done sends this to the fork, moves the issue to Done at once, and closes the fork when it has finished. Empty: Done closes the fork right away.">done message (optional)
+        <input id="donetpl" spellcheck="false" placeholder="empty: Done closes the fork right away"></label>
       <div class="pg"><i id="bar"></i></div>
       <small id="count"></small>
       <div class="flt" id="filter">
@@ -88,8 +90,11 @@ const state = { rows: [], filter: 'open', sel: null, info: null, busy: new Set()
 // The first-message template: one per run, kept in this browser. An issue with a prompt of its own ignores it.
 const TEMPLATE = 'lets focus on issue {identifier}';
 const TPL_KEY = `forkit.template.${CFG.run}`;
-const stored = () => { try { return localStorage.getItem(TPL_KEY); } catch { return null; } };
+const DONE_KEY = `forkit.done.${CFG.run}`;
+const stored = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+const keep = (key, value) => { try { localStorage.setItem(key, value); } catch { /* storage blocked: it holds for this page */ } };
 const template = () => $('tpl').value.trim() || TEMPLATE;
+const doneMessage = (row) => $('donetpl').value.trim().replaceAll('{identifier}', row.input.id);
 const firstMessage = (row) => row.input.prompt || template().replaceAll('{identifier}', row.input.id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 // The page-state key (flow-js skill §4): a frame cannot inherit it, so its URL carries it.
@@ -128,13 +133,39 @@ async function startFork(row, message) {
   }
 }
 
+async function close(pid) {
+  try { await post(`/graph/agentic_process/${pid}/close`); }
+  catch (e) { console.warn('[forkit] close', e); }   // already gone: the row still moves on
+}
+
+/** Close the forks of finishing issues once each has done its done message: idle, nothing queued, three looks in a row. */
+const idle = new Map();
+async function finish() {
+  for (const row of state.rows.filter((r) => r.input.status === 'done' && r.input.process_id)) {
+    const pid = row.input.process_id;
+    let proc = null;
+    try { const res = await sdk.apiClient.get(`/graph/agentic_process/${pid}`); proc = res?.data?.data ?? res?.data ?? res; }
+    catch { /* gone */ }
+    const resting = !proc || proc.status !== 'running' || (proc.worker_status !== 'working' && !(proc.queue?.entries || []).length);
+    idle.set(pid, resting ? (idle.get(pid) || 0) + 1 : 0);
+    if (idle.get(pid) < 3 && proc && proc.status === 'running') continue;
+    idle.delete(pid);
+    await close(pid);
+    try { await state.ds.put(row.key, { input: { ...row.input, process_id: null } }, { expected: row.version }); }
+    catch (e) { console.warn('[forkit] finish', e); }
+  }
+}
+
 async function setStatus(row, status) {
   try {
-    if (status === 'done' && row.input.process_id) {
-      try { await post(`/graph/agentic_process/${row.input.process_id}/close`); }
-      catch (e) { console.warn('[forkit] close', e); }   // already gone: the row still moves to done
-    }
-    await state.ds.put(row.key, { input: { ...row.input, status, process_id: null } }, { expected: row.version });
+    const pid = row.input.process_id;
+    // Done with a done message: the fork gets it, the issue is done NOW, and the fork is closed when it has finished
+    // (a done row that still names its fork is "finishing"; `finish()` closes it). ↺ Open keeps a fork still alive.
+    const wrapUp = status === 'done' && pid ? doneMessage(row) : '';
+    if (wrapUp) await post(`/graph/agentic_process/${pid}/enqueue`, { prompt: wrapUp, source: 'page' });
+    else if (status === 'done' && pid) await close(pid);
+    const keepsFork = wrapUp || status === 'open';
+    await state.ds.put(row.key, { input: { ...row.input, status, process_id: keepsFork ? pid : null } }, { expected: row.version });
   } catch (e) {
     fail(`Could not change #${row.input.id}: ${e?.message || e}`);
   }
@@ -196,7 +227,7 @@ function render() {
       + `<span class="dot ${dot}"></span><b>#${esc(i.id)}</b><span class="t" title="${esc(i.title)}">${esc(i.title)}</span>`
       + `<button class="nf${state.info === r.key ? ' on' : ''}" data-info title="What is it about">ⓘ</button>`
       + `<button class="st" data-status="${isDone ? 'open' : 'done'}" title="${isDone ? 'Change status to open' : 'Change status to done'}">${isDone ? '↺ Open' : '✓ Done'}</button>`
-      + `<small>${i.process_id ? `fork ${esc(i.process_id.slice(0, 8))}` : isDone ? 'closed' : 'not started'}</small>`
+      + `<small>${i.process_id ? (isDone ? 'finishing… ' : '') + `fork ${esc(i.process_id.slice(0, 8))}` : isDone ? 'closed' : 'not started'}</small>`
       + (state.info === r.key ? `<p class="desc">${esc(i.desc || 'No description.')}</p>` : '')
       + '</li>';
   }).join('');
@@ -219,10 +250,11 @@ $('main').addEventListener('click', (ev) => {
   if (row && message) startFork(row, message);
 });
 $('tpl').addEventListener('input', (ev) => {
-  try { localStorage.setItem(TPL_KEY, ev.target.value); } catch { /* storage blocked: it holds for this page */ }
+  keep(TPL_KEY, ev.target.value);
   delete $('main').dataset.ask;   // the open Start panel shows the new message
   renderMain();
 });
+$('donetpl').addEventListener('input', (ev) => keep(DONE_KEY, ev.target.value));
 $('filter').addEventListener('click', (ev) => {
   if (ev.target.dataset.f) { state.filter = ev.target.dataset.f; render(); }
 });
@@ -230,7 +262,8 @@ $('filter').addEventListener('click', (ev) => {
 (async () => {
   $('title').textContent = CFG.title || 'forkit';
   $('root').textContent = CFG.root || '';
-  $('tpl').value = stored() || TEMPLATE;
+  $('tpl').value = stored(TPL_KEY) || TEMPLATE;
+  $('donetpl').value = stored(DONE_KEY) || '';
   try {
     sdk.applyHostTheme?.();
     await sdk.initSdk();
@@ -239,6 +272,7 @@ $('filter').addEventListener('click', (ev) => {
     if (!ds) throw new Error(`no ${CFG.kind} dataset — run scripts/forkit.py again`);
     state.ds = ds;
     ds.onRowsChanged(() => load());
+    setInterval(finish, 5000);
     await load();
   } catch (e) {
     fail(`forkit could not load: ${e?.message || e}`);
