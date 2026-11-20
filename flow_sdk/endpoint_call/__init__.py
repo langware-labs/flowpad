@@ -148,6 +148,9 @@ class Transport:
                     if fresh is None or fresh.key == sealed.key:
                         return resp
                     sealed = fresh
+        except httpx.TimeoutException as exc:
+            # The request left and no answer came back in time: not "no connection". Trying again is reasonable.
+            raise EndpointCallError("timed_out", f"The hub did not answer in time ({type(exc).__name__})") from exc
         except httpx.HTTPError as exc:
             raise EndpointCallError("unavailable", f"The hub could not be reached: {type(exc).__name__}") from exc
         return resp
