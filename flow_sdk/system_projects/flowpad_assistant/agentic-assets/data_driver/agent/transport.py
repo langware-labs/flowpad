@@ -246,6 +246,9 @@ def _run_prefix(source: Any, config: Mapping[str, Any]) -> list[str]:
         lines.append(f"- the page-batch script, by absolute path: `{Path(__file__).with_name('page_batch.py')}`")
         if source.account:
             lines.append(f"- this account, as the source knows it (`--account`): `{source.account}`")
+        from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+
+        lines.append(f"- where message media is kept (`--media`): `{data_dir_for('data_source', source.id) / 'files'}`")
     return lines
 
 

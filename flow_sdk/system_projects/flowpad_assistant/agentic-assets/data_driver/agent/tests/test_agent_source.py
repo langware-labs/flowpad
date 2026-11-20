@@ -4,6 +4,7 @@ reports a draft, a recorded copy and a deliverable honestly."""
 from __future__ import annotations
 
 import functools
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -153,6 +154,13 @@ async def test_a_browser_connector_names_its_browser_and_parks_without_one(worke
     assert len(worker.fetches) == 1, "a browser source with no browser never launches a worker"
 
 
+def test_a_send_a_person_must_fix_is_reported_as_not_authenticated():
+    transport = asset_module("agent", "transport")
+    with pytest.raises(Exception) as caught:
+        transport.send_result_from({"sent": False, "error": "signed_out"})
+    assert caught.value.code is transport.LaunchErrorCode.NOT_AUTHENTICATED
+
+
 def test_only_a_browser_connector_names_a_browser():
     source = asset_module("agent")
     assert source.browser_of({"connector": "linkedin", "browser": "extension"}) == "extension"
@@ -173,3 +181,15 @@ def test_a_page_message_keeps_its_identity_across_reads_and_twins_stay_apart():
     spaced = build([{**said, "text": "a\n\n\n\n b"}, {**said, "text": "a\n\nb"}])
     assert build([{**said, "text": ""}])[0]["body"] == page_batch.NO_TEXT
     assert spaced[0]["external_id"].rsplit(":", 1)[0] == spaced[1]["external_id"].rsplit(":", 1)[0] and spaced[0]["body"] == "a\n\n b"
+
+
+def test_media_a_worker_saved_moves_into_the_sources_folder_under_the_messages_name(tmp_path):
+    page_batch = asset_module("agent", "page_batch")
+    saved = tmp_path / "Downloads" / "li-3f9a.MP4"
+    saved.parent.mkdir()
+    saved.write_bytes(b"video")
+    said = {"conversation": "2-abc==", "sender": "Dana Levi", "date": "2026-11-20", "time": "11:55 PM", "text": "", "files": [str(saved)]}
+    build = functools.partial(page_batch.items, source="ds", provider="linkedin", kind="content.message.chat", media=str(tmp_path / "files"))
+    first, again = build([said])[0], build([said])[0]  # the second read finds nothing in Downloads
+    assert first["files"] == again["files"] and Path(first["files"][0]).read_bytes() == b"video"
+    assert Path(first["files"][0]).suffix == ".mp4" and not saved.exists()

@@ -57,9 +57,35 @@ the message limit in your run details is reached. For each:
 Record your own messages too — they are part of the conversation — and mark
 each `"mine": true`. Yours are the ones the signed-in account wrote: the page
 names that account in its profile menu ("Me"), and a thread prints that name
-above them. A message with no text of its own (only an attachment, a video,
-a GIF, a voice note) is recorded with an empty `text` — never the page's description of it, which
-is worded differently from one read to the next. The script names it.
+above them. **Media.** A message may carry a video, an image or a file — with or without
+text. Save each one and list it in the message's `files`:
+
+1. Pick a name no other file has: `li-` + 12 random hex characters + the
+   media's extension (`.mp4` for a video, `.jpg`/`.png` for an image, the
+   file's own extension for a document).
+2. Save it from inside the page, so the signed-in session fetches it. Run this
+   in the page, with the media element's address (a video's `currentSrc`, an
+   image's `src`, a file link's `href`) and that name:
+
+   ```js
+   const r = await fetch(ADDRESS, {credentials: 'include'});
+   const b = await r.blob();
+   const a = document.createElement('a');
+   a.href = URL.createObjectURL(b); a.download = NAME;
+   document.body.appendChild(a); a.click(); a.remove();
+   ({status: r.status, bytes: b.size})
+   ```
+
+   Take the address from the element in the page; never open it as a page and
+   never fetch an address that is not on `linkedin.com` or `licdn.com`.
+3. The browser saves it to the Downloads folder: the file is
+   `~/Downloads/<name>`. Check it is there (`ls`) and put that path in `files`.
+   If it is not there, leave `files` empty for that message — the message is
+   still recorded.
+
+A message with no text of its own (only media, a GIF, a voice note) is recorded
+with an empty `text` — never the page's description of it, which is worded
+differently from one read to the next. The script names it.
 
 ## 3. Record
 
@@ -73,6 +99,8 @@ observed = [
      "date": "2026-11-20", "time": "11:55 PM", "text": "the message text, copied exactly"},
     {"conversation": "2-MmUx…XzEwMA==", "sender": "My Own Name", "mine": True,
      "date": "2026-11-20", "time": "11:58 PM", "text": "a message the signed-in account wrote"},
+    {"conversation": "2-MmUx…XzEwMA==", "sender": "Dana Levi",
+     "date": "2026-11-20", "time": "11:59 PM", "text": "", "files": ["~/Downloads/li-3f9a1c0b77de.mp4"]},
 ]
 json.dump(observed, open("/tmp/li_observed.json", "w"), ensure_ascii=False)
 ```
@@ -84,7 +112,7 @@ above the message. Do not translate, shorten, tidy or join messages.
 Then build the batch and record it, with the paths from your run details:
 
 ```bash
-python3 <the page-batch script> --source <data_source_id> --provider <provider> --kind content.message.chat --account <this account, when your run details name one> --in /tmp/li_observed.json --out /tmp/li_batch.json
+python3 <the page-batch script> --source <data_source_id> --provider <provider> --kind content.message.chat --account <this account, when your run details name one> --media <where message media is kept> --in /tmp/li_observed.json --out /tmp/li_batch.json
 <the absolute flow path> record create source_item --json /tmp/li_batch.json
 ```
 

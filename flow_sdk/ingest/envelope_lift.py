@@ -22,6 +22,7 @@ from email.utils import formataddr, getaddresses
 from typing import Any, Optional
 
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
+from flow_sdk.sources.files import LOCAL_KIND, local_file
 from flow_sdk.sources.values.items import EmailMessageData, FeedItemData, MessageData, Payload, RecordData, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 
@@ -92,6 +93,7 @@ def data_of(source: Any, item: Any, origin: CloudOrigin) -> Payload:
         sent_at=_when(item),
         in_reply_to=_beside(origin, _text(item, "reply_to_external_id")),
         recipients=tuple(person(addr, name) for name, addr in getaddresses(getattr(item, "recipients", None) or ()) if addr),
+        attachments=tuple(local_file(path) for path in getattr(item, "files", None) or ()),
     )
     if email:
         return EmailMessageData(subject=_verbatim(item, "name"), **fields)
@@ -134,6 +136,7 @@ def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemS
         thread_key=data.item_thread,
         reply_to_external_id=data.item_reply_to,
         recipients=[formataddr((p.name or "", p.address or p.origin.key)) for p in getattr(data, "recipients", ())],
+        files=[f.data.path for f in getattr(data, "attachments", ()) if f.origin.kind == LOCAL_KIND and getattr(f.data, "path", None)],
         raw=getattr(data, "raw", None),
         # Adoption hints: a record that already exists locally as a hub-mirrored row (a help-desk
         # ticket) names the hub's own ids, so the projection lands on that row instead of a twin.

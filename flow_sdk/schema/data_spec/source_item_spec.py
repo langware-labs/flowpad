@@ -128,6 +128,9 @@ class SourceItemSpec(DataSpec):
     #: Who else the message was addressed to, as the provider printed each one
     #: (``"Ada <ada@x.io>"`` or a bare address). Not digested.
     recipients: list[str] = []
+    #: Files the message carried that are ALREADY on this machine — absolute paths, saved by the
+    #: caller (a worker that read the message in a browser). Lifted into the payload's attachments.
+    files: list[str] = []
     raw: Optional[dict] = None
 
     # ── the contract's value, lifted from the header above (``ingest/envelope_lift.py``) ──

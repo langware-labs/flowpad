@@ -44,3 +44,14 @@ def test_a_chat_is_a_message_and_anything_else_a_feed_item():
 def test_what_the_envelope_already_carries_is_kept():
     given = CloudOrigin(kind="k", namespace="n", key="x")
     assert lift(GMAIL, _env(origin=given)).origin is given
+
+
+def test_files_the_caller_already_saved_ride_the_message_and_survive_the_round_trip(tmp_path):
+    from flow_sdk.ingest.envelope_lift import envelope_of
+
+    saved = tmp_path / "clip.mp4"
+    saved.write_bytes(b"video")
+    item = lift(GMAIL, _env(kind="content.message.chat", files=[str(saved)]))
+    (file,) = item.data.attachments
+    assert (file.data.as_, file.data.size, file.data.path) == ("video", 5, str(saved.resolve()))
+    assert envelope_of(item, data_source_id="ds", provider="agent").files == [str(saved.resolve())]

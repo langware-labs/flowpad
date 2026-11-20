@@ -7,11 +7,13 @@ text twice in a minute — the words only, since two reads of one page space the
 differently. An edited message is therefore a new one. The clock on the page is the
 browser's local time; it becomes UTC here, not in a model's head.
 
-    python page_batch.py --source <data_source_id> --provider <p> --kind <k> [--account <a>] --in observed.json --out batch.json
+    python page_batch.py --source <data_source_id> --provider <p> --kind <k> [--account <a>] [--media <dir>] --in observed.json --out batch.json
 
 ``observed.json`` is a list of ``{conversation, sender, date: "YYYY-MM-DD", time: "11:55 PM" | "23:55", text}``
-in page order, with optional ``mine`` (the signed-in account wrote it), ``sender_id`` and
-``permalink``. ``--account`` is what the source knows its own account by: a ``mine`` message is
+in page order, with optional ``mine`` (the signed-in account wrote it), ``sender_id``,
+``permalink`` and ``files`` — media the worker saved from the page, by path. With ``--media`` each
+file is moved into that folder under a name built from the message's identity, so the same media
+read twice is one file. ``--account`` is what the source knows its own account by: a ``mine`` message is
 authored by it, so the application reads our own words as ours. Prints ``{external_ids, high_water}``.
 """
 from __future__ import annotations
@@ -20,6 +22,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,7 +44,7 @@ def minute_utc(date: str, time: str) -> datetime:
     raise ValueError(f"not a page time: {date!r} {time!r}")
 
 
-def items(observed: list[dict], *, source: str, provider: str, kind: str, account: str = "") -> list[dict]:
+def items(observed: list[dict], *, source: str, provider: str, kind: str, account: str = "", media: str = "") -> list[dict]:
     seen: Counter = Counter()
     out = []
     for row in observed:
@@ -58,8 +61,21 @@ def items(observed: list[dict], *, source: str, provider: str, kind: str, accoun
             "external_id": f"{conversation}:{digest}", "name": "", "body": text, "occurred_at": at,
             "author_display": sender, "author_external_id": account if account and row.get("mine") else str(row.get("sender_id") or sender),
             "thread_key": conversation, "permalink": row.get("permalink") or None,
+            "files": [_keep(Path(path), media, f"{digest}-{n}") for n, path in enumerate(row.get("files") or ())],
         })
     return out
+
+
+def _keep(saved: Path, media: str, stem: str) -> str:
+    """Where a saved file lives from now on: moved into ``media`` (when given) under the message's own name."""
+    saved = saved.expanduser()
+    if not media:
+        return str(saved.resolve())
+    home = Path(media) / f"{stem}{saved.suffix.lower()}"
+    if saved.is_file():
+        home.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(saved), home)
+    return str(home)
 
 
 def main() -> None:
@@ -67,8 +83,9 @@ def main() -> None:
     for name in ("source", "provider", "kind", "in", "out"):
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--account", default="")
+    parser.add_argument("--media", default="")
     args = vars(parser.parse_args())
-    batch = items(json.loads(Path(args["in"]).read_text(encoding="utf-8")), source=args["source"], provider=args["provider"], kind=args["kind"], account=args["account"])
+    batch = items(json.loads(Path(args["in"]).read_text(encoding="utf-8")), source=args["source"], provider=args["provider"], kind=args["kind"], account=args["account"], media=args["media"])
     Path(args["out"]).write_text(json.dumps(batch, ensure_ascii=False), encoding="utf-8")
     print(json.dumps({"external_ids": [i["external_id"] for i in batch], "high_water": max((i["occurred_at"] for i in batch), default=None)}))  # noqa: T201 — the script's answer to the worker
 
