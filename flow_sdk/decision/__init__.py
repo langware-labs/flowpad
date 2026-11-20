@@ -26,7 +26,6 @@ from flow_sdk.external_apis.decision import (
 )
 from flow_sdk.instance_settings.api_endpoint import (
     DECISION_KIND,
-    KIND_HEADER,
     decision_endpoints,
     fetch_hub_api_endpoints,
 )
@@ -61,9 +60,7 @@ async def _endpoint(endpoint: Optional[str]) -> APIEndpointOffer:
 
 
 async def decide(spec: DecisionSpec | dict, *, endpoint: Optional[str] = None) -> DecisionResult:
-    from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_graph_url  # noqa: PLC0415
+    from flow_sdk.endpoint_call import EndpointCallError, Transport  # noqa: PLC0415 — the hub client
 
     if not isinstance(spec, DecisionSpec):
         try:
@@ -77,27 +74,16 @@ async def decide(spec: DecisionSpec | dict, *, endpoint: Optional[str] = None) -
     wire = DecisionWire(endpoint=offer.typeid, path=dialect.PATH, request=sent)
     started = time.perf_counter()
     try:
-        url = hub_graph_url("api_endpoint", offer.id, "invoke", dialect.PATH)
-        if url is None:
-            status, body = 0, None
-        else:
-            # The kind names which of the endpoint's roots answers (one endpoint may front several APIs).
-            resp = await HubProxy.send("POST", url, json=sent, headers={KIND_HEADER: DECISION_KIND})
-            status = resp.status_code
-            try:
-                body = resp.json()
-            except ValueError:
-                body = resp.text[:500]
-    except HubError as exc:
+        # The one transport every capability uses; the kind names which of the endpoint's roots answers.
+        status, body = await Transport(offer, DECISION_KIND).exchange("POST", dialect.PATH, json=sent, timeout=None)
+    except EndpointCallError as exc:  # the hub itself was not reached
         raise DecisionError(
-            "auth" if exc.status_code == 401 else "unavailable",
-            f"The hub could not be reached: {exc}",
-            status=exc.status_code,
-            wire=wire.model_copy(update={"status": exc.status_code or 0}),
+            "auth" if exc.reason == "auth" else "unavailable",
+            exc.message,
+            status=exc.status,
+            wire=wire.model_copy(update={"status": exc.status or 0}),
         ) from exc
     wire = wire.model_copy(update={"status": status, "response": body})
-    if status == 0:
-        raise DecisionError("unavailable", "No hub is configured (offline or Local privacy mode)", wire=wire)
     if status != 200:
         detail = failure_detail(body)
         raise DecisionError(

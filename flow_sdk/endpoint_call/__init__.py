@@ -76,7 +76,7 @@ class Transport:
         self.offer = offer
         self.kind = kind
 
-    async def send(
+    async def exchange(
         self,
         method: str,
         sub_path: str,
@@ -85,8 +85,9 @@ class Transport:
         params: Optional[dict] = None,
         timeout: Any = CALL_TIMEOUT,
         kind: Optional[str] = None,
-    ) -> Any:
-        """One vendor request through the hub; the parsed JSON body of a 2xx, else ``EndpointCallError``.
+    ) -> tuple[int, Any]:
+        """One vendor request through the hub: ``(status, body)`` whatever the status -- the body parsed
+        as JSON, else its first 500 characters. Raises only when the hub itself could not be reached.
         ``kind`` names another root of the same endpoint for this one request (a vendor's file store)."""
         headers = {KIND_HEADER: kind or self.kind}
         sealed = await sealed_endpoint()
@@ -95,14 +96,18 @@ class Transport:
         else:
             resp = await self._send_as_user(method, sub_path, json, params, headers, timeout)
         try:
-            body = resp.json()
+            return resp.status_code, resp.json()
         except ValueError:
-            body = resp.text[:500]
-        if not 200 <= resp.status_code < 300:
+            return resp.status_code, resp.text[:500]
+
+    async def send(self, method: str, sub_path: str, **how: Any) -> Any:
+        """``exchange``, for a caller that only wants the answer: the body of a 2xx, else ``EndpointCallError``."""
+        status, body = await self.exchange(method, sub_path, **how)
+        if not 200 <= status < 300:
             raise EndpointCallError(
-                reason_for(resp.status_code, body),
-                f"{self.offer.name or self.offer.typeid} answered {resp.status_code}: {detail_of(body)}",
-                status=resp.status_code,
+                reason_for(status, body),
+                f"{self.offer.name or self.offer.typeid} answered {status}: {detail_of(body)}",
+                status=status,
             )
         return body
 
@@ -114,8 +119,9 @@ class Transport:
         url = hub_graph_url("api_endpoint", self.offer.id, "invoke", sub_path)
         if url is None:
             raise EndpointCallError("unavailable", "No hub is configured (offline or Local privacy mode)")
+        how = {} if timeout is None else {"timeout": timeout}  # None: the hub client's own
         try:
-            return await HubProxy.send(method, url, json=json, params=params, headers=headers, timeout=timeout)
+            return await HubProxy.send(method, url, json=json, params=params, headers=headers, **how)
         except HubError as exc:
             reason: EndpointCallFailure = "auth" if exc.status_code == 401 else "unavailable"
             raise EndpointCallError(reason, f"The hub could not be reached: {exc}", status=exc.status_code) from exc
