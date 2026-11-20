@@ -14596,9 +14596,17 @@ msgstr "Flowpad עובד הכי טוב עם כמה כלים במחשב שלכם:
 msgid "Flowpad.ai Logo"
 msgstr "לוגו Flowpad.ai"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Flowpad's Google identity is not available to you"
+msgstr "הזהות של Flowpad ב-Google לא זמינה לך"
+
 #: src/components/inbound/InboundView.tsx
 msgid "Flowpad's number · linked sender"
 msgstr "מספר Flowpad · שולח מקושר"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Flowpad's own Google identity pays for this organization. No key is needed."
+msgstr "הזהות של Flowpad ב-Google משלמת עבור הארגון הזה. אין צורך במפתח."
 
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Flowpad's setup comes first"
@@ -16021,6 +16029,10 @@ msgstr "Hub: {cloudUrl}"
 #: src/components/code-editor/DiffContent.tsx
 msgid "Hunk {hunkNumber}: Lines {oldStart}–{oldEnd} → {newStart}–{newEnd}"
 msgstr "מקטע {hunkNumber}: שורות {oldStart}–{oldEnd} → {newStart}–{newEnd}"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "I have a key after all"
+msgstr "בכל זאת יש לי מפתח"
 
 #. placeholder {0}: m[1]
 #: src/notifications/renderDesktopNotification.ts
@@ -20956,6 +20968,10 @@ msgstr "אין מפתח בשורש הזה"
 msgid "No key stored — this root cannot serve requests until one is saved."
 msgstr "לא נשמר מפתח — השורש הזה לא יכול לשרת בקשות עד שיישמר אחד."
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "No key? Use Flowpad's Google identity"
+msgstr "אין מפתח? השתמש בזהות של Flowpad ב-Google"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "No known event matches. Type the event name under Advanced."
 msgstr "לא נמצא אירוע תואם. הקלידו את שם האירוע תחת מתקדם."
@@ -23214,6 +23230,10 @@ msgstr ""
 msgid "Open Backup Folder"
 msgstr "פתחו תיקיית גיבוי"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Open Billing & keys to see whether it is active."
+msgstr "פתח את Billing & keys כדי לראות אם הוא פעיל."
+
 #: src/components/footer/BrowserChip.tsx
 msgid "Open Chrome Web Store"
 msgstr ""
@@ -24133,6 +24153,7 @@ msgid "Organization"
 msgstr "ארגון"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Organization activated"
 msgstr "הארגון הופעל"
 
@@ -24143,6 +24164,10 @@ msgstr ""
 #: src/components/organization/organization-page.tsx
 msgid "Organization created"
 msgstr "הארגון נוצר"
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Organization created, but its status could not be read"
+msgstr "הארגון נוצר, אבל לא ניתן היה לקרוא את מצבו"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Organization created, but the key was not saved"
@@ -31572,6 +31597,10 @@ msgid "Specific unix sockets allowed in sandbox"
 msgstr "Unix sockets ספציפיים המורשים בסנדבוקס"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "Spending now bills Flowpad's Google Vertex AI."
+msgstr "ההוצאה מחויבת עכשיו ל-Google Vertex AI של Flowpad."
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Spending now bills your own {providerLabel}."
 msgstr ""
 
@@ -33397,6 +33426,14 @@ msgstr "המספר שלפני הנקודתיים בטוקן הבוט."
 msgid "The one you already took"
 msgstr "זה שכבר ביצעתם"
 
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+msgid "The organization was created without a credential. Ask an admin to grant it, or add your own key below."
+msgstr "הארגון נוצר בלי credential. בקש ממנהל להעניק אותו, או הוסף מפתח משלך למטה."
+
+#: src/components/organization/budgets/PayingProviderSetup.tsx
+#~ msgid "The organization was created. Add your own key below."
+#~ msgstr "הארגון נוצר. הוסף מפתח משלך למטה."
+
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
@@ -34067,6 +34104,10 @@ msgstr "המסמך הזה כבר לא קיים."
 #: src/components/data-sources/DataDriversView.tsx
 msgid "This driver takes no config."
 msgstr "לדרייבר הזה אין שדות תצורה."
+
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "This endpoint signs in to Google with the hub's own identity. No key is needed, and a key entered here would not be used."
+msgstr "נקודת הקצה הזו מתחברת ל-Google עם הזהות של ה-hub עצמו. אין צורך במפתח, ומפתח שיוזן כאן לא יהיה בשימוש."
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "this endpoint's own key"

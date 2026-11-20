@@ -60,7 +60,13 @@ export interface PayingProviderSetupProps {
   orgId: string;
   org: Pick<
     OrgScopeBudget,
-    'endpoint_id' | 'is_root' | 'provider' | 'credential_hint' | 'can_set_credential' | 'can_set_up_budget'
+    | 'endpoint_id'
+    | 'is_root'
+    | 'provider'
+    | 'credential_hint'
+    | 'can_set_credential'
+    | 'can_set_up_budget'
+    | 'hub_identity_available'
   >;
 }
 
@@ -71,7 +77,11 @@ export function PayingProviderSetup({ orgId, org }: PayingProviderSetupProps) {
   // told the owner of a brand new org "its owner sets one up" and gave them no way to be that
   // owner. The right question is asked of the organization, and it is answerable before setup.
   if (!org.endpoint_id) {
-    return org.can_set_up_budget ? <OrgKeyCreateForm orgId={orgId} /> : <PayingProviderSummary org={org} />;
+    return org.can_set_up_budget ? (
+      <OrgKeyCreateForm orgId={orgId} hubIdentityAvailable={org.hub_identity_available === true} />
+    ) : (
+      <PayingProviderSummary org={org} />
+    );
   }
 
   // Same statement of fact for everyone: bringing a key is not offered on a pool that already
@@ -181,10 +191,13 @@ function ProviderSelect({
 /** Provider + key entry when the org has no pool yet. One submit, two hub calls. */
 function OrgKeyCreateForm({
   orgId,
+  hubIdentityAvailable = false,
   onSwitched,
   onCancel,
 }: {
   orgId: string;
+  /** The hub says this person may start the organization on Flowpad's own Google identity. */
+  hubIdentityAvailable?: boolean;
   /** Present when this form moves an EXISTING root to another provider instead of creating one. */
   onSwitched?: (result: SwitchPayingProviderResult) => void;
   onCancel?: () => void;
@@ -194,6 +207,8 @@ function OrgKeyCreateForm({
   const [providerId, setProviderId] = useState<ProviderSpec['id']>(PROVIDERS[0].id);
   const [key, setKey] = useState('');
   const [project, setProject] = useState('');
+  // Vertex without a key: the hub signs in with its own Google identity, for people it allows (the hub decides).
+  const [hubIdentity, setHubIdentity] = useState(false);
   const [busy, setBusy] = useState(false);
   const setup = useSetPayingProvider();
   const switcher = useSwitchPayingProvider();
@@ -201,15 +216,16 @@ function OrgKeyCreateForm({
   const switching = onSwitched !== undefined;
   const spec = PROVIDERS.find((p) => p.id === providerId) ?? PROVIDERS[0];
   // A Vertex API key names no project (a service-account JSON does), and the root's URL must.
-  const needsProject = providerId === 'vertex' && isVertexApiKey(key);
+  const keyless = hubIdentity && providerId === 'vertex' && !switching;
+  const needsProject = providerId === 'vertex' && isVertexApiKey(key) && !keyless;
   const missingProject = needsProject && !project.trim();
 
   const submit = async () => {
-    if (!key.trim() || busy) return;
+    if ((!key.trim() && !keyless) || busy) return;
     // Checked BEFORE the root is created. This flow's two calls are ordered create-then-store, so
     // letting a visibly wrong key through would leave behind exactly what it cannot undo: a root
     // with no usable credential.
-    const badShape = keyShapeProblem(providerId, key);
+    const badShape = keyless ? null : keyShapeProblem(providerId, key);
     if (badShape) {
       notify.error({ title: t`That key does not look right`, message: i18n._(badShape), id: 'org-root' });
       return;
@@ -227,6 +243,41 @@ function OrgKeyCreateForm({
       const baseUrl = rootBaseUrl(providerId, spec.defaultBaseUrl, key, needsProject ? project : undefined);
       const request = { orgId, provider: providerId, baseUrl };
       const created = switching ? await switcher.mutateAsync(request) : await setup.mutateAsync(request);
+      if (keyless) {
+        // No key to store. The hub decides whether this person may use its identity, and says so only by what the
+        // root can do: a root that reports no credential was not granted, and the key form below takes over.
+        const endpointId = endpointIdFromTypeId(created.endpoint_id);
+        let granted: boolean;
+        try {
+          const chain = await llmEndpointsService.getChain(endpointId);
+          granted = chain.hops.some((hop) => hop.id === endpointId && hop.has_credential);
+        } catch (e) {
+          // The root exists. Only the status read failed, so say that instead of "could not activate": the
+          // organization may already be active, and re-submitting a form that has moved on would be wrong.
+          void invalidate();
+          notify.error({
+            title: t`Organization created, but its status could not be read`,
+            message: errorMessage(e, t`Open Billing & keys to see whether it is active.`),
+            id: 'org-root',
+          });
+          return;
+        }
+        void invalidate();
+        if (granted) {
+          notify.success({
+            title: t`Organization activated`,
+            message: t`Spending now bills Flowpad's Google Vertex AI.`,
+            id: 'org-root',
+          });
+        } else {
+          notify.error({
+            title: t`Flowpad's Google identity is not available to you`,
+            message: t`The organization was created without a credential. Ask an admin to grant it, or add your own key below.`,
+            id: 'org-root',
+          });
+        }
+        return;
+      }
       try {
         await llmEndpointsService.setCredential(endpointIdFromTypeId(created.endpoint_id), key.trim());
         // The setup's own refetch ran before the key existed; read again so the stored-key hint shows.
@@ -268,16 +319,29 @@ function OrgKeyCreateForm({
         </Trans>
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <ProviderSelect value={providerId} onChange={setProviderId} disabled={busy} />
-        <div className="min-w-56 flex-1">
-          <CredentialField
-            provider={providerId}
-            value={key}
-            onChange={setKey}
-            placeholder={spec.keyPlaceholder}
-            disabled={busy}
-          />
-        </div>
+        <ProviderSelect
+          value={providerId}
+          onChange={(id) => {
+            setProviderId(id);
+            if (id !== 'vertex') setHubIdentity(false);
+          }}
+          disabled={busy}
+        />
+        {keyless ? (
+          <p className="min-w-56 flex-1 text-sm text-muted-foreground" data-testid="org-root-hub-identity">
+            <Trans>Flowpad's own Google identity pays for this organization. No key is needed.</Trans>
+          </p>
+        ) : (
+          <div className="min-w-56 flex-1">
+            <CredentialField
+              provider={providerId}
+              value={key}
+              onChange={setKey}
+              placeholder={spec.keyPlaceholder}
+              disabled={busy}
+            />
+          </div>
+        )}
         {needsProject && (
           <Input
             className="h-8 w-48"
@@ -291,7 +355,7 @@ function OrgKeyCreateForm({
         )}
         <Button
           size="sm"
-          disabled={busy || !key.trim() || missingProject}
+          disabled={busy || (!key.trim() && !keyless) || missingProject}
           onClick={() => void submit()}
           data-testid={switching ? 'org-root-switch' : 'org-root-activate'}
         >
@@ -303,6 +367,17 @@ function OrgKeyCreateForm({
           </Button>
         )}
       </div>
+      {providerId === 'vertex' && !switching && hubIdentityAvailable && (
+        <button
+          type="button"
+          className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          onClick={() => setHubIdentity((on) => !on)}
+          disabled={busy}
+          data-testid="org-root-hub-identity-toggle"
+        >
+          {hubIdentity ? <Trans>I have a key after all</Trans> : <Trans>No key? Use Flowpad's Google identity</Trans>}
+        </button>
+      )}
       {needsProject && (
         <p className="text-xs text-muted-foreground" data-testid="org-root-vertex-api-key-hint">
           <Trans>API key: Gemini models only — upload the service-account JSON to reach Claude.</Trans>

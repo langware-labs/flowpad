@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   switchAsync: vi.fn(),
   setCredential: vi.fn(),
+  getChain: vi.fn(),
   invalidate: vi.fn(() => Promise.resolve()),
   del: vi.fn(() => Promise.resolve()),
   aliases: {} as Record<string, string>,
@@ -33,10 +34,16 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    llmEndpointsService: { ...(actual.llmEndpointsService as object), setCredential: h.setCredential },
+    llmEndpointsService: {
+      ...(actual.llmEndpointsService as object),
+      setCredential: h.setCredential,
+      getChain: h.getChain,
+    },
     dataManager: { ...(actual.dataManager as object), delete: h.del },
   };
 });
+
+vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 
 import { PayingProviderSetup } from '@src/components/organization/budgets/PayingProviderSetup';
 
@@ -194,6 +201,129 @@ describe('PayingProviderSetup — no budget yet', () => {
  * that constructor throw inside the service call before any HTTP — a dead Save button, no network
  * request, and `Invalid (0)` from Test's own catch.
  */
+describe("PayingProviderSetup — Vertex on Flowpad's own Google identity (no key)", () => {
+  const org = {
+    endpoint_id: null,
+    is_root: false,
+    provider: null,
+    credential_hint: '',
+    can_set_credential: true,
+    can_set_up_budget: true,
+    hub_identity_available: true,
+  };
+
+  async function chooseVertexWithoutKey(user: ReturnType<typeof userEvent.setup>) {
+    render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-vertex'));
+    await user.click(screen.getByTestId('org-root-hub-identity-toggle'));
+  }
+
+  it('offers nothing new when the hub says the choice is not available to this person', async () => {
+    const user = userEvent.setup();
+    render(<PayingProviderSetup orgId={ORG_ID} org={{ ...org, hub_identity_available: false }} />);
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-vertex'));
+    expect(screen.queryByTestId('org-root-hub-identity-toggle')).toBeNull();
+    expect(screen.getByTestId('credential-input')).toBeTruthy();
+  });
+
+  it('offers nothing when the hub does not send the field at all (an older hub)', async () => {
+    const user = userEvent.setup();
+    const older: Partial<typeof org> = { ...org };
+    delete older.hub_identity_available;
+    render(<PayingProviderSetup orgId={ORG_ID} org={older as typeof org} />);
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-vertex'));
+    expect(screen.queryByTestId('org-root-hub-identity-toggle')).toBeNull();
+  });
+
+  it('offers the choice to a person the hub says may use it, and to nobody else', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-vertex'));
+    expect(screen.getByTestId('org-root-hub-identity-toggle')).toBeTruthy();
+    rerender(<PayingProviderSetup orgId={ORG_ID} org={{ ...org, hub_identity_available: false }} />);
+    expect(screen.queryByTestId('org-root-hub-identity-toggle')).toBeNull();
+  });
+
+  it('offers the choice only for Vertex', async () => {
+    const user = userEvent.setup();
+    render(<PayingProviderSetup orgId={ORG_ID} org={org} />);
+    await user.click(screen.getByTestId('org-root-provider'));
+    await user.click(await screen.findByTestId('org-root-provider-anthropic'));
+    expect(screen.queryByTestId('org-root-hub-identity-toggle')).toBeNull();
+  });
+
+  it('creates the root with no key, never stores one, and says so when the hub granted it', async () => {
+    h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
+    h.getChain.mockResolvedValue({ hops: [{ id: ENDPOINT_BARE, has_credential: true }] });
+    const user = userEvent.setup();
+    await chooseVertexWithoutKey(user);
+    expect(screen.getByTestId('org-root-hub-identity')).toBeTruthy();
+    expect(screen.queryByTestId('credential-input')).toBeNull();
+    fireEvent.click(screen.getByTestId('org-root-activate'));
+
+    await waitFor(() => expect(h.getChain).toHaveBeenCalledWith(ENDPOINT_BARE));
+    expect(h.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ orgId: ORG_ID, provider: 'vertex' }));
+    expect(h.setCredential).not.toHaveBeenCalled();
+    const { notify } = await import('@src/notifications');
+    await waitFor(() => expect(notify.success).toHaveBeenCalled());
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it('says it was not granted when the root reports no credential, and stores no key', async () => {
+    h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
+    h.getChain.mockResolvedValue({ hops: [{ id: ENDPOINT_BARE, has_credential: false }] });
+    const user = userEvent.setup();
+    await chooseVertexWithoutKey(user);
+    fireEvent.click(screen.getByTestId('org-root-activate'));
+
+    const { notify } = await import('@src/notifications');
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    expect(notify.success).not.toHaveBeenCalled();
+    expect(h.setCredential).not.toHaveBeenCalled();
+  });
+
+  it('says the organization was created, not that activation failed, when the status read fails', async () => {
+    h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
+    h.getChain.mockRejectedValue(new Error('hub blip'));
+    const user = userEvent.setup();
+    await chooseVertexWithoutKey(user);
+    fireEvent.click(screen.getByTestId('org-root-activate'));
+
+    const { notify } = await import('@src/notifications');
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    const title = vi.mocked(notify.error).mock.calls[0][0].title;
+    expect(title).toMatch(/created, but its status could not be read/);
+    expect(title).not.toMatch(/Could not activate/);
+    expect(h.invalidate).toHaveBeenCalled();
+    expect(h.setCredential).not.toHaveBeenCalled();
+  });
+
+  it('tells a person who was not granted to ask an admin or add a key, and stores nothing', async () => {
+    h.mutateAsync.mockResolvedValue({ endpoint_id: ENDPOINT_TYPEID, created: true, rebased: 0 });
+    h.getChain.mockResolvedValue({ hops: [{ id: ENDPOINT_BARE, has_credential: false }] });
+    const user = userEvent.setup();
+    await chooseVertexWithoutKey(user);
+    fireEvent.click(screen.getByTestId('org-root-activate'));
+
+    const { notify } = await import('@src/notifications');
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    expect(vi.mocked(notify.error).mock.calls[0][0].message).toMatch(/Ask an admin to grant it/);
+    expect(h.setCredential).not.toHaveBeenCalled();
+  });
+
+  it('goes back to the key form when the choice is undone', async () => {
+    const user = userEvent.setup();
+    await chooseVertexWithoutKey(user);
+    await user.click(screen.getByTestId('org-root-hub-identity-toggle'));
+    expect(screen.getByTestId('credential-input')).toBeTruthy();
+    expect(screen.getByTestId('org-root-activate')).toHaveProperty('disabled', true);
+  });
+});
+
 describe('PayingProviderSetup — the hub sends a prefixed typeid, the credential calls want a bare id', () => {
   it('hands CredentialField the bare uuid for an org that already has a root', () => {
     render(

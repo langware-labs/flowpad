@@ -112,6 +112,12 @@ export interface OrgScopeBudget extends ScopeBudget {
    */
   can_set_up_budget: boolean;
   /**
+   * May the caller start this organization on Flowpad's own Google identity, with no key? `true` only while
+   * the hub is configured for it AND the caller is allowed. The setup form offers the choice only then.
+   * Absent on an older hub, which reads as `false`.
+   */
+  hub_identity_available?: boolean;
+  /**
    * May the caller share this organization — invite people, re-role them, remove them? Admin and
    * above, and so deliberately WIDER than everything else on this row: running the people is what
    * an organization is shared for.

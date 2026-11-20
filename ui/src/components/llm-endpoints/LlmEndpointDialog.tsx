@@ -93,6 +93,29 @@ export interface LlmEndpointDialogProps {
 
 const isSize = (name: string) => (LLM_MODEL_SIZES as readonly string[]).includes(name);
 
+/**
+ * Whether the dialog says "no key is needed": a hub-side Vertex root that reports a credential and holds no key.
+ * Pure so the "is a key stored?" question can be tested apart from React's effect order: `editing` already says,
+ * and `storedHint` (copied from it in an effect) only catches up a frame later.
+ */
+export function explainsHubIdentity(input: {
+  local: boolean;
+  provider: string | null | undefined;
+  editing: { credential_hint?: string | null } | null | undefined;
+  storedHint: string;
+  hop: { is_root?: boolean; has_credential?: boolean } | null | undefined;
+}): boolean {
+  const { local, provider, editing, storedHint, hop } = input;
+  return (
+    !local &&
+    provider === 'vertex' &&
+    !!editing &&
+    !(storedHint || editing.credential_hint) &&
+    !!hop?.is_root &&
+    !!hop.has_credential
+  );
+}
+
 export function LlmEndpointDialog({
   open,
   onOpenChange,
@@ -128,6 +151,10 @@ export function LlmEndpointDialog({
   const [busy, setBusy] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [storedHint, setStoredHint] = useState('');
+  // A Vertex root the hub signs in to with its own Google identity stores no key (so there is no hint)
+  // yet reports a credential. It needs none, and a key typed here would be ignored.
+  const ownHop = tierChain.data?.hops.find((hop) => hop.id === editing?.id);
+  const usesHubIdentity = explainsHubIdentity({ local, provider: draft.provider, editing, storedHint, hop: ownHop });
 
   useEffect(() => {
     if (!open) return;
@@ -394,16 +421,25 @@ export function LlmEndpointDialog({
                   </div>
                 </div>
               )}
-              <CredentialField
-                endpointId={local ? undefined : editing?.id}
-                provider={draft.provider}
-                credentialHint={storedHint}
-                placeholder={spec?.keyPlaceholder}
-                value={draft.key}
-                onChange={(key) => setDraft((d) => ({ ...d, key }))}
-                onStored={setStoredHint}
-                disabled={readOnly}
-              />
+              {usesHubIdentity ? (
+                <p className="text-sm text-muted-foreground" data-testid="hub-identity-note">
+                  <Trans>
+                    This endpoint signs in to Google with the hub's own identity. No key is needed, and a key entered
+                    here would not be used.
+                  </Trans>
+                </p>
+              ) : (
+                <CredentialField
+                  endpointId={local ? undefined : editing?.id}
+                  provider={draft.provider}
+                  credentialHint={storedHint}
+                  placeholder={spec?.keyPlaceholder}
+                  value={draft.key}
+                  onChange={(key) => setDraft((d) => ({ ...d, key }))}
+                  onStored={setStoredHint}
+                  disabled={readOnly}
+                />
+              )}
               {local && editing?.credential_kind && (
                 <p className="text-xs text-muted-foreground">
                   {editing.credential_kind === 'service_account'
