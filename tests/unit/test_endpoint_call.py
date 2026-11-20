@@ -201,8 +201,8 @@ def test_kie_takes_a_resolution_and_keyframes_when_they_are_given():
             prompt="p",
             model="wan/3-0-video",
             resolution="1080p",
-            first_frame_url="https://x/a.png",
-            last_frame_url="https://x/b.png",
+            first_frame="https://x/a.png",
+            last_frame="https://x/b.png",
         )
     )
     assert wire["input"]["resolution"] == "1080P"
@@ -232,7 +232,7 @@ def test_veo_takes_key_frames_as_bytes_and_refuses_a_url(tmp_path: Path):
     assert wire["instances"] == [{"prompt": "p", "image": frame, "lastFrame": frame}]
     assert wire["parameters"]["generateAudio"] is True and wire["parameters"]["resolution"] == "720p"
     with pytest.raises(EndpointCallError) as refused:
-        veo.to_wire(VideoRequest(prompt="p", first_frame_url="https://x/a.png"))
+        veo.to_wire(VideoRequest(prompt="p", first_frame="https://x/a.png"))
     assert refused.value.reason == "invalid_request"
 
 

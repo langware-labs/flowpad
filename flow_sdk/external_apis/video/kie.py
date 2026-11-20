@@ -16,7 +16,7 @@ from typing import Any
 
 from flow_sdk.endpoint_call.dialect import poll_job, read_image
 from flow_sdk.endpoint_call.errors import EndpointCallError
-from flow_sdk.schema.data_spec.media_spec import FILE_UPLOAD, VIDEO_GENERATE, VideoRequest, VideoResult
+from flow_sdk.schema.data_spec.media_spec import FILE_UPLOAD, VIDEO_GENERATE, VideoRequest, VideoResult, is_url
 
 KIND = VIDEO_GENERATE
 HOSTS = ("api.kie.ai",)
@@ -56,10 +56,10 @@ def to_wire(request: VideoRequest) -> dict[str, Any]:
         inputs["aspect_ratio"] = request.aspect_ratio
     if audio_key and request.audio:
         inputs[audio_key] = True
-    if request.first_frame_url:
-        inputs["first_frame_url"] = request.first_frame_url
-    if request.last_frame_url:
-        inputs["last_frame_url"] = request.last_frame_url
+    if request.first_frame:
+        inputs["first_frame_url"] = request.first_frame
+    if request.last_frame:
+        inputs["last_frame_url"] = request.last_frame
     return {"model": model, "input": inputs}
 
 
@@ -105,13 +105,11 @@ async def hosted(frame: str, transport) -> str:
 
 
 async def run(request: VideoRequest, transport, out_dir: Path) -> VideoResult:
-    async def url_of(url: str, frame: str) -> str:
-        return url or (await hosted(frame, transport) if frame else "")
+    async def url_of(frame: str) -> str:
+        return frame if not frame or is_url(frame) else await hosted(frame, transport)
 
-    first, last = await asyncio.gather(
-        url_of(request.first_frame_url, request.first_frame), url_of(request.last_frame_url, request.last_frame)
-    )
-    wire = to_wire(request.model_copy(update={"first_frame_url": first, "last_frame_url": last}))
+    first, last = await asyncio.gather(url_of(request.first_frame), url_of(request.last_frame))
+    wire = to_wire(request.model_copy(update={"first_frame": first, "last_frame": last}))
     job_id = str(_data(await transport.send("POST", CREATE_PATH, json=wire), "the job").get("taskId") or "")
     if not job_id:
         raise EndpointCallError("bad_response", "Kie created a job without a taskId")

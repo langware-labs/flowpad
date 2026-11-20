@@ -4,7 +4,7 @@
     clip = await call(VIDEO_GENERATE, VideoRequest(prompt="it rolls away"))
     answer = await call(DECISION, DecisionSpec(state=..., questions={...}))   # what ``decide()`` wraps
 
-A capability is a KIND plus a request spec and a result spec (``CAPABILITIES``). The caller
+A capability is a KIND plus a request spec and a result spec (``CAPABILITIES``, in the schema layer). The caller
 names the kind and hands over the request; everything vendor-specific happens below:
 
 * the endpoint is found by what it serves, never by id -- the first one this user may call
@@ -29,13 +29,12 @@ import httpx
 from flow_sdk.endpoint_call.errors import EndpointCallError, EndpointCallFailure, detail_of, reason_for
 from flow_sdk.external_apis.decision.errors import DecisionError
 from flow_sdk.instance_settings.api_endpoint import (
-    DECISION_KIND,
     KIND_HEADER,
     endpoints_serving,
     sealed_endpoint,
 )
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
-from flow_sdk.schema.data_spec.decision_spec import DecisionResult, DecisionSpec
+from flow_sdk.schema.data_spec.endpoint_capability import CAPABILITIES, DECISION
 from flow_sdk.schema.data_spec.media_spec import (
     IMAGE_GENERATE,
     VIDEO_GENERATE,
@@ -45,15 +44,6 @@ from flow_sdk.schema.data_spec.media_spec import (
     VideoResult,
 )
 from flow_sdk.schema.data_spec.spec import DataSpec
-
-DECISION = DECISION_KIND
-
-#: kind -> (what is asked, what comes back).
-CAPABILITIES: dict[str, tuple[type[DataSpec], type[DataSpec]]] = {
-    DECISION: (DecisionSpec, DecisionResult),
-    IMAGE_GENERATE: (ImageRequest, ImageResult),
-    VIDEO_GENERATE: (VideoRequest, VideoResult),
-}
 
 #: A plain JSON call: long enough for a model that draws while the connection stays open.
 CALL_TIMEOUT = httpx.Timeout(connect=10, write=30, read=300, pool=5)

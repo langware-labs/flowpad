@@ -17,7 +17,7 @@ from typing import Any
 
 from flow_sdk.endpoint_call.dialect import poll_job, read_image
 from flow_sdk.endpoint_call.errors import EndpointCallError
-from flow_sdk.schema.data_spec.media_spec import VIDEO_GENERATE, VideoRequest, VideoResult
+from flow_sdk.schema.data_spec.media_spec import VIDEO_GENERATE, VideoRequest, VideoResult, is_url
 
 KIND = VIDEO_GENERATE
 #: Veo is served per region; the global host (where the image models live) does not have it.
@@ -41,11 +41,11 @@ def duration_for(seconds: int) -> int:
     return next((allowed for allowed in DURATIONS if allowed >= seconds), DURATIONS[-1])
 
 
-def _frame(path: str, url: str, which: str) -> dict[str, str] | None:
+def _frame(path: str, which: str) -> dict[str, str] | None:
     if not path:
-        if url:
-            raise EndpointCallError("invalid_request", f"Veo takes the {which} frame as a local file, not a URL")
         return None
+    if is_url(path):
+        raise EndpointCallError("invalid_request", f"Veo takes the {which} frame as a local file, not a URL")
     _file, mime, data = read_image(path, "frame")
     if mime not in _FRAME_TYPES:
         raise EndpointCallError("invalid_request", f"the {which} frame must be a PNG or a JPEG, got {mime}")
@@ -54,9 +54,9 @@ def _frame(path: str, url: str, which: str) -> dict[str, str] | None:
 
 def to_wire(request: VideoRequest) -> dict[str, Any]:
     instance: dict[str, Any] = {"prompt": request.prompt}
-    if first := _frame(request.first_frame, request.first_frame_url, "first"):
+    if first := _frame(request.first_frame, "first"):
         instance["image"] = first
-    if last := _frame(request.last_frame, request.last_frame_url, "last"):
+    if last := _frame(request.last_frame, "last"):
         instance["lastFrame"] = last
     parameters: dict[str, Any] = {
         "durationSeconds": duration_for(request.duration_s),

@@ -11,6 +11,10 @@ from typing import Any, Awaitable, Callable
 
 from flow_sdk.endpoint_call.errors import EndpointCallError
 
+#: The first checks of a job come sooner than its vendor's interval.
+EARLY_POLLS = 4
+EARLY_POLL_SECONDS = 3.0
+
 
 def read_image(path: str, what: str = "image") -> tuple[Path, str, str]:
     """``(file, mime, base64)`` of local image ``path``; ``invalid_request`` when it is not there."""
@@ -24,12 +28,15 @@ def read_image(path: str, what: str = "image") -> tuple[Path, str, str]:
 async def poll_job(
     job_id: str, check: Callable[[], Awaitable[Any]], *, every: float, timeout: float, vendor: str
 ) -> Any:
-    """Ask ``check`` every ``every`` seconds until it answers something other than ``None``, and
-    return that. ``timed_out`` after ``timeout`` seconds; every failure carries ``job_id``, so a job
-    cut short can be looked up rather than started again."""
+    """Ask ``check`` until it answers something other than ``None``, and return that: soon at first
+    (a short job should not wait a full interval), then every ``every`` seconds. ``timed_out`` after
+    ``timeout`` seconds; every failure carries ``job_id``, so a job cut short can be looked up rather
+    than started again."""
     deadline = time.monotonic() + timeout
+    asked = 0
     while True:
-        await asyncio.sleep(every)
+        await asyncio.sleep(min(every, EARLY_POLL_SECONDS) if asked < EARLY_POLLS else every)
+        asked += 1
         try:
             finished = await check()
         except EndpointCallError as exc:

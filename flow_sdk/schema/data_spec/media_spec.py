@@ -56,13 +56,11 @@ class VideoRequest(DataSpec):
     resolution: str = ""
     aspect_ratio: str = "16:9"
     audio: bool = False
-    #: The frames the clip starts and ends on, as local image files. The dialect hosts them
-    #: for the vendor through the same endpoint (``file.upload``).
+    #: The frames the clip starts and ends on: a local image file, or the public URL of one that is
+    #: already hosted. What a vendor cannot take as given, its dialect converts (a file is hosted
+    #: through the same endpoint, ``file.upload``) or refuses.
     first_frame: str = ""
     last_frame: str = ""
-    #: The same frames as public URLs, for images that are already hosted. A URL wins over a file.
-    first_frame_url: str = ""
-    last_frame_url: str = ""
 
 
 class VideoResult(DataSpec):
@@ -77,6 +75,10 @@ class VideoResult(DataSpec):
     latency_ms: float = 0.0
 
 
+def is_url(frame: str) -> bool:
+    return frame.startswith(("http://", "https://"))
+
+
 __all__ = [
     "FILE_UPLOAD",
     "IMAGE_GENERATE",
@@ -85,4 +87,5 @@ __all__ = [
     "ImageResult",
     "VideoRequest",
     "VideoResult",
+    "is_url",
 ]

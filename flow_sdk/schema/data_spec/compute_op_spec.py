@@ -49,6 +49,7 @@ from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.confirm_spec import ConfirmSpec
 from flow_sdk.schema.data_spec.decision_spec import ChoiceQuestion, Question, ScoreQuestion, YesNoQuestion
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
+from flow_sdk.schema.data_spec.endpoint_capability import CAPABILITIES
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.returned_value_spec import (
     AskResult,
@@ -180,7 +181,8 @@ class CliOp(ExeData):
     def _has_a_command(self) -> "CliOp":
         if not self.commands and not self.source_step and not self.webapp_step and not self.requirement_step:
             raise ValueError(
-                "a cli op needs a command for at least one platform, a source_step, a webapp_step or a requirement_step")
+                "a cli op needs a command for at least one platform, a source_step, a webapp_step or a requirement_step"
+            )
         return self
 
     def command_for(self, platform: str = "") -> Optional[str]:
@@ -316,9 +318,13 @@ class DecisionOp(ExeData):
             question = self.questions.get(name)
             if question is None:
                 raise ValueError(f"require.{name} names no question (the questions are {sorted(self.questions)})")
-            wanted = {"choice": ChoiceQuestion, "yes": YesNoQuestion, "no": YesNoQuestion, "at_least": ScoreQuestion}[req.kind]
+            wanted = {"choice": ChoiceQuestion, "yes": YesNoQuestion, "no": YesNoQuestion, "at_least": ScoreQuestion}[
+                req.kind
+            ]
             if not isinstance(question, wanted):
-                raise ValueError(f"require.{name}: a {req.kind} requirement needs a {wanted.model_fields['type'].default} question")
+                raise ValueError(
+                    f"require.{name}: a {req.kind} requirement needs a {wanted.model_fields['type'].default} question"
+                )
             if req.choice is not None and req.choice not in question.options:
                 raise ValueError(f"require.{name}: {req.choice!r} is not one of its options {sorted(question.options)}")
             if req.at_least is not None and req.at_least not in question.levels:
@@ -530,7 +536,7 @@ class EndpointOp(ExeData):
 
     ``kind`` names the capability (``image.generate``, ``video.generate``); what it takes and
     what it returns are that capability's own request and result specs
-    (``flow_sdk.endpoint_call.CAPABILITIES``), so the op declares neither. Which vendor
+    (``endpoint_capability.CAPABILITIES``), so the op declares neither. Which vendor
     answers is decided by the hub from the kind, never written here. The answer is its own
     verdict: a clip that was made is not made again to check it.
     """
@@ -552,8 +558,6 @@ class EndpointOp(ExeData):
     @field_validator("kind")
     @classmethod
     def _a_known_capability(cls, v: str) -> str:
-        from flow_sdk.endpoint_call import CAPABILITIES  # noqa: PLC0415 — the table lives with the call
-
         if v not in CAPABILITIES:
             raise ValueError(f"{v!r} is not a capability (one of {sorted(CAPABILITIES)})")
         return v
@@ -590,7 +594,7 @@ def validate_shape(shape: Any) -> None:
             validate_shape(child)
     elif isinstance(shape, str):
         if shape.startswith(OPTIONAL_MARK):
-            validate_shape(shape[len(OPTIONAL_MARK):])
+            validate_shape(shape[len(OPTIONAL_MARK) :])
         elif not shape.startswith(ENUM_PREFIX):
             for kind in shape.split(KIND_UNION):
                 if not known_kind(kind_of(kind)):
@@ -761,10 +765,13 @@ class ComputeOpSpec(AssetDocumentSpec):
         if self.completion_check is not None and self.status_check:
             raise ValueError(f"{self.name or 'this op'}: a completion_check or a status_check, not both")
         checked = self.completion_check is not None or bool(self.status_check)
-        if getattr(self.exe_data, "auto_continue", False) and not (checked and (
-            (self.exe_data.recheck and self.output_shape == ConfirmSpec.spec_kind)
-            or any(choice.command for choice in self.exe_data.choices)
-        )):
+        if getattr(self.exe_data, "auto_continue", False) and not (
+            checked
+            and (
+                (self.exe_data.recheck and self.output_shape == ConfirmSpec.spec_kind)
+                or any(choice.command for choice in self.exe_data.choices)
+            )
+        ):
             raise ValueError(
                 f"{self.name or 'this op'}: auto_continue needs a check, and either recheck with output "
                 "confirm or a choice that is a command"

@@ -33,10 +33,11 @@ from urllib.parse import urlparse
 
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
+from flow_sdk.schema.data_spec.endpoint_capability import DECISION
 
 logger = logging.getLogger(__name__)
 
-DECISION_KIND = "decision"
+DECISION_KIND = DECISION
 #: The header the hub reads the kind from. It is the hub's business only: never forwarded.
 KIND_HEADER = "x-flowpad-kind"
 _LIST_TTL_SECONDS = 30.0
