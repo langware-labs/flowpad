@@ -471,7 +471,9 @@ async def test_an_invite_box_calls_its_sealed_endpoint_with_the_key_the_hub_plac
     from flow_sdk.instance_settings import api_endpoint as listing
 
     hub["rows"] = []  # nothing this machine may list
-    monkeypatch.setenv(listing.SEALED_URL_VAR, "https://0f0e0d0c-aaaa-bbbb-cccc-000000000001.hub.test")
+    monkeypatch.setenv(
+        listing.SEALED_URL_VAR, "https://hub.test/api/v1/graph/api_endpoint/0f0e0d0c-aaaa-bbbb-cccc-000000000001/invoke"
+    )
     monkeypatch.setenv(listing.SEALED_KEY_VAR, "fp_box_key")
     monkeypatch.setenv(listing.SEALED_SERVES_VAR, json.dumps({IMAGE_GENERATE: "aiplatform.googleapis.com"}))
     listing.invalidate_api_endpoint_listing()
@@ -493,7 +495,8 @@ async def test_an_invite_box_calls_its_sealed_endpoint_with_the_key_the_hub_plac
         listing.invalidate_api_endpoint_listing()
 
     (request,) = seen
-    assert request.url.host == "0f0e0d0c-aaaa-bbbb-cccc-000000000001.hub.test"
+    assert request.url.host == "hub.test"
+    assert request.url.path.startswith("/api/v1/graph/api_endpoint/0f0e0d0c-aaaa-bbbb-cccc-000000000001/invoke/")
     assert request.url.path.endswith(":generateContent")
     assert request.headers["authorization"] == "Bearer fp_box_key"
     assert request.headers[KIND_HEADER] == IMAGE_GENERATE

@@ -16,7 +16,7 @@ Finding a DECISION endpoint is then a filter on ``kinds``, not a hub query: the 
 the tag, the caller keeps the kinds it needs.
 
 A machine with no hub login (an invite box) lists nothing. It may still hold a SEALED endpoint:
-the hub placed its own allocation's origin, a key that can only invoke it, and what it serves
+the hub placed its own allocation's invoke URL, a key that can only invoke it, and what it serves
 (``sealed_endpoint``). That one is offered last, and called with the key instead of a login.
 """
 
@@ -26,6 +26,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
@@ -49,6 +50,7 @@ _serves_cache: dict[str, tuple[float, dict[str, str]]] = {}
 SEALED_URL_VAR = "FLOWPAD_API_ENDPOINT_URL"
 SEALED_KEY_VAR = "FLOWPAD_API_ENDPOINT_KEY"
 SEALED_SERVES_VAR = "FLOWPAD_API_ENDPOINT_SERVES"
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _SEALED_VARS = (SEALED_URL_VAR, SEALED_KEY_VAR, SEALED_SERVES_VAR)
 #: (fetched_at, the sealed endpoint or None). A reset machine gets a new key: never kept for long.
 _sealed_cache: tuple[float, "SealedEndpoint | None"] | None = None
@@ -92,7 +94,8 @@ async def sealed_endpoint() -> SealedEndpoint | None:
         except ValueError:
             serves = {}
         serves = {str(k): str(v) for k, v in serves.items()} if isinstance(serves, dict) else {}
-        endpoint_id = (urlparse(url).hostname or "").split(".")[0]
+        named = _UUID.search(url)  # the allocation's id is in its invoke URL
+        endpoint_id = named.group(0) if named else "sealed"
         offer = APIEndpointOffer(id=endpoint_id, name="this machine's API budget", kinds=sorted(serves))
         sealed = SealedEndpoint(offer=offer, url=url, key=key, serves=serves)
     _sealed_cache = (time.monotonic(), sealed)
