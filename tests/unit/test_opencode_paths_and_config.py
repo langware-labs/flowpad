@@ -381,11 +381,12 @@ def test_unbound_model_does_not_override_native_title_defaults():
 async def test_driver_config_uses_cached_final_binding(tmp_path):
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import WorkerApiAuth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import ProcessMcpRuntime
     from flow_sdk.builtin.agentic_process.cli_drivers.opencode.driver import OpenCodeDriver
 
     process = AgenticProcess(worker_type="opencode", workdir=str(tmp_path))
     model = "openrouter/openai/gpt-4o-mini"
     process.__dict__["_spawn_api_auth"] = WorkerApiAuth(model_slug=model, endpoint_typeid="llm_endpoint-test")
-    path = await OpenCodeDriver()._write_config(process, None)
+    path = await OpenCodeDriver()._write_config(process, None, ProcessMcpRuntime())
     written = json.loads(path.read_text())
     assert written["small_model"] == written["agent"]["title"]["model"] == model
