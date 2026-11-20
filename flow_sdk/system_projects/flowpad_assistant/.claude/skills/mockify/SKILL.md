@@ -72,7 +72,7 @@ follow. Browsing is never guessed: nothing outside the tree decides where a clic
 | `tag` | `existing` (default: the product today, its changes drawn as a diff) or `new` (only the suggestion has it; no marks). **The tag never decides whether a screen is walked** |
 | `actions` | every clickable thing the reviewer will try — see below |
 | `state` | optional assertion, `["ticket=picked"]`: what must be true here |
-| `changes`, `decisions` | the proposed changes ON this screen (see "Existing vs new"); open questions (D1, D2… unique across the mock) |
+| `changes`, `decisions` | the proposed changes ON this screen (see "Existing vs new"); open questions, each `{id: "D1", question: "…"}` (ids unique across the mock) |
 
 **Action** (`mockify.action`, an edge): `{id, label, does, to?, kind?, when?, set?}`
 

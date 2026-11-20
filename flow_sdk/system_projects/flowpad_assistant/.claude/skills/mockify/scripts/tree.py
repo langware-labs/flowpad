@@ -152,6 +152,9 @@ def _walk(tree: dict, mock: dict, problems: list) -> list:
                     kids.setdefault(sid, []).append(a)
         if mains > 1:
             problems.append(f"{sid}: {mains} main actions -- a screen continues one way; the others are branches")
+        for d in s.get("decisions") or []:
+            if not isinstance(d, dict) or not d.get("id") or not str(d.get("question") or "").strip():
+                problems.append(f"{sid}: decision {d!r} is not {{id, question}}")
         changes = s.get("changes") or []
         ids = [c.get("id") for c in changes]
         if len(set(ids)) != len(ids):

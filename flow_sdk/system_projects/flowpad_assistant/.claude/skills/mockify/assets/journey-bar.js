@@ -645,7 +645,7 @@
       panel.innerHTML = html; return;
     }
     if (decisions.length) {
-      html += `<div class="chips">${decisions.map((d) => `<button class="chip${draft.decision === d.id ? ' on' : ''}" data-dec="${esc(d.id)}" title="${esc(d.question)}">${esc(d.id)} · ${esc(d.question.length > 40 ? d.question.slice(0, 40) + '…' : d.question)}</button>`).join('')}</div>`;
+      html += `<div class="chips">${decisions.map(({ id, question }) => { const q = question || ''; return `<button class="chip${draft.decision === id ? ' on' : ''}" data-dec="${esc(id)}" title="${esc(q)}">${esc(id)} · ${esc(q.length > 40 ? q.slice(0, 40) + '…' : q)}</button>`; }).join('')}</div>`;
     }
     if (draft.anchor) {
       html += `<div class="anchor">📍 <span>On</span> <b title="${esc(draft.anchor.selector)}">${esc(draft.anchor.label)}</b><button class="ico clear-anchor" title="Not on this element">✕</button></div>`
