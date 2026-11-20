@@ -24,7 +24,12 @@ from flow_sdk.external_apis.decision import (
     failure_detail,
     reason_for_status,
 )
-from flow_sdk.instance_settings.api_endpoint import decision_endpoints, fetch_hub_api_endpoints
+from flow_sdk.instance_settings.api_endpoint import (
+    DECISION_KIND,
+    KIND_HEADER,
+    decision_endpoints,
+    fetch_hub_api_endpoints,
+)
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import (
     ChoiceAnswer,
@@ -42,6 +47,9 @@ from flow_sdk.schema.data_spec.decision_spec import (
 async def _endpoint(endpoint: Optional[str]) -> APIEndpointOffer:
     if endpoint:
         wanted = endpoint.removeprefix("api_endpoint-")
+        for offer in await decision_endpoints():  # an allocation's vendor host comes from its chain
+            if offer.id == wanted:
+                return offer
         for offer in await fetch_hub_api_endpoints():
             if offer.id == wanted:
                 return offer
@@ -73,7 +81,8 @@ async def decide(spec: DecisionSpec | dict, *, endpoint: Optional[str] = None) -
         if url is None:
             status, body = 0, None
         else:
-            resp = await HubProxy.send("POST", url, json=sent)
+            # The kind names which of the endpoint's roots answers (one endpoint may front several APIs).
+            resp = await HubProxy.send("POST", url, json=sent, headers={KIND_HEADER: DECISION_KIND})
             status = resp.status_code
             try:
                 body = resp.json()

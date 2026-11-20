@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from flow_sdk.external_apis.decision.errors import DecisionError
+from flow_sdk.instance_settings.api_endpoint import DECISION_KIND
 from flow_sdk.schema.data_spec.decision_spec import (
     ChoiceAnswer,
     ChoiceQuestion,
@@ -22,6 +23,7 @@ from flow_sdk.schema.data_spec.decision_spec import (
     YesNoAnswer,
 )
 
+KIND = DECISION_KIND
 PATH = "v1/systemone"
 DEFAULT_MODEL = "jev-latest"
 HOSTS = ("api.typesafe.ai",)
@@ -73,3 +75,8 @@ def from_wire(spec: DecisionSpec, body: Any) -> DecisionResult:
             input_tokens=int(usage.get("input_tokens") or 0), output_tokens=int(usage.get("output_tokens") or 0)
         ),
     )
+
+
+async def run(spec: DecisionSpec, transport: Any, out_dir: Any = None) -> DecisionResult:
+    """The dialect as the unified call runs every capability (``flow_sdk.endpoint_call``): one request, one answer."""
+    return from_wire(spec, await transport.send("POST", PATH, json=to_wire(spec)))

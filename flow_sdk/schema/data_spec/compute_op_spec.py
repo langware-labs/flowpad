@@ -41,7 +41,7 @@ from __future__ import annotations
 import sys
 from typing import Any, ClassVar, Literal, Optional, Union
 
-from pydantic import Field, model_serializer, model_validator
+from pydantic import Field, field_validator, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
@@ -89,7 +89,8 @@ class OpSubkind(StrEnum):
 
     ``navigate`` shows a place and answers whether it can be used there;
     ``cli`` is a subprocess; ``decision`` is a closed question put to the Decision
-    API (no text, calibrated answers); ``prompt`` is a model with no tools;
+    API (no text, calibrated answers); ``endpoint`` is one capability of a hub API
+    endpoint (an image, a video); ``prompt`` is a model with no tools;
     ``agent`` is a spawned harness carrying an Agent's identity, with tools;
     ``ask`` is a person — the most expensive thing to spend.
     """
@@ -98,6 +99,7 @@ class OpSubkind(StrEnum):
     CLI = "cli"
     PYTHON = "python"
     DECISION = "decision"
+    ENDPOINT = "endpoint"
     PROMPT = "prompt"
     AGENT = "agent"
     ASK = "ask"
@@ -523,12 +525,47 @@ class AskOp(ExeData):
         return self
 
 
+class EndpointOp(ExeData):
+    """One capability of a hub ``APIEndpoint`` run on one value in scope.
+
+    ``kind`` names the capability (``image.generate``, ``video.generate``); what it takes and
+    what it returns are that capability's own request and result specs
+    (``flow_sdk.endpoint_call.CAPABILITIES``), so the op declares neither. Which vendor
+    answers is decided by the hub from the kind, never written here. The answer is its own
+    verdict: a clip that was made is not made again to check it.
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.endpoint"
+    #: A video job runs for minutes.
+    DEFAULT_TIMEOUT: ClassVar[float] = AGENT_TIMEOUT
+    RECHECKED: ClassVar[bool] = False
+    PLAIN_VALUE: ClassVar[bool] = True
+    #: The scope name the request is read from when the op names none.
+    DEFAULT_INPUT: ClassVar[str] = "REQUEST"
+
+    kind: str
+    #: One endpoint (an id or ``api_endpoint-<id>``); empty finds one by what it serves.
+    endpoint: str = ""
+    #: The scope value (by name) that is the capability's request.
+    input: str = DEFAULT_INPUT
+
+    @field_validator("kind")
+    @classmethod
+    def _a_known_capability(cls, v: str) -> str:
+        from flow_sdk.endpoint_call import CAPABILITIES  # noqa: PLC0415 — the table lives with the call
+
+        if v not in CAPABILITIES:
+            raise ValueError(f"{v!r} is not a capability (one of {sorted(CAPABILITIES)})")
+        return v
+
+
 #: Which ``exe_data`` class each subkind carries — the whole dispatch table.
 EXE_DATA: dict[OpSubkind, type[ExeData]] = {
     OpSubkind.PYTHON: PythonOp,
     OpSubkind.NAVIGATE: NavigateOp,
     OpSubkind.CLI: CliOp,
     OpSubkind.DECISION: DecisionOp,
+    OpSubkind.ENDPOINT: EndpointOp,
     OpSubkind.PROMPT: PromptOp,
     OpSubkind.AGENT: AgentOp,
     OpSubkind.ASK: AskOp,
@@ -657,7 +694,7 @@ class ComputeOpSpec(AssetDocumentSpec):
     description: str = ""
     subkind: OpSubkind = OpSubkind.CLI
     #: The call itself — the DataSpec ``compute_op.<subkind>``.
-    exe_data: Union[NavigateOp, CliOp, PythonOp, DecisionOp, PromptOp, AgentOp, AskOp]
+    exe_data: Union[NavigateOp, CliOp, PythonOp, DecisionOp, EndpointOp, PromptOp, AgentOp, AskOp]
     input: Optional[ShapeForm] = None
     output: Optional[ShapeForm] = None
     #: The kind of what this op RETURNS: a registered DataSpec kind, or a
