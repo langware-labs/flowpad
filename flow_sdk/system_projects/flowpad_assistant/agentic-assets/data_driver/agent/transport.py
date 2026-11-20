@@ -28,7 +28,7 @@ from flow_sdk.builtin.agentic_process.launch_health import (
     emit_launch_failed,
     ensure_launchable,
 )
-from flow_sdk.ingest.driver_runtime import ingest_run_context
+from flow_sdk.ingest.driver_runtime import ingest_run_context, message_files_root
 from flow_sdk.ingest.health import SourceError
 
 from .source import PERSON_FIXES, browser_of, profile_of
@@ -243,13 +243,22 @@ def _run_prefix(source: Any, config: Mapping[str, Any]) -> list[str]:
     profile = profile_of(config)  # every prompt re-asserts the invariant it prints
     lines = [f"- data-source id (`data_source_id`): `{source.id}`", f"- provider: `{config.get('connector')}`"]
     if profile.browser:
-        lines.append(f"- the page-batch script, by absolute path: `{Path(__file__).with_name('page_batch.py')}`")
-        if source.account:
-            lines.append(f"- this account, as the source knows it (`--account`): `{source.account}`")
-        from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
-
-        lines.append(f"- where message media is kept (`--media`): `{data_dir_for('data_source', source.id) / 'files'}`")
+        lines.append(f"- the page-batch command — run it as written, adding `--in <observed file> --out <batch file>`: `{page_batch_command(source, config)}`")
     return lines
+
+
+def page_batch_command(source: Any, config: Mapping[str, Any]) -> str:
+    """The batch script's whole command line but its two files: a worker that assembles flags from
+    prose gets one wrong."""
+    import shlex  # noqa: PLC0415
+
+    argv = [
+        "python3", str(Path(__file__).with_name("page_batch.py")), "--source", str(source.id),
+        "--provider", str(config.get("connector")), "--kind", profile_of(config).kind,
+        *(("--account", source.account) if source.account else ()),
+        "--media", str(message_files_root(source.id)),
+    ]
+    return shlex.join(argv)
 
 
 def _run_suffix(receipt_path: Any, flow_cli: Path) -> list[str]:
@@ -280,22 +289,23 @@ def page_clock(since: str) -> list[str]:
     from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
 
     form = "%A %Y-%m-%d %H:%M (UTC%z)"
-    lines = [f"now, on the page's clock (local time): `{datetime.now().astimezone().strftime(form)}`"]
+    lines = [f"- now, on the page's clock (local time): `{datetime.now().astimezone().strftime(form)}`"]
     if floor := iso_to_utc(since):
-        lines.append(f"the floor on the page's clock: `{floor.astimezone().strftime(form)}`")
+        lines.append(f"- the floor on the page's clock: `{floor.astimezone().strftime(form)}`")
     return lines
 
 
 def fetch_instruction(source: Any, config: Mapping[str, Any], receipt_path: Any, *, mailbox: str, since: str) -> str:
     """The subagent markdown leads; only the per-run addendum is built here. The CLI is named by
     ABSOLUTE path: a stale ``flow`` on the worker's PATH once shadowed this backend's."""
-    body = _subagent_prompt(str(config.get("subagent") or profile_of(config).subagent))
+    profile = profile_of(config)
+    body = _subagent_prompt(str(config.get("subagent") or profile.subagent))
     flow_cli = Path(sys.executable).parent / "flow"
     run_lines = [
         *_run_prefix(source, config),
-        f"- {profile_of(config).mailbox_noun}: `{mailbox}`",
+        f"- {profile.mailbox_noun}: `{mailbox}`",
         f"- fetch messages newer than: `{since or '(no floor — fetch the most recent)'}`",
-        *([f"- {line}" for line in page_clock(since)] if profile_of(config).browser else []),
+        *(page_clock(since) if profile.browser else []),
         f"- record at most {int(config.get('max_items') or 25)} messages, newest first",
         *_run_suffix(receipt_path, flow_cli),
     ]

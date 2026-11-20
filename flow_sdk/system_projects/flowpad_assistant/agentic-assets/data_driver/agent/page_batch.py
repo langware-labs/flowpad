@@ -49,10 +49,8 @@ def items(observed: list[dict], *, source: str, provider: str, kind: str, accoun
     out = []
     for row in observed:
         conversation, sender = (str(row[k]).strip() for k in ("conversation", "sender"))
-        # A message with no words of its own (a video, a file) is named the same way on every read.
-        text = _BLANK_RUN.sub("\n\n", "\n".join(line.rstrip() for line in str(row.get("text") or "").strip().splitlines())) or NO_TEXT
+        text = _body(str(row.get("text") or ""))
         at = minute_utc(str(row["date"]), str(row["time"])).isoformat()
-        # Keyed on the words alone: two reads of one page differ in how they space the same text.
         key = (conversation, sender, at, " ".join(text.split()))
         seen[key] += 1
         digest = hashlib.sha256("\x1f".join((*key, str(seen[key]))).encode()).hexdigest()[:20]
@@ -61,21 +59,28 @@ def items(observed: list[dict], *, source: str, provider: str, kind: str, accoun
             "external_id": f"{conversation}:{digest}", "name": "", "body": text, "occurred_at": at,
             "author_display": sender, "author_external_id": account if account and row.get("mine") else str(row.get("sender_id") or sender),
             "thread_key": conversation, "permalink": row.get("permalink") or None,
-            "files": [_keep(Path(path), media, f"{digest}-{n}") for n, path in enumerate(row.get("files") or ())],
+            "files": [home for n, path in enumerate(row.get("files") or ()) if (home := _keep(Path(path), media, f"{digest}-{n}"))],
         })
     return out
 
 
+def _body(text: str) -> str:
+    """The text as it is stored: trailing spaces and runs of blank lines gone, and a message with no
+    words of its own (a video, a file) named the same way on every read."""
+    return _BLANK_RUN.sub("\n\n", "\n".join(line.rstrip() for line in text.strip().splitlines())) or NO_TEXT
+
+
 def _keep(saved: Path, media: str, stem: str) -> str:
-    """Where a saved file lives from now on: moved into ``media`` (when given) under the message's own name."""
-    saved = saved.expanduser()
+    """Where a saved file lives from now on — moved into ``media`` under the message's own name —
+    or ``""`` when it is neither where the worker said nor already kept."""
     if not media:
-        return str(saved.resolve())
+        raise SystemExit("a message with files needs --media: where they are kept")
+    saved = saved.expanduser()
     home = Path(media) / f"{stem}{saved.suffix.lower()}"
     if saved.is_file():
         home.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(saved), home)
-    return str(home)
+    return str(home) if home.is_file() else ""
 
 
 def main() -> None:

@@ -156,7 +156,7 @@ async def test_a_browser_connector_names_its_browser_and_parks_without_one(worke
 
 def test_a_send_a_person_must_fix_is_reported_as_not_authenticated():
     transport = asset_module("agent", "transport")
-    with pytest.raises(Exception) as caught:
+    with pytest.raises(transport.LaunchError) as caught:
         transport.send_result_from({"sent": False, "error": "signed_out"})
     assert caught.value.code is transport.LaunchErrorCode.NOT_AUTHENTICATED
 
@@ -176,6 +176,12 @@ def test_a_page_message_keeps_its_identity_across_reads_and_twins_stay_apart():
     assert [i["external_id"] for i in first] == [i["external_id"] for i in again[:2]]
     assert len({i["external_id"] for i in again}) == 3 and first[0]["thread_key"] == "2-abc=="
     assert page_batch.minute_utc("2026-11-20", "23:55") == page_batch.minute_utc("2026-11-20", "11:55 pm")
+
+
+def test_a_page_message_names_our_own_words_the_wordless_and_the_respaced():
+    page_batch = asset_module("agent", "page_batch")
+    build = functools.partial(page_batch.items, source="ds", provider="linkedin", kind="content.message.chat")
+    said = {"conversation": "2-abc==", "sender": "Dana Levi", "date": "2026-11-20", "time": "11:55 PM", "text": "שלום"}
     ours = build([{**said, "mine": True}, said], account="me-key")
     assert [i["author_external_id"] for i in ours] == ["me-key", "Dana Levi"]
     spaced = build([{**said, "text": "a\n\n\n\n b"}, {**said, "text": "a\n\nb"}])

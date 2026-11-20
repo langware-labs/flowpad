@@ -65,7 +65,7 @@ from here on.
 Read back from the page: the sender name printed above your message (the
 account you are signed in as), the day heading as a calendar date, and the
 clock time shown. Write one observed message and build the record with the
-script from your run details — the same script the reader uses, so the two
+page-batch command from your run details — the same script the reader uses, so the two
 agree on the message's id:
 
 ```python
@@ -76,7 +76,7 @@ json.dump([{"conversation": "<thread_key>", "sender": "<your name as printed>",
 ```
 
 ```bash
-python3 <the page-batch script> --source <data_source_id> --provider <provider> --kind content.message.chat --account <this account, when your run details name one> --in /tmp/li_sent.json --out /tmp/li_sent_batch.json
+<the page-batch command> --in /tmp/li_sent.json --out /tmp/li_sent_batch.json
 <the absolute flow path> record create source_item --json /tmp/li_sent_batch.json
 ```
 

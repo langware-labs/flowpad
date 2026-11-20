@@ -22,8 +22,18 @@ from email.utils import formataddr, getaddresses
 from typing import Any, Optional
 
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
-from flow_sdk.sources.files import LOCAL_KIND, local_file
-from flow_sdk.sources.values.items import EmailMessageData, FeedItemData, MessageData, Payload, RecordData, UserProfile
+from flow_sdk.sources.files import kind_of as file_kind_of
+from flow_sdk.sources.files import media_type_of
+from flow_sdk.sources.values.items import (
+    EmailMessageData,
+    FeedItemData,
+    FileItem,
+    MessageData,
+    MessageFileData,
+    Payload,
+    RecordData,
+    UserProfile,
+)
 from flow_sdk.sources.values.origin import CloudOrigin
 
 MESSAGE_KIND = "content.message"
@@ -93,7 +103,7 @@ def data_of(source: Any, item: Any, origin: CloudOrigin) -> Payload:
         sent_at=_when(item),
         in_reply_to=_beside(origin, _text(item, "reply_to_external_id")),
         recipients=tuple(person(addr, name) for name, addr in getaddresses(getattr(item, "recipients", None) or ()) if addr),
-        attachments=tuple(local_file(path) for path in getattr(item, "files", None) or ()),
+        attachments=tuple(_saved_file(origin, i, path) for i, path in enumerate(getattr(item, "files", None) or ())),
     )
     if email:
         return EmailMessageData(subject=_verbatim(item, "name"), **fields)
@@ -136,7 +146,7 @@ def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemS
         thread_key=data.item_thread,
         reply_to_external_id=data.item_reply_to,
         recipients=[formataddr((p.name or "", p.address or p.origin.key)) for p in getattr(data, "recipients", ())],
-        files=[f.data.path for f in getattr(data, "attachments", ()) if f.origin.kind == LOCAL_KIND and getattr(f.data, "path", None)],
+        files=[f.data.path for f in getattr(data, "attachments", ()) if _rides(f, item.origin) and getattr(f.data, "path", None)],
         raw=getattr(data, "raw", None),
         # Adoption hints: a record that already exists locally as a hub-mirrored row (a help-desk
         # ticket) names the hub's own ids, so the projection lands on that row instead of a twin.
@@ -145,6 +155,20 @@ def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemS
         origin=item.origin,
         data=data,
     )
+
+
+def _saved_file(origin: CloudOrigin, index: int, path: str) -> FileItem:
+    """A file the caller already saved, named beside its message (``<message key>#<n>``) — never by
+    the machine path, which would differ on the next machine. Read off the path alone: no disk is
+    touched, so a lift made while the file exists and one made after it is gone are the same value."""
+    media_type = media_type_of(path)
+    data = MessageFileData(name=path.replace("\\", "/").rsplit("/", 1)[-1], path=path, media_type=media_type, as_=file_kind_of(media_type))
+    return FileItem(origin=_beside(origin, f"{origin.key}#{index}"), data=data)
+
+
+def _rides(file: FileItem, message: CloudOrigin) -> bool:
+    """Whether ``file`` is named beside ``message`` — the mark of a file its caller saved."""
+    return file.origin.kind == message.kind and file.origin.key.startswith(f"{message.key}#")
 
 
 def _beside(origin: CloudOrigin, key: str) -> Optional[CloudOrigin]:

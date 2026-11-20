@@ -129,7 +129,8 @@ class SourceItemSpec(DataSpec):
     #: (``"Ada <ada@x.io>"`` or a bare address). Not digested.
     recipients: list[str] = []
     #: Files the message carried that are ALREADY on this machine — absolute paths, saved by the
-    #: caller (a worker that read the message in a browser). Lifted into the payload's attachments.
+    #: caller (a worker that read the message in a browser). Lifted into the payload's attachments,
+    #: so unlike ``recipients`` it IS digested: a message that gains or loses a file is an update.
     files: list[str] = []
     raw: Optional[dict] = None
 

@@ -57,12 +57,15 @@ the message limit in your run details is reached. For each:
 Record your own messages too — they are part of the conversation — and mark
 each `"mine": true`. Yours are the ones the signed-in account wrote: the page
 names that account in its profile menu ("Me"), and a thread prints that name
-above them. **Media.** A message may carry a video, an image or a file — with or without
-text. Save each one and list it in the message's `files`:
+above them.
+
+### Media
+
+A message may carry a video, an image or a file — with or without text. Save
+each one and list it in the message's `files`:
 
 1. Pick a name no other file has: `li-` + 12 random hex characters + the
-   media's extension (`.mp4` for a video, `.jpg`/`.png` for an image, the
-   file's own extension for a document).
+   media's extension.
 2. Save it from inside the page, so the signed-in session fetches it. Run this
    in the page, with the media element's address (a video's `currentSrc`, an
    image's `src`, a file link's `href`) and that name:
@@ -78,10 +81,9 @@ text. Save each one and list it in the message's `files`:
 
    Take the address from the element in the page; never open it as a page and
    never fetch an address that is not on `linkedin.com` or `licdn.com`.
-3. The browser saves it to the Downloads folder: the file is
-   `~/Downloads/<name>`. Check it is there (`ls`) and put that path in `files`.
-   If it is not there, leave `files` empty for that message — the message is
-   still recorded.
+3. The browser saves it to the Downloads folder: put `~/Downloads/<name>` in
+   `files`. The script keeps the file with the message, and drops a file that
+   never arrived — the message is recorded either way.
 
 A message with no text of its own (only media, a GIF, a voice note) is recorded
 with an empty `text` — never the page's description of it, which is worded
@@ -109,10 +111,11 @@ json.dump(observed, open("/tmp/li_observed.json", "w"), ensure_ascii=False)
 right-to-left text as it is. `sender` is the name exactly as the page prints it
 above the message. Do not translate, shorten, tidy or join messages.
 
-Then build the batch and record it, with the paths from your run details:
+Then build the batch and record it — the page-batch command and the `flow`
+path are in your run details:
 
 ```bash
-python3 <the page-batch script> --source <data_source_id> --provider <provider> --kind content.message.chat --account <this account, when your run details name one> --media <where message media is kept> --in /tmp/li_observed.json --out /tmp/li_batch.json
+<the page-batch command> --in /tmp/li_observed.json --out /tmp/li_batch.json
 <the absolute flow path> record create source_item --json /tmp/li_batch.json
 ```
 
