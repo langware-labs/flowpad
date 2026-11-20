@@ -3,6 +3,7 @@ worker records (a traversal returns no items), the receipt's high-water is the c
 reports a draft, a recorded copy and a deliverable honestly."""
 from __future__ import annotations
 
+import functools
 from types import SimpleNamespace
 
 import pytest
@@ -108,7 +109,10 @@ async def test_the_items_origin_joins_the_mailbox():
     assert source.query().conversation == source.origin("SENT", "SENT")
 
 
-@pytest.mark.parametrize("reported,health", [("no_connector", SourceHealth.CONFIG_ERROR), ("imap_hiccup", SourceHealth.TRANSIENT_ERROR)])
+@pytest.mark.parametrize("reported,health", [
+    ("no_connector", SourceHealth.CONFIG_ERROR), ("no_browser", SourceHealth.CONFIG_ERROR),
+    ("signed_out", SourceHealth.CONFIG_ERROR), ("imap_hiccup", SourceHealth.TRANSIENT_ERROR),
+])
 async def test_a_reported_error_classifies_by_what_fixes_it(worker, reported, health):
     worker.receipt = {"error": reported}
     with pytest.raises(Exception) as caught:
@@ -134,3 +138,38 @@ async def test_a_reply_by_message_is_declared_unsupported():
     async with source:
         with pytest.raises(Unsupported):
             await source.reply(source.origin("m-1", "INBOX"), None)  # type: ignore[arg-type]
+
+
+# ── a connector read through a browser ───────────────────────────────────────
+
+
+async def test_a_browser_connector_names_its_browser_and_parks_without_one(worker):
+    await DataDriver.loaded("agent").traverse(_row(connector="linkedin", browser="chrome_debug"), _view())
+    assert worker.fetches[0]["mailbox"] == "inbox" and worker.fetches[0]["config"]["browser"] == "chrome_debug"
+    for config in ({}, {"browser": "no-such-browser"}):
+        with pytest.raises(Exception) as caught:
+            await DataDriver.loaded("agent").traverse(_row(connector="linkedin", **config), _view())
+        assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
+    assert len(worker.fetches) == 1, "a browser source with no browser never launches a worker"
+
+
+def test_only_a_browser_connector_names_a_browser():
+    source = asset_module("agent")
+    assert source.browser_of({"connector": "linkedin", "browser": "extension"}) == "extension"
+    assert source.browser_of({"connector": "gmail", "browser": "extension"}) == ""
+
+
+def test_a_page_message_keeps_its_identity_across_reads_and_twins_stay_apart():
+    page_batch = asset_module("agent", "page_batch")
+    build = functools.partial(page_batch.items, source="ds", provider="linkedin", kind="content.message.chat")
+    said = {"conversation": "2-abc==", "sender": "Dana Levi", "date": "2026-11-20", "time": "11:55 PM", "text": "שלום"}
+    first = build([said, said])
+    again = build([said, said, {**said, "time": "11:56 PM"}])
+    assert [i["external_id"] for i in first] == [i["external_id"] for i in again[:2]]
+    assert len({i["external_id"] for i in again}) == 3 and first[0]["thread_key"] == "2-abc=="
+    assert page_batch.minute_utc("2026-11-20", "23:55") == page_batch.minute_utc("2026-11-20", "11:55 pm")
+    ours = build([{**said, "mine": True}, said], account="me-key")
+    assert [i["author_external_id"] for i in ours] == ["me-key", "Dana Levi"]
+    spaced = build([{**said, "text": "a\n\n\n\n b"}, {**said, "text": "a\n\nb"}])
+    assert build([{**said, "text": ""}])[0]["body"] == page_batch.NO_TEXT
+    assert spaced[0]["external_id"].rsplit(":", 1)[0] == spaced[1]["external_id"].rsplit(":", 1)[0] and spaced[0]["body"] == "a\n\n b"

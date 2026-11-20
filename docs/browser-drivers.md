@@ -1,3 +1,6 @@
+---
+id: a6481919-df9f-4cbb-a089-73fc45f6be5d
+---
 # Browser drivers
 
 A **browser driver** is one way a session drives a browser. It is a folder,
@@ -38,6 +41,21 @@ the folders; the launch, the footer menu and the editor ask the manifest.
 the session's own setting, the project's recommendation, then `agent`. A driver that does not
 support the session's worker is replaced by `agent`, and the answer keeps what was asked
 (`requested`) so the menu can say why.
+
+## A channel read through a browser
+
+A message channel with no API (LinkedIn) is a connector of the `agent` data driver
+(`agentic-assets/data_driver/agent/`, `CONNECTOR_PROFILES` row with `browser=True`). The source's
+config names its browser driver (`browser: extension | chrome_debug | agent`); the worker's launch
+asks for it as the `session` rung (`context_data["browser"]`).
+
+- The source refuses to run on another browser (`require_browser`, `wrong_browser`): a pick for the
+  project, or a worker the driver does not support, would read another account's inbox.
+- A page shows no message id and a time to the minute, so `page_batch.py` (run by the worker)
+  builds each record's id from the conversation, sender, minute and words, and turns the page's
+  local time into UTC. The reader and the sender both use it, so a sent message and its later
+  read are one record. An edited message is a new one; a deleted one stays.
+- The worker reports `no_browser` or `signed_out` when a person must act; both park the source.
 
 ## Settings are this machine's
 
