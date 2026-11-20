@@ -1,3 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>forkit</title>
+<link rel="stylesheet" href="/sdk/flowpad.css">
+<style>
+html, body { margin: 0; height: 100%; background: hsl(var(--background)); color: hsl(var(--foreground));
+  font-family: var(--font-sans, system-ui, sans-serif); }
+.fk { display: flex; height: 100vh; }
+.fk aside { width: 330px; flex: none; border-right: 1px solid hsl(var(--border)); overflow: auto; }
+.hd { padding: 12px; border-bottom: 1px solid hsl(var(--border)); display: grid; gap: 4px; }
+.hd span, .hd small, .it small { color: hsl(var(--muted-foreground)); font-size: 12px; }
+.pg { height: 4px; background: hsl(var(--muted)); border-radius: 2px; }
+.pg i { display: block; height: 100%; width: 0; background: #2da44e; border-radius: 2px; }
+.flt { display: flex; gap: 2px; background: hsl(var(--muted)); border-radius: 6px; padding: 2px; margin-top: 4px; }
+.flt button { flex: 1; border: 0; background: none; border-radius: 4px; padding: 3px 0; font-size: 12px; color: inherit; cursor: pointer; }
+.flt button.on { background: hsl(var(--background)); box-shadow: 0 1px 2px rgba(0,0,0,.15); font-weight: 600; }
+ul { list-style: none; margin: 0; padding: 4px; }
+.it { display: grid; grid-template-columns: 8px auto 1fr 20px 64px; gap: 6px; align-items: center; padding: 7px 8px;
+  border-radius: 6px; font-size: 13px; cursor: pointer; }
+.it:hover { background: hsl(var(--muted)); }
+.it.sel { background: hsl(var(--accent)); box-shadow: inset 3px 0 #58a6ff; }
+.it .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.it small { grid-column: 2 / 5; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--muted-foreground)); opacity: .5; }
+.dot.live { background: #2da44e; opacity: 1; }
+.dot.busy { background: #bf8700; opacity: 1; }
+.nf { border: 0; background: none; color: hsl(var(--muted-foreground)); cursor: pointer; font-size: 14px; padding: 0; }
+.nf.on { color: #58a6ff; }
+.st { grid-column: 5; grid-row: 1 / 3; border: 1px solid hsl(var(--border)); background: none; color: inherit;
+  border-radius: 6px; font-size: 11px; padding: 4px 0; font-weight: 600; cursor: pointer; }
+.st:hover { background: #2da44e; border-color: #2da44e; color: #fff; }
+.desc { grid-column: 2 / 6; margin: 4px 0 2px; font-size: 12px; line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.dn { opacity: .55; } .dn .t { text-decoration: line-through; }
+main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+main.empty { align-items: center; justify-content: center; color: hsl(var(--muted-foreground)); }
+main iframe { flex: 1; border: 0; width: 100%; }
+.th { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid hsl(var(--border)); font-size: 13px; }
+.th span { color: hsl(var(--muted-foreground)); flex: 1; }
+.err { color: #cf222e; font-size: 12px; padding: 8px 12px; }
+</style>
+</head>
+<body>
+<div class="fk">
+  <aside>
+    <div class="hd">
+      <b id="title">forkit</b>
+      <span>root: <code id="root"></code></span>
+      <div class="pg"><i id="bar"></i></div>
+      <small id="count"></small>
+      <div class="flt" id="filter">
+        <button data-f="open" class="on">Open</button><button data-f="done">Done</button><button data-f="all">All</button>
+      </div>
+    </div>
+    <ul id="list"></ul>
+    <p class="err" id="err" hidden></p>
+  </aside>
+  <main id="main" class="empty"><div id="hint">Pick an issue to start its fork.</div></main>
+</div>
+<script>window.FORKIT = /*FORKIT_CONFIG*/{};</script>
+<script type="module">
 /**
  * forkit — a list of issues on the left, the live fork working the selected one in the centre.
  *
@@ -141,3 +204,6 @@ $('filter').addEventListener('click', (ev) => {
     fail(`forkit could not load: ${e?.message || e}`);
   }
 })();
+</script>
+</body>
+</html>

@@ -39,9 +39,9 @@ data (`forkit.issue` rows), so the app, another window or an agent all see the s
    - `desc`: what the issue is about, in plain words; it is what the person reads behind ⓘ.
    - `prompt`: leave it out for the default ("work ONLY issue #N … propose the fix"). Write one when the issue
      needs a specific first step (its failing test, the file to start in).
-2. `"$FLOWPAD_PYTHON" -I <this skill>/scripts/forkit.py issues.json` → `{ok, slug, typeid, app_url}`.
+2. `"$FLOWPAD_PYTHON" -I <this skill>/scripts/forkit.py issues.json` → `{ok, slug, issues, page}`.
    Re-running the same title keeps every issue's status and fork; issues no longer listed are removed.
-3. `flow show entity <typeid>`.
+3. `flow show file <page>`.
 
 Reply with: how many issues, the root, that a fork starts when an issue is first opened, and that ✓ Done closes it.
 
@@ -49,8 +49,8 @@ Page code follows the **flow-js** skill (the terminal frame carries the page-sta
 
 ## Where things are
 
-- The forkit project: `<workspace root>/forkit` (`~/Flowpad workspace/forkit`; `FORKIT_HOME` overrides — never under
-  `~/.flow`, which Flowpad never loads as a project, so the kind would vanish on restart), namespace `forkit_runs`, dataset `issues`
-  (every run; key `<slug>--<issue id>`), the app per run in `agentic-assets/webapp/forkit-<slug>/`.
-- Rows: read or fix with the data-management skill's `dm_ctl` (`ds-rows <home>/agentic-assets/dataset/issues
-  --match '{"input.run": "<slug>"}'`); never edit row files by hand.
+- The page: ONE file, `forkit.html` in this skill; each run is a copy with its run filled in, `<home>/forkit-<slug>.html`.
+- The kind: `forkit.issue`, shipped by Flowpad (`flowpad_assistant/agentic-assets/data_schema/forkit.issue`) — nothing to apply.
+- The rows: the `issues` dataset of the forkit project, `<workspace root>/forkit` (`FORKIT_HOME` overrides; never under
+  `~/.flow`); every run, key `<slug>--<issue id>`. Read or fix them with the data-management skill's `dm_ctl`
+  (`ds-rows <home>/agentic-assets/dataset/issues --match '{"input.run": "<slug>"}'`); never edit row files by hand.

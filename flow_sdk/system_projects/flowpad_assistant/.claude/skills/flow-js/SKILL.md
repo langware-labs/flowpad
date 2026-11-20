@@ -16,6 +16,14 @@ description: How a page talks to Flowpad through the browser JS SDK (`/sdk/flowp
 Every Flowpad page reaches Flowpad through the SDK, same-origin, with the key Flowpad gave it. Calls and patterns
 by use case: `reference/api.md`.
 
+## 0. The shape — one HTML file, data in tables
+
+A page is ONE `.html` file (styles and script inline), shown with `flow show file`. No build, no web app to register.
+Data that must persist is rows of a kind, read and written through `sdk.Dataset` — a dataset is the page's table.
+A skill Flowpad ships declares its kinds once, in `flowpad_assistant/agentic-assets/data_schema/<skill>.<kind>/`: the
+name is plain (`forkit.issue`), one for the whole system, nothing to copy or apply per project. A page of your own
+project uses that project's kinds (`--<ns>--.<kind>`, the data-management skill). The forkit skill is the example.
+
 ## 1. Load it — pick by where the page runs
 
 | page | load |

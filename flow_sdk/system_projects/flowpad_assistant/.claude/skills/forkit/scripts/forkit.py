@@ -1,29 +1,27 @@
-"""forkit: put a list of issues into the forkit project and serve the app that works them in forks.
+"""forkit: write a list of issues as rows and make the one page that works them in forks.
 
 Usage: "$FLOWPAD_PYTHON" -I forkit.py <issues.json>
 
 issues.json: {"root": "<agentic_process id>", "title": "...", "slug"?: "...",
               "issues": [{"id": "60", "title": "...", "desc"?: "...", "prompt"?: "..."}]}
 
-- The forkit project lives at ``$FORKIT_HOME`` (default ``<workspace root>/forkit``, e.g. ``~/Flowpad workspace/forkit``), a Flowpad project of its own with its
-  own namespace; its ``issues`` dataset holds every run's rows (``forkit.issue``, key ``<slug>--<issue id>``).
+- Rows are ``forkit.issue`` (a kind Flowpad ships), in the ``issues`` dataset of the forkit project at ``$FORKIT_HOME``
+  (default ``<workspace root>/forkit``); key ``<slug>--<issue id>``.
 - Re-running a slug keeps each issue's status and fork; issues no longer listed are removed.
-- The app is copied to ``<home>/agentic-assets/webapp/forkit-<slug>/`` and served; prints ``{ok, typeid, app_url}``.
-Forks are NOT made here: the app makes one the first time an issue is opened.
+- The page is ``<home>/forkit-<slug>.html`` (the skill's ``forkit.html`` with the run filled in); prints ``{ok, page}``.
+Forks are NOT made here: the page makes one the first time an issue is opened.
 """
 
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 SKILL = Path(__file__).resolve().parent.parent
 DM_CTL = SKILL.parent / "data-management" / "scripts" / "dm_ctl.py"
-NS = "forkit_runs"
-KIND = f"--{NS}--.forkit.issue"
+KIND = "forkit.issue"
 
 
 def out(**data) -> None:
@@ -35,8 +33,8 @@ def fail(message: str) -> None:
     sys.exit(1)
 
 
-def flow(*args: str, cwd: Path | None = None) -> dict:
-    done = subprocess.run(["flow", *args], capture_output=True, text=True, cwd=cwd)
+def flow(*args: str) -> dict:
+    done = subprocess.run(["flow", *args], capture_output=True, text=True)
     text = done.stdout
     try:
         return json.JSONDecoder().raw_decode(text[text.index("{"):])[0]
@@ -62,33 +60,19 @@ def project_for(root: Path) -> str:
     return str(created["id"])
 
 
-def ensure_project(home: Path) -> str:
-    """The forkit project: manifest (own ns), the forkit kinds, the ``issues`` dataset; applied and indexed."""
-    manifest = home / "agentic-assets" / "project_manifest" / "project_manifest.json"
-    if not manifest.exists():
-        manifest.parent.mkdir(parents=True, exist_ok=True)
-        manifest.write_text(json.dumps({"schema": 1, "ns": NS, "requires": {}, "entries": []}, indent=2) + "\n")
-    project_id = project_for(home)
-    schema_dst = home / "agentic-assets" / "data_schema" / "forkit"
-    if schema_dst.exists():
-        shutil.rmtree(schema_dst)
-    shutil.copytree(SKILL / "schema" / "agentic-assets" / "data_schema" / "forkit", schema_dst)
-    group = schema_dst / "data_schema.json"
-    group.write_text(json.dumps({**json.loads(group.read_text()), "ns": NS}) + "\n")
+def ensure_project(home: Path) -> None:
+    """The forkit project and its ``issues`` dataset (rows of the shipped ``forkit.issue``), indexed."""
+    home.mkdir(parents=True, exist_ok=True)
+    project_for(home)
     ds = home / "agentic-assets" / "dataset" / "issues" / "dataset.json"
     if not ds.exists():
         ds.parent.mkdir(parents=True, exist_ok=True)
         ds.write_text(json.dumps({"metadata": {"title": "forkit issues", "description": "One row per issue of a forkit run.",
                                                "data_layout": "io_folder", "spec": {"rows": [{"input": KIND}]}},
                                   "data": {}}, indent=2) + "\n")
-    applied = flow("schema", "apply", str(home / "agentic-assets" / "data_schema"))
-    bad = [k.get("kind") for k in applied.get("schemas") or [] if k.get("status") != "ok"]
-    if not applied.get("ok") or bad:
-        fail(f"flow schema apply failed: {applied.get('error') or bad or applied}")
     indexed = flow("record", "index", str(ds.parent), "--types", "dataset")
     if not indexed.get("ok"):
         fail(f"indexing the issues dataset failed: {indexed.get('error') or indexed}")
-    return project_id
 
 
 def prompt_for(issue: dict) -> str:
@@ -121,7 +105,7 @@ def main() -> None:
     # NOT under ~/.flow: that is Flowpad's own state, never a project, so a restart would drop the forkit kind.
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     home = Path(os.environ.get("FORKIT_HOME") or get_instance_settings().workspace_root / "forkit").resolve()
-    project_id = ensure_project(home)
+    ensure_project(home)
     dataset = home / "agentic-assets" / "dataset" / "issues"
 
     have = {r["key"]: r for r in (dm("ds-rows", str(dataset), "--match", json.dumps({"input.run": slug})).get("rows") or [])}
@@ -142,23 +126,12 @@ def main() -> None:
     if gone:
         dm("ds-delete", str(dataset), *gone)
 
-    app = home / "agentic-assets" / "webapp" / (slug if slug.startswith("forkit") else f"forkit-{slug}")
-    app.mkdir(parents=True, exist_ok=True)
-    for f in (SKILL / "app").iterdir():
-        shutil.copy2(f, app / f.name)
-    (app / "webapp.json").write_text(json.dumps({"name": f"forkit-{slug}", "title": f"forkit — {title}",
-                                                 "description": f"{len(issues)} issues, forked from {root}.",
-                                                 "build": "."}) + "\n")
-    (app / "config.js").write_text("window.FORKIT = " + json.dumps(
-        {"run": slug, "title": title, "root": root, "project": project_id, "kind": KIND,
-         "dataset": ((dm("ds-find", "--", KIND).get("datasets") or [{}])[0]).get("id")}) + ";\n")
-    served = flow("app", "serve", f"forkit — {title}", "--no-show", cwd=app)
-    if not served.get("ok"):
-        fail(f"flow app serve failed: {served.get('error') or served}")
-    ep = served.get("endpoint") or {}
-    out(slug=slug, issues=len(issues), project_id=project_id, app=str(app),
-        typeid=(served.get("shown") or {}).get("typeid") or f"micro_app-{(served.get('webapp') or {}).get('id')}",
-        app_url=f"/api/v1/graph/service_endpoint/{ep.get('id')}/service/{ep.get('route')}/")
+    found = dm("ds-find", "--", KIND).get("datasets") or []
+    mine = next((d for d in found if Path(str(d.get("asset_ref") or "")).resolve() == dataset), None)
+    config = {"run": slug, "title": title, "root": root, "kind": KIND, "dataset": (mine or (found or [{}])[0]).get("id")}
+    page = home / (f"{slug}.html" if slug.startswith("forkit") else f"forkit-{slug}.html")
+    page.write_text((SKILL / "forkit.html").read_text().replace("/*FORKIT_CONFIG*/{}", json.dumps(config)))
+    out(slug=slug, issues=len(issues), page=str(page))
 
 
 if __name__ == "__main__":
