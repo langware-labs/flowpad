@@ -18,8 +18,9 @@ data (`forkit.issue` rows), so the app, another window or an agent all see the s
 
 ## Behaviour
 
-- Picking an issue starts nothing. The centre shows the fork's **first message** — `Lets focus on issue:<id>` — which
-  the person may edit, and **Start fork**. On Start the fork is made (`agentic_process/<root>/fork`, then `/open`
+- Picking an issue starts nothing. The centre shows the fork's **first message** and **Start fork**. The message
+  comes from the run's template in the header — default `lets focus on issue {identifier}`, editable there — and
+  can still be edited per issue before Start. On Start the fork is made (`agentic_process/<root>/fork`, then `/open`
   with that message) and goes straight to work on that issue. Two clicks never make two forks.
 - **✓ Done** closes the fork (`/close`) and marks the issue done. **↺ Open** reopens it; opening it again makes a
   new fork from the root.
@@ -38,8 +39,8 @@ data (`forkit.issue` rows), so the app, another window or an agent all see the s
    - `root`: the session to fork — usually YOUR process:
      `python3 -c 'import json,os;print(json.loads(os.environ["FLOWPAD_EXECUTION_SCOPE"])[0]["id"])'`.
    - `desc`: what the issue is about, in plain words; it is what the person reads behind ⓘ.
-   - `prompt`: leave it out for the default first message, `Lets focus on issue:<id>` (the fork already holds the
-     whole conversation). Write one only when the issue needs a specific first step.
+   - `prompt`: leave it out — the page's template gives the first message (the fork already holds the whole
+     conversation). Write one only when THIS issue needs a message of its own; it then ignores the template.
 2. `"$FLOWPAD_PYTHON" -I <this skill>/scripts/forkit.py issues.json` → `{ok, slug, issues, page}`.
    Re-running the same title keeps every issue's status and fork; issues no longer listed are removed.
 3. `flow show file <page>`.

@@ -75,9 +75,10 @@ def ensure_project(home: Path) -> None:
         fail(f"indexing the issues dataset failed: {indexed.get('error') or indexed}")
 
 
-def prompt_for(issue: dict) -> str:
-    """The fork's first message, shown to the person for approval: the fork already holds the whole conversation."""
-    return (issue.get("prompt") or f"Lets focus on issue:{issue['id']}").strip()
+def prompt_for(issue: dict) -> str | None:
+    """An issue's OWN first message, when it needs one; otherwise the page fills the run's template
+    ("lets focus on issue {identifier}", editable there) — the fork already holds the whole conversation."""
+    return (issue.get("prompt") or "").strip() or None
 
 
 def main() -> None:

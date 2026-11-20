@@ -37,6 +37,9 @@ ul { list-style: none; margin: 0; padding: 4px; }
 main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 main.empty { align-items: center; justify-content: center; color: hsl(var(--muted-foreground)); }
 main iframe { flex: 1; border: 0; width: 100%; }
+.tpl { display: grid; gap: 2px; font-size: 11px; color: hsl(var(--muted-foreground)); }
+.tpl input { font: inherit; font-size: 12px; padding: 4px 6px; border-radius: 5px; border: 1px solid hsl(var(--border));
+  background: hsl(var(--background)); color: hsl(var(--foreground)); }
 .ask { display: grid; gap: 8px; width: min(560px, 80%); color: hsl(var(--foreground)); font-size: 13px; }
 .ask label { color: hsl(var(--muted-foreground)); font-size: 12px; }
 .ask textarea { font: inherit; padding: 8px; border-radius: 6px; border: 1px solid hsl(var(--border));
@@ -54,6 +57,8 @@ main iframe { flex: 1; border: 0; width: 100%; }
     <div class="hd">
       <b id="title">forkit</b>
       <span>root: <code id="root"></code></span>
+      <label class="tpl" title="The first message every fork starts with. {identifier} is the issue's id.">first message
+        <input id="tpl" spellcheck="false" placeholder="lets focus on issue {identifier}"></label>
       <div class="pg"><i id="bar"></i></div>
       <small id="count"></small>
       <div class="flt" id="filter">
@@ -80,6 +85,12 @@ const CFG = window.FORKIT || {};
 const $ = (id) => document.getElementById(id);
 const state = { rows: [], filter: 'open', sel: null, info: null, busy: new Set(), ds: null };
 
+// The first-message template: one per run, kept in this browser. An issue with a prompt of its own ignores it.
+const TEMPLATE = 'lets focus on issue {identifier}';
+const TPL_KEY = `forkit.template.${CFG.run}`;
+const stored = () => { try { return localStorage.getItem(TPL_KEY); } catch { return null; } };
+const template = () => $('tpl').value.trim() || TEMPLATE;
+const firstMessage = (row) => row.input.prompt || template().replaceAll('{identifier}', row.input.id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 // The page-state key (flow-js skill §4): a frame cannot inherit it, so its URL carries it.
 const pageKey = () => globalThis.__FLOWPAD_STATE_KEY__ || new URLSearchParams(location.search).get('state');
@@ -151,7 +162,7 @@ function renderMain() {
     main.dataset.ask = row.key;
     main.innerHTML = `<div class="ask"><b>#${esc(row.input.id)} · ${esc(row.input.title)}</b>`
       + `<label for="first">The fork starts with this message:</label>`
-      + `<textarea id="first" rows="3">${esc(row.input.prompt)}</textarea>`
+      + `<textarea id="first" rows="3">${esc(firstMessage(row))}</textarea>`
       + `<button id="start">Start fork</button></div>`;
     return;
   }
@@ -207,6 +218,11 @@ $('main').addEventListener('click', (ev) => {
   const message = $('first').value.trim();
   if (row && message) startFork(row, message);
 });
+$('tpl').addEventListener('input', (ev) => {
+  try { localStorage.setItem(TPL_KEY, ev.target.value); } catch { /* storage blocked: it holds for this page */ }
+  delete $('main').dataset.ask;   // the open Start panel shows the new message
+  renderMain();
+});
 $('filter').addEventListener('click', (ev) => {
   if (ev.target.dataset.f) { state.filter = ev.target.dataset.f; render(); }
 });
@@ -214,6 +230,7 @@ $('filter').addEventListener('click', (ev) => {
 (async () => {
   $('title').textContent = CFG.title || 'forkit';
   $('root').textContent = CFG.root || '';
+  $('tpl').value = stored() || TEMPLATE;
   try {
     sdk.applyHostTheme?.();
     await sdk.initSdk();

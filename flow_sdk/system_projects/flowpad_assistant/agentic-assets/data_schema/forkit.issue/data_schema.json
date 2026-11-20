@@ -20,8 +20,8 @@
       "description": "Two or three lines saying what the issue is about."
     },
     "prompt": {
-      "shape": "string",
-      "description": "The instruction the issue's fork starts with."
+      "shape": "?string",
+      "description": "This issue's own first message; empty = the run's template (\"lets focus on issue {identifier}\")."
     },
     "root": {
       "shape": "string",
