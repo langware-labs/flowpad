@@ -7318,6 +7318,10 @@ msgstr "לחצו כדי לשנות שם של החדר"
 msgid "Click to run · double-click to open the wizard"
 msgstr "לחצו להרצה · לחיצה כפולה לפתיחת האשף"
 
+#: src/components/notes/QuickPromptsMenu.tsx
+msgid "Click to run · drag to order"
+msgstr "לחצו להרצה · גררו לשינוי הסדר"
+
 #: src/components/credentials/SignInCommand.tsx
 msgid "Click to run · right-click for more"
 msgstr ""

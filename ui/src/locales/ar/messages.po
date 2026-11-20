@@ -7318,6 +7318,10 @@ msgstr "يمكن النقر لإعادة تسمية الغرفة"
 msgid "Click to run · double-click to open the wizard"
 msgstr "انقر للتشغيل · انقر نقرًا مزدوجًا لفتح المعالج"
 
+#: src/components/notes/QuickPromptsMenu.tsx
+msgid "Click to run · drag to order"
+msgstr "انقر للتشغيل · اسحب للترتيب"
+
 #: src/components/credentials/SignInCommand.tsx
 msgid "Click to run · right-click for more"
 msgstr ""

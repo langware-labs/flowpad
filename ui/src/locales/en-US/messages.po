@@ -7318,6 +7318,10 @@ msgstr "Click to rename room"
 msgid "Click to run · double-click to open the wizard"
 msgstr "Click to run · double-click to open the wizard"
 
+#: src/components/notes/QuickPromptsMenu.tsx
+msgid "Click to run · drag to order"
+msgstr "Click to run · drag to order"
+
 #: src/components/credentials/SignInCommand.tsx
 msgid "Click to run · right-click for more"
 msgstr "Click to run · right-click for more"
