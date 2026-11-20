@@ -27,6 +27,8 @@ describe('entities-groups frontend is zero-logic', () => {
     expect(adapterSource).toContain('Group.listRoot');
     expect(adapterSource).toContain('.listChildren(');
     expect(adapterSource).not.toMatch(/QueryRequest|ExpressionNode/);
+    // the consumer's leaf filter reaches both listings untouched
+    expect(adapterSource.match(/leafMatch: cfg\.leafMatch/g)).toHaveLength(2);
   });
 
   it('menu is a pure popover embedding of BrowseableTree', () => {
