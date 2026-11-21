@@ -3,15 +3,15 @@ id: 098a70ff-0160-4950-aa04-b7e7d1990ea2
 name: mockify
 description: 'Turns a product idea into a clickable HTML mock of the user journey
   that the user can walk and comment on — every screen in order, with a journey bar
-  and a per-screen feedback box (text + image) whose comments are saved as typed rows and
+  and a per-screen feedback box (text + image) whose comments are saved as rows and
   sent back to this session in one Execute. Two
   modes: real, the default (built from a running app''s own captured DOM and CSS,
   checked side by side so it looks exactly like the app), and fast (HTML in the
-  product''s tokens, minutes — only for a product that does not run here, or when
-  the user asks for a rough sketch). Use for "mock this flow", "show me the UX", "prototype the journey", "how
-  would the user do X — show me", "make a clickable mock", or a design discussion that
-  needs screens before code; also when feedback on a mock arrives. `mockify test`: define a regression
-  test on the current UI and write it as a manual_regression .md. NOT for a working
+  product''s tokens — only for a product that does not run here, or when
+  the user asks for a sketch). Use for "mock this flow", "show me the UX", "make a clickable mock", or a
+  design discussion that needs screens before code; also when mock feedback arrives or a mock is approved. `mockify plan` / `mockify implement`:
+  build the approved mock from its build list, each item proven against its screen. `mockify test`: define a regression
+  test on the current UI as a manual_regression .md. NOT for a working
   app (web-app-builder), a one-page report or chart (html-builder), or slides (decker).'
 ---
 
@@ -27,7 +27,8 @@ Nothing is written into the repo until the person presses **💾 Save to repo** 
 words) — then "Save to repo" below copies that one mock in. Never `install_data.py`, `DM ds-put` or a mock folder into the repo.
 
 **A mock is data.** Its journey is a `mockify.mock` row in the mock project's `mocks` dataset; every comment
-is a `mockify.feedback` row in `mock-feedback` (text, optional image, optional decision id, status).
+is a `mockify.feedback` row in `mock-feedback` (text, optional image, optional decision id, status); once it
+is approved, everything it owes the product is a `mockify.build_item` row in `mock-build`.
 The page reads and writes those rows through the Flowpad SDK. Every data step follows the
 **data-management** skill — load it, and obey its ground rules (probe first, rows only through
 `dm_ctl` / the SDK, never by hand). `DM` below is its `dm_ctl` shell function.
@@ -36,28 +37,37 @@ The page reads and writes those rows through the Flowpad SDK. Every data step fo
 
 ```bash
 "$FLOWPAD_PYTHON" <this skill>/scripts/mock_project.py ensure <repo root>
-# {"root": "<mock project>", "project_id", "ns", "mocks": "<…/dataset/mocks>", "feedback": "<…/dataset/mock-feedback>", "webapps": "<…/webapp>"}
+# {"root": "<mock project>", "project_id", "ns", "mocks": "<…/dataset/mocks>", "feedback": "<…/dataset/mock-feedback>", "build": "<…/dataset/mock-build>", "webapps": "<…/webapp>"}
 ```
 
 It makes (or finds) `$TMPDIR/mockify/<repo folder name>/`, registers it as a project, installs the kinds
-(`schema/`, in the mock project's own namespace `mocks_<repo ns>` — never the repo's, or a restart drops them) and the `mocks` / `mock-feedback` datasets, applies and indexes them.
+(`schema/`, in the mock project's own namespace `mocks_<repo ns>` — never the repo's, or a restart drops them) and the `mocks` / `mock-feedback` / `mock-build` datasets, applies and indexes them.
 Repeat it any time: it finds the same project. `<mock project>` below is its `root`. First time on this
 Flowpad: prove the kinds in a data-management probe (good value fits, a broken one is refused).
 
-## The three phases — in order, none skipped
+## From idea to built product — the stages, in order, none skipped
+
+| stage | command | output | done when |
+|---|---|---|---|
+| **Design** — the three phases below | `mockify` | the mock, walked and commented on | the person approves it |
+| **Approve** | the bar's **✓ Approve**, or the person's words | the mock row is `approved`; its **build list** is rows in `mock-build` | the person has the list |
+| **Plan** | `mockify plan` | every list item has `where` (the code that carries it), or is a flag | no item without one |
+| **Implement** | `mockify implement` | every item built, then proven beside its mock screen | `build_list.py report` exits 0 |
+
+Design, the mock's own three phases:
 
 | phase | output | done when |
 |---|---|---|
-| **1. Plan** | the mock row's **tree**: screens, their actions and vars — `tree.py validate` says OK | the user has the tree (`tree.py show`) |
-| **2. Implement** | ONE `index.html` holding every screen as its own `<section data-step>` | `build_mock.py` wrote it with no missing screen |
+| **1. Tree** | the mock row's **tree**: screens, their actions and vars — `tree.py validate` says OK | the user has the tree (`tree.py show`) |
+| **2. Screens** | ONE `index.html` holding every screen as its own `<section data-step>` | `build_mock.py` wrote it with no missing screen |
 | **3. Validate** | `validate_mock.py` PASS, then your own look at every screen | PASS + screenshots looked at |
 
 The failure this order prevents: a mock that is one base screen with small patches, where clicking a
 control changes nothing. Every screen is planned, then built in full, then checked against its plan.
 
-After approval the mock is a **contract**: "Once the mock is approved" below says what is owed then.
+After approval the mock is a **contract**: "Approve", "`mockify plan`" and "`mockify implement`" below are how it is kept.
 
-## Phase 1 — Write the mock tree
+## Phase 1 — Tree: write the mock tree
 
 A mock is a **tree**: screens are its nodes, actions its edges, vars its state. You write it once, as the mock
 row's `tree`; `scripts/tree.py` validates it and computes the one walk that Next, Back and the screen numbers
@@ -164,7 +174,7 @@ seed data"). Reach the state (`reference/real-capture.md` §2 has recipes for th
 cannot, STOP and ask. A fast mock's row MUST carry `fast_reason` (the person's quoted words, or the product
 that does not run here); the bar refuses a fast mock without it.
 
-## Phase 2 — Implement every screen, into one HTML file
+## Phase 2 — Screens: build every screen, into one HTML file
 
 **Keep everything that is not under discussion.** Every screen is a full-window capture — top bar, rail,
 tab rows, status bar. A control missing from a mock reads as "remove it".
@@ -334,45 +344,84 @@ Then:
 2. Revise the screens and the mock row (`DM ds-put` the row with its new tree / decisions; settled
    decisions leave the row, their answer goes into the screen).
 3. Set each comment you acted on to `addressed` (`DM ds-put-many` with their versions); set the mock to
-   `revised`, then `in_review` again once re-shown.
+   `revised`, then `in_review` again once re-shown. A mock that was `approved` is no longer approved: remove
+   `approved_at`, build nothing of the screens that changed, and wait for the approval again.
 4. Rebuild, validate again (Phase 3) and re-show.
 
-## Once the mock is approved — it is a contract
+## Approve — the mock becomes a contract, and its build list is made
 
-An approved mock is not a recommendation. From the moment the person approves it (in words, or an Execute that
-says so), the mock is what gets built: every screen, every path, every control, every sentence. Tell the person
-the two things below are now owed.
+An approved mock is not a recommendation. From the moment the person approves it, the mock is what gets built:
+every screen, every path, every control, every sentence.
 
-**1. Stick to the mock, or raise a flag — never a third way.**
+**What counts as approval**: the bar's **✓ Approve** (it sets the row to `approved` with `approved_at` and sends you
+one line), or the person's words about THIS mock ("approved", "build it"). Then you set the row yourself
+(`DM ds-put` the row with `"status": "approved", "approved_at": "<now, ISO>"`). A yes to a plan is not a yes to a
+design change: if the mock does not show it, it was not agreed. The bar refuses to approve over a comment nobody
+answered, and so does the script.
 
-- Build what the screens show. A plan, a review finding, a technical limit or your own better idea does not
-  change a screen: only the person does, on the mock.
-- When something makes a screen impossible or wrong as drawn, first look for a fix that KEEPS the screen (a new
-  parameter, a different mechanism behind the same control). Only when there is none, raise a flag — and a flag is
-  a redrawn screen, not a sentence:
-  1. say plainly which screen cannot be built as drawn and why, in the first line of your reply;
-  2. redraw that screen in the mock (the same phases: tree, build, validate), marked as a change on it;
-  3. re-show the mock and wait for the answer there. Build nothing of that screen until it is approved.
-- A yes to a plan is not a yes to a design change. A design change listed among other plan items, answered with
-  a short "ok", was not approved: if the mock does not show it, it was not agreed.
-- Never report "done" over a known difference. A difference you could not avoid is named in the first line.
+**Make the list — the first thing you do, before any plan or code:**
 
-**2. Validate every mock path and feature against what was built.**
+```bash
+B=<mock project>/agentic-assets/dataset/mock-build
+DM ds-rows <mocks dataset> --match '{"key": "<slug>"}' > <scratch>/row.json
+DM ds-rows <…/mock-feedback> --match '{"input.mock": "<mock ref>"}' > <scratch>/feedback.json
+DM ds-rows $B --match '{"input.mock": "<mock ref>"}' > <scratch>/items.json        # empty the first time
+python3 -I <skill>/scripts/build_list.py make <scratch>/row.json --feedback <scratch>/feedback.json \
+  --html <mock-dir>/index.html --existing <scratch>/items.json \
+  | DM ds-sync $B - --match '{"input.mock": "<mock ref>"}'
+DM ds-rows $B --match '{"input.mock": "<mock ref>"}' > <scratch>/items.json && python3 -I <skill>/scripts/build_list.py show <scratch>/items.json
+```
 
-Before saying the feature is done, walk the built product against the mock and prove each item, one by one:
+One item per thing owed, in the tree's walk order; per screen: the screen itself, its state, each change (a
+rejected one is left out and named), each decision with its answer, each action that goes somewhere. `--html`
+makes a screen's item follow its drawing: redraw the screen and that item starts again. A `REFUSED` line says
+what is missing (not approved, a tree problem, an unanswered comment) — fix that, never work around it.
 
-- **Every screen** of the tree, in walk order: reach the same state in the running product, screenshot it, and put
-  it beside the mock screen. Same place in the product, same layout, same controls, same words.
-- **Every action**: each `main`, `branch`, `alt` and `jump` leads where the tree says. Branches are walked too,
-  not only the main path.
-- **Every change and every decision** the person answered: present as agreed.
-- **Every state** the screens name (empty, waiting, failed, done): reached for real, not assumed.
+Reply with the list (`show`'s output) and say that `mockify plan` is next. The list is rows, not your memory:
+after a break or in a new session, read `mock-build` again; never rebuild it from what you remember.
 
-Report it as a table the person can check — one row per screen and per action: mock item · where it is in the
-product · `matches` / `differs: <what>` / `not checked: <why>`, with the screenshot pair. `not checked` is an
-honest answer; a row left out is not. Anything that `differs` is fixed or raised as a flag (rule 1) before the
-report says done. A passing test suite does not replace this table: tests prove behaviour, not that it is the
-agreed design.
+## `mockify plan` — where each item is built
+
+No product code yet. For every item, in order:
+
+1. Find where the product carries it today — the control, the component, the route (grep first; reuse before
+   new). Write it on the item: `build_list.py set <items.json> <n> todo --where "<file or component>: <what changes>"
+   | DM ds-put-many $B -`.
+2. An item that cannot be built as drawn: first look for a way that KEEPS the screen (a new parameter, a
+   different mechanism behind the same control). Only when there is none it is a **flag**, and a flag is a redrawn
+   screen, not a sentence: `set <n> flagged --note "<why>"`; say it in the first line of your reply; redraw that
+   screen in the mock (the same phases), which moves the mock back to `in_review`; re-show it and wait. After the
+   new approval run `make` again — with `--existing`, the items that did not change keep their state.
+3. A plan, a review finding, a technical limit or your own better idea never changes a screen. Only the person
+   does, on the mock.
+
+Done when no item is without `where` and none is `flagged`. Send the person the list with its `where` column.
+Whatever plan document you write is this list in its order; it adds nothing the list does not have.
+
+## `mockify implement` — build one item, prove it, then the next
+
+Loop until `report` exits 0. Re-read the rows (`DM ds-rows $B … > <scratch>/items.json`) before each script call.
+
+1. `build_list.py next <items.json>` — the one item to work on. Not another one.
+2. Build it. `set <n> built | DM ds-put-many $B -`.
+3. Prove it in the running product (the dev instance — never the person's running app): reach the same state,
+   screenshot it, and put it beside the mock screen. Same place in the product, same layout, same controls, same
+   words. For an action: click it and land where the tree says. For a state: reached for real, not assumed.
+   - the same → `set <n> matches --shot <png>`
+   - not the same → `set <n> differs --note "<what>"`, fix it, prove it again. Never move on over a `differs`.
+   - cannot be checked here → `set <n> not_checked --note "<why>"` — an honest answer; a row left out is not.
+4. A screen's items are all `matches` / `not_checked` before the next screen starts; `set` refuses otherwise.
+
+When `next` returns nothing: walk the built product once from the first screen to the last, branches too, then
+
+```bash
+python3 -I <skill>/scripts/build_list.py report <scratch>/items.json     # the table; exit 1 = NOT DONE, with the reasons
+```
+
+Your reply is that table (mock item · where in the product · `matches` / `differs: …` / `not checked: …`) with
+the screenshot pairs. Say "done" only on exit 0, and name every `not checked` in the first lines. A passing test
+suite does not replace the table: tests prove behaviour, not that it is the agreed design. Never report "done"
+over a known difference.
 
 ## `mockify test` — define a regression test on the current UI
 

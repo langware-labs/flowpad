@@ -7,7 +7,7 @@
 **Back and Next never move.** They sit side by side, before everything whose width changes (the title, the changes
 switch, the Execute count), and the bar is held by its left edge — so repeated clicks on Next land on Next.
 
-Every popup (☰ screens, feedback, review, save) opens with the same toolbar: **💬 Feedback · Review · 💾 Save to repo**.
+Every popup (☰ screens, feedback, review, approve, save) opens with the same toolbar: **💬 Feedback · Review · ✓ Approve · 💾 Save to repo**.
 
 ## What the page defines (before the script)
 
@@ -118,3 +118,13 @@ today element `[data-change="<id>"]` and its suggested version `<template data-c
 - **Changes out of view**: "↓ N changes below" / "↑ N changes above" scrolls to the nearest one; the `N changes`
   counter walks them one by one. Execute sends the rows; a change with no row is approved.
   Next and Back walk the EXISTING screens; a NEW screen is reached through its change's card or a `data-next`.
+
+## Approve
+
+- **✓ Approve** shows what approving means (screens, changes to build, changes rejected) and is disabled while a
+  comment that says something is not `addressed` — a verdict with no words (Approved / Yes / the option picked) asks
+  nothing of the builder and never blocks.
+- On confirm it puts the mock row with `status: approved` and `approved_at` (now, ISO), then sends the session one
+  line: `Mock "<slug>" is approved: … build_list.py make, then mockify plan (SKILL.md "Approve")`.
+- An approved mock shows `· ✓ approved` in the bar. Saving a comment or a change verdict on it puts the row back
+  to `in_review` and removes `approved_at`; the feedback panel says so before the save.

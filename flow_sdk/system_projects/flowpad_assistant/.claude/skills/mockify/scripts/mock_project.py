@@ -4,7 +4,7 @@
     $FLOWPAD_PYTHON mock_project.py save   <repo root> <mock slug>
 
 ``ensure`` makes (or finds) ``$TMPDIR/mockify/<repo folder name>/``: a Flowpad project of its own with the
-namespace of its own (``mocks_<repo ns>``), mockify's kinds, the ``mocks`` and ``mock-feedback`` datasets, and -- under
+namespace of its own (``mocks_<repo ns>``), mockify's kinds, the ``mocks``, ``mock-feedback`` and ``mock-build`` datasets, and -- under
 ``agentic-assets/webapp/mock-<slug>/`` -- every mock. It registers the project, applies the kinds and
 indexes the datasets, and prints ``{root, project_id, ns}``. Nothing is written to the repo.
 
@@ -28,7 +28,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from install_data import install  # noqa: E402
+from install_data import DATASETS as INSTALLED, install  # noqa: E402
 
 MANIFEST = Path("agentic-assets/project_manifest/project_manifest.json")
 
@@ -99,7 +99,7 @@ def stamp_kinds(root: Path, ns: str) -> None:
 
 
 DM_CTL = HERE.parent.parent / "data-management" / "scripts" / "dm_ctl.py"
-DATASETS = ("mocks", "mock-feedback")
+DATASETS = tuple(INSTALLED)   # in the order they are installed: a row links only to a dataset before it
 
 
 def read_rows(root: Path) -> dict:
@@ -160,7 +160,7 @@ def ensure(repo: Path) -> None:
         left = len(bad)
     if not applied.get("ok") or bad:
         fail(f"flow schema apply failed: {applied.get('error') or bad or applied}")
-    indexed = flow("record", "index", str(root / "agentic-assets" / "dataset"), "--types", "dataset")   # both datasets
+    indexed = flow("record", "index", str(root / "agentic-assets" / "dataset"), "--types", "dataset")   # every dataset
     per = (indexed.get("per_type") or {}).get("dataset") or {}
     if not indexed.get("ok") or per.get("errors") or not (per.get("indexed") or per.get("skipped")):   # skipped = unchanged
         fail(f"indexing the datasets failed: {indexed.get('error') or indexed}")
@@ -168,6 +168,7 @@ def ensure(repo: Path) -> None:
     out(root=str(root), project_id=project_id, ns=installed["ns"], carried_rows=carried, repo=str(repo),
         mocks=str(root / "agentic-assets" / "dataset" / "mocks"),
         feedback=str(root / "agentic-assets" / "dataset" / "mock-feedback"),
+        build=str(root / "agentic-assets" / "dataset" / "mock-build"),
         webapps=str(root / "agentic-assets" / "webapp"))
 
 
