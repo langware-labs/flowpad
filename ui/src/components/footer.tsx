@@ -3,6 +3,7 @@ import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { LiveSessionsChip } from '@src/components/footer/LiveSessionsChip';
 import { BrowserChip } from '@src/components/footer/BrowserChip';
 import { SecretManagerChip } from '@src/components/footer/SecretManagerChip';
+import { FooterChip } from '@src/components/footer/FooterChip';
 import { ActivityStatusPill } from '@src/components/footer/ActivityStatusPill';
 import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
 import { PoweredBy } from '@src/components/powered-by';
@@ -75,12 +76,22 @@ export function Footer({ className = '' }: FooterProps) {
 
         {/* Version + Powered by on the right */}
         <div className="flex w-full min-w-0 items-center justify-end gap-1 overflow-hidden sm:ms-auto sm:w-auto sm:flex-none sm:gap-2">
-          {!isHubOnly() && <LiveSessionsChip />}
-          {!isHubOnly() && <BrowserChip />}
-          {dataContext.caps.localFiles && <SecretManagerChip />}
-          <PendingActionsChip />
+          <FooterChip name="live sessions" when={!isHubOnly()}>
+            <LiveSessionsChip />
+          </FooterChip>
+          <FooterChip name="browser" when={!isHubOnly()}>
+            <BrowserChip />
+          </FooterChip>
+          <FooterChip name="secret manager" when={dataContext.caps.localFiles}>
+            <SecretManagerChip />
+          </FooterChip>
+          <FooterChip name="pending actions">
+            <PendingActionsChip />
+          </FooterChip>
           <AdvancedOnly reserve={false}>
-            <IndexerStatusPill />
+            <FooterChip name="indexer">
+              <IndexerStatusPill />
+            </FooterChip>
           </AdvancedOnly>
           {/* Runtime-shaped, not page-shaped: a desktop showing the hub page still has a desk
               backend, so the popover's actions work there — and the label would
@@ -89,8 +100,14 @@ export function Footer({ className = '' }: FooterProps) {
           {/* Who is paying for the next agent run. Beside the version because it answers the
               same class of question — what am I actually running — and essential for the same
               reason: a wrong funding source spends the wrong money silently. */}
-          {!isHubOnly() && <FundingChip />}
-          {!isHubOnly() && version && <VersionPopover currentVersion={version} />}
+          <FooterChip name="funding" when={!isHubOnly()}>
+            <FundingChip />
+          </FooterChip>
+          {!isHubOnly() && version && (
+            <FooterChip name="version">
+              <VersionPopover currentVersion={version} />
+            </FooterChip>
+          )}
           <PoweredBy className="cq-powered" />
           <LanguageSelector />
         </div>

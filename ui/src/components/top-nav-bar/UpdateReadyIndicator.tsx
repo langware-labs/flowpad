@@ -1,5 +1,6 @@
 import { useLingui } from '@lingui/react/macro';
 import { ArrowDownCircle } from 'lucide-react';
+import { TopBarPill } from './TopBarPill';
 import { openVersionPopover, useUpdateReady } from '@src/components/update-ready/update-ready';
 
 /**
@@ -10,17 +11,13 @@ export function UpdateReadyIndicator() {
   const { t } = useLingui();
   const state = useUpdateReady();
   if (!state?.ready) return null;
-  const label = t`Update ready`;
   return (
-    <button
-      type="button"
-      data-testid="top-nav-update-ready"
-      onClick={() => openVersionPopover()}
+    <TopBarPill
+      testId="top-nav-update-ready"
+      icon={<ArrowDownCircle className="h-3.5 w-3.5" />}
+      label={t`Update ready`}
       title={t`An update is downloaded and ready to install`}
-      className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-primary px-2 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-    >
-      <ArrowDownCircle className="h-3.5 w-3.5" />
-      <span>{label}</span>
-    </button>
+      onClick={() => openVersionPopover()}
+    />
   );
 }
