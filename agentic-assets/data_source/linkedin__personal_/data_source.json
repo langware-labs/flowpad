@@ -10,7 +10,7 @@
   },
   "reflect": "record",
   "reflect_into": "",
-  "poll_interval_seconds": 300,
+  "poll_interval_seconds": 10800,
   "window_days": 7,
   "rate_limit_retries": 0,
   "required_capabilities": [],
