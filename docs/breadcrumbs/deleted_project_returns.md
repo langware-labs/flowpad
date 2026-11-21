@@ -14,12 +14,17 @@ version: 2
 
 > Ground truth. Proven by RCA on 2026-10-28. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.deleted_project_returns.rules
 sites:
-  - rel_path: "tests/hub_tests/test_deleted_project_stays_deleted.py"
+  - rel_path: tests/hub_tests/test_deleted_project_stays_deleted.py
     line: 26
-    note: "FAILING? Read this tag's rules before editing; a project the user deleted must not be hydrated back from the hub by its conversation's messages. Needs the local hub and two identities."
+    note: FAILING? Read this tag's rules before editing; a project the user deleted must not be hydrated back from the hub by its conversation's messages. Needs the local hub and two identities.
+proven: '2026-10-28'
+statements:
+  - text: Nothing on the message-receive path (`_process_single_hub_message`, `materialize_flow_message`, `_fetch_conversation_messages`) creates a Project row from a reference in a message.
+  - text: 'A Project row appears on this machine only through an explicit user action: opening a share link (`Project.resolve_open`, `project.py:2594`, and `open_action.py:96`), a launch (`launch_action.py:79`), installing from the review popup, or cloning.'
+  - text: Deleting a project that has a conversation must not be undone by that conversation syncing.
 ```
 
 ## Expected behavior
@@ -49,10 +54,6 @@ The lever is the single call `await Project.hydrate_from_hub(...)` inside `mirro
 * The test fails with the shim in place and passes with it removed (shim code stashed back in, run, stash popped).
 
 ## Invariants
-
-1. Nothing on the message-receive path (`_process_single_hub_message`, `materialize_flow_message`, `_fetch_conversation_messages`) creates a Project row from a reference in a message.
-2. A Project row appears on this machine only through an explicit user action: opening a share link (`Project.resolve_open`, `project.py:2594`, and `open_action.py:96`), a launch (`launch_action.py:79`), installing from the review popup, or cloning.
-3. Deleting a project that has a conversation must not be undone by that conversation syncing.
 
 ## Failure modes
 

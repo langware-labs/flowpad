@@ -12,12 +12,17 @@ version: 2
 
 > Ground truth. Proven by RCA on 2026-11-16 (FLOWPAD-2376). Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.agent_browser_mcp.rules
 sites:
-  - rel_path: "tests/long_tests/test_agent_browser_mcp.py"
+  - rel_path: tests/long_tests/test_agent_browser_mcp.py
     line: 51
-    note: "FAILING? read this tag's rules before editing"
+    note: FAILING? read this tag's rules before editing
+proven: 2026-11-16 · FLOWPAD-2376
+statements:
+  - text: The launched PID is the server.
+  - text: One launch path on every OS.
+  - text: argv is a list.
 ```
 
 ## Expected behavior

@@ -13,12 +13,17 @@ description: A box is signed in to FlowPad only while the hub WS is VERIFIED, an
 
 > Ground truth. Proven by RCA on 2026-10-04. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.hub_signin_reconnect.rules
 sites:
-  - rel_path: "tests/unit/test_hub_signin_survives_ws_reconnect.py"
+  - rel_path: tests/unit/test_hub_signin_survives_ws_reconnect.py
     line: 86
-    note: "FAILING? a hub socket reconnect forgot who the hub named, signing the box out of every hub-funded LLM endpoint - read this tag's rules before touching HubWebSocketManager._run_forever/_set_state(verified=...) or core.status.hub_status"
+    note: FAILING? a hub socket reconnect forgot who the hub named, signing the box out of every hub-funded LLM endpoint - read this tag's rules before touching HubWebSocketManager._run_forever/_set_state(verified=...) or core.status.hub_status
+proven: '2026-10-04'
+statements:
+  - text: A reconnect with the same credentials never changes `_verified`.
+  - text: 'Every path that can change WHO is logged in (`stop()`/`restart()`: login, logout) clears `_verified`, and every path that completes a login asks `verify_current_user()` again.'
+  - text: Nothing polls verification.
 ```
 
 ## Expected behavior

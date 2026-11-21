@@ -249,6 +249,14 @@ Three words were used for neighbours. Say which:
   capsule on a failing test pointing at its rules doc (`breadcrumb.test.*`),
   written by the `tagit` skill and read by `tag-context`. It is not a trace tag
   and never belongs in the toplog catalog.
+- **lw (langware)** — ours ([lw.md](lw.md)): a project's collection of statement docs,
+  organised into a dependency tree by tags (`flow_sdk/lw/`, read and written with `flow tag tree|check|show|put`). Written `lw` in code
+  and commands because "langware" is also the company's name. A **statement** is one
+  sentence of architecture in a `statements` block of a doc, with the `issues` that violate
+  it today (none = it passes); a **requirement** is one sentence of implementation in a
+  `requirements` block that depends on the statements it implements. Blocks are named and
+  linked by tag (the second sense above); neither has an id. Written by the `langit` skill.
+  Not the agent **requirements / readiness** below, which are what an agent needs to run.
 - **icon pack** — a namespace of icons (`IconPackSpec`): its `kind` is the tag's parent
   segment, so `acme-vendors.sonos` is the `sonos` icon of the `acme-vendors` pack. Built-in
   packs ship under `flow_sdk/server/icons/`; an **icon pack asset** (`icon_pack` type,

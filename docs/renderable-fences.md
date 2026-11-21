@@ -79,7 +79,7 @@ ProseMirror's own editable check, so nothing else stops a user editing a
 read-only document (the vibe display, any `view`-mode asset). `commit` refuses
 the write too, as defence in depth.
 
-## The three renderers
+## The renderers
 
 **`mermaid`** draws diagrams, lazily importing a heavy dependency and
 re-rendering on theme change. The chart editor already writes these blocks
@@ -91,7 +91,22 @@ rewrite the block through `yaml`'s Document API rather than regenerating it, so
 comments, key order and quoting survive.
 
 **`breadcrumb`** renders the tests a rules doc governs — see [Live refresh](#live-refresh)
-below, and the `tagit` skill that writes these blocks.
+below. It is the older form: the `tagit` skill now writes a `test_debug` block.
+
+**`test_debug`** is what `tagit` writes in a rules doc (`renderers/lw.ts`): the tag, when the rules
+were proven, what they depend on and the bound tests (refreshed from the tag index like
+`breadcrumb`), then the rules as statements. Its tab reads "Test debug".
+
+**`statements`** and **`requirements`** render the lw (langware) blocks of a statement doc
+([lw.md](lw.md)) — `renderers/lw.ts`. A statements card shows the block's tag, the tags it
+depends on, and one row per statement: its sentence, `stated` or `proven`, and either `pass` or
+the issues that violate it today, with a chip per file it is about. A requirements card shows the
+statements it implements and its requirements. Both are read-only: a block is written by
+`flow tag put`, which checks it against every other block of the project, and by hand only in the
+Code pane. The schema (`renderers/lw-schema.ts`) is the TS twin of
+`flow_sdk/schema/data_spec/lw_spec.py`; `tests/fixtures/lw_blocks_contract.json` pins that the
+two agree on which blocks are valid. Strict like `interface`: a block that does not match shows the
+error with the source one tab away.
 
 The Code pane is the authoritative structural editor in Editor mode: it is the
 real ProseMirror code-block content, not a detached textarea, so typing, undo,

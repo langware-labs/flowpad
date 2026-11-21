@@ -13,15 +13,20 @@ description: A mail-assistant Agent auto-launched on an e2b box answered as vibe
 
 > Ground truth. Proven by RCA on 2026-09-16. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.agent_session_persona.rules
 sites:
-  - rel_path: "ui/tests/api/agent_use_keeps_agent_persona.test.ts"
+  - rel_path: ui/tests/api/agent_use_keeps_agent_persona.test.ts
     line: 46
-    note: "FAILING? an agent session must keep the AGENT as its identity - prepareAgentSession embeds vibe with asPersona:false. Read this tag's rules before touching embedVibeSubagent or set_ap_persona."
-  - rel_path: "ui/tests/e2e/agent-auto-launch/agent_auto_launch_persona.spec.ts"
+    note: FAILING? an agent session must keep the AGENT as its identity - prepareAgentSession embeds vibe with asPersona:false. Read this tag's rules before touching embedVibeSubagent or set_ap_persona.
+  - rel_path: ui/tests/e2e/agent-auto-launch/agent_auto_launch_persona.spec.ts
     line: 101
-    note: "FAILING? the auto-launched agent must answer as itself, not as vibe - read this tag's rules (and its open item on the vibe layer's capability pitch) before editing."
+    note: FAILING? the auto-launched agent must answer as itself, not as vibe - read this tag's rules (and its open item on the vibe layer's capability pitch) before editing.
+proven: '2026-09-16'
+statements:
+  - text: In an agent session the agent's `system_prompt` is the identity.
+  - text: Plain vibe sessions are unchanged.
+  - text: Use and auto-launch cannot diverge.
 ```
 
 Builds on [declared_persona](declared_persona.md) — the renderer never infers a

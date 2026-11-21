@@ -12,12 +12,16 @@ description: For a headless (pty_mode false) process, the SDK's waitForReady() r
 
 > Ground truth. Proven by the fix 517e107a2 (PR #814, 2026-11-10): the bound test failed with a 409 without it and passes with it. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.headless_wait_ready.rules
 sites:
-  - rel_path: "ui/tests/long_tests/wait_for_ready_headless_switch.test.ts"
+  - rel_path: ui/tests/long_tests/wait_for_ready_headless_switch.test.ts
     line: 18
-    note: "FAILING? read this tag's rules before touching waitForReady's headless gate"
+    note: FAILING? read this tag's rules before touching waitForReady's headless gate
+proven: '2026-11-10'
+statements:
+  - text: '`waitForReady()` resolving means a `switchMode` / `restart` sent next is not refused for a busy turn.'
+  - text: Do not swap the headless gate for `isReadyForInput`.
 ```
 
 ## Expected behavior

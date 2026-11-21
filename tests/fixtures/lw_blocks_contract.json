@@ -1,0 +1,490 @@
+{
+  "comment": "Block bodies of lw statement docs (docs/lw.md), read by tests/unit/test_lw.py (flow_sdk/schema/data_spec/lw_spec.py) and ui/tests/unit/lw-schema.test.ts (the renderers' lw-schema.ts). The two suites pin one answer to 'is this block valid'. Change the fixture only with both suites in hand.",
+  "cases": [
+    {
+      "name": "minimal statements",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "A compute node represents a machine."
+          }
+        ]
+      },
+      "ok": true
+    },
+    {
+      "name": "everything a statement may carry",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "depends_on": [
+          "c",
+          "--acme--.orders.created"
+        ],
+        "statements": [
+          {
+            "text": "X.",
+            "basis": "proven",
+            "issues": [
+              "Y never does it."
+            ],
+            "about": [
+              "flow_sdk/x.py:3",
+              "ui/src/y.ts"
+            ]
+          }
+        ]
+      },
+      "ok": true
+    },
+    {
+      "name": "minimal requirements",
+      "kind": "requirements",
+      "body": {
+        "tag": "a.b.build",
+        "depends_on": [
+          "a.b"
+        ],
+        "requirements": [
+          {
+            "text": "Build it."
+          }
+        ]
+      },
+      "ok": true
+    },
+    {
+      "name": "tag missing",
+      "kind": "statements",
+      "body": {
+        "statements": [
+          {
+            "text": "A compute node represents a machine."
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "tag not normalized",
+      "kind": "statements",
+      "body": {
+        "tag": "A.b",
+        "statements": [
+          {
+            "text": "A compute node represents a machine."
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "tag with a space",
+      "kind": "statements",
+      "body": {
+        "tag": "a b",
+        "statements": [
+          {
+            "text": "A compute node represents a machine."
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "namespace marker not first",
+      "kind": "statements",
+      "body": {
+        "tag": "a.--acme--.b",
+        "statements": [
+          {
+            "text": "A compute node represents a machine."
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "depends on itself",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "depends_on": [
+          "a.b"
+        ],
+        "statements": [
+          {
+            "text": "A compute node represents a machine."
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "depends_on not a list",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "depends_on": "c",
+        "statements": [
+          {
+            "text": "A compute node represents a machine."
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid dependency tag",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "depends_on": [
+          "C d"
+        ],
+        "statements": [
+          {
+            "text": "A compute node represents a machine."
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "empty list",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": []
+      },
+      "ok": false
+    },
+    {
+      "name": "list missing",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b"
+      },
+      "ok": false
+    },
+    {
+      "name": "unknown block field",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "proven": "2026",
+        "statements": [
+          {
+            "text": "A compute node represents a machine."
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "statement with an id",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "id": "S1",
+            "text": "X."
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "statement with requirements",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "X.",
+            "requirements": [
+              "Y."
+            ]
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "statement with an unknown field",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "X.",
+            "today": "no"
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "empty text",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "  "
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "unknown basis",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "X.",
+            "basis": "guessed"
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "empty issue",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "X.",
+            "issues": [
+              ""
+            ]
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "file outside the project",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "X.",
+            "about": [
+              "../x.py"
+            ]
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "absolute file",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "X.",
+            "about": [
+              "/etc/passwd"
+            ]
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "file line zero",
+      "kind": "statements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "X.",
+            "about": [
+              "x.py:0"
+            ]
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "requirement with a basis",
+      "kind": "requirements",
+      "body": {
+        "tag": "a.b",
+        "depends_on": [
+          "a"
+        ],
+        "requirements": [
+          {
+            "text": "Build it.",
+            "basis": "stated"
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "statements list in a requirements block",
+      "kind": "requirements",
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "A compute node represents a machine."
+          }
+        ]
+      },
+      "ok": false
+    },
+    {
+      "name": "body is a list",
+      "kind": "statements",
+      "body": [
+        "nope"
+      ],
+      "ok": false
+    },
+    {
+      "name": "test_debug: everything it may carry",
+      "kind": "test_debug",
+      "ok": true,
+      "body": {
+        "tag": "breadcrumb.test.agent_activity_readout.rules",
+        "depends_on": [
+          "breadcrumb.test.live_frame_identity.rules"
+        ],
+        "sites": [
+          {
+            "rel_path": "ui/tests/unit/chat-activity-readout.test.tsx",
+            "line": 49,
+            "note": "FAILING? read this tag's rules before editing"
+          },
+          {
+            "rel_path": "ui/tests/unit/chat-activity-readout.test.tsx",
+            "line": 231
+          }
+        ],
+        "proven": "2026-08-13 · FLOWPAD-1980",
+        "statements": [
+          {
+            "text": "The activity line takes the process and nothing else.",
+            "about": [
+              "ui/src/components/chat/ChatActivityReadout.tsx"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "test_debug: only a tag and statements",
+      "kind": "test_debug",
+      "ok": true,
+      "body": {
+        "tag": "breadcrumb.test.agent_activity_readout.rules",
+        "statements": [
+          {
+            "text": "x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test_debug: no statements",
+      "kind": "test_debug",
+      "ok": false,
+      "body": {
+        "tag": "breadcrumb.test.agent_activity_readout.rules",
+        "sites": [
+          {
+            "rel_path": "a.py"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test_debug: site outside the project",
+      "kind": "test_debug",
+      "ok": false,
+      "body": {
+        "tag": "breadcrumb.test.agent_activity_readout.rules",
+        "sites": [
+          {
+            "rel_path": "../a.py"
+          }
+        ],
+        "statements": [
+          {
+            "text": "x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test_debug: site line zero",
+      "kind": "test_debug",
+      "ok": false,
+      "body": {
+        "tag": "breadcrumb.test.agent_activity_readout.rules",
+        "sites": [
+          {
+            "rel_path": "a.py",
+            "line": 0
+          }
+        ],
+        "statements": [
+          {
+            "text": "x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "statements: sites belong to test_debug",
+      "kind": "statements",
+      "ok": false,
+      "body": {
+        "tag": "a.b",
+        "sites": [
+          {
+            "rel_path": "a.py"
+          }
+        ],
+        "statements": [
+          {
+            "text": "x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "old files field is unknown",
+      "kind": "statements",
+      "ok": false,
+      "body": {
+        "tag": "a.b",
+        "statements": [
+          {
+            "text": "x",
+            "files": [
+              {
+                "rel_path": "a.py"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

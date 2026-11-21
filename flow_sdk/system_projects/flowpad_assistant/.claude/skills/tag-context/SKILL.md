@@ -72,6 +72,10 @@ capsules; pass `--root <path>` to scan elsewhere.
   them like you would CLAUDE.md instructions scoped to this tag.
 - If your change conflicts with a returned rule, STOP and surface the conflict
   instead of silently overriding it.
+- A doc may hold its rules as `statements` blocks (one sentence each, with the
+  `issues` that violate it today). `flow tag tree <tag>` lists the tag's block and
+  every block it depends on; `flow tag show <tag>` prints them. Read those too:
+  a statement you depend on binds you as much as the one you landed on.
 - Mention the tag(s) you consulted in your final summary (e.g. "per
   `flow.runs` context: kept budgets on the run row").
 

@@ -12,12 +12,19 @@ version: 2
 
 > Ground truth. Proven by RCA on 2026-08-24. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.worker_terminal_theme.rules
 sites:
-  - rel_path: "tests/long_tests/test_create_process_terminal_theme.py"
+  - rel_path: tests/long_tests/test_create_process_terminal_theme.py
     line: 60
-    note: "FAILING? read this tag's rules before editing \u2014 the theme must ride createProcess, not open"
+    note: FAILING? read this tag's rules before editing — the theme must ride createProcess, not open
+proven: '2026-08-24'
+statements:
+  - text: The theme rides **every** call that can spawn — `ComputeNode.createProcess` (`scan_actions.py:353,641`) and `AgenticProcess._http_open` (`:7198,7211`).
+  - text: '`start_pty` takes the theme as a **parameter**, like `visible` and `retry`.'
+  - text: Absent or invalid input leaves the worker **unpinned**.
+  - text: '`terminal_theme` is persisted, so a recovery relaunch — which passes nothing — keeps the palette the worker launched with.'
+  - text: The client resolves the theme in `ts_sdk/src/utils/runtime.ts:hostTerminalTheme`, from the class on `<html>`, and returns `undefined` off-DOM.
 ```
 
 ## Expected behavior
@@ -78,12 +85,6 @@ into `settings_json`, which `claude/cli.py` renders as `--settings <json>`.
 
 * Absent or invalid input leaves the worker **unpinned**. Only `"light"` and
   `"dark"` are accepted; anything else is dropped rather than forwarded.
-
-* `terminal_theme` is persisted, so a recovery relaunch — which passes nothing —
-  keeps the palette the worker launched with.
-
-* The client resolves the theme in `ts_sdk/src/utils/runtime.ts:hostTerminalTheme`,
-  from the class on `<html>`, and returns `undefined` off-DOM.
 
 ## Failure modes
 
