@@ -93,6 +93,15 @@ describe('QuickPromptsMenu', () => {
     expect(notes.del).toHaveBeenCalledWith(notes.prompts[0]);
   });
 
+  it("a click on the prompt's note picks its colour and sends nothing", async () => {
+    const onSend = await open();
+    await userEvent.click(screen.getByTestId('quick-prompt-color'));
+    await userEvent.click(await screen.findByRole('option', { name: 'blue' }));
+    expect(notes.save).toHaveBeenCalledWith(notes.prompts[0], { color: 'blue' });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByTestId('quick-prompts-popover')).toBeTruthy();
+  });
+
   it('edit changes the text in place and sends nothing', async () => {
     const onSend = await open();
     await userEvent.click(screen.getByTestId('quick-prompt-edit'));

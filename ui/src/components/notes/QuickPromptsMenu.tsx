@@ -22,6 +22,8 @@ import {
   useQuickPrompts,
 } from '@src/hooks/use-entity-notes';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
+import { noteColor } from './note-palette';
+import { NoteColorPicker } from './NoteViews';
 import { StickyNoteShape } from './StickyNoteShape';
 
 /** The folder tree the quick prompts live in (docs/entities-groups.md). */
@@ -203,10 +205,12 @@ export function QuickPromptsMenu({
 
 const ROW_BUTTON = 'shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground';
 
-/** One saved prompt: click runs it, the pencil edits its text in place, and delete takes two clicks. */
+/** One saved prompt: click runs it, its note picks its colour, the pencil edits its text in place, and
+ *  delete takes two clicks. */
 function QuickPromptRow({ note, onRun }: { note: Annotation; onRun: () => void }) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
+  const [picking, setPicking] = useState(false);
   // Delete takes two clicks: the first arms it (the bin turns into a check), the second deletes.
   const [armed, setArmed] = useState(false);
   const deleteLabel = armed ? t`Confirm: Delete` : t`Delete`;
@@ -214,6 +218,28 @@ function QuickPromptRow({ note, onRun }: { note: Annotation; onRun: () => void }
   return (
     <div data-testid="quick-prompt-row" className="flex w-full items-center gap-2">
       <ScopeIcon project={note.target_type === 'project'} />
+      <Popover open={picking} onOpenChange={setPicking}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            title={t`Color`}
+            aria-label={t`Color`}
+            data-testid="quick-prompt-color"
+            className="shrink-0 rounded hover:bg-muted"
+          >
+            <StickyNoteShape color={note.data?.color as string | undefined} size={18} />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent side="top" align="start" className="w-auto p-2" data-testid="quick-prompt-color-picker">
+          <NoteColorPicker
+            value={noteColor(note.data?.color).token}
+            onChange={(color) => {
+              if (color) void saveNote(note, { color });
+              setPicking(false);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
       {editing ? (
         <textarea
           autoFocus
@@ -235,9 +261,8 @@ function QuickPromptRow({ note, onRun }: { note: Annotation; onRun: () => void }
           type="button"
           onClick={onRun}
           data-testid="quick-prompt-run"
-          className="flex min-w-0 flex-1 items-center gap-2 text-start"
+          className="flex min-w-0 flex-1 items-center text-start"
         >
-          <StickyNoteShape color={note.data?.color as string | undefined} size={18} />
           <span className="block min-w-0 flex-1 truncate text-xs text-foreground">{noteTitle(note)}</span>
         </button>
       )}
