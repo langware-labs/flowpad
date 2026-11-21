@@ -3,6 +3,7 @@
   "packages": [
     "aiohttp",
     "caio",
+    "cbor2",
     "cffi",
     "charset-normalizer",
     "cryptography",

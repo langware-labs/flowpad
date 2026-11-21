@@ -69,6 +69,7 @@ vi.mock('@src/hooks/use-sandboxes', async (importOriginal) => ({
   // Real too: the hub sends `node_provider`, the TS type says `node_provider_type`,
   // and only the real reader bridges the two.
   isUserMachine: (await importOriginal<typeof import('@src/hooks/use-sandboxes')>()).isUserMachine,
+  splitOwnMachine: (await importOriginal<typeof import('@src/hooks/use-sandboxes')>()).splitOwnMachine,
   nextSandboxName: () => 'Sandbox 2',
 }));
 vi.mock('@src/pages/hub-home/NewSandboxDialog', () => ({ NewSandboxDialog: () => null }));

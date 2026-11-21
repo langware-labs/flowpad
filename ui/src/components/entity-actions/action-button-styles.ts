@@ -10,6 +10,12 @@ export const compactEntityActionClassName =
 export const attentionEntityActionClassName = `${compactEntityActionClassName} animate-pulse motion-reduce:animate-none bg-amber-500/20 text-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.55)] ring-2 ring-amber-500/60 hover:bg-amber-500/30 hover:text-amber-500 dark:text-amber-400`;
 
 /**
+ * The bar's stop button while the screen is being recorded: the attention
+ * treatment in red, at the chrome height, and as wide as its timer needs.
+ */
+export const recordingEntityActionClassName = `${compactEntityActionClassName} h-8 w-auto shrink-0 gap-1.5 px-2 text-xs font-medium tabular-nums animate-pulse motion-reduce:animate-none bg-red-500/20 text-red-500 shadow-[0_0_12px_rgba(239,68,68,0.55)] ring-2 ring-red-500/60 hover:bg-red-500/30 hover:text-red-500 dark:text-red-400`;
+
+/**
  * The same contract one size up, for WINDOW CHROME — the navigation bar's own
  * controls, which are hit at a glance rather than read inside a view.
  *

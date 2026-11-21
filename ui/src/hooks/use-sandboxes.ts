@@ -168,9 +168,9 @@ export type SandboxDetails = NodeStatus;
 
 /**
  * The OSS↔hub wire-field divergence lives ONLY in these three helpers. The hub's
- * ComputeNode field is `node_provider`, but the OSS entity types it
- * `node_provider_type` and drops the former on `toJSON()`. `readProvider`
- * tolerates both on read; `hubEntityJson` re-injects it on write. A fresh draft
+ * ComputeNode field is `node_provider`; the desktop's own rows carry
+ * `node_provider_type`. The entity holds both: `readProvider` reads the hub's
+ * first, and `hubEntityJson` always names one on a write to the hub. A fresh draft
  * uses the Hub's bootstrap-selected provider so `ops/setup` never silently
  * ignores an operator's provider selection.
  *
@@ -181,13 +181,40 @@ export type SandboxDetails = NodeStatus;
  * whose default is `local_machine`, a provider that hosts compute nodes but
  * never a sandbox.
  */
-function readProvider(node: ComputeNode): string | undefined {
-  return (node as unknown as { node_provider?: string }).node_provider ?? node.node_provider_type;
+function readProvider(node: ComputeNode): ComputeProviderType | undefined {
+  return node.node_provider ?? node.node_provider_type;
 }
 
 /** A machine a person connected with `flow connect` — not a cloud sandbox, so no provider gates it. */
 export function isUserMachine(node: ComputeNode): boolean {
-  return readProvider(node) === ComputeProviderType.USER_MACHINE;
+  const provider = readProvider(node);
+  if (provider === ComputeProviderType.USER_MACHINE) return true;
+  // Workaround for a field the desktop's server drops. It keeps its own copy of a hub node
+  // (`hub_bridge._handle_shared_machine_op` → `Entity.accepted_from_hub`), and that copy keeps only the fields the
+  // desktop `ComputeNode` declares: `node_provider_type`, with no `hub_name` for the hub's `node_provider`
+  // (`flow_sdk/builtin/faas/compute_node.py`). So the desktop's own list names no provider for a hub node.
+  // Enrolment (and only enrolment) stamps the machine's id on the node, which names a person's computer as well.
+  const config = node.node_config as { machine_id?: unknown } | null | undefined;
+  return provider === undefined && typeof config?.machine_id === 'string' && config.machine_id.length > 0;
+}
+
+/** The desktop app's own machine (`@local`), as its own server lists it — never a node of the hub. */
+export function isLocalMachine(node: ComputeNode): boolean {
+  return readProvider(node) === ComputeProviderType.LOCAL_MACHINE || node.name === '@local';
+}
+
+/**
+ * One card per machine inside the desktop app. The app lists its machine twice: its own `@local` card and the
+ * node it registered on the hub (`ownNodeTypeId`, null when it registered none). `localCard` is the card that
+ * stands for the machine; `hidden` is the hub node left out for it. Both null when there is no `@local` card.
+ */
+export function splitOwnMachine(
+  sandboxes: ComputeNode[],
+  ownNodeTypeId: string | null,
+): { localCard: ComputeNode | null; hidden: ComputeNode | null } {
+  const localCard = ownNodeTypeId ? (sandboxes.find(isLocalMachine) ?? null) : null;
+  const hidden = localCard ? (sandboxes.find((node) => node.typeId.toString() === ownNodeTypeId) ?? null) : null;
+  return { localCard, hidden };
 }
 
 function defaultSandboxProvider(): ComputeProviderType {
