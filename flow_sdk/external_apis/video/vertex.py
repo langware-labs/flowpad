@@ -93,7 +93,7 @@ async def run(request: VideoRequest, transport, out_dir: Path) -> VideoResult:
 
     async def clip_when_done() -> bytes | None:
         operation = await transport.send(
-            "POST", path_for(model, "fetchPredictOperation"), json={"operationName": job_id}
+            "POST", path_for(model, "fetchPredictOperation"), json={"operationName": job_id}, repeatable=True
         )
         if not isinstance(operation, dict):
             raise EndpointCallError("bad_response", f"Veo answered the job status with no object: {operation!s:.200}")

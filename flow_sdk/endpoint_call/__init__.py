@@ -19,6 +19,8 @@ Every failure is an :class:`EndpointCallError` with a closed ``reason``.
 
 from __future__ import annotations
 
+import logging
+import socket
 import time
 from functools import lru_cache
 from pathlib import Path
@@ -49,6 +51,24 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 #: A plain JSON call: long enough for a model that draws while the connection stays open.
 CALL_TIMEOUT = httpx.Timeout(connect=10, write=30, read=300, pool=5)
 DOWNLOAD_TIMEOUT = httpx.Timeout(connect=10, write=10, read=600, pool=5)
+
+
+logger = logging.getLogger(__name__)
+
+
+def _keepalive_transport() -> httpx.AsyncHTTPTransport:
+    """A transport whose sockets probe the peer after 10 silent seconds, every 5, and give up after 3
+    unanswered probes: a dead path is noticed in about 25 seconds instead of at the read timeout."""
+    options = [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
+    idle = getattr(socket, "TCP_KEEPIDLE", None) or getattr(socket, "TCP_KEEPALIVE", None)  # Linux / macOS
+    for name, value in (
+        (idle, 10),
+        (getattr(socket, "TCP_KEEPINTVL", None), 5),
+        (getattr(socket, "TCP_KEEPCNT", None), 3),
+    ):
+        if name is not None:
+            options.append((socket.IPPROTO_TCP, name, value))
+    return httpx.AsyncHTTPTransport(socket_options=options)
 
 
 @lru_cache(maxsize=1)
@@ -86,14 +106,17 @@ class Transport:
         params: Optional[dict] = None,
         timeout: Any = CALL_TIMEOUT,
         kind: Optional[str] = None,
+        repeatable: bool = False,
     ) -> tuple[int, Any]:
         """One vendor request through the hub: ``(status, body)`` whatever the status -- the body parsed
         as JSON, else its first 500 characters. Raises only when the hub itself could not be reached.
-        ``kind`` names another root of the same endpoint for this one request (a vendor's file store)."""
+        ``kind`` names another root of the same endpoint for this one request (a vendor's file store).
+        ``repeatable``: asking twice does no harm (a picture, a job's status), so a connection that died
+        under the request is tried once more. Never for a call that starts paid work (a video job)."""
         headers = {KIND_HEADER: kind or self.kind}
         sealed = await sealed_endpoint()
         if sealed is not None and sealed.offer.id == self.offer.id:
-            resp = await self._send_sealed(sealed, method, sub_path, json, params, headers, timeout)
+            resp = await self._send_sealed(sealed, method, sub_path, json, params, headers, timeout, repeatable)
         else:
             resp = await self._send_as_user(method, sub_path, json, params, headers, timeout)
         try:
@@ -128,32 +151,47 @@ class Transport:
             raise EndpointCallError(reason, f"The hub could not be reached: {exc}", status=exc.status_code) from exc
 
     @staticmethod
-    async def _send_sealed(sealed, method, sub_path, json, params, headers, timeout) -> httpx.Response:
+    async def _send_sealed(
+        sealed, method, sub_path, json, params, headers, timeout, repeatable=False
+    ) -> httpx.Response:
         """This machine's own API budget: its allocation's invoke URL, with the key the hub placed here.
-        A refused key is read again once: a reset machine is given a new one, and a memo may hold the old."""
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                for attempt in (1, 2):
-                    resp = await client.request(
-                        method,
-                        f"{sealed.url}/{sub_path.lstrip('/')}",
-                        json=json,
-                        params=params,
-                        headers={**headers, "Authorization": f"Bearer {sealed.key}"},
-                    )
-                    if resp.status_code not in (401, 403) or attempt == 2:
-                        return resp
-                    invalidate_api_endpoint_listing()
-                    fresh = await sealed_endpoint()
-                    if fresh is None or fresh.key == sealed.key:
-                        return resp
-                    sealed = fresh
-        except httpx.TimeoutException as exc:
+
+        A refused key is read again once: a reset machine is given a new one, and a memo may hold the old.
+
+        The answer to a picture or a clip comes after a long SILENT wait (the vendor is working), and a
+        connection out of a sandbox can die in that silence without this side ever being told: the call
+        then sat on a dead socket for the whole read timeout (seen on staging: the load balancer logged
+        ``client_disconnected`` at 16 s, the machine waited 300). So the socket sends keepalive probes --
+        which keep the path's state alive and notice a dead one within seconds -- and a ``repeatable``
+        request is sent once more when its connection was lost."""
+        lost: Exception | None = None
+        for send in range(2 if repeatable else 1):
+            try:
+                async with httpx.AsyncClient(timeout=timeout, transport=_keepalive_transport()) as client:
+                    for attempt in (1, 2):
+                        resp = await client.request(
+                            method,
+                            f"{sealed.url}/{sub_path.lstrip('/')}",
+                            json=json,
+                            params=params,
+                            headers={**headers, "Authorization": f"Bearer {sealed.key}"},
+                        )
+                        if resp.status_code not in (401, 403) or attempt == 2:
+                            return resp
+                        invalidate_api_endpoint_listing()
+                        fresh = await sealed_endpoint()
+                        if fresh is None or fresh.key == sealed.key:
+                            return resp
+                        sealed = fresh
+            except httpx.HTTPError as exc:
+                lost = exc
+                logger.warning(
+                    "sealed endpoint: connection lost (%s) on %s, send %d", type(exc).__name__, sub_path, send + 1
+                )
+        if isinstance(lost, httpx.TimeoutException):
             # The request left and no answer came back in time: not "no connection". Trying again is reasonable.
-            raise EndpointCallError("timed_out", f"The hub did not answer in time ({type(exc).__name__})") from exc
-        except httpx.HTTPError as exc:
-            raise EndpointCallError("unavailable", f"The hub could not be reached: {type(exc).__name__}") from exc
-        return resp
+            raise EndpointCallError("timed_out", f"The hub did not answer in time ({type(lost).__name__})") from lost
+        raise EndpointCallError("unavailable", f"The hub could not be reached: {type(lost).__name__}") from lost
 
     async def download(self, url: str, dest: Path) -> Path:
         """A finished file at the vendor's own public URL, straight to disk (no key is involved)."""

@@ -485,7 +485,7 @@ async def test_an_invite_box_calls_its_sealed_endpoint_with_the_key_the_hub_plac
 
     real_client = httpx.AsyncClient
     monkeypatch.setattr(
-        httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(vendor), **kwargs)
+        httpx, "AsyncClient", lambda **kwargs: real_client(**{**kwargs, "transport": httpx.MockTransport(vendor)})
     )
     try:
         image = await call(IMAGE_GENERATE, ImageRequest(prompt="a red ball"), out_dir=tmp_path)
@@ -547,10 +547,60 @@ async def test_a_sealed_key_that_is_refused_is_read_again_once(hub, monkeypatch:
 
     real_client = httpx.AsyncClient
     monkeypatch.setattr(
-        httpx, "AsyncClient", lambda **kwargs: real_client(transport=httpx.MockTransport(hub_side), **kwargs)
+        httpx, "AsyncClient", lambda **kwargs: real_client(**{**kwargs, "transport": httpx.MockTransport(hub_side)})
     )
     try:
         image = await call(IMAGE_GENERATE, ImageRequest(prompt="a red ball"), out_dir=tmp_path)
     finally:
         listing.invalidate_api_endpoint_listing()
     assert keys == ["Bearer fp_old_key", "Bearer fp_new_key"] and Path(image.files[0]).is_file()
+
+
+async def test_a_repeatable_call_whose_connection_died_is_sent_once_more_and_a_paid_one_is_not(
+    hub, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A connection out of a sandbox can die while the vendor is still working. A picture is asked for
+    again; a call that starts paid work is not (the first may have gone through)."""
+    from flow_sdk.instance_settings import api_endpoint as listing
+
+    hub["rows"] = []
+    monkeypatch.setenv(
+        listing.SEALED_URL_VAR, "https://hub.test/api/v1/graph/api_endpoint/0f0e0d0c-aaaa-bbbb-cccc-000000000001/invoke"
+    )
+    monkeypatch.setenv(listing.SEALED_KEY_VAR, "fp_box_key")
+    serves = {IMAGE_GENERATE: "aiplatform.googleapis.com", VIDEO_GENERATE: "us-central1-aiplatform.googleapis.com"}
+    monkeypatch.setenv(listing.SEALED_SERVES_VAR, json.dumps(serves))
+    listing.invalidate_api_endpoint_listing()
+    asked: list[str] = []
+
+    def hub_side(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.path.rsplit(":", 1)[-1])
+        if len(asked) == 1 or request.url.path.endswith(":predictLongRunning"):
+            raise httpx.ReadError("the connection died in the silence", request=request)
+        return httpx.Response(200, json=vertex_answer(PNG))
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: real_client(**{**kwargs, "transport": httpx.MockTransport(hub_side)}),
+    )
+    try:
+        image = await call(IMAGE_GENERATE, ImageRequest(prompt="a red ball"), out_dir=tmp_path)
+        assert asked == ["generateContent", "generateContent"] and Path(image.files[0]).is_file()
+        with pytest.raises(EndpointCallError) as lost:
+            await call(VIDEO_GENERATE, VideoRequest(prompt="it rolls"), out_dir=tmp_path)
+    finally:
+        listing.invalidate_api_endpoint_listing()
+    assert lost.value.reason == "unavailable" and asked.count("predictLongRunning") == 1, (
+        "a paid job is never started twice"
+    )
+
+
+def test_the_sealed_transport_probes_a_silent_connection():
+    import socket
+
+    from flow_sdk.endpoint_call import _keepalive_transport
+
+    options = _keepalive_transport()._pool._socket_options
+    assert (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1) in options and len(options) >= 3

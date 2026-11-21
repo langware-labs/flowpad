@@ -115,7 +115,9 @@ async def run(request: VideoRequest, transport, out_dir: Path) -> VideoResult:
         raise EndpointCallError("bad_response", "Kie created a job without a taskId")
 
     async def record_when_done() -> dict[str, Any] | None:
-        record = _data(await transport.send("GET", RECORD_PATH, params={"taskId": job_id}), "the job status")
+        record = _data(
+            await transport.send("GET", RECORD_PATH, params={"taskId": job_id}, repeatable=True), "the job status"
+        )
         if record.get("state") == "fail":
             raise EndpointCallError("failed", f"Kie job failed: {record.get('failMsg') or 'no reason given'}")
         return record if record.get("state") == "success" else None

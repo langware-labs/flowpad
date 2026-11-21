@@ -63,7 +63,10 @@ def images_of(body: Any) -> list[tuple[str, bytes]]:
 
 async def run(request: ImageRequest, transport, out_dir: Path) -> ImageResult:
     model = request.model or DEFAULT_MODEL
-    body = await transport.send("POST", path_for(model), json=await asyncio.to_thread(to_wire, request))
+    # Asking twice only draws twice: a lost connection is tried once more.
+    body = await transport.send(
+        "POST", path_for(model), json=await asyncio.to_thread(to_wire, request), repeatable=True
+    )
     stamp = time.strftime("%Y%m%d-%H%M%S")
     files: list[str] = []
     for index, (mime, data) in enumerate(images_of(body), start=1):
