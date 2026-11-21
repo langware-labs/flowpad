@@ -15,8 +15,8 @@ A project's lw is its statement docs: plain markdown docs holding fenced YAML bl
 
 * A **statement** is architecture: one sentence that is true by design. ``issues`` are the
   violations found in today's code; none means it passes. It has no id.
-* A **requirement** is implementation: one sentence of what must be built. It lives in a
-  ``requirements`` block that depends on the statements it implements.
+* A **requirement** is implementation: one sentence of what must be built. Requirements are a
+  list of the statements block they implement.
 * A ``test_debug`` block is what tagit writes in a rules doc: the tests the rules are bound to
   (``sites``), when they were ``proven``, and the rules as ``statements``.
 * A block is named by ``tag`` and names what it builds on in ``depends_on`` — tags, in the one
@@ -38,7 +38,6 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.tags.grammar import normalize_tag
 
 STATEMENTS = "statements"
-REQUIREMENTS = "requirements"
 TEST_DEBUG = "test_debug"
 
 def _tag(value: Any) -> str:
@@ -105,7 +104,7 @@ class StatementSpec(DataSpec):
             if "id" in value:
                 raise ValueError("a statement has no id")
             if "requirements" in value or "changes" in value:
-                raise ValueError("a statement has no requirements; they go in a requirements block that depends on this one")
+                raise ValueError("a statement has no requirements; they are the block's own requirements list")
         return value
 
     _text = field_validator("text")(classmethod(lambda cls, v: _sentence(v)))
@@ -137,7 +136,7 @@ class _BlockSpec(DataSpec):
 
     #: The fence language.
     kind: ClassVar[str]
-    #: The fields as they are written, in order; the last one is the block's list.
+    #: The fields as they are written, in order.
     fields: ClassVar[tuple[str, ...]]
 
     tag: str
@@ -158,23 +157,15 @@ class _BlockSpec(DataSpec):
 
 
 class StatementsBlockSpec(_BlockSpec):
-    """A ``statements`` block: a tag, what it builds on, and its statements."""
+    """A ``statements`` block: a tag, what it builds on, its statements, and the requirements that
+    implement them."""
 
     spec_kind: ClassVar[str] = "lw.statements"
     kind: ClassVar[str] = STATEMENTS
-    fields: ClassVar[tuple[str, ...]] = ("tag", "depends_on", "statements")
+    fields: ClassVar[tuple[str, ...]] = ("tag", "depends_on", "statements", "requirements")
 
     statements: list[StatementSpec] = Field(min_length=1)
-
-
-class RequirementsBlockSpec(_BlockSpec):
-    """A ``requirements`` block: a tag, the statements it implements, and its requirements."""
-
-    spec_kind: ClassVar[str] = "lw.requirements"
-    kind: ClassVar[str] = REQUIREMENTS
-    fields: ClassVar[tuple[str, ...]] = ("tag", "depends_on", "requirements")
-
-    requirements: list[RequirementSpec] = Field(min_length=1)
+    requirements: list[RequirementSpec] = []
 
 
 class TestDebugBlockSpec(_BlockSpec):
@@ -192,9 +183,5 @@ class TestDebugBlockSpec(_BlockSpec):
 
 
 #: The fence languages lw owns, each with its shape.
-BLOCK_SPECS: dict[str, type[_BlockSpec]] = {
-    spec.kind: spec for spec in (StatementsBlockSpec, RequirementsBlockSpec, TestDebugBlockSpec)
-}
+BLOCK_SPECS: dict[str, type[_BlockSpec]] = {spec.kind: spec for spec in (StatementsBlockSpec, TestDebugBlockSpec)}
 BLOCK_KINDS = tuple(BLOCK_SPECS)
-#: The kinds that hold statements, and so can be implemented by a requirements block.
-STATEMENT_KINDS = tuple(kind for kind, spec in BLOCK_SPECS.items() if spec.fields[-1] == STATEMENTS)

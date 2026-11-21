@@ -2,26 +2,27 @@ import { t } from '@lingui/core/macro';
 /**
  * The lw (langware) blocks of a statement doc render as cards (`docs/lw.md`).
  *
- * - `statements`: one row per statement — its sentence, and whether it was
- *   stated or proven. What violates the statements today is the block's Issues
- *   tab, and the files they are about its References tab; each exists only
- *   when the block has any, and carries a counter.
- * - `requirements`: the statements it implements and its requirements.
+ * - `statements`: one numbered row per statement — its sentence, and whether
+ *   it was stated or proven. What violates the statements today is the block's
+ *   Issues tab, the files they are about its References tab, and what must be
+ *   built its Requirements tab; each exists only when the block has any, and
+ *   carries a counter.
  * - `test_debug` (what tagit writes in a rules doc): the tag, when the rules
  *   were proven, what they depend on and the tests they are bound to, then the
  *   rules as statements.
  *
- * A statements or requirements block's tag is drawn by the host, as a chip at
+ * A statements block's tag is drawn by the host, as a chip at
  * the end of the tab row (`chrome`), so the card has no header line.
  *
- * In an editable host a statement's sentence is click-to-edit: the typed text
- * goes into the block's YAML as it is (`lw-edit.ts`). A sentence cannot break a
+ * In an editable host a statement's sentence is click-to-edit: the typed text,
+ * which may run over several lines, goes into the block's YAML as it is
+ * (`lw-edit.ts`). A sentence cannot break a
  * tag or a dependency, so it needs no check against the rest of the project.
  * Everything else — tags, dependencies, issues, files — is written by
  * `flow tag put` (the `langit` and `tagit` skills), which does that check, or
  * by hand on the Code tab.
  *
- * Everything a statements or requirements card shows is in the block. A
+ * Everything a statements card shows is in the block. A
  * `test_debug` card also asks the tag index where its bound tests are now.
  */
 
@@ -37,6 +38,7 @@ import {
   type LwFileRef,
   type LwSite,
   type LwStatement,
+  splitAbout,
 } from './lw-schema';
 import { chipRow, siteChip } from './site-chip';
 import { resolveRelPath } from './source-location';
@@ -80,19 +82,58 @@ function verdictBadge(count: number): HTMLElement {
   return badge;
 }
 
-function issueLine(issue: string, labelled: boolean): HTMLElement {
+/** A file location written inside a sentence: `flow_sdk/utils/machine_id.py:29`. At least one folder, so a bare `a.b` is not one. */
+const LOCATION = /(?:[\w.@-]+\/)+[\w@-]+\.\w+(?::\d+)?/g;
+
+/**
+ * An issue's sentence with each file location in it drawn as a chip: the file's
+ * name (and line), the whole path on hover, a click previews the file there.
+ */
+function issueText(issue: string, root: string | null, ctx: FenceRenderContext): HTMLElement {
+  const text = el('span', 'lw-card-issue-text');
+  let at = 0;
+  for (const found of issue.matchAll(LOCATION)) {
+    const file = splitAbout(found[0]);
+    text.append(issue.slice(at, found.index));
+    const name = file.relPath.split('/').at(-1)!;
+    const chip = siteChip('lw-location', formatSiteLabel({ ...file, relPath: name }), resolveRelPath(file.relPath, root, file.line), ctx);
+    chip.title = found[0];
+    text.appendChild(chip);
+    at = found.index + found[0].length;
+  }
+  text.append(issue.slice(at));
+  return text;
+}
+
+/** One issue. `locations` (the Issues tab) draws the files it names as chips. */
+function issueLine(issue: string, labelled: boolean, locations?: { root: string | null; ctx: FenceRenderContext }): HTMLElement {
   const line = el('div', 'lw-card-issue');
   line.setAttribute('data-testid', 'lw-issue');
   if (labelled) line.appendChild(el('span', 'lw-card-issue-label', t`issue`));
-  line.appendChild(el('span', 'lw-card-issue-text', issue));
+  line.appendChild(locations ? issueText(issue, locations.root, locations.ctx) : el('span', 'lw-card-issue-text', issue));
   return line;
 }
 
-/** One row of a card: a sentence, its badges, and whatever is listed under it. */
-function row(testId: string, text: HTMLElement, badges: (HTMLElement | null)[], body: HTMLElement[] = []): HTMLElement {
+/**
+ * One row of a card: a sentence, its badges, and whatever is listed under it.
+ * `number` is the statement's place in its block (a statement has no id): the
+ * same number names it on the Statements, Issues and References tabs.
+ */
+function row(
+  testId: string,
+  text: HTMLElement,
+  badges: (HTMLElement | null)[],
+  body: HTMLElement[] = [],
+  number?: number,
+): HTMLElement {
   const node = el('div', 'lw-card-row');
   node.setAttribute('data-testid', testId);
   const head = el('div', 'lw-card-row-head');
+  if (number != null) {
+    const chip = el('span', 'lw-card-number', String(number));
+    chip.setAttribute('data-testid', 'lw-number');
+    head.appendChild(chip);
+  }
   head.appendChild(text);
   const shown = badges.filter((badge): badge is HTMLElement => badge != null);
   if (shown.length) {
@@ -112,18 +153,22 @@ function rowsSection(label: string, rows: HTMLElement[]): HTMLElement {
 }
 
 /** The extra views of a statements block: what is violated, and the files it is about. */
-const VIEW = { issues: 'issues', references: 'references' } as const;
+const VIEW = { issues: 'issues', references: 'references', requirements: 'requirements' } as const;
+
+/** The statements of a block with their numbers, so a filtered list keeps them. */
+const numbered = (block: LwBlock) => block.statements.map((statement, index) => ({ statement, number: index + 1 }));
 
 /** The Issues view: each violated statement, with its issues under it. */
-function issuesView(block: LwBlock): HTMLElement {
-  const rows = block.statements
-    .filter((statement) => statement.issues.length)
-    .map((statement) =>
+function issuesView(block: LwBlock, root: string | null, ctx: FenceRenderContext): HTMLElement {
+  const rows = numbered(block)
+    .filter(({ statement }) => statement.issues.length)
+    .map(({ statement, number }) =>
       row(
         'lw-issues-of',
         el('span', 'lw-card-text lw-card-text-strong', statement.text),
         [verdictBadge(statement.issues.length)],
-        statement.issues.map((issue) => issueLine(issue, false)),
+        statement.issues.map((issue) => issueLine(issue, false, { root, ctx })),
+        number,
       ),
     );
   return rowsSection(t`Issues`, rows);
@@ -131,14 +176,26 @@ function issuesView(block: LwBlock): HTMLElement {
 
 /** The References view: each statement that names files, with a chip per file. */
 function referencesView(block: LwBlock, root: string | null, ctx: FenceRenderContext): HTMLElement {
-  const rows = block.statements
-    .filter((statement) => statement.about.length)
-    .map((statement) =>
-      row('lw-references-of', el('span', 'lw-card-text lw-card-text-strong', statement.text), [], [
-        fileChips(statement, root, ctx),
-      ]),
+  const rows = numbered(block)
+    .filter(({ statement }) => statement.about.length)
+    .map(({ statement, number }) =>
+      row(
+        'lw-references-of',
+        el('span', 'lw-card-text lw-card-text-strong', statement.text),
+        [],
+        [fileChips(statement, root, ctx)],
+        number,
+      ),
     );
   return rowsSection(t`References`, rows);
+}
+
+/** The Requirements view: what must be built to make the block's statements true. */
+function requirementsView(block: LwBlock): HTMLElement {
+  return rowsSection(
+    t`Requirements`,
+    block.requirements.map((text) => row('lw-requirement', el('span', 'lw-card-text', text), [])),
+  );
 }
 
 /** The Statements view: each sentence (click-to-edit in an editable host) and its basis. */
@@ -146,8 +203,12 @@ function statementsView(block: LwBlock, ctx: FenceRenderContext, edit: (statemen
   const rows = block.statements.map((statement, index) =>
     row(
       'lw-statement',
-      editable('lw-card-text', statement.text, `lw-statement-text-${index}`, ctx.editable, (text) => edit(index, text)),
+      editable('lw-card-text', statement.text, `lw-statement-text-${index}`, ctx.editable, (text) => edit(index, text), {
+        multiline: true,
+      }),
       [basisBadge(statement)],
+      [],
+      index + 1,
     ),
   );
   return rowsSection(t`Statements`, rows);
@@ -178,22 +239,12 @@ function buildCard(
   const card = el('div', 'lw-card');
   card.setAttribute('data-testid', `lw-${block.kind}-card`);
 
-  if (ctx.view === VIEW.issues) card.appendChild(issuesView(block));
+  if (ctx.view === VIEW.issues) card.appendChild(issuesView(block, root, ctx));
   else if (ctx.view === VIEW.references) card.appendChild(referencesView(block, root, ctx));
+  else if (ctx.view === VIEW.requirements) card.appendChild(requirementsView(block));
   else {
-    const implementing = block.kind === 'requirements';
-    if (block.dependsOn.length) card.appendChild(dependsOn(implementing ? t`Implements` : t`Depends on`, block.dependsOn));
-    if (implementing) {
-      const rows = block.requirements.map((text) => {
-        const node = el('div', 'lw-card-row');
-        node.setAttribute('data-testid', 'lw-requirement');
-        node.appendChild(el('span', 'lw-card-text', text));
-        return node;
-      });
-      card.appendChild(rowsSection(t`Requirements`, rows));
-    } else {
-      card.appendChild(statementsView(block, ctx, edit));
-    }
+    if (block.dependsOn.length) card.appendChild(dependsOn(t`Depends on`, block.dependsOn));
+    card.appendChild(statementsView(block, ctx, edit));
   }
   return card;
 }
@@ -287,8 +338,9 @@ export function renderLwCard(kind: LwBlockKind, code: string, host: HTMLElement,
 }
 
 /**
- * The block's tab row: its tag, an Issues tab when something is violated and a
- * References tab when a statement names a file — each with its count.
+ * The block's tab row: its tag, an Issues tab when something is violated, a
+ * References tab when a statement names a file and a Requirements tab when
+ * the block has requirements — each with its count.
  *
  * @internal exported for tests.
  */
@@ -299,21 +351,21 @@ export function lwChrome(kind: LwBlockKind, code: string): FenceChrome {
   const views = [];
   if (issues) views.push({ id: VIEW.issues, label: t`Issues`, count: issues, tone: 'warn' as const });
   if (files) views.push({ id: VIEW.references, label: t`References`, count: files });
+  if (block.requirements.length) {
+    views.push({ id: VIEW.requirements, label: t`Requirements`, count: block.requirements.length });
+  }
   return { tag: block.tag, views };
 }
 
-const card = (kind: LwBlockKind, tabLabel: string): FenceRenderer => ({
-  language: kind,
-  tabLabel,
-  layout: 'block',
-  render: (code, host, ctx) => renderLwCard(kind, code, host, ctx),
-  chrome: (code) => lwChrome(kind, code),
-});
-
 /** One renderer per block kind: its fence language, its tab label, how it draws. */
 const RENDERERS: FenceRenderer[] = [
-  card('statements', 'Statements'),
-  card('requirements', 'Requirements'),
+  {
+    language: 'statements',
+    tabLabel: 'Statements',
+    layout: 'block',
+    render: (code, host, ctx) => renderLwCard('statements', code, host, ctx),
+    chrome: (code) => lwChrome('statements', code),
+  },
   { language: 'test_debug', tabLabel: 'Test debug', layout: 'block', render: renderTestDebugCard },
 ];
 

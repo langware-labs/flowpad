@@ -5,15 +5,10 @@ tag: machine_access
 tags:
 - machine_access
 - machine_access.model
-- machine_access.model.build
 - machine_access.identity
-- machine_access.identity.build
 - machine_access.privileged_access
-- machine_access.privileged_access.build
 - machine_access.lock
-- machine_access.lock.build
 - machine_access.remote_control
-- machine_access.remote_control.build
 description: How a machine connects to the hub as one compute node, how it is identified,
   and how its privileged access is allowed, locked and unlocked.
 ---
@@ -35,12 +30,6 @@ statements:
       - flow_sdk/server/routes/remote_control.py:208
       - flow_sdk/cli/commands/connect_cmd.py:151
       - flow_sdk/builtin/faas/compute_node.py:254
-```
-
-```requirements
-tag: machine_access.model.build
-depends_on:
-  - machine_access.model
 requirements:
   - text: 'Setting up Remote control in flow_sdk/server/routes/remote_control.py must connect the machine the way flow connect does: the same worker (flow_sdk/compute/user_machine/worker.py) serving the same compute node, not a registration alone.'
   - text: The @local compute node (flow_sdk/builtin/faas/compute_node.py) and the machine's hub compute node must be one node for one machine, not two entries.
@@ -61,12 +50,6 @@ statements:
       - flow_sdk/utils/machine_id.py:29
       - flow_sdk/core/compute/hub_node.py:46
       - flow_sdk/cloud_client/client_hooks.py:57
-```
-
-```requirements
-tag: machine_access.identity.build
-depends_on:
-  - machine_access.identity
 requirements:
   - text: get_machine_id in flow_sdk/utils/machine_id.py must answer the override stored in the global .flow/machine_id when there is one, before its cache and the id of the operating system.
   - text: flow_sdk/core/compute/hub_node.py must take the machine id of a compute node from get_machine_id and drop its own machine_id(); a machine already enrolled under the minted id in ~/.flow/machine_id must keep resolving to the same node.
@@ -88,12 +71,6 @@ statements:
       - flow_sdk/compute/user_machine/worker.py:135
       - flow_sdk/server/routes/it_session.py:68
       - flow_sdk/core/compute/it_session.py:99
-```
-
-```requirements
-tag: machine_access.privileged_access.build
-depends_on:
-  - machine_access.privileged_access
 requirements:
   - text: A compute node must carry whether it allows privileged access, and flow_sdk/compute/user_machine/worker.py must refuse every privileged operation on a node that does not allow it.
   - text: The privileged operations must be named in one place (shell, pty, IT messages and the other machine-protected operations of flow_sdk/compute/user_machine/worker.py), so one check covers them all.
@@ -114,12 +91,6 @@ statements:
       - flow_sdk/core/compute/access_keys.py:233
       - flow_sdk/server/routes/remote_control.py:359
       - flow_sdk/compute/user_machine/worker.py:291
-```
-
-```requirements
-tag: machine_access.lock.build
-depends_on:
-  - machine_access.lock
 requirements:
   - text: flow_sdk/compute/user_machine/worker.py and flow_sdk/server/routes/it_session.py must refuse every privileged operation while the machine is protected by a passkey and locked (flow_sdk/core/compute/access_keys.py is_on is false).
   - text: Each privileged message sent over the channel to an unlocked machine must carry a signature, and flow_sdk/compute/user_machine/worker.py must validate it before executing and refuse a message that fails.
@@ -140,12 +111,6 @@ statements:
       - flow_sdk/core/compute/hub_node.py:95
       - flow_sdk/server/routes/remote_control.py:208
       - flow_sdk/cli/commands/connect_cmd.py:100
-```
-
-```requirements
-tag: machine_access.remote_control.build
-depends_on:
-  - machine_access.remote_control
 requirements:
   - text: create_node in flow_sdk/core/compute/hub_node.py must take a "locked" setting into the creation config of the node; Remote control (flow_sdk/server/routes/remote_control.py) creates its node with it, flow connect without it.
   - text: Remote control must create and serve its node through the flow connect path (one ensure function in flow_sdk/core/compute/hub_node.py and the same worker), differing from flow connect only in the "locked" creation config.

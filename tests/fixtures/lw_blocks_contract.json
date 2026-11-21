@@ -40,22 +40,6 @@
       "ok": true
     },
     {
-      "name": "minimal requirements",
-      "kind": "requirements",
-      "body": {
-        "tag": "a.b.build",
-        "depends_on": [
-          "a.b"
-        ],
-        "requirements": [
-          {
-            "text": "Build it."
-          }
-        ]
-      },
-      "ok": true
-    },
-    {
       "name": "tag missing",
       "kind": "statements",
       "body": {
@@ -319,36 +303,6 @@
       "ok": false
     },
     {
-      "name": "requirement with a basis",
-      "kind": "requirements",
-      "body": {
-        "tag": "a.b",
-        "depends_on": [
-          "a"
-        ],
-        "requirements": [
-          {
-            "text": "Build it.",
-            "basis": "stated"
-          }
-        ]
-      },
-      "ok": false
-    },
-    {
-      "name": "statements list in a requirements block",
-      "kind": "requirements",
-      "body": {
-        "tag": "a.b",
-        "statements": [
-          {
-            "text": "A compute node represents a machine."
-          }
-        ]
-      },
-      "ok": false
-    },
-    {
       "name": "body is a list",
       "kind": "statements",
       "body": [
@@ -482,6 +436,95 @@
                 "rel_path": "a.py"
               }
             ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "statements with the requirements that implement them",
+      "kind": "statements",
+      "ok": true,
+      "body": {
+        "tag": "machine_access.remote_control",
+        "statements": [
+          {
+            "text": "Remote control is flow connect with a node created locked."
+          }
+        ],
+        "requirements": [
+          {
+            "text": "The node's creation config says locked."
+          },
+          {
+            "text": "The worker enforces it."
+          }
+        ]
+      }
+    },
+    {
+      "name": "requirements only, no statements",
+      "kind": "statements",
+      "ok": false,
+      "body": {
+        "tag": "machine_access.remote_control",
+        "requirements": [
+          {
+            "text": "x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "requirement with a basis",
+      "kind": "statements",
+      "ok": false,
+      "body": {
+        "tag": "machine_access.remote_control",
+        "statements": [
+          {
+            "text": "Remote control is flow connect with a node created locked."
+          }
+        ],
+        "requirements": [
+          {
+            "text": "x",
+            "basis": "stated"
+          }
+        ]
+      }
+    },
+    {
+      "name": "requirement that is not a sentence",
+      "kind": "statements",
+      "ok": false,
+      "body": {
+        "tag": "machine_access.remote_control",
+        "statements": [
+          {
+            "text": "Remote control is flow connect with a node created locked."
+          }
+        ],
+        "requirements": [
+          {
+            "text": "  "
+          }
+        ]
+      }
+    },
+    {
+      "name": "test_debug has no requirements",
+      "kind": "test_debug",
+      "ok": false,
+      "body": {
+        "tag": "breadcrumb.test.a.rules",
+        "statements": [
+          {
+            "text": "x"
+          }
+        ],
+        "requirements": [
+          {
+            "text": "y"
           }
         ]
       }

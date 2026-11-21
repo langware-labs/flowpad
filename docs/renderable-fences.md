@@ -97,12 +97,11 @@ below. It is the older form: the `tagit` skill now writes a `test_debug` block.
 were proven, what they depend on and the bound tests (refreshed from the tag index like
 `breadcrumb`), then the rules as statements. Its tab reads "Test debug".
 
-**`statements`** and **`requirements`** render the lw (langware) blocks of a statement doc
+**`statements`** renders the lw (langware) block of a statement doc
 ([lw.md](lw.md)) — `renderers/lw.ts`. A statements card lists each sentence with `stated` or
 `proven`; in an editable doc the sentence is click-to-edit and the typed text is written into the
 block (`renderers/lw-edit.ts`). The issues that violate the statements and the files they are about
-are extra tabs of the block (below). A requirements card shows the statements it implements and its
-requirements. Everything but a sentence is written by `flow tag put`, which checks a block against
+are extra tabs of the block (below), and so are its requirements. Everything but a sentence is written by `flow tag put`, which checks a block against
 every other block of the project, or by hand in the Code pane. The schema (`renderers/lw-schema.ts`)
 is the TS twin of `flow_sdk/schema/data_spec/lw_spec.py`; `tests/fixtures/lw_blocks_contract.json`
 pins that the two agree on which blocks are valid. Strict like `interface`: a block that does not

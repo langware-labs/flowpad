@@ -34,14 +34,16 @@ statements:
       - get_machine_id never reads the override file.
     about:
       - flow_sdk/utils/machine_id.py:29
+requirements:
+  - text: Remote control holds the connection.
 ```
 
-```requirements
+```statements
 tag: machine_access.connected.build
 depends_on:
   - machine_access.connected
-requirements:
-  - text: Remote control holds the connection.
+statements:
+  - text: Remote control starts the worker.
 ```
 """
 
@@ -65,8 +67,9 @@ def test_a_doc_holds_several_blocks_and_no_issues_means_pass(tmp_path):
     collection = lw.load(_docs(tmp_path))
     assert [(b.kind, b.tag, b.line) for b in collection.blocks] == [
         ("statements", "machine_access.connected", 12),
-        ("requirements", "machine_access.connected.build", 24),
+        ("statements", "machine_access.connected.build", 26),
     ]
+    assert [r.text for r in collection.blocks[0].spec.requirements] == ["Remote control holds the connection."]
     first, second = collection.blocks[0].items
     assert first.issues == [] and first.about == []
     assert second.issues == ["get_machine_id never reads the override file."]
@@ -95,10 +98,10 @@ def test_put_adds_a_block_lists_its_tag_and_leaves_the_body_alone(tmp_path):
 def test_put_replaces_the_block_with_the_same_tag(tmp_path):
     root = _docs(tmp_path)
     assert _put(root, "statements", "machine_access.connected", {"statements": [{"text": "One node per machine."}]}) == []
-    before, after = DOC.split("```statements")[0], DOC.split("```\n\n```requirements")[1]
+    before, after = DOC.split("```statements")[0], DOC.split("```\n\n```statements")[1]
     assert (root / "machine_access.md").read_text(encoding="utf-8") == (
         before + "```statements\ntag: machine_access.connected\nstatements:\n  - text: One node per machine.\n"
-        "```\n\n```requirements" + after
+        "```\n\n```statements" + after
     )
 
 
@@ -113,9 +116,9 @@ def test_a_refused_put_writes_nothing(tmp_path):
         ("statements", "machine_access.x", {"statements": [{"text": "x", "about": ["../x.py"]}]}, "a path inside the project"),
         ("statements", "machine_access.x", {"statements": []}, "at least 1 item"),
         ("statements", "machine_access.x", {"statements": [{"text": "x"}], "extra": 1}, "extra: unknown field"),
-        ("requirements", "machine_access.x", {"requirements": [{"text": "x"}]}, "must depend on a statements block"),
-        ("requirements", "machine_access.x", {"depends_on": ["machine_access"], "requirements": [{"text": "x"}]}, "must depend on a statements block"),
-        ("requirements", "machine_access.connected", {"requirements": [{"text": "x"}]}, "is a statements block here"),
+        ("statements", "machine_access.x", {"requirements": [{"text": "x"}]}, "statements: Field required"),
+        ("statements", "machine_access.x", {"statements": [{"text": "x"}], "requirements": [{"text": "y", "basis": "stated"}]}, "unknown field"),
+        ("test_debug", "machine_access.connected", {"statements": [{"text": "x"}]}, "is a statements block here"),
     ]
     assert [p.message for p in lw.put(root, "statements", "a", {"statements": [{"text": "x"}]}, root)] == [
         "the doc does not exist; create it first"  # a folder is not a doc
@@ -192,7 +195,7 @@ def test_remove_deletes_one_block_unless_another_depends_on_it(tmp_path):
     ]
     assert doc.read_text(encoding="utf-8") == DOC
     assert lw.remove(doc, "machine_access.connected.build", root) == []
-    assert doc.read_text(encoding="utf-8") == DOC.split("\n```requirements")[0]
+    assert doc.read_text(encoding="utf-8") == DOC[:DOC.index("\n```statements\ntag: machine_access.connected.build")]
     assert [p.message for p in lw.remove(doc, "machine_access.connected.build", root)] == [
         "no block has the tag 'machine_access.connected.build' in this doc"
     ]
@@ -214,9 +217,9 @@ def test_the_command_line_reports_and_exits_non_zero_on_a_problem(tmp_path):
                        "--json", '{"statements": [{"id": "S1", "text": "x"}]}', "--root", str(root)])
     assert bad.exit_code == 1 and "a statement has no id" in bad.output and "REFUSED: nothing written" in bad.output
     shown = run(tag_app, ["show", "machine_access", "--root", str(root)])  # a doc tag: every block of the doc
-    assert shown.exit_code == 0 and shown.output.count("```statements") == 1 and shown.output.count("```requirements") == 1
+    assert shown.exit_code == 0 and shown.output.count("```statements") == 2 and shown.output.count("requirements:") == 1
     listed = run(tag_app, ["blocks", "--root", str(root)])
-    assert "requirements " in listed.output and "1 docs, 2 blocks" in listed.output
+    assert "statements " in listed.output and "1 docs, 2 blocks" in listed.output
     tree = run(tag_app, ["tree", "machine_access.connected.build", "--root", str(root)])
     assert tree.output.splitlines()[1].startswith("  machine_access.connected  statements (2)")
     assert run(tag_app, ["tree", "nobody.has.this", "--root", str(root)]).exit_code == 1
@@ -319,7 +322,7 @@ def test_the_repo_docs_pass_the_check():
     assert problems == [], "\n".join(str(p) for p in problems)
 
 
-def test_a_test_debug_block_is_written_in_its_field_order_and_can_be_implemented(tmp_path):
+def test_a_test_debug_block_is_written_in_its_field_order_and_can_be_depended_on(tmp_path):
     doc = tmp_path / "rules.md"
     doc.write_text("# Rules\n")
     body = {
@@ -332,8 +335,8 @@ def test_a_test_debug_block_is_written_in_its_field_order_and_can_be_implemented
     assert block.kind == "test_debug" and len(block.items) == 1
     keys = [line.split(":")[0] for line in render_block(block.spec).splitlines() if line[:1].isalpha()]
     assert keys == ["tag", "sites", "proven", "statements"]
-    requirements = {"depends_on": ["breadcrumb.test.a.rules"], "requirements": [{"text": "Hold the frame."}]}
-    assert lw.put(doc, "requirements", "breadcrumb.test.a.build", requirements, tmp_path) == []
+    follows = {"depends_on": ["breadcrumb.test.a.rules"], "statements": [{"text": "The frame is held."}]}
+    assert lw.put(doc, "statements", "breadcrumb.test.a.follows", follows, tmp_path) == []
     assert lw.check(lw.load(tmp_path)) == []
 
 

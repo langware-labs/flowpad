@@ -33,14 +33,14 @@ and needs no running Flowpad.
 |---|---|---|
 | **Statement** | Architecture: what is true by design | `text`, `basis` (`stated` or `proven`), `issues` (optional), `about` (optional) |
 | **Requirement** | Implementation: what must be built | `text` |
-| **Block** | A fenced YAML block, `statements` or `requirements` | `tag`, `depends_on` (tags), the list |
+| **Block** | A fenced YAML `statements` block | `tag`, `depends_on` (tags), `statements`, `requirements` (optional) |
 | **Doc** | A plain doc anywhere in the project's docs, holding several blocks | frontmatter `tags`, `depends_on` (optional) |
 
 - A statement has **no id** and **no requirements**. A dependency names a **tag**: a block's or a doc's.
 - A statement with no `issues` **passes**: nothing in the code today violates it. Each issue is one sentence saying what violates it.
 - `about` lists the files a statement is about: `"flow_sdk/utils/machine_id.py"` or `"flow_sdk/utils/machine_id.py:29"`, relative to the project root.
 - A tag of **another project** is written with its namespace: `--<package>--.<tag>`. Tags of this project are written bare.
-- A `requirements` block depends on the `statements` blocks it implements.
+- Requirements are the `requirements` list of the statements block they implement. There is no requirements block.
 - `basis: stated` = the owner said it. `basis: proven` = a test or a proven root cause shows it.
 
 ````
@@ -53,12 +53,6 @@ statements:
     basis: stated
     issues:
       - No node carries a "locked" setting.
-```
-
-```requirements
-tag: machine_access.remote_control.build
-depends_on:
-  - machine_access.remote_control
 requirements:
   - text: The node's creation config says "locked", and the worker enforces it.
 ```
@@ -104,19 +98,19 @@ Do all four steps before answering, one statement at a time. Steps 1 to 3 are th
    - **You replaced a statement that other blocks depend on:** their statements were checked under the old meaning. Check each of them against the code again and update its `issues`; do not touch its text.
    - **It does not contradict a statement but takes away its reason** (for example a block built on the statement you just replaced): leave that statement's text alone. Name it in the reply under "To decide".
 4. **Write.** Put the statement's block, any earlier block you changed, and the requirements:
-   - Every issue means something must be built. Write it as a requirement, one sentence saying what must change and where, in the `requirements` block that depends on this statements block (`<block tag>.build`; create it if there is none).
+   - Every issue means something must be built. Write it as a requirement, one sentence saying what must change and where, in the `requirements` list of this statements block.
    - Do not repeat a requirement that a block this one depends on already states; one requirement, in the block of the statement it mostly serves.
-   - Remove requirements the new statement makes unnecessary. A requirements block left empty is removed with `flow tag drop`.
+   - Remove requirements the new statement makes unnecessary.
 
 Write each block with `flow tag put`, never by editing the YAML by hand. It replaces the block that has the tag, or adds it at the end of the doc, lists the block's tag in the doc's frontmatter `tags` (which is what makes `flow tag get <tag>` find the doc), and leaves the body of the doc untouched (the header may be re-wrapped, and Flowpad adds an `id:` to a new doc on its own):
 
 ```bash
 flow tag put --doc <path to the doc> \
   --kind statements --tag <block tag> \
-  --json '{"depends_on": ["<tag>"], "statements": [{"text": "…", "basis": "stated", "issues": ["…"]}]}'
+  --json '{"depends_on": ["<tag>"], "statements": [{"text": "…", "basis": "stated", "issues": ["…"]}], "requirements": [{"text": "…"}]}'
 ```
 
-`--json` carries the **whole block** (every statement in it, old and new), not only the new one; a statement you leave out is gone. For requirements: `--kind requirements` and `"requirements": [{"text": "…"}]`. `put` checks the doc before it writes: a refused put prints the reason and writes nothing; fix the block and run it again. Write a block before the blocks that depend on it.
+`--json` carries the **whole block** (every statement in it, old and new), not only the new one; a statement or a requirement you leave out is gone. `put` checks the doc before it writes: a refused put prints the reason and writes nothing; fix the block and run it again. Write a block before the blocks that depend on it.
 
 To delete a whole block: `flow tag drop --doc <path> --tag <block tag>`. It is refused while another block depends on it; change or remove that one first.
 

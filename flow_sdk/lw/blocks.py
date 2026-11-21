@@ -38,7 +38,7 @@ class Block:
 
     @property
     def items(self) -> list[Any]:
-        return list(getattr(self.spec, self.spec.fields[-1])) if self.spec else []
+        return list(self.spec.statements) if self.spec else []
 
 
 def validate(kind: str, data: Any) -> tuple[Optional[Any], list[str]]:

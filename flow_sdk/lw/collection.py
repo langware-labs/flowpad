@@ -18,7 +18,7 @@ from flow_sdk.capsules.atomic import atomic_write, capsule_lock
 from flow_sdk.fs_store.indexer.walk import gitignore_walk
 from flow_sdk.fs_store.operations.namespace_roots import root_for
 from flow_sdk.lw.blocks import Block, parse_blocks, render_block, validate
-from flow_sdk.schema.data_spec.lw_spec import BLOCK_KINDS, REQUIREMENTS, STATEMENT_KINDS
+from flow_sdk.schema.data_spec.lw_spec import BLOCK_KINDS
 from flow_sdk.tags.grammar import split_namespace
 
 
@@ -142,8 +142,6 @@ def check(collection: Collection) -> list[Problem]:
         for dep in block.depends_on:
             if why := resolver.why_not(dep):
                 out.append(Problem(block.path, block.line, f"depends_on '{dep}': {why}"))
-        if block.kind == REQUIREMENTS and not any(d in by_tag and by_tag[d].kind in STATEMENT_KINDS for d in block.depends_on):
-            out.append(Problem(block.path, block.line, "a requirements block must depend on a statements block"))
     for path, deps in collection.doc_deps.items():
         for dep in deps:
             if why := resolver.why_not(dep):

@@ -1,8 +1,8 @@
-// The lw (langware) cards: ```statements, ```requirements and ```test_debug fences (docs/lw.md).
+// The lw (langware) cards: ```statements and ```test_debug fences (docs/lw.md).
 import { describe, expect, it, vi } from 'vitest';
 import { getFenceRenderer } from '@src/components/milkdown-editor/plugins/fence-render/registry';
 import { lwChrome, renderLwCard, renderTestDebugCard } from '@src/components/milkdown-editor/plugins/fence-render/renderers/lw';
-import type { LwBlockKind } from '@src/components/milkdown-editor/plugins/fence-render/renderers/lw-schema';
+import { parseLwBlock, type LwBlockKind } from '@src/components/milkdown-editor/plugins/fence-render/renderers/lw-schema';
 
 const STATEMENTS = `tag: machine_access.remote_control
 depends_on:
@@ -20,10 +20,7 @@ statements:
     basis: proven
 `;
 
-const REQUIREMENTS = `tag: machine_access.remote_control.build
-depends_on:
-  - machine_access.remote_control
-requirements:
+const WITH_REQUIREMENTS = `${STATEMENTS}requirements:
   - text: Remote control runs the whole flow connect path.
   - text: The machine is the authority for "locked".
 `;
@@ -63,9 +60,10 @@ describe('a statements card', () => {
   it('shows what it depends on and one row per statement: the sentence and its basis, nothing else', () => {
     const host = render('statements', STATEMENTS);
     expect(texts(host, 'lw-depends-on')).toEqual(['machine_access.connected_machine', 'machine_access.privileged_access']);
+    // Each statement carries its number in the block, then its sentence and its basis.
     expect(texts(host, 'lw-statement')).toEqual([
-      'Remote control is flow connect with a node created locked.stated',
-      'A machine may protect its privileged access with a device passkey.proven',
+      '1Remote control is flow connect with a node created locked.stated',
+      '2A machine may protect its privileged access with a device passkey.proven',
     ]);
     // The tag is the tab row's (`chrome`); issues and files have tabs of their own.
     for (const gone of ['lw-tag', 'lw-verdict', 'lw-issue', 'lw-file']) {
@@ -85,12 +83,13 @@ describe('a statements card', () => {
 
   it('has no Issues tab with no issues, and no References tab with no files', () => {
     expect(lwChrome('statements', 'tag: a.b\nstatements:\n  - text: x\n')).toEqual({ tag: 'a.b', views: [] });
-    expect(lwChrome('requirements', REQUIREMENTS)).toEqual({ tag: 'machine_access.remote_control.build', views: [] });
+    expect(lwChrome('statements', WITH_REQUIREMENTS).views!.at(-1)).toEqual({ id: 'requirements', label: 'Requirements', count: 2 });
   });
 
   it('lists on the Issues tab each violated statement with its issues', () => {
     const host = render('statements', STATEMENTS, { view: 'issues' });
     expect(texts(host, 'lw-issues-of')).toHaveLength(1);
+    expect(texts(host, 'lw-number')).toEqual(['1']); // the statement's number, as on the Statements tab
     expect(host.querySelector('[data-testid="lw-issues-of"] .lw-card-text')!.textContent).toBe(
       'Remote control is flow connect with a node created locked.',
     );
@@ -99,6 +98,25 @@ describe('a statements card', () => {
       'Remote control uses only the first half of flow connect.',
       'No node carries a "locked" setting.',
     ]);
+  });
+
+  it('draws a file location inside an issue as a chip: the file name, the whole path on hover, a click opens it', () => {
+    const previewFile = vi.fn();
+    const source = `tag: a.b
+statements:
+  - text: x
+    issues:
+      - flow_sdk/server/routes/remote_control.py:214 registers the node; only flow_sdk/cli/commands/connect_cmd.py runs e.g. the worker.
+`;
+    const host = render('statements', source, { view: 'issues', previewFile });
+    const chips = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="lw-location"]')];
+    expect(chips.map((chip) => [chip.textContent, chip.title])).toEqual([
+      ['remote_control.py:214', 'flow_sdk/server/routes/remote_control.py:214'],
+      ['connect_cmd.py', 'flow_sdk/cli/commands/connect_cmd.py'],
+    ]);
+    expect(texts(host, 'lw-issue')).toEqual(['remote_control.py:214 registers the node; only connect_cmd.py runs e.g. the worker.']);
+    chips[0].click();
+    expect(previewFile).toHaveBeenCalledWith('/repo/flow_sdk/server/routes/remote_control.py', { line: 214 });
   });
 
   it('lists on the References tab the files of each statement, and opens one at its line', () => {
@@ -123,7 +141,7 @@ describe('a statements card', () => {
     const commit = vi.fn();
     const host = render('statements', STATEMENTS, { editable: true, commit });
     const field = host.querySelector<HTMLElement>('[data-testid="lw-statement-text-0"]')!;
-    expect(field.getAttribute('contenteditable')).toBe('true');
+    expect(field.getAttribute('contenteditable')).toBe('plaintext-only');
     field.textContent = 'Remote control is flow connect with a node created unlocked.';
     field.dispatchEvent(new FocusEvent('blur'));
     expect(commit).toHaveBeenCalledTimes(1);
@@ -132,6 +150,23 @@ describe('a statements card', () => {
     );
     // The card redrew from the new source, so the next edit starts from it.
     expect(host.querySelector('[data-testid="lw-statement-text-0"]')!.textContent).toContain('unlocked');
+  });
+
+  it('takes a statement of several lines: Enter is a new line, Cmd+Enter keeps the change', () => {
+    const commit = vi.fn();
+    const host = render('statements', STATEMENTS, { editable: true, commit });
+    const field = host.querySelector<HTMLElement>('[data-testid="lw-statement-text-0"]')!;
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    field.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(false);
+    field.textContent = 'Remote control is flow connect.\nThe node is created locked.';
+    const keep = new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true });
+    field.dispatchEvent(keep);
+    field.dispatchEvent(new FocusEvent('blur')); // jsdom does not blur an element that never had focus
+    expect(keep.defaultPrevented).toBe(true);
+    expect(parseLwBlock('statements', commit.mock.calls[0][0]).statements[0].text).toBe(
+      'Remote control is flow connect.\nThe node is created locked.',
+    );
   });
 
   it('keeps select-all inside the field being edited', () => {
@@ -161,23 +196,24 @@ describe('a statements card', () => {
   });
 });
 
-describe('a requirements card', () => {
-  it('shows the statements it implements and its requirements', () => {
-    const host = render('requirements', REQUIREMENTS);
-    expect(host.textContent).toContain('Implements');
-    expect(texts(host, 'lw-depends-on')).toEqual(['machine_access.remote_control']);
+describe('the requirements of a statements block', () => {
+  it('are listed on the Requirements tab', () => {
+    const host = render('statements', WITH_REQUIREMENTS, { view: 'requirements' });
     expect(texts(host, 'lw-requirement')).toEqual([
       'Remote control runs the whole flow connect path.',
       'The machine is the authority for "locked".',
     ]);
-    expect(host.querySelector('[data-testid="lw-verdict"]')).toBeNull();
+    expect(host.querySelector('[data-testid="lw-statement"]')).toBeNull();
+  });
+
+  it('are no longer a block of their own', () => {
+    expect(getFenceRenderer('requirements')).toBeUndefined();
   });
 });
 
 describe('registration', () => {
-  it('draws both fence languages as document-width cards', () => {
-    expect(getFenceRenderer('statements')?.layout).toBe('block');
-    expect(getFenceRenderer('requirements')?.tabLabel).toBe('Requirements');
+  it('draws a statements block as a document-width card', () => {
+    expect(getFenceRenderer('statements')).toMatchObject({ layout: 'block', tabLabel: 'Statements' });
   });
 });
 

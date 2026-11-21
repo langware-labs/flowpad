@@ -57,6 +57,9 @@ export function iconMarkup(icon: LucideIcon, size = 12): string {
  *
  * Enter commits, Escape reverts, blur commits. An edit that doesn't change
  * anything commits nothing. Select-all selects the field, not the document.
+ *
+ * A `multiline` value (a sentence that may run over several lines) keeps Enter
+ * for a new line; Cmd/Ctrl+Enter or a click away commits it.
  */
 export function editable(
   className: string,
@@ -64,6 +67,7 @@ export function editable(
   testId: string,
   canEdit: boolean,
   onCommit: (next: string) => void,
+  options: { multiline?: boolean } = {},
 ): HTMLElement {
   // Read-only host (the vibe display, any `view` mode asset): draw the value as
   // plain text. The controls sit in a `contenteditable="false"` pane, outside
@@ -78,7 +82,9 @@ export function editable(
   const node = el('span', `${className} fence-editable`, value);
   // setAttribute, not the `contentEditable` IDL property: the property does not
   // reflect to the attribute in jsdom, so component tests could not observe it.
-  node.setAttribute('contenteditable', 'true');
+  // `plaintext-only` makes Enter a line break in the text itself, not a wrapping element, so
+  // `textContent` is what was typed, line breaks included.
+  node.setAttribute('contenteditable', options.multiline ? 'plaintext-only' : 'true');
   node.spellcheck = false;
   node.setAttribute('role', 'textbox');
   node.setAttribute('data-testid', testId);
@@ -109,7 +115,7 @@ export function editable(
       // the next key typed replaces the document.
       event.preventDefault();
       node.ownerDocument.getSelection()?.selectAllChildren(node);
-    } else if (event.key === 'Enter') {
+    } else if (event.key === 'Enter' && (!options.multiline || event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       node.blur();
     } else if (event.key === 'Escape') {

@@ -12,7 +12,8 @@
  *           - No node carries a "locked" setting.
  *     ```
  *
- * A `requirements` block is the same with a `requirements` list of `{ text }`.
+ * A statements block may also carry `requirements`, a list of `{ text }`: what
+ * must be built to make its statements true.
  * A `test_debug` block is what tagit writes in a rules doc: `sites` (the bound
  * tests) and `proven` around the same `tag`, `depends_on` and `statements`.
  *
@@ -30,7 +31,7 @@ import { z } from 'zod';
 
 import type { BreadcrumbSite } from './breadcrumb-schema';
 
-export type LwBlockKind = 'statements' | 'requirements' | 'test_debug';
+export type LwBlockKind = 'statements' | 'test_debug';
 
 const tag = z.string().refine(
   (value) => {
@@ -48,7 +49,7 @@ const sentence = z.string().refine((value) => value.trim().length > 0, { message
 const ABOUT = /^(.*):(\d+)$/;
 
 /** `path` or `path:line` -> the path and its line. */
-function splitAbout(value: string): LwFileRef {
+export function splitAbout(value: string): LwFileRef {
   const found = ABOUT.exec(value);
   return found ? { relPath: found[1], line: Number(found[2]) } : { relPath: value };
 }
@@ -74,7 +75,7 @@ const noIdNoRequirements = (value: unknown, ctx: z.RefinementCtx) => {
   if ('requirements' in value || 'changes' in value) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'a statement has no requirements; they go in a requirements block that depends on this one',
+      message: "a statement has no requirements; they are the block's own requirements list",
     });
   }
 };
@@ -103,8 +104,7 @@ const blockOf = <T extends z.ZodRawShape>(shape: T) =>
     .refine(notItself, NOT_ITSELF);
 
 const SCHEMAS = {
-  statements: blockOf({ statements: z.array(statement).min(1) }),
-  requirements: blockOf({ requirements: z.array(requirement).min(1) }),
+  statements: blockOf({ statements: z.array(statement).min(1), requirements: z.array(requirement).optional() }),
   test_debug: blockOf({
     sites: z.array(site).optional(),
     proven: z.string().nullish(),
@@ -141,8 +141,7 @@ export interface LwBlock {
 /** Validate an already-parsed block body. Throws `<path>: <message>` on the first problem. */
 export function validateLwBlock(kind: LwBlockKind, raw: unknown): LwBlock {
   if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
-    const list = kind === 'requirements' ? 'requirements' : 'statements';
-    throw new Error(`A ${kind} block must be a YAML mapping with a \`tag\` and a \`${list}\` list`);
+    throw new Error(`A ${kind} block must be a YAML mapping with a \`tag\` and a \`statements\` list`);
   }
   const result = SCHEMAS[kind].safeParse(raw);
   if (!result.success) {

@@ -58,7 +58,7 @@ statements:
     basis: stated
   - text: A block and a doc have a tag, and they also have dependency tags.
     basis: stated
-  - text: Statements do not have requirements; requirements are another list of things, with statements as their dependencies.
+  - text: A statement does not have requirements; requirements are another list of the same block, shown as another tab.
     basis: stated
   - text: Pass means no violation of the statement; v1 does not handle verification.
     basis: stated
@@ -120,14 +120,14 @@ statements:
 ```
 ````
 
-Requirements are a separate list. A `requirements` block names the statements it implements as its
-dependencies:
+Requirements are a separate list of the same block: what must be built to make its statements
+true.
 
 ````
-```requirements
-tag: machine_access.remote_control.build
-depends_on:
-  - machine_access.remote_control
+```statements
+tag: machine_access.remote_control
+statements:
+  - text: Remote control is flow connect with a node created locked.
 requirements:
   - text: The node's creation config says "locked", and the worker enforces it.
 ```
@@ -159,7 +159,7 @@ statements:
 | `statements` | `statements`, `test_debug` | A list. Each has `text`; optional `basis` (`stated` by the owner, `proven` by a test or a root cause), `issues`, `about`. |
 | `issues` | a statement | What in today's code violates the statement, one sentence each. None means it passes. |
 | `about` | a statement | The files it is about: `path` or `path:line`, from the project root. |
-| `requirements` | `requirements` | A list. Each has `text` only. The block depends on the statements it implements. |
+| `requirements` | `statements` | A list. Each has `text` only: what must be built to make the block's statements true. Optional. |
 | `sites` | `test_debug` | The tests the rules are bound to: `rel_path`, optional `line` and `note`. |
 | `proven` | `test_debug` | When the rules were proven, and the ticket when there is one. |
 
@@ -169,8 +169,8 @@ block lists the block's tag in the doc's `tags`, which is what binds the doc to 
 index: `flow tag get <block tag>`, the tag graph and the `tag-context` skill find statement docs with
 no index of their own.
 
-A block is whatever a markdown reader sees as a code block whose language is `statements`,
-`requirements` or `test_debug`: backticks or tildes, a fence of any length, indented up to three spaces (inside a
+A block is whatever a markdown reader sees as a code block whose language is `statements`
+or `test_debug`: backticks or tildes, a fence of any length, indented up to three spaces (inside a
 list item). A block shown inside another fence, as the example above is, is text and not a block.
 
 ## The command
@@ -189,7 +189,7 @@ flow tag drop --doc <path> --tag <tag>
 
 `check` fails on: a body that is not valid YAML or does not match its schema (an unknown field, an
 empty list, a statement with an id or requirements), a tag used twice, a dependency that names
-nothing, a dependency cycle, and a `requirements` block that depends on no `statements` block.
+nothing, and a dependency cycle.
 `put` replaces one block by its tag, or adds it at the end of the doc, and leaves the rest of the doc
 as it is, line ends and the block's indent included; a refused `put` writes nothing, and two writers
 of one doc take turns. `drop` is refused while another block depends on the one being removed.
@@ -217,12 +217,15 @@ The editor draws each block as a card ([renderable-fences.md](renderable-fences.
 
 - **Statements block.** The Statements tab lists each sentence and whether it was stated or proven.
   What violates the statements today is the block's **Issues** tab, and the files they are about its
-  **References** tab; each has a counter and is there only when the block has any. The block's tag is
+  **References** tab, and what must be built its **Requirements** tab; each has a counter and is
+  there only when the block has any. Each statement carries its number in the block, the same on
+  every tab. A file location
+  written inside an issue is drawn as a chip: the file's name, the whole path on hover. The block's tag is
   a chip at the end of the tab row (its last part; the whole tag on hover).
-- **Editing.** In Editor mode a click on a sentence makes it editable in place: Enter or a click away
-  keeps the change, Escape drops it, and the typed text goes into the block as it is. Tags,
+- **Editing.** In Editor mode a click on a sentence makes it editable in place. A statement may run
+  over several lines: Enter is a new line, a click away or Cmd/Ctrl+Enter keeps the change, Escape
+  drops it, and the typed text goes into the block as it is. Tags,
   dependencies, issues and files are changed with `flow tag put` or on the Code tab.
-- **Requirements block.** What it implements and its requirements, with its tag in the tab row.
 - **`test_debug` block.** Its bound tests and when it was proven first, then the rules with `pass` or
   their issues and a chip per file.
 

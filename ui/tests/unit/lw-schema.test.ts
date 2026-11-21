@@ -46,8 +46,8 @@ describe('parseLwBlock', () => {
     expect(block.statements[1]).toEqual({ text: 'A statement with nothing else passes.', basis: undefined, issues: [], about: [] });
   });
 
-  it('normalizes a requirements block to its sentences', () => {
-    const block = parseLwBlock('requirements', 'tag: a.build\ndepends_on: [a]\nrequirements:\n  - text: Build it.\n');
+  it('reads the requirements of a statements block as their sentences', () => {
+    const block = parseLwBlock('statements', 'tag: a.b\nstatements:\n  - text: It is so.\nrequirements:\n  - text: Build it.\n');
     expect(block.requirements).toEqual(['Build it.']);
   });
 

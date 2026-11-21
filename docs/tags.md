@@ -122,7 +122,7 @@ escalation. Asking for a tag includes its descendants (`tag_is_within`).
 `flow tag create <name>` blesses a name from the CLI (generic `POST /graph/tag`;
 idempotent by uuid5-of-name), and the `tagit` skill is the writer that produces
 both carriers at once — a rules doc plus a `breadcrumb.test.*` capsule on the
-failing test it explains. Statement and requirement blocks ([lw.md](lw.md)) name
+failing test it explains. Statement blocks ([lw.md](lw.md)) name
 each other by tag too: a block's `tag` and `depends_on` follow this grammar.
 
 The same derivation renders as a graph: the `tag` subgraph projection

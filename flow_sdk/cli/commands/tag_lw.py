@@ -1,6 +1,6 @@
 """The statement-doc subcommands of `flow tag` -- lw (langware), a project's statement docs.
 
-A tag names an lw block in a doc (statements, requirements, test_debug); these commands read and write those blocks
+A tag names an lw block in a doc (statements, test_debug); these commands read and write those blocks
 and walk the dependency tree their tags make. They run in-process on the project that contains the
 current directory (its ``docs`` folder; ``--root`` to point elsewhere) and need no server.
 
@@ -110,7 +110,7 @@ def show(tag: str, root: _Root = None) -> None:
 
 def put_block(
     doc: Annotated[Path, typer.Option("--doc", help="The doc to write into.")],
-    kind: Annotated[str, typer.Option("--kind", help="statements, requirements or test_debug.")],
+    kind: Annotated[str, typer.Option("--kind", help="statements or test_debug.")],
     tag: Annotated[str, typer.Option("--tag", help="The block's tag.")],
     body: Annotated[str, typer.Option("--json", help='The whole block: {"depends_on": [...], "<kind>": [{"text": ...}]}')],
     root: _Root = None,

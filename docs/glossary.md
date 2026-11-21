@@ -253,8 +253,8 @@ Three words were used for neighbours. Say which:
   organised into a dependency tree by tags (`flow_sdk/lw/`, read and written with `flow tag tree|check|show|put`). Written `lw` in code
   and commands because "langware" is also the company's name. A **statement** is one
   sentence of architecture in a `statements` block of a doc, with the `issues` that violate
-  it today (none = it passes); a **requirement** is one sentence of implementation in a
-  `requirements` block that depends on the statements it implements. Blocks are named and
+  it today (none = it passes); a **requirement** is one sentence of implementation in the
+  `requirements` list of the same block. Blocks are named and
   linked by tag (the second sense above); neither has an id. Written by the `langit` skill.
   Not the agent **requirements / readiness** below, which are what an agent needs to run.
 - **icon pack** — a namespace of icons (`IconPackSpec`): its `kind` is the tag's parent
