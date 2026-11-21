@@ -5,9 +5,10 @@
 
 ## What this covers
 
-The Record button left of Share in the top nav bar: a click starts a screen recording
-(`getDisplayMedia`, video only), a second click stops it, the WebM lands in Flowpad's
-recordings temp folder, and the "Recording ready" dialog offers Share (the standard
+Record screen in the top nav bar's menu (the last button on the bar): the menu item starts a
+screen recording (`getDisplayMedia`, video only); while it runs — and only then — a glowing red
+stop button with the elapsed time sits on the bar, and a click on it stops. The WebM lands in
+Flowpad's recordings temp folder, and the "Recording ready" dialog offers Share (the standard
 share-to-conversation dialog, with the recording as the file) or Save to project
 (the file moves under `<project>/recordings/`).
 
@@ -19,11 +20,12 @@ the desktop walk (Electron, the real picker) is the manual check for that half.
 
 ## Scenario
 
-1. Open the home dock. The bar shows the Record button (`top-nav-record-screen`)
-   **before** the Share button in document order.
-2. Click Record. The button turns into the recording state (`data-recording="true"`)
-   with an elapsed time.
-3. After about two seconds click it again. The "Recording ready" dialog opens with a
+1. Open the home dock. The bar's menu button (`top-nav-more`) is the **last** control on the
+   bar, and the idle bar has no stop button (`top-nav-recording-stop`).
+2. Open the menu and click Record screen (`top-nav-more-record`). The menu closes and the bar
+   shows the stop button (`top-nav-recording-stop`, `data-recording="true"`) with an elapsed
+   time, **before** the menu button in document order.
+3. After about two seconds click the stop button. The "Recording ready" dialog opens with a
    file named `screen-<ISO stamp>.webm`; the file exists on disk under
    `<FLOWPAD_TEMP_DIR>/<instance>/recordings/` (asked of the backend's
    `recording-folder` action, never guessed).
@@ -32,7 +34,8 @@ the desktop walk (Electron, the real picker) is the manual check for that half.
    names the project path with an Open link.
 5. Click Share. The standard share dialog opens (a project file's first share offers to
    link the project to the cloud; Skip it) and its asset chip names the `.webm`.
-   Cancel it: the flow ends (no dialog left, the bar's button is back to Record).
+   Cancel it: the flow ends (no dialog left, no stop button on the bar, and the menu's
+   Record screen can start again).
 
 ## Run
 

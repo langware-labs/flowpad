@@ -2,6 +2,7 @@
 export * from './host';
 export * from './source-editor';
 export * from './dataset-editor';
+export * from './driver-editor';
 export * from './editors';
 export * from './eval-browser';
 export * from './agent-panel';

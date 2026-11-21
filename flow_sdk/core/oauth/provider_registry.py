@@ -1105,9 +1105,10 @@ async def missing_granted(
     return [s for s in dict.fromkeys(scopes) if granted and s not in granted]
 
 
-def grant_gap(missing: "list[str] | tuple[str, ...]") -> str:
-    """The one sentence for a sign-in that lacks scopes a use needs."""
-    return f"Missing permissions ({', '.join(missing)}) — connect again"
+def grant_gap(missing: "list[str] | tuple[str, ...]", title: str = "") -> str:
+    """The one sentence for a sign-in that lacks scopes a use needs; ``title`` names the sign-in when given."""
+    lead = f"{title} is missing" if title else "Missing"
+    return f"{lead} permissions ({', '.join(missing)}) — connect again"
 
 
 async def token_for(

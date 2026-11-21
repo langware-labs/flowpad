@@ -254,7 +254,8 @@ class OpenCodeDriver:
             await process.get_project()
         except Exception:
             logger.debug("OpenCodeDriver.headless_prompt: get_project failed", exc_info=True)
-        instruction_assets = await process.prepare_system_instruction_assets()
+        process_assets = await process.prepare_process_assets()
+        instruction_assets = process_assets.instruction_assets
         if not process.workdir:
             return ApiFailResponse(message="opencode prompt: workdir is not set")
 
@@ -271,7 +272,7 @@ class OpenCodeDriver:
         except WorkerSpawnError as e:
             setup_error = e  # fails inside the turn: FAILED + start_failure, not a raise from here
 
-        config_path = await self._write_config(process, instruction_assets)
+        config_path = await self._write_config(process, instruction_assets, process_assets.mcp_runtime)
 
         context = AgenticContext(
             workdir=process.workdir,
@@ -427,7 +428,7 @@ class OpenCodeDriver:
     # Internals
     # ------------------------------------------------------------------
 
-    async def _write_config(self, process: "AgenticProcess", instruction_assets) -> Path | None:
+    async def _write_config(self, process: "AgenticProcess", instruction_assets, mcp_runtime: ProcessMcpRuntime) -> Path | None:
         """Generate the per-process ``opencode.json`` (instructions + skills + MCP + provider).
 
         ``instruction_assets`` may be None — a process with only mounted roots
@@ -448,7 +449,7 @@ class OpenCodeDriver:
         return config_for_assets_dir(
             process.id,
             getattr(instruction_assets, "assets_dir", None),
-            dict(self.prepare_process_mcp(process.resolved_mcp_servers()).config_fragment),
+            dict(mcp_runtime.config_fragment),
             list(process.resolved_add_dirs or []),
             provider=dict(auth.provider_options) if auth and auth.provider_options else None,
             bound_model=auth.model_slug if auth and auth.endpoint_typeid else None,

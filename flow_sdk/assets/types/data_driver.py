@@ -1,9 +1,9 @@
 """Filesystem contracts independent of application entities."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
+from flow_sdk.assets.types.named_manifest import name_identity_key
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.schema.data_spec.data_driver_spec import AGENT_FILE, SCRIPT_FILE, DataDriverSpec
 
@@ -34,11 +34,4 @@ def data_driver_identity_key(ref: "FSRef | Path") -> str:
     is the fallback, and the two are one noun by contract (``DataDriverSpec.name``:
     "the registry key AND the folder name").
     """
-    path = Path(getattr(ref, "_path", ref))
-    root = path.parent if path.is_file() else path
-    try:
-        manifest = json.loads((root / DataDriverSpec.main_file).read_text(encoding="utf-8"))
-        name = str(manifest.get("name") or "").strip()
-    except (OSError, TypeError, json.JSONDecodeError):
-        name = ""
-    return name or root.name
+    return name_identity_key(DataDriverSpec.main_file)(ref)

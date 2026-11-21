@@ -30,64 +30,21 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, ClassVar, Mapping, Optional, Union
 
-from pydantic import Field
-
 from flow_sdk.assets.python_module import load_package_module
-from flow_sdk.schema.data_spec.frontmatter import AssetDocumentSpec
+from flow_sdk.schema.data_spec.secret_manager_spec import OsCommandsSpec, SecretManagerSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.secrets.errors import SecretStoreError
 from flow_sdk.secrets.store import SecretStore
+from flow_sdk.utils.templates import Keep
 
 logger = logging.getLogger(__name__)
 
 SHIPPED_ROOT = Path(__file__).resolve().parents[1] / "system_projects" / "flowpad_assistant" / "agentic-assets" / "secret_manager"
-MANIFEST_FILE = "secret_manager.json"
+MANIFEST_FILE = SecretManagerSpec.main_file
 STORE_FILE = "store.py"
 PACKAGE_PREFIX = "flowpad_secret_manager_"
 OPS = ("install", "login", "check", "grant", "status", "close")
 OSES = ("darwin", "linux", "win32")
-
-
-class ConfigFieldSpec(DataSpec):
-    """One field a vault of this manager is configured with."""
-
-    name: str = Field(min_length=1)
-    label: str = ""
-    required: bool = False
-
-
-class OsCommandsSpec(DataSpec):
-    """One command per OS (``""``: none on that OS)."""
-
-    darwin: str = ""
-    linux: str = ""
-    win32: str = ""
-
-
-class SecretManagerSpec(AssetDocumentSpec):
-    """``secret_manager.json`` — what a manager is and the commands that set it up."""
-
-    name: str = Field(min_length=1)
-    title: str = ""
-    icon: str = ""
-    description: str = ""
-    config_fields: list[ConfigFieldSpec] = Field(default_factory=list)
-    install: OsCommandsSpec = Field(default_factory=OsCommandsSpec)
-    login: OsCommandsSpec = Field(default_factory=OsCommandsSpec)
-    #: Exits 0 when this machine can read the vault.
-    check: str = ""
-    #: Gives ``{email}`` read access to the vault.
-    grant: str = ""
-    #: Exits 0 while access is open on this machine (signed in, unlocked). Must never prompt: it is run to
-    #: show a state. Empty: the state is not known without asking for a value.
-    status: str = ""
-    #: Seals access on this machine (sign out, lock); ``login`` opens it again. Empty: it cannot be closed.
-    close: str = ""
-    #: Environment for every command, filled like a command (``{"OP_ACCOUNT": "{account}"}``); a
-    #: variable whose placeholder the vault's config does not fill is left out.
-    env: dict[str, str] = Field(default_factory=dict)
-    #: What the person does when sign-in fails (a desktop-app setting, an approval): shown by the setup wizard.
-    login_help: str = ""
 
 
 class VaultAccess(StrEnum):
@@ -373,11 +330,7 @@ async def _run(template: str, values: Mapping[str, Any], env: Optional[Mapping[s
     return proc.returncode or 0, (lines[-1] if lines else "")
 
 
-class _Keep(dict):
-    """``format_map`` that leaves an unknown placeholder as it is."""
-
-    def __missing__(self, key: str) -> str:
-        return "{" + key + "}"
+_Keep = Keep
 
 
 def _with_defaults(manager: str, config: Mapping[str, Any]) -> dict[str, Any]:

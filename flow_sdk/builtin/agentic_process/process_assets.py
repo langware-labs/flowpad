@@ -364,8 +364,11 @@ class ProcessAssets:
         return materialized_agents_json(assets_dir)
 
 
-    async def _prepare_system_instruction_assets(self) -> SystemInstructionAssets | None:
+    async def _prepare_system_instruction_assets(self, browser: BrowserLaunch | None = None) -> SystemInstructionAssets | None:
         """Compose the system-prompt layers and project them for this worker.
+
+        ``browser``: the launch's browser when the caller already decided it, so the prompt
+        and the launch switches name the same one.
 
         The layers and their order are :mod:`system_prompt`'s alone. ``None`` only
         when there is nothing at all — no embedded assets and no layer with text —
@@ -383,7 +386,11 @@ class ProcessAssets:
         has_assets = bool(legacy_agents) or self.embedded_assets is not None or bool(self.process.embedded_asset_refs)
         asset_dir = self.ensure_process_assets() if has_assets else None
         agents = {**legacy_agents, **self._load_materialized_agents_json(asset_dir.os_path)} if asset_dir else {}
-        layers = await compose_layers(self.process, agents)
+        if browser is None:
+            from flow_sdk.builtin.agentic_process.browser_choice import resolve_for  # noqa: PLC0415
+
+            browser = await resolve_for(self.process)
+        layers = await compose_layers(self.process, agents, browser=browser)
         if asset_dir is None:
             if not layers:
                 return None
@@ -420,7 +427,11 @@ class ProcessAssets:
             own = (self.process.context_data or {}).get("agent_skills_dir")
             if link_skills(self._process_assets_path(), directories, own=[own] if own else []):
                 self.ensure_process_assets()
-        instructions = await self._prepare_system_instruction_assets()
+        from flow_sdk.builtin.agentic_process.browser_choice import resolve_for  # noqa: PLC0415
+
+        # Decided ONCE: the prompt's browser block and the launch switches below read this.
+        launch = await resolve_for(self.process)
+        instructions = await self._prepare_system_instruction_assets(launch)
         hook_runtime = ProcessHookRuntime()
         supports_hooks = bool(getattr(self.process.driver, "supports_process_hooks", False))
         if self.process.process_hook_events or supports_hooks:
@@ -438,29 +449,31 @@ class ProcessAssets:
                 tuple(self.process.process_hook_events),
                 app_launch=is_app_launch(self.process.context_data),
             )
-        mcp_runtime = ProcessMcpRuntime()
-        prepare_mcp = getattr(self.process.driver, "prepare_process_mcp", None)
-        from flow_sdk.builtin.agentic_process.browser_choice import resolve_for  # noqa: PLC0415
-        from flow_sdk.core.agent_browser import MCP_NAME, mcp_spec  # noqa: PLC0415
-
-        launch = await resolve_for(self.process)
-        browser = launch.kind
-        servers = list(self.process.resolved_mcp_servers())
-        if prepare_mcp is not None:
-            # The agent browser is ADDED to the user's own servers: when it is the whole set,
-            # the launch is not strict, so ``~/.claude.json`` still applies.
-            additive = browser == "agent" and not servers
-            if browser == "agent" and all(s.name != MCP_NAME for s in servers):
-                servers.append(mcp_spec())
-            mcp_runtime = prepare_mcp(servers)
-            if additive:
-                mcp_runtime = mcp_runtime.model_copy(update={"strict": False})
         return PreparedProcessAssets(
             instruction_assets=instructions,
             hook_runtime=hook_runtime,
-            mcp_runtime=mcp_runtime,
+            mcp_runtime=self._mcp_runtime(launch),
             browser=launch,
         )
+
+    def _mcp_runtime(self, launch: BrowserLaunch) -> ProcessMcpRuntime:
+        """The session's MCP servers as this worker takes them: its own, plus its browser driver's.
+
+        The ONE place the browser's server joins a launch; every turn path reads
+        ``PreparedProcessAssets.mcp_runtime``, never ``resolved_mcp_servers`` directly."""
+        prepare_mcp = getattr(self.process.driver, "prepare_process_mcp", None)
+        if prepare_mcp is None:
+            return ProcessMcpRuntime()
+        # The browser driver's own MCP server (None when it rides the worker's switch).
+        browser_server = launch.mcp_spec()
+        servers = list(self.process.resolved_mcp_servers())
+        # The browser's server is ADDED to the user's own servers: when it is the whole set,
+        # the launch is not strict, so ``~/.claude.json`` still applies.
+        additive = browser_server is not None and not servers
+        if browser_server is not None and all(s.name != browser_server.name for s in servers):
+            servers.append(browser_server)
+        mcp_runtime = prepare_mcp(servers)
+        return mcp_runtime.model_copy(update={"strict": False}) if additive else mcp_runtime
 
 
     async def attach_embedded_asset(self, entity_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":

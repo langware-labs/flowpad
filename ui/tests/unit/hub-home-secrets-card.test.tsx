@@ -45,6 +45,7 @@ vi.mock('@src/hooks/use-projects', () => ({
 vi.mock('@src/hooks/use-sandboxes', () => ({
   // A sandbox card, never a machine connected with `flow connect`.
   isUserMachine: () => false,
+  splitOwnMachine: () => ({ localCard: null, hidden: null }),
   useSandboxes: () => ({
     // `node_provider_id` marks it as launched — the card branches on it to
     // choose between Open and Launch.

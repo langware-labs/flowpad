@@ -17,6 +17,12 @@ const STORE = 'flowpad.stateKey';
 export const STATE_HEADER = 'X-Flowpad-State';
 /** The query a page's address carries its key in (the server reads the same name: `page_state.QUERY`). */
 export const STATE_QUERY = 'state';
+/**
+ * The same key under the name the app's own navigation carries it (the dock option `stateKey`, `STATE_KEY_PARAM` in
+ * `ui/src/navigation/DockPointer.ts`). A framed shell that moved inside itself has only this one: a frame never reads
+ * the stored copy, so without it every call after the first move answers 403.
+ */
+const DOCK_STATE_QUERY = 'stateKey';
 const HAS_STATE_QUERY = new RegExp(`[?&]${STATE_QUERY}=`);
 
 type Reason = 'missing' | 'unknown';
@@ -58,7 +64,8 @@ export function stateKey(): string | null {
     if (isTopLevel()) remember(injected);
     return injected;
   }
-  const fromUrl = new URLSearchParams(globalThis.location?.search ?? '').get(STATE_QUERY);
+  const query = new URLSearchParams(globalThis.location?.search ?? '');
+  const fromUrl = query.get(STATE_QUERY) || query.get(DOCK_STATE_QUERY);
   if (fromUrl) return fromUrl;
   return isTopLevel() ? recall() : null;
 }

@@ -1,0 +1,7 @@
+{
+  "name": "editor",
+  "title": "Chrome debug — editor",
+  "description": "Choose the app, profile and port Chrome debug uses on this computer, and see which workers can use it.",
+  "kind": "application.web.editor",
+  "build": "."
+}

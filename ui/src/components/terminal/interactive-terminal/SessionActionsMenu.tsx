@@ -160,8 +160,20 @@ export function SessionActionsMenu({
               setInfoOpen(true);
             }}
           >
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
+            <DropdownMenuLabel className="flex items-center justify-between text-xs text-muted-foreground">
               <Trans>Session</Trans>
+              {hasSession && (
+                <button
+                  type="button"
+                  data-testid="session-action-copy-details"
+                  className="rounded p-0.5 hover:bg-accent hover:text-foreground"
+                  title={t`Copy session details`}
+                  aria-label={t`Copy session details`}
+                  onClick={() => void copyToClipboard(sessionDetailsText(process))}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              )}
             </DropdownMenuLabel>
             {hasSession && (
               <>
@@ -170,12 +182,6 @@ export function SessionActionsMenu({
                   icon={Info}
                   label={t`Session info`}
                   onSelect={() => (openInfoAfterClose.current = true)}
-                />
-                <ActionItem
-                  testId="session-action-copy-details"
-                  icon={Copy}
-                  label={t`Copy session details`}
-                  onSelect={() => void copyToClipboard(sessionDetailsText(process))}
                 />
                 <ActionItem
                   testId="session-action-transcript"

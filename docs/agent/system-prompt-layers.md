@@ -28,11 +28,35 @@ Most general first. A layer is present only when its scope applies and it has te
 | 7 | `AGENTS` | embedded agents: persona (`process_persona_path`) + layers | sessions with embedded sub-agents (vibe.md, standard.md, wizards…); suppressed for a CoS |
 | 8 | `AUTO_OPEN` | `agent_auto_open.auto_open_prompt_block` | sessions with `vibe` embedded |
 | 9 | `LANGUAGE` | `i18n.supported_locales.language_prompt_block` | the project has a non-English `locale` |
-| 10 | `SUBJECT` | `system_prompt.subject_layer` | app chats keyed to a local file (`target_typeid_str` = `compute_node-@local/<path>`, "Chat about this file") |
+| 10 | `BROWSER` | the session's browser driver, `agentic-assets/browser_driver/<name>/instructions.md` (`BrowserLaunch.instructions`) | every session — it always has a browser |
+| 11 | `CREDENTIALS` | `cli_worker_base_driver.credentials_prompt_block` — the project's credentials by name, never a value | projects that declare a credential |
+| 12 | `SECRET_MANAGER` | the active vault's manager, `agentic-assets/secret_manager/<name>/instructions.md` filled with the vault's config (`managers.instructions_for`) | a vault is active for the project (`secrets/active.py`) |
+| 13 | `SUBJECT` | `system_prompt.subject_layer` | app chats keyed to a local file (`target_typeid_str` = `compute_node-@local/<path>`, "Chat about this file") |
 
 `common.md` / `common_ui.md` ship with the wheel (the `system_projects/**/*`
 package-data glob). Their frontmatter (`id`, `title`) is stripped; a missing or empty
 file is no layer. `SystemInstructionAssets.layers` records which layers a launch got.
+
+## Layers a selected asset renders
+
+`BROWSER` and `SECRET_MANAGER` are not fixed text: each is rendered by the ONE asset selected for
+the session, and both are selected by the same ladder — the person's own pick for the project on
+this computer, then the session / entity, then the project, then the default.
+
+| | Browser | Secret vault |
+|---|---|---|
+| asset | `BrowserDriver` (`agentic-assets/browser_driver/<name>/`) | `SecretManager` (`agentic-assets/secret_manager/<name>/`); a vault is one configured instance |
+| rule | `browser_choice.decide` | `secrets/active.active_among` |
+| the person's pick | `preferences.browser.pick.<project id>` | `preferences.secrets.vault_pick.<project id>` |
+| shown and changed in | the footer's browser menu | the footer's key menu |
+
+The pick is saved on the instance, never in the project: `project_manifest.json`'s `browser` is a
+recommendation, and `default_secret_vault` stays the team's default. Composing a prompt runs no
+manager command and opens no browser. The browser is decided once per launch
+(`ProcessAssets.prepare_process_assets`) and handed to both the composer and the launch switches,
+so the prompt cannot name a browser the session did not get. A driver that does not support the
+session's worker is replaced by the default one before either reads it ([browser-drivers](../browser-drivers.md)). A vault can change mid-session while
+a PTY session's prompt is written at launch: `flow secrets active` is the live answer.
 
 ## The app stamp — `launch_surface`
 

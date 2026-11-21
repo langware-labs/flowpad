@@ -29,6 +29,7 @@ vi.mock('@src/components/share-to-conversation/ShareToConversationDialog', () =>
 vi.mock('@src/components/project-home/PublishProjectDialog', () => ({ PublishProjectDialog: () => null }));
 
 import { TypeId, dataContext, dataManager } from '@sdk';
+import { ContextMenuButton } from '@src/components/entity-actions/ContextMenuButton';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
@@ -85,6 +86,31 @@ describe('Context button', () => {
 
     fireEvent.click(screen.getByTestId('context-menu-filter-static'));
     expect(screen.getAllByTestId('context-menu-row').map((row) => row.dataset.via)).toEqual(['static']);
+  });
+
+  it('controlled: no button of its own; the parent opens it and it reads then', async () => {
+    vi.spyOn(dataContext, 'caps', 'get').mockReturnValue({ localFiles: true } as never);
+    const read = vi
+      .spyOn(dataManager, 'getByTypeId')
+      .mockResolvedValue({ getContextRelations: () => Promise.resolve(h.rows) } as never);
+    const onOpenChange = vi.fn();
+    const anchorRef = { current: document.body };
+    const menu = (open: boolean) => (
+      <ContextMenuButton typeId={typeId} open={open} onOpenChange={onOpenChange} anchorRef={anchorRef} />
+    );
+    const { rerender } = render(menu(false));
+    expect(screen.queryByTestId('entity-actions-context')).toBeNull();
+    expect(screen.queryByTestId('context-menu')).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+
+    rerender(menu(true));
+    await waitFor(() => expect(screen.getAllByTestId('context-menu-row')).toHaveLength(2));
+    expect(screen.queryByTestId('entity-actions-context')).toBeNull();
+
+    // A row navigates and asks the parent to close; the parent owns the state.
+    fireEvent.click(screen.getAllByTestId('context-menu-row')[0]);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    await waitFor(() => expect(h.openDock).toHaveBeenCalledTimes(1));
   });
 
   it('is not drawn on the hub', () => {

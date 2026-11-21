@@ -113,6 +113,14 @@ _LOCAL_OR_RUNTIME_FIELDS = frozenset(
 )
 
 
+def _refuse_links_out(asset: Path, root: Path) -> None:
+    """A pushed asset is read on the machine that parses it: a symlink inside it whose target is outside the
+    checkout would copy that machine's file into the record (pentest-1120 #42). Refuse the whole asset."""
+    for member in asset.rglob("*") if asset.is_dir() else ():  # ``asset`` is already resolved
+        if member.is_symlink() and not member.resolve().is_relative_to(root):
+            raise ValueError(f"asset file {member.relative_to(root)} links outside the checkout")
+
+
 def read_asset_tree(
     *,
     entity_type: str,
@@ -139,6 +147,8 @@ def read_asset_tree(
     layout = info.layout_of(resolved_asset, verify=True)
     if layout.kind is LayoutKind.NONE:
         raise ValueError(f"asset origin does not resolve to a {info.type_name} asset ({info.shape.to_dict()['kind']} shape)")
+
+    _refuse_links_out(resolved_asset, root)
 
     parser_path = layout.root
     parser_ref = FSRef(parser_path, record_type=entity_type, read_only=True)

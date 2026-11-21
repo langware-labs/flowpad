@@ -46,7 +46,7 @@ import time
 from pathlib import Path
 from typing import AsyncIterator, Callable, Optional
 
-from flow_sdk.core.compute.exec import command_env, last_line, run_shell
+from flow_sdk.core.compute.exec import OWN_GROUP, command_env, last_line, run_shell
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from flow_sdk.utils.process_tree import kill_process_tree
 
@@ -106,7 +106,7 @@ class _PosixHost:
                 "/bin/sh", stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 env=command_env(), limit=2**22,
                 # Its own GROUP (a timeout kills the tree), never its own SESSION (see the module docstring).
-                process_group=0,
+                **OWN_GROUP,
             )
         return self._proc
 

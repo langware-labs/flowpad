@@ -1,0 +1,19 @@
+{
+  "name": "agent",
+  "title": "Embedded",
+  "icon": "globe",
+  "description": "Flowpad's own browser window, on a profile of its own. It opens on the first browser call.",
+  "workers": {
+    "*": {"attach": "mcp_server", "setup": "Nothing to set up: Flowpad starts the window on the first browser call."}
+  },
+  "mcp": {"name": "agent_browser", "command": "{python}", "args": ["-m", "flow_sdk.core.agent_browser", "mcp", "--driver", "{driver}"]},
+  "managed": true,
+  "apps": ["chrome", "edge", "brave", "chromium"],
+  "probe": "cdp",
+  "config_fields": [
+    {"name": "app", "label": "Browser app"},
+    {"name": "profile", "label": "Profile (Flowpad's own)"}
+  ],
+  "defaults": {"app": "", "profile": "default", "port": ""},
+  "tool_prefixes": ["mcp__agent_browser__"]
+}

@@ -35,7 +35,8 @@ its live state to the agent's session, and the agent reads it.
 ## The page side
 
 The page reports state quietly and wakes the agent only when a moment matters. Add
-this to the page (the two globals are set by Flowpad when it serves the page):
+this to the page (the two globals are set by Flowpad when it serves the page; every other SDK rule — init, theme,
+frames and the page-state key — is in the **flow-js** skill):
 
 ```js
 async function connectToAgent() {

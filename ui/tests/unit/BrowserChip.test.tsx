@@ -1,12 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import type { BrowserStatus } from '@sdk';
-import { chipState, extensionProfile, extensionState } from '@src/components/footer/BrowserChip';
+import type { BrowserDriverInfo, BrowserDriverState, BrowserStatus } from '@sdk';
+import { chipState, extensionProfile, usable } from '@src/components/footer/BrowserChip';
 
+const driver = (name: string, state: BrowserDriverState, managed = true): BrowserDriverInfo => ({
+  name,
+  title: name,
+  icon: 'globe',
+  description: '',
+  managed,
+  probe: managed ? 'cdp' : 'extension',
+  tool_prefixes: [],
+  install_url: '',
+  state,
+  setup: '',
+  config: {},
+});
 const base: BrowserStatus = {
   setting: 'agent',
+  pick: '',
   effective: 'agent',
-  supports_extension: true,
-  agent: { up: false, pid: null, port: null, browser: '' },
+  source: 'default',
+  requested: '',
+  worker: 'claude',
+  drivers: [driver('agent', 'ready'), driver('extension', 'not_installed', false)],
   extension: { installed: false, device: '' },
   last_use: null,
 };
@@ -17,14 +33,6 @@ const use = (family: string, secondsAgo: number, failed = false) => ({
   url: 'https://example.com',
   at: new Date(now - secondsAgo * 1000).toISOString(),
   failed,
-});
-
-describe('extensionState', () => {
-  it('not installed when Claude Code never saw it', () => expect(extensionState(base)).toBe('not_installed'));
-  it('not connected when installed but unproven', () =>
-    expect(extensionState({ ...base, extension: { installed: true, device: 'Browser 1' } })).toBe('not_connected'));
-  it('connected once a session drove it', () =>
-    expect(extensionState({ ...base, last_use: use('extension', 5) })).toBe('connected'));
 });
 
 describe('chipState', () => {
@@ -45,4 +53,10 @@ describe('extensionProfile', () => {
   it('names the profile the extension is in', () =>
     expect(extensionProfile({ ...base, extension: { installed: true, device: '', profiles } })).toBe('Work'));
   it('null when no profile has it (shown as "Profile not found")', () => expect(extensionProfile(base)).toBeNull());
+});
+
+describe('usable', () => {
+  it('a driver this worker cannot use, or that is not installed, cannot be picked', () =>
+    expect(base.drivers.map(usable)).toEqual([true, false]));
+  it('a browser nobody proved connected yet can still be picked', () => expect(usable(driver('x', 'not_connected', false))).toBe(true));
 });

@@ -55,6 +55,8 @@ Flowpad: prove the kinds in a data-management probe (good value fits, a broken o
 The failure this order prevents: a mock that is one base screen with small patches, where clicking a
 control changes nothing. Every screen is planned, then built in full, then checked against its plan.
 
+After approval the mock is a **contract**: "Once the mock is approved" below says what is owed then.
+
 ## Phase 1 — Write the mock tree
 
 A mock is a **tree**: screens are its nodes, actions its edges, vars its state. You write it once, as the mock
@@ -72,7 +74,7 @@ follow. Browsing is never guessed: nothing outside the tree decides where a clic
 | `tag` | `existing` (default: the product today, its changes drawn as a diff) or `new` (only the suggestion has it; no marks). **The tag never decides whether a screen is walked** |
 | `actions` | every clickable thing the reviewer will try — see below |
 | `state` | optional assertion, `["ticket=picked"]`: what must be true here |
-| `changes`, `decisions` | the proposed changes ON this screen (see "Existing vs new"); open questions (D1, D2… unique across the mock) |
+| `changes`, `decisions` | the proposed changes ON this screen (see "Existing vs new"); open questions, each `{id: "D1", question: "…"}` (ids unique across the mock) |
 
 **Action** (`mockify.action`, an edge): `{id, label, does, to?, kind?, when?, set?}`
 
@@ -334,6 +336,43 @@ Then:
 3. Set each comment you acted on to `addressed` (`DM ds-put-many` with their versions); set the mock to
    `revised`, then `in_review` again once re-shown.
 4. Rebuild, validate again (Phase 3) and re-show.
+
+## Once the mock is approved — it is a contract
+
+An approved mock is not a recommendation. From the moment the person approves it (in words, or an Execute that
+says so), the mock is what gets built: every screen, every path, every control, every sentence. Tell the person
+the two things below are now owed.
+
+**1. Stick to the mock, or raise a flag — never a third way.**
+
+- Build what the screens show. A plan, a review finding, a technical limit or your own better idea does not
+  change a screen: only the person does, on the mock.
+- When something makes a screen impossible or wrong as drawn, first look for a fix that KEEPS the screen (a new
+  parameter, a different mechanism behind the same control). Only when there is none, raise a flag — and a flag is
+  a redrawn screen, not a sentence:
+  1. say plainly which screen cannot be built as drawn and why, in the first line of your reply;
+  2. redraw that screen in the mock (the same phases: tree, build, validate), marked as a change on it;
+  3. re-show the mock and wait for the answer there. Build nothing of that screen until it is approved.
+- A yes to a plan is not a yes to a design change. A design change listed among other plan items, answered with
+  a short "ok", was not approved: if the mock does not show it, it was not agreed.
+- Never report "done" over a known difference. A difference you could not avoid is named in the first line.
+
+**2. Validate every mock path and feature against what was built.**
+
+Before saying the feature is done, walk the built product against the mock and prove each item, one by one:
+
+- **Every screen** of the tree, in walk order: reach the same state in the running product, screenshot it, and put
+  it beside the mock screen. Same place in the product, same layout, same controls, same words.
+- **Every action**: each `main`, `branch`, `alt` and `jump` leads where the tree says. Branches are walked too,
+  not only the main path.
+- **Every change and every decision** the person answered: present as agreed.
+- **Every state** the screens name (empty, waiting, failed, done): reached for real, not assumed.
+
+Report it as a table the person can check — one row per screen and per action: mock item · where it is in the
+product · `matches` / `differs: <what>` / `not checked: <why>`, with the screenshot pair. `not checked` is an
+honest answer; a row left out is not. Anything that `differs` is fixed or raised as a flag (rule 1) before the
+report says done. A passing test suite does not replace this table: tests prove behaviour, not that it is the
+agreed design.
 
 ## `mockify test` — define a regression test on the current UI
 

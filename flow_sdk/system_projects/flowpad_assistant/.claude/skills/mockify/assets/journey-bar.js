@@ -217,6 +217,27 @@
     .crow small { margin-left: auto; font-weight: 700; } .crow small.yes { color: #1a7f37; } .crow small.no { color: #cf222e; }
     .min .hide-min { display: none !important; }
     @media (max-width: 900px) { .restart-label, .nav .lbl, .trail { display: none; } .step { max-width: 26vw; } .where { flex-basis: 26vw; width: 26vw; } .nav { padding: 0 10px; } }
+    /* A phone: the bar docks at the bottom, full width, in rows — tools and the title on top, then Back and Next as
+       two big labelled buttons under the thumb. Nothing is squeezed to make room for something less important. */
+    @media (max-width: 600px) {
+      :host { left: 8px !important; right: 8px !important; top: auto !important; bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important; transform: none !important; }
+      .bar { flex-wrap: wrap; height: auto; padding: 6px; border-radius: 18px; max-width: none; }
+      .bar.min { border-radius: 999px; }
+      .grip, .restart, .sep { display: none; }
+      .ico { height: 40px; min-width: 40px; }
+      .scope { order: 1; } .steps { order: 2; } .execute { order: 4; height: 40px; } .min-btn { order: 5; }
+      .where { order: 3; flex: 1 1 0; width: auto; }
+      .step, .n { max-width: none; } .where { overflow: hidden; } .who { display: none; }
+      .execute { min-width: 40px; text-align: center; }
+      .chg { order: 6; flex: 1 1 100%; height: 40px; justify-content: space-between; }
+      .sw button { height: 30px; padding: 0 14px; }
+      .bar > .nav { order: 7; flex: 1 1 40%; height: 48px; justify-content: center; }
+      .nav, .nav .lbl { display: inline-flex; font-size: 16px; font-weight: 700; }
+      .panel, .panel.wide { left: 0 !important; right: 0 !important; width: auto; max-height: 60vh; }
+      .panel.up, .panel.down { top: auto !important; bottom: calc(100% + 6px) !important; }
+      .ptools { flex-wrap: wrap; }
+    }
+    @media (max-width: 360px) { .exec-lbl { display: none; } }
     .panel { position: absolute; left: 0; width: min(420px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; background: var(--mk-bg); color: var(--mk-fg);
       border: 1.5px solid var(--mk-edge); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.3); padding: 10px; }
     .panel.down { top: 50px; } .panel.up { bottom: 50px; }
@@ -259,7 +280,7 @@
     <span class="chg hide-min" hidden><button class="cnt" title="Go to the next change on this screen"></button><span class="sw"><button class="sw-d on" title="Today (red) and the suggestion (green), side by side">Diff</button><button class="sw-t" title="The screen as it is today">Today</button><button class="sw-a" title="Only the suggestion">After</button></span></span>
     <span class="sep hide-min"></span>
     <button class="ico steps hide-min" title="All screens" aria-label="All screens">☰</button>
-    <button class="execute" title="Send the comments so far to the session that builds this mock">▶ Execute <span class="exec-n"></span></button>
+    <button class="execute" title="Send the comments so far to the session that builds this mock">▶ <span class="exec-lbl">Execute</span> <span class="exec-n"></span></button>
     <button class="ico min-btn" title="Minimise" aria-label="Minimise">–</button>
   </div>
   <div class="panel down" hidden></div>`;
@@ -645,7 +666,7 @@
       panel.innerHTML = html; return;
     }
     if (decisions.length) {
-      html += `<div class="chips">${decisions.map((d) => `<button class="chip${draft.decision === d.id ? ' on' : ''}" data-dec="${esc(d.id)}" title="${esc(d.question)}">${esc(d.id)} · ${esc(d.question.length > 40 ? d.question.slice(0, 40) + '…' : d.question)}</button>`).join('')}</div>`;
+      html += `<div class="chips">${decisions.map(({ id, question }) => { const q = question || ''; return `<button class="chip${draft.decision === id ? ' on' : ''}" data-dec="${esc(id)}" title="${esc(q)}">${esc(id)} · ${esc(q.length > 40 ? q.slice(0, 40) + '…' : q)}</button>`; }).join('')}</div>`;
     }
     if (draft.anchor) {
       html += `<div class="anchor">📍 <span>On</span> <b title="${esc(draft.anchor.selector)}">${esc(draft.anchor.label)}</b><button class="ico clear-anchor" title="Not on this element">✕</button></div>`

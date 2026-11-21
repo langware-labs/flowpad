@@ -41,7 +41,7 @@ from __future__ import annotations
 import sys
 from typing import Any, ClassVar, Literal, Optional, Union
 
-from pydantic import Field, model_serializer, model_validator
+from pydantic import Field, field_validator, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
@@ -49,6 +49,7 @@ from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.confirm_spec import ConfirmSpec
 from flow_sdk.schema.data_spec.decision_spec import ChoiceQuestion, Question, ScoreQuestion, YesNoQuestion
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
+from flow_sdk.schema.data_spec.endpoint_capability import CAPABILITIES
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.returned_value_spec import (
     AskResult,
@@ -89,7 +90,8 @@ class OpSubkind(StrEnum):
 
     ``navigate`` shows a place and answers whether it can be used there;
     ``cli`` is a subprocess; ``decision`` is a closed question put to the Decision
-    API (no text, calibrated answers); ``prompt`` is a model with no tools;
+    API (no text, calibrated answers); ``endpoint`` is one capability of a hub API
+    endpoint (an image, a video); ``prompt`` is a model with no tools;
     ``agent`` is a spawned harness carrying an Agent's identity, with tools;
     ``ask`` is a person — the most expensive thing to spend.
     """
@@ -98,6 +100,7 @@ class OpSubkind(StrEnum):
     CLI = "cli"
     PYTHON = "python"
     DECISION = "decision"
+    ENDPOINT = "endpoint"
     PROMPT = "prompt"
     AGENT = "agent"
     ASK = "ask"
@@ -178,7 +181,8 @@ class CliOp(ExeData):
     def _has_a_command(self) -> "CliOp":
         if not self.commands and not self.source_step and not self.webapp_step and not self.requirement_step:
             raise ValueError(
-                "a cli op needs a command for at least one platform, a source_step, a webapp_step or a requirement_step")
+                "a cli op needs a command for at least one platform, a source_step, a webapp_step or a requirement_step"
+            )
         return self
 
     def command_for(self, platform: str = "") -> Optional[str]:
@@ -314,9 +318,13 @@ class DecisionOp(ExeData):
             question = self.questions.get(name)
             if question is None:
                 raise ValueError(f"require.{name} names no question (the questions are {sorted(self.questions)})")
-            wanted = {"choice": ChoiceQuestion, "yes": YesNoQuestion, "no": YesNoQuestion, "at_least": ScoreQuestion}[req.kind]
+            wanted = {"choice": ChoiceQuestion, "yes": YesNoQuestion, "no": YesNoQuestion, "at_least": ScoreQuestion}[
+                req.kind
+            ]
             if not isinstance(question, wanted):
-                raise ValueError(f"require.{name}: a {req.kind} requirement needs a {wanted.model_fields['type'].default} question")
+                raise ValueError(
+                    f"require.{name}: a {req.kind} requirement needs a {wanted.model_fields['type'].default} question"
+                )
             if req.choice is not None and req.choice not in question.options:
                 raise ValueError(f"require.{name}: {req.choice!r} is not one of its options {sorted(question.options)}")
             if req.at_least is not None and req.at_least not in question.levels:
@@ -523,12 +531,45 @@ class AskOp(ExeData):
         return self
 
 
+class EndpointOp(ExeData):
+    """One capability of a hub ``APIEndpoint`` run on one value in scope.
+
+    ``kind`` names the capability (``image.generate``, ``video.generate``); what it takes and
+    what it returns are that capability's own request and result specs
+    (``endpoint_capability.CAPABILITIES``), so the op declares neither. Which vendor
+    answers is decided by the hub from the kind, never written here. The answer is its own
+    verdict: a clip that was made is not made again to check it.
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.endpoint"
+    #: A video job runs for minutes.
+    DEFAULT_TIMEOUT: ClassVar[float] = AGENT_TIMEOUT
+    RECHECKED: ClassVar[bool] = False
+    PLAIN_VALUE: ClassVar[bool] = True
+    #: The scope name the request is read from when the op names none.
+    DEFAULT_INPUT: ClassVar[str] = "REQUEST"
+
+    kind: str
+    #: One endpoint (an id or ``api_endpoint-<id>``); empty finds one by what it serves.
+    endpoint: str = ""
+    #: The scope value (by name) that is the capability's request.
+    input: str = DEFAULT_INPUT
+
+    @field_validator("kind")
+    @classmethod
+    def _a_known_capability(cls, v: str) -> str:
+        if v not in CAPABILITIES:
+            raise ValueError(f"{v!r} is not a capability (one of {sorted(CAPABILITIES)})")
+        return v
+
+
 #: Which ``exe_data`` class each subkind carries — the whole dispatch table.
 EXE_DATA: dict[OpSubkind, type[ExeData]] = {
     OpSubkind.PYTHON: PythonOp,
     OpSubkind.NAVIGATE: NavigateOp,
     OpSubkind.CLI: CliOp,
     OpSubkind.DECISION: DecisionOp,
+    OpSubkind.ENDPOINT: EndpointOp,
     OpSubkind.PROMPT: PromptOp,
     OpSubkind.AGENT: AgentOp,
     OpSubkind.ASK: AskOp,
@@ -553,7 +594,7 @@ def validate_shape(shape: Any) -> None:
             validate_shape(child)
     elif isinstance(shape, str):
         if shape.startswith(OPTIONAL_MARK):
-            validate_shape(shape[len(OPTIONAL_MARK):])
+            validate_shape(shape[len(OPTIONAL_MARK) :])
         elif not shape.startswith(ENUM_PREFIX):
             for kind in shape.split(KIND_UNION):
                 if not known_kind(kind_of(kind)):
@@ -657,7 +698,7 @@ class ComputeOpSpec(AssetDocumentSpec):
     description: str = ""
     subkind: OpSubkind = OpSubkind.CLI
     #: The call itself — the DataSpec ``compute_op.<subkind>``.
-    exe_data: Union[NavigateOp, CliOp, PythonOp, DecisionOp, PromptOp, AgentOp, AskOp]
+    exe_data: Union[NavigateOp, CliOp, PythonOp, DecisionOp, EndpointOp, PromptOp, AgentOp, AskOp]
     input: Optional[ShapeForm] = None
     output: Optional[ShapeForm] = None
     #: The kind of what this op RETURNS: a registered DataSpec kind, or a
@@ -724,10 +765,13 @@ class ComputeOpSpec(AssetDocumentSpec):
         if self.completion_check is not None and self.status_check:
             raise ValueError(f"{self.name or 'this op'}: a completion_check or a status_check, not both")
         checked = self.completion_check is not None or bool(self.status_check)
-        if getattr(self.exe_data, "auto_continue", False) and not (checked and (
-            (self.exe_data.recheck and self.output_shape == ConfirmSpec.spec_kind)
-            or any(choice.command for choice in self.exe_data.choices)
-        )):
+        if getattr(self.exe_data, "auto_continue", False) and not (
+            checked
+            and (
+                (self.exe_data.recheck and self.output_shape == ConfirmSpec.spec_kind)
+                or any(choice.command for choice in self.exe_data.choices)
+            )
+        ):
             raise ValueError(
                 f"{self.name or 'this op'}: auto_continue needs a check, and either recheck with output "
                 "confirm or a choice that is a command"

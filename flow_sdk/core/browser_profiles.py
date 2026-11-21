@@ -285,6 +285,41 @@ def _windows_app_path(key: str) -> Optional[str]:
     return None
 
 
+#: Chrome's nightly channel. Not in ``CATALOG``: it is a browser a driver may RUN on a profile of
+#: Flowpad's own, never one whose profiles are offered for opening a link.
+CANARY = BrowserDef(
+    id="canary",
+    name="Google Chrome Canary",
+    kind="chromium",
+    mac_app="Google Chrome Canary",
+    mac_roots=("Google/Chrome Canary",),
+    win_app_path_key=None,
+    win_exes=("Google/Chrome SxS/Application/chrome.exe",),
+    win_roots=("Google/Chrome SxS/User Data",),
+    linux_bins=("google-chrome-canary", "google-chrome-unstable"),
+    linux_roots=(".config/google-chrome-canary", ".config/google-chrome-unstable"),
+)
+
+
+def app_def(app_id: str) -> Optional[BrowserDef]:
+    """The browser app ``app_id`` names — a catalog row, or :data:`CANARY`."""
+    return next((b for b in (*CATALOG, CANARY) if b.id == app_id), None)
+
+
+def app_binary(app_id: str, os_name: Optional[OsName] = None) -> Optional[str]:
+    """The program to run for ``app_id`` (on macOS the binary INSIDE the ``.app``), or None when it
+    is not installed here."""
+    browser = app_def(app_id)
+    if browser is None:
+        return None
+    os_name = os_name or current_os()
+    found = find_executable(browser, os_name)
+    if found and os_name == "mac":
+        binary = Path(found) / "Contents" / "MacOS" / browser.mac_app
+        return str(binary) if binary.is_file() else None
+    return found
+
+
 def find_executable(browser: BrowserDef, os_name: OsName) -> Optional[str]:
     """What the launch runs: the ``.app`` path on macOS, the executable elsewhere."""
     if os_name == "mac":

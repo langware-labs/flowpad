@@ -706,7 +706,7 @@ diagnosis to this process for you — do **not** attempt the cross-link yourself
 
 ```bash
 "$FLOWPAD_PYTHON" "<this skill dir>/report.py" \
-  --title "<the ROOT CAUSE in one line -- never the person's report or the warning's text repeated>" \
+  --title "<ROOT CAUSE — FIX, in one line, e.g. 'Project X's folder is gone — remove its record'; never the person's report or the warning's text repeated>" \
   --symptoms "<what was observed>" \
   --rca "<root cause, or 'none — healthy' if no issue>" \
   --fix "<fixed: what you changed. needs_action: the step the person takes, FIRST and exact (which screen, which entry) -- it is shown under the title. Else 'none needed'>" \
@@ -720,6 +720,15 @@ diagnosis to this process for you — do **not** attempt the cross-link yourself
 ```
 
 `--title` is shown to the person as the one-line **Root cause**, right under their own one-line issue.
+It always ends with the fix after an em dash (`<cause> — <fix>`): a reader who stops at that line
+knows what to do. Only `ok`/`informational` reports, where nothing needs doing, leave it out.
+
+**Never `--fix "none"` on an issue.** A found issue always has a fix — something you did, a step
+for the person, or one you can run on their say-so. If the fix is destructive or hard to undo, do
+not skip it: offer it with `--local-fix yes` (the person's press is the consent) and say in `--fix`
+exactly what it removes. Example: a project whose folder is gone (the "project without a folder"
+warning) — `--fix "Remove the stale project record 'X' (no sessions; its folder no longer exists)"
+--local-fix yes`; on Fix, remove it through the cleanup action, never by editing the database.
 
 `--local-fix yes` puts a **Fix** button on the diagnosis: pressing it sends you, in this same session,
 the request to apply `--fix`. Say `yes` ONLY when `--fix` is something you can do on this machine

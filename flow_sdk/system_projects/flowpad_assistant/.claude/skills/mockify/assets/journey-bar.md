@@ -60,7 +60,7 @@ also stamps `data-persona` on each section.
 
 ## Data, through the Flowpad SDK
 
-The bar imports `/sdk/flowpad-sdk.js` (the page must be served by Flowpad — `flow app serve`), runs
+SDK rules for the bar's code: the **flow-js** skill. The bar imports `/sdk/flowpad-sdk.js` (the page must be served by Flowpad — `flow app serve`), runs
 `initSdk()`, resolves the project from its own URL (`resolveAppHost`), and finds the datasets by kind:
 `Dataset.forKind('mockify.mock' | 'mockify.feedback', projectId)`. It never computes an id or writes files.
 

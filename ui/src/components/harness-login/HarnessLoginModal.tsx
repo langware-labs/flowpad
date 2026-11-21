@@ -54,8 +54,8 @@ import {
   pillForFlowpad,
   pillForHarness,
   pillOf,
+  type FundingPill,
   type PillAction,
-  type PillKind,
 } from './funding-pill';
 import { harnessVisual } from './harness-visual';
 import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-store';
@@ -122,9 +122,9 @@ const ACTION_LABEL: Record<PillAction, MessageDescriptor | null> = {
   details: null,
 };
 
-const actionLabel = (action: PillAction, kind?: PillKind): string | undefined => {
+const actionLabel = (pill: FundingPill): string | undefined => {
   // An assistant that is not installed is installed first; its sign-in comes after.
-  const label = kind === 'not_installed' ? msg`Install` : ACTION_LABEL[action];
+  const label = pill.kind === 'not_installed' ? msg`Install` : ACTION_LABEL[pill.action];
   return label ? i18n._(label) : undefined;
 };
 
@@ -242,7 +242,7 @@ function FlowpadRow({ record, funding, onConnected }: Omit<Facts, 'left'> & { on
       pill={pill}
       pillFragment="hub-endpoints"
       actionBusy={signingIn}
-      action={actionLabel(pill.action, pill.kind)}
+      action={actionLabel(pill)}
       onAction={() => (pill.action === 'details' ? exits.toSources('endpoints') : void connect())}
     />
   );
@@ -290,7 +290,7 @@ function HarnessRow({
       name={h?.label || worker}
       small={small}
       pill={pill}
-      action={actionLabel(pill.action, pill.kind)}
+      action={actionLabel(pill)}
       onAction={onAction}
       isDefault={isDefault}
       onMakeDefault={onMakeDefault}
