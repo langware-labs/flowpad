@@ -75,12 +75,6 @@ def ensure_project(home: Path) -> None:
         fail(f"indexing the issues dataset failed: {indexed.get('error') or indexed}")
 
 
-def prompt_for(issue: dict) -> str | None:
-    """An issue's OWN first message, when it needs one; otherwise the page fills the run's template
-    ("lets focus on issue {identifier}", editable there) — the fork already holds the whole conversation."""
-    return (issue.get("prompt") or "").strip() or None
-
-
 def main() -> None:
     if len(sys.argv) != 2:
         fail("usage: forkit.py <issues.json>")
@@ -114,7 +108,7 @@ def main() -> None:
         old = (have.get(key) or {}).get("input") or {}
         rows.append({"key": key, "input": {
             "run": slug, "id": str(issue["id"]), "title": issue["title"], "desc": issue.get("desc") or None,
-            "prompt": prompt_for(issue), "root": root, "order": n,
+            "prompt": (issue.get("prompt") or "").strip() or None, "root": root, "order": n,
             "status": old.get("status") or "open", "process_id": old.get("process_id") or None}})
         if key in have:
             expected[key] = have[key]["version"]

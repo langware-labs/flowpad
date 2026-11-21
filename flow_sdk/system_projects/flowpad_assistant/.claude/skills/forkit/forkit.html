@@ -58,7 +58,7 @@ main iframe { flex: 1; border: 0; width: 100%; }
       <b id="title">forkit</b>
       <span>root: <code id="root"></code></span>
       <label class="tpl" title="The first message every fork starts with. {identifier} is the issue's id.">first message
-        <input id="tpl" spellcheck="false" placeholder="lets focus on issue {identifier}"></label>
+        <input id="tpl" spellcheck="false"></label>
       <label class="tpl" title="Optional. ✓ Done sends this to the fork, moves the issue to Done at once, and closes the fork when it has finished. Empty: Done closes the fork right away.">done message (optional)
         <input id="donetpl" spellcheck="false" placeholder="empty: Done closes the fork right away"></label>
       <div class="pg"><i id="bar"></i></div>
@@ -78,8 +78,9 @@ main iframe { flex: 1; border: 0; width: 100%; }
  * forkit — a list of issues on the left, the live fork working the selected one in the centre.
  *
  * The rows (forkit.issue, one dataset) are the only state: status and the fork's process id live there,
- * so another window, an agent or a reload sees the same thing. A fork is made when the person
- * approves the issue's first message (agentic_process/<root>/fork, then /open with it); ✓ Done closes it.
+ * so another window, an agent or a reload sees the same thing (the two message templates are this browser's).
+ * A fork is made when the person approves the issue's first message (agentic_process/<root>/fork, the message
+ * into its queue, then /open); ✓ Done closes it.
  */
 import * as sdk from '/sdk/flowpad-sdk.js';
 
@@ -102,12 +103,14 @@ const pageKey = () => globalThis.__FLOWPAD_STATE_KEY__ || new URLSearchParams(lo
 const framed = (url) => { const k = pageKey(); if (!k || /[?&]state=/.test(url)) return url;
   const [u, h] = url.split('#'); return `${u}${u.includes('?') ? '&' : '?'}state=${encodeURIComponent(k)}${h ? '#' + h : ''}`; };
 const fail = (msg) => { $('err').hidden = false; $('err').textContent = msg; console.error('[forkit]', msg); };
+const canStart = (row) => !row.input.process_id && row.input.status !== 'done' && !state.busy.has(row.key);
 const post = async (path, body) => {
   const res = await sdk.apiClient.post(path, body || {});
   const data = res?.data ?? res;
   if (data?.status === 'fail' || data?.success === false) throw new Error(data?.message || `${path} failed`);
   return data?.data ?? data;
 };
+const send = (pid, prompt) => post(`/graph/agentic_process/${pid}/enqueue`, { prompt, source: 'page' });
 
 async function load() {
   const { rows } = await state.ds.query({ match: { 'input.run': CFG.run }, order_by: { 'input.order': 'asc' }, limit: 1000 });
@@ -115,15 +118,19 @@ async function load() {
   render();
 }
 
-/** The fork for an issue: made once, on first open. Two clicks never make two forks. */
+/** The fork for an issue: made once, on Start. Two clicks never make two forks. */
 async function startFork(row, message) {
-  if (row.input.process_id || row.input.status === 'done' || state.busy.has(row.key)) return;
+  if (!canStart(row)) return;
   state.busy.add(row.key);
   render();
   try {
     const made = await post(`/graph/agentic_process/${row.input.root}/fork`, { visible: false });
     if (!made?.id) throw new Error('the fork returned no process id');
-    await post(`/graph/agentic_process/${made.id}/open`, { instruction: message });
+    // The first message goes in the fork's queue BEFORE anything opens it: whoever starts the worker first (this
+    // page, its terminal frame, a Flowpad tab) boots it with the queue head. An `/open {instruction}` that loses
+    // that race is answered "success" and the message is silently dropped.
+    await send(made.id, message);
+    await post(`/graph/agentic_process/${made.id}/open`, {});
     await state.ds.put(row.key, { input: { ...row.input, process_id: made.id } }, { expected: row.version });
   } catch (e) {
     fail(`Could not fork #${row.input.id}: ${e?.message || e}`);
@@ -140,20 +147,28 @@ async function close(pid) {
 
 /** Close the forks of finishing issues once each has done its done message: idle, nothing queued, three looks in a row. */
 const idle = new Map();
-async function finish() {
-  for (const row of state.rows.filter((r) => r.input.status === 'done' && r.input.process_id)) {
-    const pid = row.input.process_id;
-    let proc = null;
-    try { const res = await sdk.apiClient.get(`/graph/agentic_process/${pid}`); proc = res?.data?.data ?? res?.data ?? res; }
-    catch { /* gone */ }
-    const resting = !proc || proc.status !== 'running' || (proc.worker_status !== 'working' && !(proc.queue?.entries || []).length);
-    idle.set(pid, resting ? (idle.get(pid) || 0) + 1 : 0);
-    if (idle.get(pid) < 3 && proc && proc.status === 'running') continue;
-    idle.delete(pid);
-    await close(pid);
-    try { await state.ds.put(row.key, { input: { ...row.input, process_id: null } }, { expected: row.version }); }
-    catch (e) { console.warn('[forkit] finish', e); }
+async function finishOne(row) {
+  const pid = row.input.process_id;
+  let proc = null;
+  try { proc = await sdk.apiClient.get(`/graph/agentic_process/${pid}`); }
+  catch { /* gone */ }
+  const alive = proc?.status === 'running';
+  if (alive) {
+    const quiet = proc.worker_status !== 'working' && !(proc.queue?.entries || []).length;
+    const looks = quiet ? (idle.get(pid) || 0) + 1 : 0;
+    if (looks < 3) { idle.set(pid, looks); return; }
   }
+  idle.delete(pid);
+  if (alive || !proc) await close(pid);
+  try { await state.ds.put(row.key, { input: { ...row.input, process_id: null } }, { expected: row.version }); }
+  catch (e) { console.warn('[forkit] finish', e); }
+}
+let finishing = false;
+async function finish() {
+  if (finishing) return;   // a slow pass is never doubled by the next tick
+  finishing = true;
+  try { await Promise.all(state.rows.filter((r) => r.input.status === 'done' && r.input.process_id).map(finishOne)); }
+  finally { finishing = false; }
 }
 
 async function setStatus(row, status) {
@@ -161,11 +176,11 @@ async function setStatus(row, status) {
     const pid = row.input.process_id;
     // Done with a done message: the fork gets it, the issue is done NOW, and the fork is closed when it has finished
     // (a done row that still names its fork is "finishing"; `finish()` closes it). ↺ Open keeps a fork still alive.
-    const wrapUp = status === 'done' && pid ? doneMessage(row) : '';
-    if (wrapUp) await post(`/graph/agentic_process/${pid}/enqueue`, { prompt: wrapUp, source: 'page' });
-    else if (status === 'done' && pid) await close(pid);
-    const keepsFork = wrapUp || status === 'open';
-    await state.ds.put(row.key, { input: { ...row.input, status, process_id: keepsFork ? pid : null } }, { expected: row.version });
+    const closing = status === 'done' && pid;
+    const wrapUp = closing && doneMessage(row);
+    if (wrapUp) await send(pid, wrapUp);
+    else if (closing) await close(pid);
+    await state.ds.put(row.key, { input: { ...row.input, status, process_id: closing && !wrapUp ? null : pid } }, { expected: row.version });
   } catch (e) {
     fail(`Could not change #${row.input.id}: ${e?.message || e}`);
   }
@@ -173,7 +188,6 @@ async function setStatus(row, status) {
 
 function select(key) {
   state.sel = key;
-  const row = state.rows.find((r) => r.key === key);
   render();   // an issue with no fork shows its first message and waits for Start — nothing starts by itself
 }
 
@@ -184,7 +198,7 @@ function renderMain() {
   const want = pid ? `/win/shell/agentic_process-${pid}` : null;
   const frame = main.querySelector('iframe');
   if (want && frame?.dataset.src === want) return;   // keep the live terminal; never reload it on a render
-  const asking = row && !want && row.input.status !== 'done' && !state.busy.has(row.key);
+  const asking = row && canStart(row);
   if (asking && main.dataset.ask === row.key) return;   // keep the message being edited
   delete main.dataset.ask;
   main.className = want ? '' : 'empty';
@@ -251,8 +265,8 @@ $('main').addEventListener('click', (ev) => {
 });
 $('tpl').addEventListener('input', (ev) => {
   keep(TPL_KEY, ev.target.value);
-  delete $('main').dataset.ask;   // the open Start panel shows the new message
-  renderMain();
+  const row = state.rows.find((r) => r.key === state.sel);
+  if ($('first') && row) $('first').value = firstMessage(row);   // the open Start panel shows the new message
 });
 $('donetpl').addEventListener('input', (ev) => keep(DONE_KEY, ev.target.value));
 $('filter').addEventListener('click', (ev) => {
@@ -262,6 +276,7 @@ $('filter').addEventListener('click', (ev) => {
 (async () => {
   $('title').textContent = CFG.title || 'forkit';
   $('root').textContent = CFG.root || '';
+  $('tpl').placeholder = TEMPLATE;
   $('tpl').value = stored(TPL_KEY) || TEMPLATE;
   $('donetpl').value = stored(DONE_KEY) || '';
   try {
