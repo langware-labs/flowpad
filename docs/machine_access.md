@@ -117,8 +117,3 @@ requirements:
   - text: Remote control must create and serve its node through the flow connect path (one ensure function in flow_sdk/core/compute/hub_node.py and the same worker), differing from flow connect only in the "locked" creation config.
   - text: On a node created "locked", flow_sdk/compute/user_machine/worker.py must refuse privileged access until a passkey is defined on the machine and has signed there (an accepted key in flow_sdk/core/compute/access_keys.py and a verified answer).
 ```
-
-<br />
-
-<br />
-
