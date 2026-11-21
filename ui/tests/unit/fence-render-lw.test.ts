@@ -1,7 +1,7 @@
 // The lw (langware) cards: ```statements, ```requirements and ```test_debug fences (docs/lw.md).
 import { describe, expect, it, vi } from 'vitest';
 import { getFenceRenderer } from '@src/components/milkdown-editor/plugins/fence-render/registry';
-import { renderLwCard, renderTestDebugCard } from '@src/components/milkdown-editor/plugins/fence-render/renderers/lw';
+import { lwChrome, renderLwCard, renderTestDebugCard } from '@src/components/milkdown-editor/plugins/fence-render/renderers/lw';
 import type { LwBlockKind } from '@src/components/milkdown-editor/plugins/fence-render/renderers/lw-schema';
 
 const STATEMENTS = `tag: machine_access.remote_control
@@ -31,20 +31,27 @@ requirements:
 function render(
   kind: LwBlockKind,
   source: string,
-  overrides: { root?: string | null; previewFile?: (path: string, options?: { line?: number }) => void } = {},
+  overrides: {
+    root?: string | null;
+    previewFile?: (path: string, options?: { line?: number }) => void;
+    view?: string;
+    editable?: boolean;
+    commit?: (next: string) => void;
+  } = {},
 ): HTMLElement {
   const host = document.createElement('div');
   renderLwCard(kind, source, host, {
     theme: 'dark',
     blockId: 'b1',
-    editable: false,
+    editable: overrides.editable ?? false,
     host: {
       openFile: () => {},
       previewFile: overrides.previewFile ?? (() => {}),
       documentProjectRoot: () => ('root' in overrides ? overrides.root! : '/repo'),
       projectRootById: () => null,
     },
-    commit: () => {},
+    commit: overrides.commit ?? (() => {}),
+    view: overrides.view,
   });
   return host;
 }
@@ -53,39 +60,94 @@ const texts = (host: HTMLElement, testId: string) =>
   [...host.querySelectorAll(`[data-testid="${testId}"]`)].map((node) => node.textContent);
 
 describe('a statements card', () => {
-  it('shows the tag, what it depends on, and one row per statement', () => {
+  it('shows what it depends on and one row per statement: the sentence and its basis, nothing else', () => {
     const host = render('statements', STATEMENTS);
-    expect(texts(host, 'lw-tag')).toEqual(['machine_access.remote_control']);
     expect(texts(host, 'lw-depends-on')).toEqual(['machine_access.connected_machine', 'machine_access.privileged_access']);
-    expect(host.querySelectorAll('[data-testid="lw-statement"]')).toHaveLength(2);
-    expect(host.textContent).toContain('Depends on');
+    expect(texts(host, 'lw-statement')).toEqual([
+      'Remote control is flow connect with a node created locked.stated',
+      'A machine may protect its privileged access with a device passkey.proven',
+    ]);
+    // The tag is the tab row's (`chrome`); issues and files have tabs of their own.
+    for (const gone of ['lw-tag', 'lw-verdict', 'lw-issue', 'lw-file']) {
+      expect(host.querySelector(`[data-testid="${gone}"]`)).toBeNull();
+    }
   });
 
-  it('says pass for a statement with no issues, and lists the issues of one that has them', () => {
-    const host = render('statements', STATEMENTS);
-    const verdicts = [...host.querySelectorAll('[data-testid="lw-verdict"]')];
-    expect(verdicts.map((v) => [v.getAttribute('data-verdict'), v.textContent])).toEqual([
-      ['issues', '2 issues'],
-      ['pass', 'pass'],
-    ]);
+  it('names its tag, and an Issues and a References tab with their counts', () => {
+    expect(lwChrome('statements', STATEMENTS)).toEqual({
+      tag: 'machine_access.remote_control',
+      views: [
+        { id: 'issues', label: 'Issues', count: 2, tone: 'warn' },
+        { id: 'references', label: 'References', count: 1 },
+      ],
+    });
+  });
+
+  it('has no Issues tab with no issues, and no References tab with no files', () => {
+    expect(lwChrome('statements', 'tag: a.b\nstatements:\n  - text: x\n')).toEqual({ tag: 'a.b', views: [] });
+    expect(lwChrome('requirements', REQUIREMENTS)).toEqual({ tag: 'machine_access.remote_control.build', views: [] });
+  });
+
+  it('lists on the Issues tab each violated statement with its issues', () => {
+    const host = render('statements', STATEMENTS, { view: 'issues' });
+    expect(texts(host, 'lw-issues-of')).toHaveLength(1);
+    expect(host.querySelector('[data-testid="lw-issues-of"] .lw-card-text')!.textContent).toBe(
+      'Remote control is flow connect with a node created locked.',
+    );
+    expect(texts(host, 'lw-verdict')).toEqual(['2 issues']);
     expect(texts(host, 'lw-issue')).toEqual([
-      'issueRemote control uses only the first half of flow connect.',
-      'issueNo node carries a "locked" setting.',
+      'Remote control uses only the first half of flow connect.',
+      'No node carries a "locked" setting.',
     ]);
   });
 
-  it('opens a file the statement is about, at its line', () => {
+  it('lists on the References tab the files of each statement, and opens one at its line', () => {
     const previewFile = vi.fn();
-    const chip = render('statements', STATEMENTS, { previewFile }).querySelector<HTMLButtonElement>('[data-testid="lw-file"]')!;
+    const host = render('statements', STATEMENTS, { view: 'references', previewFile });
+    expect(texts(host, 'lw-references-of')).toHaveLength(1);
+    const chip = host.querySelector<HTMLButtonElement>('[data-testid="lw-file"]')!;
     expect(chip.textContent).toBe('flow_sdk/core/compute/hub_node.py:46');
     chip.click();
     expect(previewFile).toHaveBeenCalledWith('/repo/flow_sdk/core/compute/hub_node.py', { line: 46 });
   });
 
   it('keeps the file chip, disabled with the reason, when the doc has no project', () => {
-    const chip = render('statements', STATEMENTS, { root: null }).querySelector<HTMLButtonElement>('[data-testid="lw-file"]')!;
+    const chip = render('statements', STATEMENTS, { root: null, view: 'references' }).querySelector<HTMLButtonElement>(
+      '[data-testid="lw-file"]',
+    )!;
     expect(chip.disabled).toBe(true);
     expect(chip.title).not.toBe('');
+  });
+
+  it('writes a sentence typed in an editable doc into the block, and nothing else', () => {
+    const commit = vi.fn();
+    const host = render('statements', STATEMENTS, { editable: true, commit });
+    const field = host.querySelector<HTMLElement>('[data-testid="lw-statement-text-0"]')!;
+    expect(field.getAttribute('contenteditable')).toBe('true');
+    field.textContent = 'Remote control is flow connect with a node created unlocked.';
+    field.dispatchEvent(new FocusEvent('blur'));
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit.mock.calls[0][0]).toBe(
+      STATEMENTS.replace('with a node created locked.', 'with a node created unlocked.'),
+    );
+    // The card redrew from the new source, so the next edit starts from it.
+    expect(host.querySelector('[data-testid="lw-statement-text-0"]')!.textContent).toContain('unlocked');
+  });
+
+  it('keeps select-all inside the field being edited', () => {
+    const host = render('statements', STATEMENTS, { editable: true });
+    document.body.appendChild(host);
+    const field = host.querySelector<HTMLElement>('[data-testid="lw-statement-text-0"]')!;
+    const key = new KeyboardEvent('keydown', { key: 'a', metaKey: true, bubbles: true, cancelable: true });
+    field.dispatchEvent(key);
+    expect(key.defaultPrevented).toBe(true);
+    expect(document.getSelection()!.toString()).toBe('Remote control is flow connect with a node created locked.');
+    host.remove();
+  });
+
+  it('draws the sentence as plain text in a read-only doc', () => {
+    const field = render('statements', STATEMENTS).querySelector('[data-testid="lw-statement-text-0"]')!;
+    expect(field.hasAttribute('contenteditable')).toBe(false);
   });
 
   it('shows text as text, never as markup', () => {

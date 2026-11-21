@@ -410,3 +410,61 @@ describe('fence NodeView with a renderer', () => {
     expect(v.dom.querySelector('pre code')?.textContent).toBe('hello');
   });
 });
+
+describe('a renderer with extra views and a tag', () => {
+  const tab = (view: EditorView, id: string) =>
+    block(view)!.querySelector<HTMLButtonElement>(`[data-testid="fence-render-tab-${id}"]`);
+  const press = (button: HTMLButtonElement) => button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+
+  /** A block whose source lists its extra views, one word each; each view draws its own name. */
+  function register() {
+    registerFenceRenderer({
+      language: 'stub',
+      tabLabel: 'Stub',
+      render: (code, host, ctx) => {
+        host.textContent = `${ctx.view ?? 'main'}: ${code}`;
+      },
+      chrome: (code) => ({
+        tag: 'docs.stub.block',
+        views: code.split(' ').filter((word) => word !== '-').map((id, n) => ({ id, label: id, count: n + 1, tone: 'warn' as const })),
+      }),
+    });
+  }
+
+  it('draws a tab per view with its counter, before Code, and the tag at the end of the row', async () => {
+    register();
+    const v = mount(para('x'), fence('stub', 'issues references'));
+    await settle();
+    const row = [...block(v)!.querySelector('.fence-render-tabs')!.children].map((node) => node.textContent);
+    expect(row).toEqual(['Stub', 'issues1', 'references2', 'Code', 'block']);
+    expect(block(v)!.querySelector('[data-testid="fence-render-tag"] [title]')!.getAttribute('title')).toBe('docs.stub.block');
+  });
+
+  it('shows a view when its tab is pressed, and the main one again from its own tab', async () => {
+    register();
+    const v = mount(para('x'), fence('stub', 'issues references'));
+    await settle();
+    press(tab(v, 'issues')!);
+    await settle();
+    expect(block(v)!.querySelector('.fence-render-output')!.textContent).toBe('issues: issues references');
+    expect(tab(v, 'issues')!.getAttribute('aria-selected')).toBe('true');
+    expect(tab(v, 'render')!.getAttribute('aria-selected')).toBe('false');
+    press(tab(v, 'render')!);
+    await settle();
+    expect(block(v)!.querySelector('.fence-render-output')!.textContent).toBe('main: issues references');
+  });
+
+  it('falls back to the main view when the view on screen goes away', async () => {
+    register();
+    const v = mount(para('x'), fence('stub', 'issues'));
+    await settle();
+    press(tab(v, 'issues')!);
+    await settle();
+    const pos = 3; // after the paragraph
+    v.dispatch(v.state.tr.replaceWith(pos + 1, pos + 1 + 'issues'.length, schema.text('-')));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(tab(v, 'issues')).toBeNull();
+    expect(block(v)!.querySelector('.fence-render-output')!.textContent).toBe('main: -');
+    expect(tab(v, 'render')!.getAttribute('aria-selected')).toBe('true');
+  });
+});

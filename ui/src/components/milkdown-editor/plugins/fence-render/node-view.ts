@@ -15,7 +15,8 @@ import { DOMSerializer, type Node as PMNode } from '@milkdown/prose/model';
 import type { Decoration, EditorView, NodeView, NodeViewConstructor, ViewMutationRecord } from '@milkdown/prose/view';
 import { fenceModeFromDecorations, setFenceMode, type FenceMode } from './fence-mode';
 import { NO_HOST_SERVICES, type FenceHostServices } from './host-services';
-import { getFenceRenderer, type FenceRenderer, type FenceTheme } from './registry';
+import { getFenceRenderer, type FenceChrome, type FenceRenderer, type FenceTheme } from './registry';
+import { tagChipMarkup } from './renderers/dom';
 
 /** Debounce for re-rendering while the user types in the source pane. */
 const RENDER_DEBOUNCE_MS = 150;
@@ -102,7 +103,15 @@ class FenceRenderNodeView implements NodeView {
   private readonly renderTab: HTMLButtonElement;
   private readonly codeTab: HTMLButtonElement;
 
+  /** The renderer's extra tabs, rebuilt from its `chrome` after each good render. */
+  private viewTabs: HTMLButtonElement[] = [];
+  private tagChip: HTMLElement | null = null;
+  /** What the row was last drawn from, so an unchanged block does not rebuild it. */
+  private chromeKey = '';
+
   private mode: FenceMode;
+  /** The extra view on screen, or null for the main one. Only meaningful in `render` mode. */
+  private activeView: string | null = null;
   private unwatch: (() => void)[] = [];
   private renderTimer: ReturnType<typeof setTimeout> | null = null;
   /**
@@ -198,24 +207,69 @@ class FenceRenderNodeView implements NodeView {
 
   /** Everything a render depends on, flattened for a single equality check. */
   private signature(code: string): string {
-    return `${currentTheme()}\u0000${String(this.view.editable)}\u0000${code}`;
+    return `${currentTheme()}\u0000${String(this.view.editable)}\u0000${this.activeView ?? ''}\u0000${code}`;
   }
 
-  private makeTab(label: string, mode: FenceMode): HTMLButtonElement {
+  /**
+   * A tab of the row. `viewId` is an extra view of the renderer (`null` = its
+   * main one); both are `render` mode, so only "Code" changes the block's mode.
+   */
+  private makeTab(label: string, mode: FenceMode, viewId: string | null = null): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'fence-render-tab';
     button.textContent = label;
     button.setAttribute('role', 'tab');
     button.setAttribute('data-mode', mode);
-    button.setAttribute('data-testid', `fence-render-tab-${mode}`);
+    button.setAttribute('data-testid', `fence-render-tab-${viewId ?? mode}`);
     button.addEventListener('mousedown', (event) => {
       event.preventDefault();
       const pos = this.getPos();
       if (pos == null) return;
+      if (mode === 'render' && viewId !== this.activeView) {
+        this.activeView = viewId;
+        this.markTabs();
+        this.scheduleRender(0);
+        // Already on the render side: nothing to switch, and the caret stays where it is.
+        if (this.mode === 'render') return;
+      }
       setFenceMode(this.view, pos, mode);
     });
     return button;
+  }
+
+  /** Redraw the extra tabs and the tag chip when the block's chrome changed. */
+  private syncChrome(chrome: FenceChrome): void {
+    const key = JSON.stringify(chrome);
+    if (key === this.chromeKey) return;
+    this.chromeKey = key;
+
+    this.viewTabs.forEach((tab) => tab.remove());
+    this.viewTabs = (chrome.views ?? []).map((view) => {
+      const tab = this.makeTab(view.label, 'render', view.id);
+      tab.setAttribute('data-view', view.id);
+      if (view.count != null) {
+        const count = document.createElement('span');
+        count.className = 'fence-render-tab-count';
+        if (view.tone) count.setAttribute('data-tone', view.tone);
+        count.textContent = String(view.count);
+        tab.appendChild(count);
+      }
+      this.codeTab.before(tab);
+      return tab;
+    });
+
+    this.tagChip?.remove();
+    this.tagChip = null;
+    if (chrome.tag) {
+      // The app's own tag chip, as markup: a NodeView has no React tree to mount it in.
+      this.tagChip = document.createElement('span');
+      this.tagChip.className = 'fence-render-tag';
+      this.tagChip.setAttribute('data-testid', 'fence-render-tag');
+      this.tagChip.innerHTML = tagChipMarkup(chrome.tag);
+      this.tabs.appendChild(this.tagChip);
+    }
+    this.markTabs();
   }
 
   /**
@@ -270,7 +324,20 @@ class FenceRenderNodeView implements NodeView {
     this.dom.setAttribute('data-mode', this.mode);
     this.source.hidden = !showCode;
     this.preview.hidden = showCode;
-    this.renderTab.setAttribute('aria-selected', String(!showCode));
+    this.markTabs();
+  }
+
+  /**
+   * Which tab is the selected one. Touches only the tab row, which is chrome:
+   * unlike `applyMode` it is safe outside ProseMirror's own update, where a
+   * change to the block's root would be read back as an edit to the document.
+   */
+  private markTabs(): void {
+    const showCode = this.mode === 'code';
+    this.renderTab.setAttribute('aria-selected', String(!showCode && this.activeView == null));
+    this.viewTabs.forEach((tab) =>
+      tab.setAttribute('aria-selected', String(!showCode && tab.getAttribute('data-view') === this.activeView)),
+    );
     this.codeTab.setAttribute('aria-selected', String(showCode));
   }
 
@@ -284,8 +351,21 @@ class FenceRenderNodeView implements NodeView {
 
   private async render(): Promise<void> {
     const code = this.node.textContent;
+    if (!this.lastRenderFailed && this.signature(code) === this.renderedSignature) return;
+
+    // Only now that a render will happen: the row costs the renderer a parse.
+    // A block that does not parse keeps the row its last good render drew.
+    let chrome: FenceChrome | null = null;
+    try {
+      chrome = this.renderer.chrome?.(code) ?? {};
+    } catch {
+      chrome = null;
+    }
+    // A view that went away (its last issue was fixed) leaves the main one on screen.
+    if (chrome && this.activeView && !chrome.views?.some((view) => view.id === this.activeView)) {
+      this.activeView = null;
+    }
     const signature = this.signature(code);
-    if (!this.lastRenderFailed && signature === this.renderedSignature) return;
 
     const token = ++this.renderToken;
     const theme = currentTheme();
@@ -301,9 +381,11 @@ class FenceRenderNodeView implements NodeView {
         editable,
         host: this.getHost(),
         commit: this.commit,
+        view: this.activeView ?? undefined,
       });
       if (token !== this.renderToken) return; // superseded by a newer render
       this.preview.replaceChildren(host);
+      if (chrome) this.syncChrome(chrome);
       this.clearError();
       this.renderedSignature = signature;
       this.lastRenderFailed = false;

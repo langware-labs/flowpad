@@ -213,7 +213,18 @@ that project lives is known to a running Flowpad; on the command line pass
 
 ## In the app
 
-The editor draws each block as a card ([renderable-fences.md](renderable-fences.md)): the tag, the
-tags it depends on, and a row per statement with `pass` or its issues and a chip per file. A
-`test_debug` card shows its bound tests and when it was proven first. The Code tab shows the YAML.
-Under the doc's title the editor shows the header's tag and what the doc depends on.
+The editor draws each block as a card ([renderable-fences.md](renderable-fences.md)).
+
+- **Statements block.** The Statements tab lists each sentence and whether it was stated or proven.
+  What violates the statements today is the block's **Issues** tab, and the files they are about its
+  **References** tab; each has a counter and is there only when the block has any. The block's tag is
+  a chip at the end of the tab row (its last part; the whole tag on hover).
+- **Editing.** In Editor mode a click on a sentence makes it editable in place: Enter or a click away
+  keeps the change, Escape drops it, and the typed text goes into the block as it is. Tags,
+  dependencies, issues and files are changed with `flow tag put` or on the Code tab.
+- **Requirements block.** What it implements and its requirements, with its tag in the tab row.
+- **`test_debug` block.** Its bound tests and when it was proven first, then the rules with `pass` or
+  their issues and a chip per file.
+
+The Code tab shows the YAML. Under the doc's title the editor shows the header's tag and what the doc
+depends on.

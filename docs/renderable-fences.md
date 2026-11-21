@@ -98,15 +98,22 @@ were proven, what they depend on and the bound tests (refreshed from the tag ind
 `breadcrumb`), then the rules as statements. Its tab reads "Test debug".
 
 **`statements`** and **`requirements`** render the lw (langware) blocks of a statement doc
-([lw.md](lw.md)) — `renderers/lw.ts`. A statements card shows the block's tag, the tags it
-depends on, and one row per statement: its sentence, `stated` or `proven`, and either `pass` or
-the issues that violate it today, with a chip per file it is about. A requirements card shows the
-statements it implements and its requirements. Both are read-only: a block is written by
-`flow tag put`, which checks it against every other block of the project, and by hand only in the
-Code pane. The schema (`renderers/lw-schema.ts`) is the TS twin of
-`flow_sdk/schema/data_spec/lw_spec.py`; `tests/fixtures/lw_blocks_contract.json` pins that the
-two agree on which blocks are valid. Strict like `interface`: a block that does not match shows the
-error with the source one tab away.
+([lw.md](lw.md)) — `renderers/lw.ts`. A statements card lists each sentence with `stated` or
+`proven`; in an editable doc the sentence is click-to-edit and the typed text is written into the
+block (`renderers/lw-edit.ts`). The issues that violate the statements and the files they are about
+are extra tabs of the block (below). A requirements card shows the statements it implements and its
+requirements. Everything but a sentence is written by `flow tag put`, which checks a block against
+every other block of the project, or by hand in the Code pane. The schema (`renderers/lw-schema.ts`)
+is the TS twin of `flow_sdk/schema/data_spec/lw_spec.py`; `tests/fixtures/lw_blocks_contract.json`
+pins that the two agree on which blocks are valid. Strict like `interface`: a block that does not
+match shows the error with the source one tab away.
+
+**Extra tabs and the tag.** A renderer may declare `chrome(code)`: extra views of the block, each a
+tab with an optional counter between the main tab and Code, and the block's tag, drawn as the app's
+tag chip at the end of the tab row. The NodeView passes the view on screen to `render` as
+`ctx.view`, keeps it across re-renders, and falls back to the main view when a view is no longer
+declared (a statements block has an Issues tab only while it has issues). An extra view is still
+`render` mode: only Code shows the source.
 
 The Code pane is the authoritative structural editor in Editor mode: it is the
 real ProseMirror code-block content, not a detached textarea, so typing, undo,

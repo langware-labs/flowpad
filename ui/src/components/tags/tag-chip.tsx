@@ -1,7 +1,18 @@
 import { Tag as TagIcon } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import type { FlowMessage } from '@sdk';
 import { profileLabel } from '@sdk/models/MessageEnvelope';
-import { tagChipStyle } from './MessageTags';
+
+/** A tag colour remains readable in both themes; text uses the app foreground. */
+export function tagChipStyle(color?: string | null): CSSProperties | undefined {
+  return color
+    ? {
+        borderColor: color,
+        backgroundColor: `color-mix(in srgb, ${color} 18%, hsl(var(--background)))`,
+        color: 'hsl(var(--foreground))',
+      }
+    : undefined;
+}
 
 /** A tag as a small chip: its last segment, in its colour. */
 export function TagChip({ name, color }: { name: string; color?: string | null }) {
