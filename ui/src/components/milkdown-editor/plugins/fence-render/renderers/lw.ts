@@ -16,7 +16,7 @@ import { t } from '@lingui/core/macro';
  *
  * In an editable host a statement's sentence is click-to-edit: the typed text,
  * which may run over several lines, goes into the block's YAML as it is
- * (`lw-edit.ts`). A sentence cannot break a
+ * (`lw-edit.ts`), and statements can be added and deleted there. A sentence cannot break a
  * tag or a dependency, so it needs no check against the rest of the project.
  * Everything else — tags, dependencies, issues, files — is written by
  * `flow tag put` (the `langit` and `tagit` skills), which does that check, or
@@ -26,11 +26,13 @@ import { t } from '@lingui/core/macro';
  * `test_debug` card also asks the tag index where its bound tests are now.
  */
 
+import { Plus, Trash2 } from 'lucide-react';
+
 import { registerFenceRenderer, type FenceChrome, type FenceRenderContext, type FenceRenderer } from '../registry';
 import { ensureBreadcrumbContext, peekBreadcrumbContext } from './breadcrumb-context';
 import { formatSiteLabel } from './breadcrumb-schema';
-import { editable, el } from './dom';
-import { applyLwEdit } from './lw-edit';
+import { editable, el, iconMarkup } from './dom';
+import { applyLwEdit, type LwEdit } from './lw-edit';
 import {
   parseLwBlock,
   type LwBlock,
@@ -42,6 +44,9 @@ import {
 } from './lw-schema';
 import { chipRow, siteChip } from './site-chip';
 import { resolveRelPath } from './source-location';
+
+const ADD_ICON = iconMarkup(Plus);
+const DELETE_ICON = iconMarkup(Trash2);
 
 function section(label: string, body: HTMLElement): HTMLElement {
   const wrap = el('div', 'lw-card-section');
@@ -198,19 +203,49 @@ function requirementsView(block: LwBlock): HTMLElement {
   );
 }
 
-/** The Statements view: each sentence (click-to-edit in an editable host) and its basis. */
-function statementsView(block: LwBlock, ctx: FenceRenderContext, edit: (statement: number, text: string) => void): HTMLElement {
-  const rows = block.statements.map((statement, index) =>
-    row(
+/**
+ * The Statements view: each sentence and its basis. In an editable host a
+ * sentence is click-to-edit, each statement can be deleted (while more than one
+ * is left) and a row at the end adds one.
+ */
+function statementsView(block: LwBlock, ctx: FenceRenderContext, edit: (change: LwEdit) => void): HTMLElement {
+  const deletable = ctx.editable && block.statements.length > 1;
+  const rows = block.statements.map((statement, index) => {
+    const node = row(
       'lw-statement',
-      editable('lw-card-text', statement.text, `lw-statement-text-${index}`, ctx.editable, (text) => edit(index, text), {
-        multiline: true,
-      }),
+      editable(
+        'lw-card-text',
+        statement.text,
+        `lw-statement-text-${index}`,
+        ctx.editable,
+        (text) => edit({ kind: 'text', statement: index, text }),
+        { multiline: true },
+      ),
       [basisBadge(statement)],
       [],
       index + 1,
-    ),
-  );
+    );
+    if (deletable) {
+      const remove = el('button', 'lw-card-delete');
+      remove.type = 'button';
+      remove.setAttribute('data-testid', `lw-statement-delete-${index}`);
+      remove.setAttribute('aria-label', t`Delete statement ${index + 1}`);
+      remove.title = t`Delete this statement`;
+      remove.innerHTML = DELETE_ICON;
+      remove.addEventListener('click', () => edit({ kind: 'delete', statement: index }));
+      node.firstElementChild!.appendChild(remove);
+    }
+    return node;
+  });
+  if (ctx.editable) {
+    const add = el('button', 'lw-card-add');
+    add.type = 'button';
+    add.setAttribute('data-testid', 'lw-statement-add');
+    add.innerHTML = ADD_ICON;
+    add.appendChild(el('span', '', t`Add statement`));
+    add.addEventListener('click', () => edit({ kind: 'add', text: t`New statement` }));
+    rows.push(add);
+  }
   return rowsSection(t`Statements`, rows);
 }
 
@@ -233,7 +268,7 @@ function rulesSection(block: LwBlock, root: string | null, ctx: FenceRenderConte
 function buildCard(
   block: LwBlock,
   ctx: FenceRenderContext,
-  edit: (statement: number, text: string) => void,
+  edit: (change: LwEdit) => void,
 ): HTMLElement {
   const root = ctx.host.documentProjectRoot();
   const card = el('div', 'lw-card');
@@ -323,11 +358,20 @@ function parse(kind: LwBlockKind, source: string): LwBlock {
  * into an inline chip and keeps whatever was rendered last.
  */
 function draw(kind: LwBlockKind, source: string, host: HTMLElement, ctx: FenceRenderContext): void {
-  const edit = (statement: number, text: string) => {
-    const next = applyLwEdit(source, { statement, text });
+  const edit = (change: LwEdit) => {
+    const next = applyLwEdit(source, change);
     if (next === source) return;
     ctx.commit(next);
     draw(kind, next, host, ctx);
+    // The delete button is gone with its row: hand focus to the document, so undo reaches the edit.
+    if (change.kind === 'delete') ctx.focusDocument?.();
+    if (change.kind === 'add') {
+      // The new statement is there to be typed over: put the caret in it, all of it selected.
+      const fields = host.querySelectorAll<HTMLElement>('[data-testid^="lw-statement-text-"]');
+      const field = fields[fields.length - 1];
+      field?.focus();
+      if (field) field.ownerDocument.getSelection()?.selectAllChildren(field);
+    }
   };
   host.replaceChildren(buildCard(parse(kind, source), ctx, edit));
 }

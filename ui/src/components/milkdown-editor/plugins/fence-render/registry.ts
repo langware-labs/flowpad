@@ -55,6 +55,12 @@ export interface FenceRenderContext {
    */
   commit(nextSource: string): void;
   /**
+   * Put keyboard focus back in the document. For an edit made with a control
+   * that then disappears (a delete button): without it focus is left nowhere,
+   * and undo, which the document owns, does not reach the edit.
+   */
+  focusDocument?(): void;
+  /**
    * Which of the renderer's extra views to draw (a `FenceView.id` from its
    * `chrome`), or `undefined` for the main one.
    */

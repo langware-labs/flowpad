@@ -114,6 +114,11 @@ tag chip at the end of the tab row. The NodeView passes the view on screen to `r
 declared (a statements block has an Issues tab only while it has issues). An extra view is still
 `render` mode: only Code shows the source.
 
+**Between two blocks.** A rendered block hides its source, so two of them in a row leave no place for
+a text caret between them, and neither does one at the end of the doc. `fence-gap.ts` adds
+ProseMirror's gap cursor and puts it there on a click; typing at it starts a paragraph in that
+place, and Enter an empty one.
+
 The Code pane is the authoritative structural editor in Editor mode: it is the
 real ProseMirror code-block content, not a detached textarea, so typing, undo,
 autosave and Markdown serialization follow the ordinary document path. View

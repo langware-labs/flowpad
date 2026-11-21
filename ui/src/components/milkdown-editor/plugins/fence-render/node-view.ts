@@ -317,6 +317,15 @@ class FenceRenderNodeView implements NodeView {
       ? state.tr.replaceWith(from, to, this.view.state.schema.text(nextSource))
       : state.tr.delete(from, to);
     this.view.dispatch(tr);
+
+    // The card redraws itself after its own edit, but the tab row is ours: an
+    // edit may change a counter or take a view away (a deleted statement's issues).
+    try {
+      const chrome = this.renderer.chrome?.(nextSource);
+      if (chrome) this.syncChrome(chrome);
+    } catch {
+      // not a valid block: the row stays as the last good render left it
+    }
   };
 
   private applyMode(): void {
@@ -381,6 +390,7 @@ class FenceRenderNodeView implements NodeView {
         editable,
         host: this.getHost(),
         commit: this.commit,
+        focusDocument: () => this.view.focus(),
         view: this.activeView ?? undefined,
       });
       if (token !== this.renderToken) return; // superseded by a newer render

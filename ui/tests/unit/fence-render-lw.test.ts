@@ -180,6 +180,38 @@ statements:
     host.remove();
   });
 
+  it('adds a statement from the row at the end, ready to be typed over', () => {
+    const commit = vi.fn();
+    const host = render('statements', STATEMENTS, { editable: true, commit });
+    document.body.appendChild(host);
+    host.querySelector<HTMLButtonElement>('[data-testid="lw-statement-add"]')!.click();
+    expect(parseLwBlock('statements', commit.mock.calls[0][0]).statements.map((s) => [s.text, s.basis])[2]).toEqual([
+      'New statement',
+      'stated',
+    ]);
+    expect(texts(host, 'lw-number')).toEqual(['1', '2', '3']);
+    expect(document.activeElement).toBe(host.querySelector('[data-testid="lw-statement-text-2"]'));
+    expect(document.getSelection()!.toString()).toBe('New statement');
+    host.remove();
+  });
+
+  it('deletes a statement from its row, but never the last one', () => {
+    const commit = vi.fn();
+    const host = render('statements', STATEMENTS, { editable: true, commit });
+    host.querySelector<HTMLButtonElement>('[data-testid="lw-statement-delete-0"]')!.click();
+    expect(parseLwBlock('statements', commit.mock.calls[0][0]).statements.map((s) => s.text)).toEqual([
+      'A machine may protect its privileged access with a device passkey.',
+    ]);
+    // One statement left on the card: nothing to delete it with.
+    expect(host.querySelector('[data-testid^="lw-statement-delete-"]')).toBeNull();
+  });
+
+  it('offers neither in a read-only doc', () => {
+    const host = render('statements', STATEMENTS);
+    expect(host.querySelector('[data-testid="lw-statement-add"]')).toBeNull();
+    expect(host.querySelector('[data-testid^="lw-statement-delete-"]')).toBeNull();
+  });
+
   it('draws the sentence as plain text in a read-only doc', () => {
     const field = render('statements', STATEMENTS).querySelector('[data-testid="lw-statement-text-0"]')!;
     expect(field.hasAttribute('contenteditable')).toBe(false);

@@ -454,6 +454,23 @@ describe('a renderer with extra views and a tag', () => {
     expect(block(v)!.querySelector('.fence-render-output')!.textContent).toBe('main: issues references');
   });
 
+  it('redraws the row after an edit the card makes itself', async () => {
+    let commit: (next: string) => void = () => {};
+    registerFenceRenderer({
+      language: 'stub',
+      tabLabel: 'Stub',
+      render: (_code, _host, ctx) => {
+        commit = (next) => ctx.commit(next);
+      },
+      chrome: (code) => ({ views: code.split(' ').map((id) => ({ id, label: id })) }),
+    });
+    const v = mount(para('x'), fence('stub', 'issues references'));
+    await settle();
+    commit('issues');
+    expect(tab(v, 'references')).toBeNull();
+    expect(tab(v, 'issues')).not.toBeNull();
+  });
+
   it('falls back to the main view when the view on screen goes away', async () => {
     register();
     const v = mount(para('x'), fence('stub', 'issues'));

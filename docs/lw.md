@@ -224,7 +224,8 @@ The editor draws each block as a card ([renderable-fences.md](renderable-fences.
   a chip at the end of the tab row (its last part; the whole tag on hover).
 - **Editing.** In Editor mode a click on a sentence makes it editable in place. A statement may run
   over several lines: Enter is a new line, a click away or Cmd/Ctrl+Enter keeps the change, Escape
-  drops it, and the typed text goes into the block as it is. Tags,
+  drops it, and the typed text goes into the block as it is. A row at the end of the Statements tab adds a
+  statement, and each statement has a delete control on hover (the last one stays; undo brings one back). Tags,
   dependencies, issues and files are changed with `flow tag put` or on the Code tab.
 - **`test_debug` block.** Its bound tests and when it was proven first, then the rules with `pass` or
   their issues and a chip per file.
