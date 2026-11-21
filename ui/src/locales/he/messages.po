@@ -3434,7 +3434,6 @@ msgid "Add to project"
 msgstr "הוסיפו לפרויקט"
 
 #: src/components/conversation/MessageActionsMenu.tsx
-#: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Add to queue"
 msgstr "הוסיפו לתור"
 
@@ -3648,9 +3647,6 @@ msgstr "סוכן (הגדרה)"
 msgid "Agent {0}"
 msgstr "סוכן {0}"
 
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/HostedAppRow.tsx
 msgid "Agent browser"
 msgstr ""
@@ -8689,6 +8685,7 @@ msgid "Copy remote URL"
 msgstr "העתקת כתובת ה-remote"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Copy session details"
 msgstr ""
 
@@ -10799,6 +10796,7 @@ msgstr "ברירת מחדל"
 
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/credentials/VariableDetails.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
@@ -12509,7 +12507,6 @@ msgid "Edit package {0}"
 msgstr ""
 
 #: src/components/prompt-library/PromptEditDialog.tsx
-#: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Edit prompt"
 msgstr "ערכו פרומפט"
 
@@ -15313,6 +15310,10 @@ msgstr "חזרה"
 msgid "Go back to stream inbox"
 msgstr "חזרו לדואר הנכנס"
 
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Go back to the project's default"
+msgstr ""
+
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Go to Console"
 msgstr "עברו לקונסול"
@@ -17704,8 +17705,8 @@ msgid "Last updated {ago} — results may be outdated."
 msgstr "עודכן לאחרונה {ago} — ייתכן שהתוצאות אינן עדכניות."
 
 #: src/components/notes/QuickPromptsMenu.tsx
-msgid "Last used first · click to run"
-msgstr "האחרון בשימוש ראשון · לחיצה מריצה"
+#~ msgid "Last used first · click to run"
+#~ msgstr "האחרון בשימוש ראשון · לחיצה מריצה"
 
 #: src/components/hooks-manager/index.tsx
 msgid "Last:"
@@ -20253,6 +20254,8 @@ msgstr "קובץ חדש"
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/quick-create/DesktopSurface.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
@@ -20313,7 +20316,6 @@ msgid "New project"
 msgstr "פרויקט חדש"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
-#: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "New prompt"
 msgstr "פרומפט חדש"
 
@@ -21494,8 +21496,8 @@ msgid "No prompts yet — {guestName}'s prompts will run here, in your Claude Co
 msgstr "אין עדיין פרומפטים — הפרומפטים של {guestName} ירוצו כאן, ב-Claude Code שלכם."
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
-msgid "No prompts yet — create one below."
-msgstr "אין פרומפטים עדיין — צרו אחד למטה."
+#~ msgid "No prompts yet — create one below."
+#~ msgstr "אין פרומפטים עדיין — צרו אחד למטה."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "No prompts yet — type one below; it runs in Claude Code on {hostName}'s machine."
@@ -25941,8 +25943,8 @@ msgid "Prompt from {otherName}"
 msgstr "פרומפט מ-{otherName}"
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
-msgid "Prompt Library"
-msgstr "ספריית פרומפטים"
+#~ msgid "Prompt Library"
+#~ msgstr "ספריית פרומפטים"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -26357,6 +26359,7 @@ msgstr "יצירה מהירה"
 #: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/notes/QuickPromptsMenu.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
 msgid "Quick prompts"
 msgstr "פרומפטים מהירים"
 
@@ -26719,6 +26722,10 @@ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Recommended automations"
+msgstr ""
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Recommended by this project"
 msgstr ""
 
 #: src/components/account/user-info.tsx
@@ -27721,6 +27728,7 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/footer/SecretManagerChip.tsx
 msgid "Reset"
 msgstr "איפוס"
 
@@ -30268,6 +30276,10 @@ msgstr "הגדרת תקציב · {scopeName}"
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set conversation project"
 msgstr "הגדירו פרויקט שיחה"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Set for this session"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Set it"
@@ -36272,6 +36284,11 @@ msgstr "השתמשו"
 msgid "Use \"Send to Expert\" to create a task"
 msgstr "השתמשו ב\"שלח למומחה\" ליצירת משימה"
 
+#. placeholder {0}: fallback.title
+#: src/components/footer/BrowserChip.tsx
+msgid "Use {0}"
+msgstr ""
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Use a different provider"
 msgstr "בחרו ספק אחר"
@@ -36287,8 +36304,8 @@ msgid "Use agent"
 msgstr "השתמשו בסוכן"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Use Agent browser"
-msgstr ""
+#~ msgid "Use Agent browser"
+#~ msgstr ""
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Use an API key"
@@ -36314,6 +36331,10 @@ msgstr "שימוש בברירות מחדל"
 msgid "Use Google Vertex AI as the backend"
 msgstr "שימוש ב-Google Vertex AI כשרת הגב"
 
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Use here"
+msgstr ""
+
 #: src/components/footer/BrowserChip.tsx
 msgid "Use it"
 msgstr ""
@@ -36336,10 +36357,18 @@ msgstr "השתמשו בהצעה"
 msgid "Use the default home"
 msgstr "השתמשו בדף הבית המוגדר כברירת מחדל"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Use the project's choice"
+msgstr ""
+
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "Use the refresh button in the toolbar to retry"
 msgstr "השתמשו בכפתור הרענון בסרגל הכלים כדי לנסות שוב"
+
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Use this vault on this computer"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Vertex"
@@ -38105,9 +38134,6 @@ msgstr "התקציב שלך: {short}"
 msgid "Your business number in your own Meta app. Meta calls the hub's webhook URL."
 msgstr "מספר העסק באפליקציית Meta שלכם. Meta קוראת לכתובת ה-webhook של ה-hub."
 
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/HostedAppRow.tsx
 msgid "Your Chrome"
 msgstr ""
@@ -38176,6 +38202,10 @@ msgstr ""
 
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Your own provider key. Usage is billed to your provider account."
+msgstr ""
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Your pick on this computer"
 msgstr ""
 
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx

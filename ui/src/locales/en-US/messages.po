@@ -3434,7 +3434,6 @@ msgid "Add to project"
 msgstr "Add to project"
 
 #: src/components/conversation/MessageActionsMenu.tsx
-#: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Add to queue"
 msgstr "Add to queue"
 
@@ -3648,9 +3647,6 @@ msgstr "agent (definition)"
 msgid "Agent {0}"
 msgstr "Agent {0}"
 
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/HostedAppRow.tsx
 msgid "Agent browser"
 msgstr "Agent browser"
@@ -8689,6 +8685,7 @@ msgid "Copy remote URL"
 msgstr "Copy remote URL"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Copy session details"
 msgstr "Copy session details"
 
@@ -10799,6 +10796,7 @@ msgstr "default"
 
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/credentials/VariableDetails.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
@@ -12509,7 +12507,6 @@ msgid "Edit package {0}"
 msgstr "Edit package {0}"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
-#: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Edit prompt"
 msgstr "Edit prompt"
 
@@ -15313,6 +15310,10 @@ msgstr "Go back"
 msgid "Go back to stream inbox"
 msgstr "Go back to stream inbox"
 
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Go back to the project's default"
+msgstr "Go back to the project's default"
+
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Go to Console"
 msgstr "Go to Console"
@@ -17704,8 +17705,8 @@ msgid "Last updated {ago} — results may be outdated."
 msgstr "Last updated {ago} — results may be outdated."
 
 #: src/components/notes/QuickPromptsMenu.tsx
-msgid "Last used first · click to run"
-msgstr "Last used first · click to run"
+#~ msgid "Last used first · click to run"
+#~ msgstr "Last used first · click to run"
 
 #: src/components/hooks-manager/index.tsx
 msgid "Last:"
@@ -20253,6 +20254,8 @@ msgstr "New File"
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/quick-create/DesktopSurface.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
@@ -20313,7 +20316,6 @@ msgid "New project"
 msgstr "New project"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
-#: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "New prompt"
 msgstr "New prompt"
 
@@ -21494,8 +21496,8 @@ msgid "No prompts yet — {guestName}'s prompts will run here, in your Claude Co
 msgstr "No prompts yet — {guestName}'s prompts will run here, in your Claude Code."
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
-msgid "No prompts yet — create one below."
-msgstr "No prompts yet — create one below."
+#~ msgid "No prompts yet — create one below."
+#~ msgstr "No prompts yet — create one below."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "No prompts yet — type one below; it runs in Claude Code on {hostName}'s machine."
@@ -25941,8 +25943,8 @@ msgid "Prompt from {otherName}"
 msgstr "Prompt from {otherName}"
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
-msgid "Prompt Library"
-msgstr "Prompt Library"
+#~ msgid "Prompt Library"
+#~ msgstr "Prompt Library"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -26357,6 +26359,7 @@ msgstr "Quick create"
 #: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/notes/QuickPromptsMenu.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
 msgid "Quick prompts"
 msgstr "Quick prompts"
 
@@ -26720,6 +26723,10 @@ msgstr "Recommended"
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Recommended automations"
 msgstr "Recommended automations"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Recommended by this project"
+msgstr "Recommended by this project"
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
@@ -27721,6 +27728,7 @@ msgstr "reset"
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/footer/SecretManagerChip.tsx
 msgid "Reset"
 msgstr "Reset"
 
@@ -30268,6 +30276,10 @@ msgstr "Set budget · {scopeName}"
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set conversation project"
 msgstr "Set conversation project"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Set for this session"
+msgstr "Set for this session"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Set it"
@@ -36272,6 +36284,11 @@ msgstr "Use"
 msgid "Use \"Send to Expert\" to create a task"
 msgstr "Use \"Send to Expert\" to create a task"
 
+#. placeholder {0}: fallback.title
+#: src/components/footer/BrowserChip.tsx
+msgid "Use {0}"
+msgstr "Use {0}"
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Use a different provider"
 msgstr "Use a different provider"
@@ -36287,8 +36304,8 @@ msgid "Use agent"
 msgstr "Use agent"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Use Agent browser"
-msgstr "Use Agent browser"
+#~ msgid "Use Agent browser"
+#~ msgstr "Use Agent browser"
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Use an API key"
@@ -36314,6 +36331,10 @@ msgstr "Use defaults"
 msgid "Use Google Vertex AI as the backend"
 msgstr "Use Google Vertex AI as the backend"
 
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Use here"
+msgstr "Use here"
+
 #: src/components/footer/BrowserChip.tsx
 msgid "Use it"
 msgstr "Use it"
@@ -36336,10 +36357,18 @@ msgstr "Use suggestion"
 msgid "Use the default home"
 msgstr "Use the default home"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Use the project's choice"
+msgstr "Use the project's choice"
+
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "Use the refresh button in the toolbar to retry"
 msgstr "Use the refresh button in the toolbar to retry"
+
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Use this vault on this computer"
+msgstr "Use this vault on this computer"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Vertex"
@@ -38105,9 +38134,6 @@ msgstr "your budget: {short}"
 msgid "Your business number in your own Meta app. Meta calls the hub's webhook URL."
 msgstr "Your business number in your own Meta app. Meta calls the hub's webhook URL."
 
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/HostedAppRow.tsx
 msgid "Your Chrome"
 msgstr "Your Chrome"
@@ -38177,6 +38203,10 @@ msgstr "Your own provider key"
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Your own provider key. Usage is billed to your provider account."
 msgstr "Your own provider key. Usage is billed to your provider account."
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Your pick on this computer"
+msgstr "Your pick on this computer"
 
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "Your project is behind on {branch}. Pull to bring the shared version in."

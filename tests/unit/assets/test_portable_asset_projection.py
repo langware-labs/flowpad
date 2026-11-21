@@ -133,3 +133,25 @@ def test_projection_rejects_identity_mismatch_and_symlink_escape(tmp_path: Path)
             checkout_root=tmp_path,
             origin=_origin("docs/escape.md"),
         )
+
+
+def test_an_agent_whose_system_prompt_links_outside_the_checkout_is_refused(tmp_path: Path) -> None:
+    """pentest-1120 #42: a symlinked file INSIDE the asset never brings the parsing machine's file into the record."""
+    repo = tmp_path / "repo"
+    bot = repo / "agents" / "bot"
+    bot.mkdir(parents=True)
+    _git(repo, "init", "-q")
+    asset_id = mint_uuid()
+    (bot / "agent.json").write_text(f'{{"type": "agent", "id": "{asset_id}", "name": "bot", "title": "Bot"}}')
+    secret = tmp_path / "hub-secret.txt"
+    secret.write_text("HUB-SECRET\n")
+    (bot / "system_prompt.md").symlink_to(secret)
+
+    with pytest.raises(ValueError, match="links outside the checkout"):
+        project_asset_tree(entity_type="agent", expected_id=asset_id, checkout_root=repo, origin=_origin("agents/bot"))
+
+    (bot / "system_prompt.md").unlink()
+    (bot / "shared.md").write_text("You are Bot.\n")
+    (bot / "system_prompt.md").symlink_to("shared.md")  # a link that stays inside the checkout is fine
+    fields = project_asset_tree(entity_type="agent", expected_id=asset_id, checkout_root=repo, origin=_origin("agents/bot")).fields
+    assert fields.get("system_prompt", "").strip() == "You are Bot."
