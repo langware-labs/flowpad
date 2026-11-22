@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { FSRef, MessageAttachment } from '@sdk';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -50,10 +50,9 @@ describe('review opens the staged copy by path in its own viewer, read-only', ()
 
   it('a .md opens in the markdown viewer in View mode, read-only', async () => {
     const write = vi.spyOn(FSRef.prototype, 'write');
-    renderReview(staged('notes.md'));
+    const { container } = renderReview(staged('notes.md'));
     expect((await screen.findByTestId('editor-mode-chip-view')).getAttribute('data-mode-active')).toBe('true');
-    // The editor mounts before the read-only mode reaches its view: on a loaded runner the chip can render first.
-    await waitFor(() => expect(document.querySelector('[contenteditable="true"]')).toBeNull());
+    expect(container.querySelector('[contenteditable="true"]')).toBeNull();
     expect(write).not.toHaveBeenCalled();
   });
 });

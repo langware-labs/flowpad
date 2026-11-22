@@ -31,6 +31,7 @@ function mount(...content: PMNode[]): EditorView {
 beforeEach(() => registerFenceRenderer({ language: 'statements', tabLabel: 'Statements', render: () => {} }));
 afterEach(() => {
   view?.destroy();
+  view?.dom.parentElement?.remove(); // destroy() leaves the mount div in the shared body
   view = null;
   clearFenceRenderers();
 });
