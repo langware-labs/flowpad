@@ -77,7 +77,7 @@ it('a dead app opened after a running one shows its own state, and the running a
   });
   // What the frame's guest is told about its visibility — the parked state, not its CSS.
   const told: { type?: string; hidden?: boolean }[] = [];
-  Object.defineProperty(frame, 'contentWindow', { get: () => ({ postMessage: (m: never) => told.push(m), close: () => {} }) } // jsdom closes it at teardown);
+  Object.defineProperty(frame, 'contentWindow', { get: () => ({ postMessage: (m: never) => told.push(m), close: () => {} }) }); // jsdom closes it at teardown
   const hidden = () => told.filter((m) => m.type === VISIBILITY_MESSAGE).at(-1)?.hidden;
 
   view.rerender(routed(<AppDisplayViewer artifactId={null} microAppId={B} />));
