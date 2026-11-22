@@ -795,12 +795,18 @@ class Agent(Entity):
         stock loop (``builtin/agent_loop``). Its ``chat`` endpoint — an HTTP message channel — is made
         here.
         """
-        from flow_sdk.builtin.agent_serve import answered_sources, ensure_chat_channel, hold_positions  # noqa: PLC0415
+        from flow_sdk.builtin.agent_serve import (  # noqa: PLC0415
+            answered_sources,
+            ensure_chat_channel,
+            ensure_conversations_channel,
+            hold_positions,
+        )
 
         deployment = await self.deploy("local")
         # Everything it runs over exists BEFORE it is marked serving — the supervisor (in the app,
         # another process) acts on `serving`, and must find a deployment that is ready to run.
         await ensure_chat_channel(self, deployment)
+        await ensure_conversations_channel(self, deployment)
         # Its position on each channel it answers is taken NOW: what lands from here on is its to
         # answer, even before its process has made its first pass.
         await hold_positions(deployment, await answered_sources(self, deployment))

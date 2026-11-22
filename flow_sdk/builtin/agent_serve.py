@@ -681,8 +681,9 @@ CHAT = "chat"
 _CHAT_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
-async def _made_chat_source(driver, agent, deployment):
-    """The deployment's chat channel, made now — or the one another process made a moment ago.
+async def _made_deployment_source(driver, agent, deployment, *, label: str, identities: Optional[list[str]] = None):
+    """The deployment's *label* channel, made now — or the one another process made a moment ago.
+    *identities* are the addresses the channel's own messages are from, when they are known at birth.
 
     The lock above is this process's; the app's supervisor and a script launching the deployment
     are two processes, and the loser of that race finds the winner's row on its second look."""
@@ -694,9 +695,10 @@ async def _made_chat_source(driver, agent, deployment):
         driver.create_config(**{key: str(deployment.id)}),
         # Keyed by the deployment, as its folder is: another machine's chat of the same agent (arrived with
         # the project) must not take this one's place (FLOWPAD-2258).
-        name=f"{agent.name or agent.id} chat {deployment.id}",
+        name=f"{agent.name or agent.id} {label} {deployment.id}",
         owner=agent.typeid,
         **_deployment_binding(deployment),
+        account_identities=list(identities or []),
         status=SourceStatus.ACTIVE.value,
     )
     try:
@@ -710,7 +712,7 @@ async def _made_chat_source(driver, agent, deployment):
 
 
 def _deployment_binding(deployment) -> dict[str, str]:
-    """The fields that tie a chat source to its placement: where it answers, and its account key."""
+    """The fields that tie a deployment's source to its placement: where it answers, and its account key."""
     return {"answer_place": str(deployment.id), "account_key": f"deployment:{deployment.id}"}
 
 
@@ -783,7 +785,7 @@ async def ensure_chat_channel(agent, deployment):
         if source is None:
             source = await _adopt_chat_source(driver, agent, deployment)
         if source is None:
-            source = await _made_chat_source(driver, agent, deployment)
+            source = await _made_deployment_source(driver, agent, deployment, label=CHAT)
         existing = await ServiceEndpoint.find_existing(str(deployment.typeid), CHAT)
         row, _saved = await upsert_endpoint(
             deployment,
@@ -794,6 +796,48 @@ async def ensure_chat_channel(agent, deployment):
             existing=existing,
         )
     return row
+
+
+# ── the agent's hub conversations: a channel per deployment ──────────────────
+
+CONVERSATIONS = "conversations"
+_CONVERSATION_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+#: The deployment logins that are an agent's own; ``user`` is a person's and ``none`` is no login.
+_AGENT_LOGINS = frozenset({"agent", "deployment"})
+
+
+async def ensure_conversations_channel(agent, deployment):
+    """The channel of the hub conversations the agent is a member of: a DataSource the agent owns,
+    answered by THIS deployment. Idempotent: looked up by the deployment.
+
+    Made ONLY where this machine is signed in to the hub as an agent Identity and the deployment
+    logs in as one (``identity`` is ``agent`` or ``deployment``); ``None`` otherwise. On a person's
+    machine the hub login is the person's, and the conversations it reads are theirs — never an
+    agent's to answer.
+    """
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.sources.hub_conversations import try_read_agent_login  # noqa: PLC0415
+    from flow_sdk.stream_inbox._locks import keyed_loop_lock  # noqa: PLC0415
+
+    identity = try_read_agent_login()
+    if identity is None or getattr(deployment, "identity", None) not in _AGENT_LOGINS:
+        return None
+    driver = DataDriver.loaded(CONVERSATIONS)
+    if driver is None:
+        return None
+    key = driver.cls.identity_config_key
+    async with keyed_loop_lock(_CONVERSATION_LOCKS, str(deployment.id)):
+        source = await DataSource.find_for_account(driver.provider, key, str(deployment.id), owner=agent.typeid)
+        if source is None:
+            return await _made_deployment_source(
+                driver, agent, deployment, label=CONVERSATIONS, identities=[identity]
+            )
+        if list(source.account_identities or []) != [identity]:
+            # The loop guard reads the agent's own messages by this: it follows the login.
+            source.account_identities = [identity]
+            await source.save()
+    return source
 
 
 # ── the serve loop: every channel the agent answers here ─────────────────────
@@ -1391,6 +1435,7 @@ class AgentServer:
             if not self.run_processes:
                 for agent, deployment in wanted.values():
                     await ensure_chat_channel(agent, deployment)
+                    await ensure_conversations_channel(agent, deployment)
                 return
             strays += [self._running.pop(d) for d in list(self._running) if d not in wanted]
             await asyncio.gather(*(self._stop_process(d) for d in strays))
@@ -1428,6 +1473,7 @@ class AgentServer:
         if str(deployment.id) in self._running and deployment_process.alive(deployment):
             return
         await ensure_chat_channel(agent, deployment)
+        await ensure_conversations_channel(agent, deployment)
         if not deployment_process.alive(deployment):
             labels = await deployment_process.start(deployment)
             if labels != {k: (deployment.provider_labels or {}).get(k) for k in labels}:
@@ -1509,6 +1555,7 @@ __all__ = [
     "answers_here",
     "deployment_chat_driver",
     "ensure_chat_channel",
+    "ensure_conversations_channel",
     "hold_positions",
     "is_own_outgoing",
     "is_request_channel",
