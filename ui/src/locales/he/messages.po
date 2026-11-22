@@ -768,6 +768,11 @@ msgstr "{0} מנפיק את קריאות ה-LLM שלכם. אפשר לסגור א
 msgid "{0} is linked. Your agent goes live as soon as its machine is ready."
 msgstr "{0} מקושר. הסוכן שלכם יעלה לאוויר ברגע שהמכונה שלו תהיה מוכנה."
 
+#. placeholder {0}: asked.title
+#: src/components/footer/BrowserChip.tsx
+msgid "{0} is not for this worker"
+msgstr ""
+
 #. placeholder {0}: harness.label
 #. placeholder {0}: row.missing_tool || row.manager_title
 #: src/components/footer/SecretManagerChip.tsx
@@ -1315,6 +1320,10 @@ msgstr "{count} ערוצים דורשים טיפול"
 msgid "{count} deployments"
 msgstr ""
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "{count} issues"
+msgstr ""
+
 #: src/components/assets/ContextFolderGitBadge.tsx
 msgid "{count} pending change(s) — click to view diff"
 msgstr "{count} שינויים ממתינים — לחצו להצגת ההבדלים"
@@ -1482,6 +1491,10 @@ msgstr "{hostName} בודק/ת"
 msgid "{hostName}'s Claude Code"
 msgstr "ה-Claude Code של {hostName}"
 
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "{hours} h {rest} min left"
+msgstr ""
+
 #: src/components/search-index/IndexerStatusPill.tsx
 msgid "{idle} — open Records Scanner"
 msgstr "{idle} — פתחו את סורק הרשומות"
@@ -1597,6 +1610,14 @@ msgstr "{m} דק׳ {rest} שנ׳"
 msgid "{m}m ago"
 msgstr "לפני {m} דק׳"
 
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "{machine} · for {hours} hours · confirm with your passkey"
+msgstr ""
+
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "{machine} · for 1 hour · confirm with your passkey"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "{machines} machines have the old value. Paused ones get it when they next start."
 msgstr ""
@@ -1624,6 +1645,11 @@ msgstr "{messageCount, plural, one {הודעה אחת} other {# הודעות}}"
 #: src/components/record-search-bar/SearchResultCard.tsx
 msgid "{messageCount} msgs"
 msgstr "{messageCount} הודעות"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "{minutes} min left"
+msgstr ""
 
 #: src/components/automations/automation-words.ts
 msgid "{ms} ms"
@@ -1754,6 +1780,10 @@ msgstr "{openDisplayCount, plural, one {שגיאה פתוחה מקובצת ב-24
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{openDisplayCount, plural, one {open error in the last 24 hours} other {open errors in the last 24 hours}}"
 msgstr "{openDisplayCount, plural, one {שגיאה פתוחה ב-24 השעות האחרונות} other {שגיאות פתוחות ב-24 השעות האחרונות}}"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "{option} h"
+msgstr ""
 
 #. placeholder {0}: value.links.length
 #. placeholder {1}: value.steps.length
@@ -2260,6 +2290,10 @@ msgstr "<0>התעלמו</0> — הסירו את שורת ה-DB, שמרו את ס
 msgid "<0>New / Stale / Mis-Sc</0> sum to <1>Pending</1>: a Fast index drives them all to 0. <2>Orphan</2> rows persist until you Scan Orphans → sweep."
 msgstr "<0>New / Stale / Mis-Sc</0> מסתכם ל-<1>Pending</1>: אינדקס Fast מוביל אותם כולם ל-0. שורות <2>Orphan</2> נמשכות עד שתנקו Scan Orphans → sweep."
 
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "<0>One more step</0> · Turn on remote control on {machineName}."
+msgstr ""
+
 #: src/components/workspace/workspace-switcher.tsx
 msgid "<name>"
 msgstr "<שם>"
@@ -2391,6 +2425,10 @@ msgstr "שעה אחת"
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 msgid "1 is IT Disabled"
 msgstr "אחת מושבתת ב-IT"
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "1 issue"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "1 Machine"
@@ -2688,6 +2726,14 @@ msgstr "פעולה חדשה. כל מה שתשלחו בשם הזה, וכל תשו
 msgid "A new project folder — everything you create is scoped to it"
 msgstr "תיקיית פרויקט חדשה — כל מה שייווצר בה ישויך אליה"
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "A passkey cannot be created on this page. Open the Flowpad hub in your browser."
+msgstr ""
+
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "A passkey cannot be used on this page. Open the Flowpad hub in your browser."
+msgstr ""
+
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A place and channel by hand…"
 msgstr "מקום וערוץ ידנית…"
@@ -2860,6 +2906,10 @@ msgstr "האישור נכשל"
 msgid "Accepted"
 msgstr "אושרה"
 
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "accepted · code {code}"
+msgstr ""
+
 #: src/components/git/InvitationsStrip.tsx
 msgid "Accepted {fullName}"
 msgstr "ההזמנה ל-{fullName} התקבלה"
@@ -2894,6 +2944,23 @@ msgstr "הרשאות"
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Access is managed on the hub."
 msgstr "ההרשאות מנוהלות ב-Hub."
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Access key name"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Access key set · remote control off"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Access key set · remote control on"
+msgstr ""
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Access keys"
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "Access requested"
@@ -3126,6 +3193,16 @@ msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Add a tag under {nodeName}"
+msgstr ""
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+#: src/pages/hub-home/AccessKeysSection.tsx
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Add access key"
+msgstr ""
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Add an access key to turn this on."
 msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
@@ -3393,6 +3470,10 @@ msgstr "הוסיפו אדם לפי כתובת אימייל כדי לשתף את 
 msgid "Add source"
 msgstr "הוספת מקור"
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Add statement"
+msgstr ""
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #: src/components/automations/ThenStepsEditor.tsx
 msgid "Add step"
@@ -3467,8 +3548,8 @@ msgid "Add…"
 msgstr "הוספה…"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Added"
-msgstr ""
+#~ msgid "Added"
+#~ msgstr ""
 
 #. placeholder {0}: entries[0].relPath
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
@@ -3998,6 +4079,7 @@ msgstr "ההקצאה נשמרה"
 
 #: src/components/page-allow/LinkAllowDialog.tsx
 #: src/components/page-allow/PageAllowGate.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "אפשרו"
@@ -4186,8 +4268,8 @@ msgid "Always on · billed once a month."
 msgstr "פעיל תמיד · חיוב פעם בחודש."
 
 #: src/components/footer/BrowserChip.tsx
-msgid "always ready"
-msgstr ""
+#~ msgid "always ready"
+#~ msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Always Thinking Enabled"
@@ -5484,7 +5566,6 @@ msgstr "אזור AWS עבור Bedrock"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/collaboration/LiveSessionView.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -6256,11 +6337,13 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/LoginAccessDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr "ביטול"
@@ -6948,8 +7031,8 @@ msgid "Chrome browser"
 msgstr "דפדפן Chrome"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Chrome profiles on this computer"
-msgstr ""
+#~ msgid "Chrome profiles on this computer"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "Chunk <0>{chunkSeq}</0> — {chunkSize}"
@@ -7685,6 +7768,10 @@ msgstr "הקוד פג תוקף. סגרו והקליקו על Connect שוב כד
 msgid "Code expires"
 msgstr "תוקף הקוד מסתיים"
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Code from the email"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "codes"
 msgstr "קודים"
@@ -7747,6 +7834,8 @@ msgstr "אוסף כל החלטת ניווט חכם (מה הוקלד, לאן ומ
 msgid "Collecting…"
 msgstr "אוסף…"
 
+#: src/components/notes/QuickPromptsMenu.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/tags/StreamInboxTags.tsx
 #: src/components/ui/agent-avatar-picker.tsx
@@ -8049,6 +8138,10 @@ msgstr "אישור מחיקה"
 msgid "confirm which charge is in question, explain the refund path, and draft the reply. Don’t send it."
 msgstr "לוודא על איזה חיוב מדובר, להסביר את דרך ההחזר ולנסח את התשובה. לא לשלוח אותה."
 
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Confirm with passkey"
+msgstr ""
+
 #. placeholder {0}: action.label
 #: src/components/browseable-tree/BrowseableTree.tsx
 msgid "Confirm: {0}"
@@ -8102,6 +8195,10 @@ msgstr "חברו ערוץ שדרכו אנשים יוכלו לפנות לסוכן
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "Connect a data source for me and help me define what I want out of each item."
 msgstr "חברו עבורי מקור נתונים ועזרו לי להגדיר מה אני רוצה לקבל מכל פריט."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Connect a shell"
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
@@ -8159,7 +8256,6 @@ msgstr "מחובר"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connected"
 msgstr "מחובר"
@@ -8284,6 +8380,7 @@ msgstr "תוכן"
 #: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
 #: src/types/ViewType.ts
 msgid "Context"
 msgstr "הקשר"
@@ -8333,6 +8430,7 @@ msgstr "אסימוני Context"
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/survey/SurveyView.tsx
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
 msgid "Continue"
 msgstr "המשיכו"
 
@@ -8773,6 +8871,10 @@ msgstr "הוספת הקודים נכשלה"
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Could not add tag"
+msgstr ""
+
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Could not add the access key. Try again."
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
@@ -9279,6 +9381,10 @@ msgstr ""
 msgid "Could not open the folder"
 msgstr "לא ניתן לפתוח את התיקייה"
 
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Could not open the hub page"
+msgstr ""
+
 #: src/components/assets/editor/chart/useOpenChart.ts
 msgid "Could not open the link"
 msgstr ""
@@ -9358,6 +9464,10 @@ msgstr ""
 #~ msgid "Could not read classification settings"
 #~ msgstr ""
 
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Could not read remote control on this machine."
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
 msgstr "לא ניתן לקרוא את האבחון"
@@ -9433,6 +9543,10 @@ msgstr "לא ניתן להסיר את החבר"
 msgid "Could not remove public access"
 msgstr "לא ניתן להסיר את הגישה הציבורית"
 
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Could not remove the access key"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Could not remove the help desk files"
 msgstr "לא היה ניתן להסיר את קבצי העזרה"
@@ -9470,6 +9584,10 @@ msgstr "לא ניתן היה לשנות את שם ההקשר"
 #: src/components/project-home/ProjectNameTitle.tsx
 msgid "Could not rename project"
 msgstr "לא ניתן לשנות את שם הפרויקט"
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Could not rename the access key"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Could not rename the invite"
@@ -9676,6 +9794,10 @@ msgstr "לא ניתן לשלוח"
 #: src/components/automations/BusView.tsx
 msgid "Could not send it"
 msgstr "לא ניתן לשלוח"
+
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Could not send the code. Try again."
+msgstr ""
 
 #: src/components/install/InstallButton.tsx
 msgid "Could not send the install"
@@ -11199,6 +11321,11 @@ msgstr "מחיקת הנבחרים"
 msgid "Delete selected ({selectedCount})"
 msgstr "מחקו את הנבחרים ({selectedCount})"
 
+#. placeholder {0}: index + 1
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Delete statement {0}"
+msgstr ""
+
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Delete tag"
 msgstr ""
@@ -11266,6 +11393,10 @@ msgstr "מחיקת הקובץ החדש הזה — הוא עדיין לא נשמ�
 #: src/components/automations/MessageRulePage.tsx
 msgid "Delete this rule?"
 msgstr "למחוק את הכלל הזה?"
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Delete this statement"
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Delete this step"
@@ -11355,6 +11486,12 @@ msgstr ""
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 #~ msgid "Dependency updates available"
 #~ msgstr ""
+
+#: src/components/milkdown-editor/plugins/doc-tags.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Depends on"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Deploy"
@@ -12022,7 +12159,6 @@ msgstr "הושלם"
 #: src/components/conversation/DiagnosisCard.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
@@ -12397,8 +12533,8 @@ msgid "Earlier message"
 msgstr "הודעה קודמת"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Edge / Brave / Arc"
-msgstr ""
+#~ msgid "Edge / Brave / Arc"
+#~ msgstr ""
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "edges"
@@ -13495,16 +13631,16 @@ msgid "Exported"
 msgstr "יוצא"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "extension"
-msgstr ""
+#~ msgid "extension"
+#~ msgstr ""
 
 #: src/components/footer/BrowserChip.tsx
 msgid "extension ✓"
 msgstr ""
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Extension installed"
-msgstr ""
+#~ msgid "Extension installed"
+#~ msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "External link"
@@ -14308,12 +14444,20 @@ msgstr "חיפוש מכונה"
 msgid "Find or type an organization…"
 msgstr "חפשו או הקלידו ארגון…"
 
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Fingerprint confirmed. Go back to Flowpad to finish."
+msgstr ""
+
 #. placeholder {0}: error.fingerprint
 #. placeholder {0}: parentError.fingerprint
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "fingerprint: {0}"
 msgstr "טביעת אצבע: {0}"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Finish adding the key in your browser, then come back here."
+msgstr ""
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Finish installing the FlowPad GitHub App on {repo}, then"
@@ -14592,6 +14736,14 @@ msgstr "אבחון Flowpad"
 msgid "Flowpad diagnostics"
 msgstr "אבחון Flowpad"
 
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Flowpad did not open. On {machineName}, open Flowpad, then the menu at the top right → Remote control."
+msgstr ""
+
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Flowpad did not open. Open Flowpad on {machine}, then press Open Flowpad here again."
+msgstr ""
+
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad didn't open? Install it, then come back to this page."
 msgstr "FlowPad לא נפתח? התקינו אותו וחזרו לדף הזה."
@@ -14681,6 +14833,10 @@ msgstr "גרסת Flowpad"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Flowpad was updated"
+msgstr ""
+
+#: src/components/top-nav-bar/StalePageIndicator.tsx
+msgid "Flowpad was updated. Reload this page to use the new version."
 msgstr ""
 
 #: src/pages/entry/InstallLanding.tsx
@@ -16642,6 +16798,7 @@ msgstr "בתוך"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
@@ -17020,6 +17177,10 @@ msgstr ""
 msgid "Is it usable?"
 msgstr ""
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "issue"
+msgstr ""
+
 #: src/components/asset-counters/issue-counters.tsx
 #: src/components/conversation/DiagnosisCard.tsx
 #: src/components/items/IssueView.tsx
@@ -17033,6 +17194,8 @@ msgstr "אבחנות בעיות שנרשמו על ידי העוזר. לחצו ע
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/issue-counters.tsx
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
 msgid "Issues"
 msgstr ""
 
@@ -18626,6 +18789,7 @@ msgstr "טוען..."
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/tabs/shared.tsx
 #: src/components/project-selector/ProjectSelector.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
 #: src/components/search-index/EntitySearchModal.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/tasks-viewer/TasksRedirect.tsx
@@ -18693,6 +18857,10 @@ msgstr "במחשב הזה"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Location"
 msgstr "מיקום"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Lock now"
+msgstr ""
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 msgid "locked after first message"
@@ -18867,6 +19035,11 @@ msgstr "מכונה: {0}"
 #: src/types/ViewType.ts
 msgid "Machines"
 msgstr "מכונות"
+
+#. placeholder {0}: accessKey.label
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Machines that accepted “{0}” stop accepting it. A machine left with no key turns remote control off."
+msgstr ""
 
 #: src/pages/entry/DesktopDownload.tsx
 msgid "macOS (.dmg) — Intel and Apple Silicon"
@@ -19521,7 +19694,6 @@ msgstr "ניתובים שגויים ×{0}: המקום החזיר 404 — הער�
 
 #: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
-#: src/components/footer/BrowserChip.tsx
 msgid "missing"
 msgstr "חסר"
 
@@ -19720,6 +19892,7 @@ msgstr "עוד"
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
 #: src/components/ui/breadcrumb.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "More"
@@ -20122,6 +20295,10 @@ msgstr "חדש"
 msgid "New"
 msgstr "חדש"
 
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "new · code {code}"
+msgstr ""
+
 #. placeholder {0}: t(descriptor.label)
 #. placeholder {0}: type ?? ''
 #. placeholder {0}: type.label
@@ -20348,6 +20525,10 @@ msgstr "יכולת חדשה"
 msgid "New source"
 msgstr "מקור חדש"
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "New statement"
+msgstr ""
+
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 msgid "New sub-team"
@@ -20405,6 +20586,10 @@ msgstr "שם למשתנה חדש {0}"
 #: src/components/credentials/DetectedKeys.tsx
 msgid "New variable value {0}"
 msgstr "ערך למשתנה חדש {0}"
+
+#: src/components/top-nav-bar/StalePageIndicator.tsx
+msgid "New version — reload"
+msgstr ""
 
 #: src/tabs/useTerminalStripController.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -20498,6 +20683,18 @@ msgstr "לא נמצא פריט עם המזהה הזה"
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "No {tabLabel} projects."
 msgstr "אין פרויקטים מסוג {tabLabel}."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "No access key · remote control off"
+msgstr ""
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "No access keys"
+msgstr ""
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "No access keys. A passkey lets you open remote control of your machines."
+msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "No access to this repository. Connect GitHub if it's private, or check the URL."
@@ -21248,6 +21445,10 @@ msgstr "לא נמצאו התאמות במאגר הבעיות הידועות של
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "No matches."
 msgstr "אין התאמות."
+
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "No matching access key on this account."
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No matching conversations"
@@ -22193,6 +22394,10 @@ msgstr "עוד לא נמשך"
 msgid "not fired yet"
 msgstr "עדיין לא הופעל"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "not for this worker"
+msgstr ""
+
 #: src/components/assets/DependencyChips.tsx
 msgid "not found"
 msgstr "לא נמצא"
@@ -22729,6 +22934,10 @@ msgstr "לא הותקן כלום. ניתן לסגור את הכרטיסייה ה
 msgid "Nothing was launched. You can close this tab."
 msgstr "לא הופעל דבר. ניתן לסגור את הלשונית הזו."
 
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Nothing was turned on."
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Nothing would arrive for this, so it was not sent:"
 msgstr "לא היה מגיע דבר עבור זה, ולכן לא נשלח:"
@@ -22825,7 +23034,9 @@ msgid "of {0}"
 msgstr ""
 
 #: src/components/automations/BusView.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
 msgid "off"
 msgstr "כבוי"
 
@@ -22846,6 +23057,18 @@ msgstr "כבוי · ניתן להפעיל כדי להריץ כאן בחינם, �
 #. placeholder {0}: port.port
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "Off: when {0} is taken, a free port is picked."
+msgstr ""
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Off. It turned itself off after {lastHours} hours. Turning it on needs your fingerprint again."
+msgstr ""
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Off. It turned itself off after 1 hour. Turning it on needs your fingerprint again."
+msgstr ""
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Off. Turning it on needs your fingerprint again."
 msgstr ""
 
 #: src/components/inbound/RouteCheck.tsx
@@ -22882,7 +23105,9 @@ msgid "oldest in Git history"
 msgstr "הישן ביותר בהיסטוריית Git"
 
 #: src/components/automations/MessageRulePage.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
 msgid "on"
 msgstr "פעיל"
 
@@ -22927,8 +23152,8 @@ msgid "On Disk"
 msgstr "בדיסק"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "on first browser step"
-msgstr ""
+#~ msgid "on first browser step"
+#~ msgstr ""
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "On load — each time it is shown"
@@ -23404,8 +23629,8 @@ msgid "Open Backup Folder"
 msgstr "פתחו תיקיית גיבוי"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Open Chrome Web Store"
-msgstr ""
+#~ msgid "Open Chrome Web Store"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Open command in external terminal"
@@ -23479,6 +23704,11 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
 msgstr "פתחו חיצונית: {childPath}"
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Open Flowpad"
+msgstr ""
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
@@ -24662,12 +24892,24 @@ msgstr "משתתפים"
 msgid "Participants ({participantCount})"
 msgstr "משתתפים ({participantCount})"
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "pass"
+msgstr ""
+
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "passed"
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Passed"
+msgstr ""
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Passkey · synced · code {code}"
+msgstr ""
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Passkey · this device · code {code}"
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
@@ -25483,7 +25725,7 @@ msgid "Preview — double-click to keep open"
 msgstr "תצוגה מקדימה — לחיצה כפולה להשארה פתוחה"
 
 #. placeholder {0}: location.path
-#: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/site-chip.ts
 msgid "Preview {0}"
 msgstr "תצוגה מקדימה של {0}"
 
@@ -25621,7 +25863,6 @@ msgid "Profile"
 msgstr "פרופיל"
 
 #: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
 msgid "Profile not found"
 msgstr ""
 
@@ -25629,13 +25870,22 @@ msgstr ""
 msgid "Profile Picture:"
 msgstr "תמונת פרופיל:"
 
+#. placeholder {0}: d.config.profile || 'default'
 #: src/components/footer/BrowserChip.tsx
-msgid "Profile: {profileName}"
+msgid "Profile: {0}"
 msgstr ""
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Profile: not available"
+msgid "Profile: {found}"
 msgstr ""
+
+#: src/components/footer/BrowserChip.tsx
+#~ msgid "Profile: {profileName}"
+#~ msgstr ""
+
+#: src/components/footer/BrowserChip.tsx
+#~ msgid "Profile: not available"
+#~ msgstr ""
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "program kind"
@@ -26030,6 +26280,15 @@ msgstr "פרוטוקול"
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Prove and connect"
 msgstr "הוכיחו וקשרו"
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "proven"
+msgstr ""
+
+#. placeholder {0}: block.proven
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "proven {0}"
+msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Proves the bot (getMe). Stored write-only."
@@ -26831,6 +27090,11 @@ msgstr "הפחתת אנימציות ואפקטי תנועה"
 msgid "referenced but not in entities table"
 msgstr "מרובט אך לא בטבלת הישויות"
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "References"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Refill"
@@ -27039,6 +27303,29 @@ msgstr "טעינה מחדש"
 msgid "Reload the MarkdownIndex list."
 msgstr "טענו מחדש את רשימת MarkdownIndex."
 
+#: src/components/remote-control/RemoteControlPanel.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
+msgid "Remote control"
+msgstr ""
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Remote control is not available in private mode."
+msgstr ""
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Remote control is not available on a machine signed in as an agent."
+msgstr ""
+
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
+msgid "Remote control is on"
+msgstr ""
+
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
+msgid "Remote control is on · <0/>"
+msgstr ""
+
 #: src/components/git/GitSetupWizard.tsx
 msgid "Remote repository"
 msgstr "מאגר מרוחק"
@@ -27062,7 +27349,10 @@ msgstr "remote: {remote}"
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/project-list-menu.tsx
 #: src/pages/discover-page/discover-page.tsx
+#: src/pages/hub-home/AccessKeysSection.tsx
+#: src/pages/hub-home/AccessKeysSection.tsx
 msgid "Remove"
 msgstr "הסרה"
 
@@ -27193,6 +27483,10 @@ msgstr "הסרה מהתור"
 msgid "Remove from team"
 msgstr "הסרה מהצוות"
 
+#: src/components/terminal/project-list-menu.tsx
+msgid "Remove from this computer"
+msgstr ""
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Remove from vibe agents"
 msgstr "הסרת סוכן מ־Vibe"
@@ -27269,6 +27563,10 @@ msgstr ""
 #: src/components/tags/TagInput.tsx
 msgid "Remove tag {tag}"
 msgstr "הסרת התגית {tag}"
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Remove this access key?"
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"
@@ -27387,6 +27685,7 @@ msgstr ""
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/tabs/TabStrip.tsx
 #: src/components/token-plan/RenameButton.tsx
+#: src/pages/hub-home/AccessKeysSection.tsx
 msgid "Rename"
 msgstr "שינוי שם"
 
@@ -27692,6 +27991,11 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "Required by this agent · project Credential"
+msgstr ""
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Requirements"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -29815,6 +30119,10 @@ msgstr "שלחו הודעה תחילה — אין עדיין תמלול"
 msgid "Send a message to this deployed agent."
 msgstr "שליחת הודעה לסוכן הפרוס"
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Send a new code"
+msgstr ""
+
 #: src/components/automations/automation-words.ts
 msgid "send a notification"
 msgstr "שליחת התראה"
@@ -29928,6 +30236,10 @@ msgstr "שליחה"
 #: src/components/conversation/ConversationView.tsx
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "שולח ב{0}: \"{sendingText}\""
+
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Sending the code…"
+msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
 msgid "sending…"
@@ -31197,6 +31509,10 @@ msgstr ""
 msgid "Sign in to FlowPad Hub first — approving a machine binds it to your account."
 msgstr "יש להתחבר ל-FlowPad Hub תחילה — אישור מכונה מקשר אותה לחשבון שלכם."
 
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Sign in to Flowpad to use remote control."
+msgstr ""
+
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Sign in to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "התחברו כדי לאפשר ל-{name} לכתוב ולהריץ קוד עבורכם. חלון דפדפן ייפתח לכניסה — FlowPad לעולם לא רואה את הסיסמה שלכם."
@@ -31759,8 +32075,8 @@ msgid "Somewhere else"
 msgstr "במקום אחר"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "soon"
-msgstr ""
+#~ msgid "soon"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Sort by added lines"
@@ -32215,6 +32531,15 @@ msgstr ""
 msgid "State"
 msgstr "מצב"
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "stated"
+msgstr ""
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Statements"
+msgstr ""
+
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Static"
 msgstr "קבוע"
@@ -32282,6 +32607,10 @@ msgstr "סטטוס:"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "status: {0}"
 msgstr "סטטוס: {0}"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Stay on for"
+msgstr ""
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/FlowchartChartView.tsx
@@ -32814,6 +33143,7 @@ msgid "tag"
 msgstr "תגית"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/milkdown-editor/plugins/doc-tags.ts
 msgid "Tag"
 msgstr "תגית"
 
@@ -33164,6 +33494,14 @@ msgstr "תודה — נשלח."
 msgid "That agent is no longer in your workspace."
 msgstr "הסוכן הזה כבר אינו בסביבת העבודה שלכם"
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "That code is wrong or has expired. Check the email and try again."
+msgstr ""
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "That did not work. Try again."
+msgstr ""
+
 #: src/components/assets/ProjectDependencyDialog.tsx
 msgid "That doesn't name a hub project — paste its id or a link to it."
 msgstr "זה אינו מזהה של פרויקט Hub. הדביקו את המזהה שלו או קישור אליו."
@@ -33196,6 +33534,10 @@ msgstr "קישור ההפעלה הזה לא שלם."
 msgid "That looks like an {0} key. This endpoint calls {1}, whose keys start with {2}."
 msgstr "זה נראה כמו מפתח {0}. נקודת הקצה הזו קוראת ל-{1}, שהמפתחות שלו מתחילים ב-{2}."
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "That machine belongs to another account. Sign in as its owner and try again."
+msgstr ""
+
 #: src/components/task-receive/IncomingDeepLink.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -33213,6 +33555,10 @@ msgstr "הריצה הזו כבר לא נמצאת בהיסטוריה."
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "That schedule can't be read"
 msgstr "לא ניתן לקרוא את לוח הזמנים הזה"
+
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "That took too long. Press Continue to try again."
+msgstr ""
 
 #: src/components/assets/editor/skill/skill-eval-analysis.ts
 msgid "The \"{attachSkillName}\" skill is not installed."
@@ -33728,6 +34074,10 @@ msgstr ""
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "The part before the @. Permanent once created."
 msgstr "החלק שלפני ה-@. קבוע אחרי היצירה."
+
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "The passkey was not created. Press Continue to try again."
+msgstr ""
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "The project could not be installed."
@@ -34474,6 +34824,10 @@ msgstr "זהו משאב ענן — הוא יושמד בענן, לא רק כאן.
 msgid "This is its first start, so it takes a few minutes."
 msgstr "זו ההפעלה הראשונה שלו, ולכן זה עשוי להימשך כמה דקות."
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "This is the first key on your account. To check it is you, we emailed a 6-digit code to {email}."
+msgstr ""
+
 #. placeholder {0}: conversation?.title ?? ''
 #: src/components/conversation/AutomationMessageActions.tsx
 msgid "This is what my automation \"{0}\" reported ({target}, attached as context). Read it, then wait for my questions."
@@ -34661,6 +35015,10 @@ msgstr ""
 msgid "This page was opened by a link, not by Flowpad. Once it runs it can read and change what Flowpad holds, so allow it only if you trust where it came from."
 msgstr ""
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "This passkey is already one of your access keys."
+msgstr ""
+
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "This permanently deletes it from disk. This cannot be undone."
 msgstr ""
@@ -34818,6 +35176,10 @@ msgstr "השאלה הזו כבר לא ממתינה."
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "This removes the downloaded help desk folder and its indexed entries from this machine. Nothing on the server changes, and everything is downloaded again the next time you open the help desk."
 msgstr "פעולה זו מסירה מהמחשב הזה את תיקיית העזרה המורדת ואת רשומות האינדקס שלה. שום דבר בשרת לא משתנה, והכול יורד שוב בפעם הבאה שהעזרה תיפתח."
+
+#: src/components/terminal/project-list-menu.tsx
+msgid "This removes the project from the list on this computer. It has no files here, and it stays available to everyone it is shared with."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "This removes the schedule from the agent. Past runs stay in the run history."
@@ -35036,6 +35398,10 @@ msgstr "ליעד Wiki זה אין תוכן קריא."
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "פעולה זו תמחק את כל יומני הניפוי מ-<0>~/.claude/debug/</0> ואת כל רשומות השגיאות שנותחו."
 
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+msgid "this window"
+msgstr ""
+
 #: src/components/assets/editor/wizard/WizardDebugger.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard declares no steps."
@@ -35206,6 +35572,10 @@ msgstr "אל"
 msgid "To"
 msgstr "אל"
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "To check it is you, we emailed a 6-digit code to {email}."
+msgstr ""
+
 #: src/pages/entry/entry-shell.tsx
 msgid "To open the {label}:"
 msgstr "כדי לפתוח:"
@@ -35346,6 +35716,10 @@ msgstr "ארוך מדי"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Too many attempts. Wait a few minutes and try again."
 msgstr "יותר מדי ניסיונות. המתינו כמה דקות ונסו שוב."
+
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Too many attempts. Wait a few minutes, then ask for a new code."
+msgstr ""
 
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "Too many tries. Try again later."
@@ -35669,12 +36043,17 @@ msgstr "כבו"
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
 msgid "Turn on"
 msgstr "הפעילו"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Turn on a scope above to see its assets."
 msgstr "הפעילו היקף למעלה כדי לראות את הנכסים שלו."
+
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Turn on remote control"
+msgstr ""
 
 #: src/components/credentials-view/RequirementChip.tsx
 msgid "Turns a feature or an integration on"
@@ -37886,6 +38265,10 @@ msgstr "כבר פניתם אל {0}: \"{1}\"."
 msgid "You already have {name} here. Replace it with this one?"
 msgstr ""
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "You already have 10 access keys. Remove one first."
+msgstr ""
+
 #. placeholder {0}: conflict.attempted_name
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "You already have a project named <0>{0}</0>. Open it, or install this one under another name."
@@ -38167,6 +38550,11 @@ msgstr "בקשות העזרה שלך"
 msgid "Your local value of {credential} is copied into the vault, and the credential records where it is."
 msgstr ""
 
+#: src/pages/hub-home/AccessKeysSection.tsx
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "your machine"
+msgstr ""
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup and caption on this image will be lost."
 msgstr "ההערות והכיתוב שלכם בתמונה זו יאבדו."
@@ -38174,6 +38562,10 @@ msgstr "ההערות והכיתוב שלכם בתמונה זו יאבדו."
 #: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."
 msgstr "מפתח ה-API החדש שלכם נוצר. אנא שמרו אותו בצורה מאובטחת."
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Your new key was added from this machine, so it is accepted here."
+msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
