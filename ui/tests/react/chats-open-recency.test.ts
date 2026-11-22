@@ -81,9 +81,11 @@ const CLAUDE_HOME = path.resolve(
  *  `-history-merge-test-`, which is scratch-listed). */
 const FIXTURE_DIR = path.join(CLAUDE_HOME, 'projects', `-rca-chats-open-recency-${RUN}`);
 /** Shared real cwd for every fixture session: the `get_by_worker_id` heal
- *  refuses (500) a session with an unknown working directory, and a /tmp cwd
- *  would be scratch-filtered out of worker-history. */
-const FIXTURE_CWD = path.join(os.tmpdir(), 'flowpad-react-fixtures', `chats-open-recency-${RUN}`);
+ *  refuses (500) a session with an unknown working directory, a /tmp cwd
+ *  would be scratch-filtered out of worker-history, and one inside FLOW_HOME is
+ *  Flowpad's own state, refused as a project. Beside FLOW_HOME is neither. */
+const FLOW_HOME = path.resolve(process.env.FLOW_HOME || path.join(os.homedir(), '.flow'));
+const FIXTURE_CWD = path.join(path.dirname(FLOW_HOME), 'flowpad-react-fixtures', `chats-open-recency-${RUN}`);
 
 function writeSession(sessionId: string, prompt: string, ts: Date): void {
   fs.mkdirSync(FIXTURE_DIR, { recursive: true });
