@@ -65,7 +65,6 @@ const OVER_WINDOW_MS = STABILITY_MS + 600;
 // ── Real on-disk session fixtures (what worker-history actually reads) ──────
 
 const RUN = randomUUID();
-const FLOW_INSTANCE = process.env.FLOW_INSTANCE?.trim() || '';
 // Resolve the ONE claude/transcript home the backend walks, mirroring
 // InstanceSettings._resolve_claude_home exactly: FLOWPAD_CLAUDE_HOME wins, then
 // Claude Code's native CLAUDE_CONFIG_DIR, else ~/.claude. The backend selects
@@ -78,14 +77,13 @@ const FLOW_INSTANCE = process.env.FLOW_INSTANCE?.trim() || '';
 const CLAUDE_HOME = path.resolve(
   process.env.FLOWPAD_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
 );
-const FLOW_HOME = path.resolve(process.env.FLOW_HOME || path.join(os.homedir(), '.flow'));
 /** NON-scratch encoded dir name so worker-history does not filter it (unlike
  *  `-history-merge-test-`, which is scratch-listed). */
 const FIXTURE_DIR = path.join(CLAUDE_HOME, 'projects', `-rca-chats-open-recency-${RUN}`);
 /** Shared real cwd for every fixture session: the `get_by_worker_id` heal
  *  refuses (500) a session with an unknown working directory, and a /tmp cwd
  *  would be scratch-filtered out of worker-history. */
-const FIXTURE_CWD = path.join(FLOW_HOME, 'instances', FLOW_INSTANCE, 'react-fixtures', `chats-open-recency-${RUN}`);
+const FIXTURE_CWD = path.join(os.tmpdir(), 'flowpad-react-fixtures', `chats-open-recency-${RUN}`);
 
 function writeSession(sessionId: string, prompt: string, ts: Date): void {
   fs.mkdirSync(FIXTURE_DIR, { recursive: true });

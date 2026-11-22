@@ -17,8 +17,8 @@
 import '@src/i18n-init';
 
 import { rmSync } from 'node:fs';
-import { homedir } from 'node:os';
 import * as path from 'node:path';
+import { tmpdir } from 'node:os'; // never under the instance dir: Flowpad's own state is never loaded as a project
 import { randomUUID } from 'node:crypto';
 
 import { i18n } from '@lingui/core';
@@ -32,9 +32,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
-const FLOW_INSTANCE = process.env.FLOW_INSTANCE?.trim() || '';
-const FLOW_HOME = path.resolve(process.env.FLOW_HOME || path.join(homedir(), '.flow'));
-const PROJECT_ROOT = path.join(FLOW_HOME, 'instances', FLOW_INSTANCE, 'react-fixtures', `home-path-${randomUUID()}`);
+const PROJECT_ROOT = path.join(tmpdir(), 'flowpad-react-fixtures', `home-path-${randomUUID()}`);
 const AGENT_NAME = 'fp2300-home-agent';
 
 let project: Project | null = null;
