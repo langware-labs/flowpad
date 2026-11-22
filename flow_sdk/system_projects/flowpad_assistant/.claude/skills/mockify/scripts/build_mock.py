@@ -152,14 +152,25 @@ def fit_to_width(width: int, focus_x: int, min_zoom: float) -> str:
         return ""
     return f"""
 <style>section[data-step]{{width:{width}px;min-height:100vh;position:relative}}html,body{{overflow:hidden}}
-section[data-device]{{width:auto;min-height:0}}</style>
+section[data-device]{{width:auto;min-height:0}}
+html.mk-phone{{overflow:auto;-webkit-overflow-scrolling:touch}}html.mk-phone body{{overflow:visible;padding-bottom:132px}}</style>
 <script>(() => {{
   // Captured apps lay out on position:fixed roots, which never scroll; a transform on the section both
   // anchors them to it and shifts the screen sideways onto focus_x when it is still wider than the frame.
-  const fit = () => document.querySelectorAll('section[data-step]').forEach((s) => {{
+  // A phone cannot show a desktop screen whole at a readable size: there the page scrolls, so the reviewer pans
+  // to the rest with a finger, and the page ends below the docked journey bar so the bar hides nothing for good.
+  let shown = '';
+  // minimum-scale: a phone browser otherwise zooms the whole page out to the wide screen, the bar with it
+  const vp = document.querySelector('meta[name=viewport]');
+  if (vp && !/minimum-scale/.test(vp.content)) vp.content += ', minimum-scale=1';
+  const fit = () => {{ const phone = document.documentElement.clientWidth <= 600; document.documentElement.classList.toggle('mk-phone', phone);
+    document.querySelectorAll('section[data-step]').forEach((s) => {{
       // a phone step is shown 1:1 in its frame; it only shrinks when the frame is narrower than the phone
       const w = +s.dataset.mkW || {width}, z = Math.max(s.dataset.mkW ? 0.5 : {min_zoom}, Math.min(1, innerWidth / w));
-      s.style.zoom = z; if (s.dataset.mkW) return; s.style.minHeight = `${{100 / z}}vh`; s.style.minHeight = `${{100 / z}}vh`;
+      // each time another screen is shown, the page opens on that screen's subject (a phone step: on its frame)
+      const turned = phone && !s.hidden && shown !== s.dataset.step + innerWidth;
+      if (turned) shown = s.dataset.step + innerWidth;
+      s.style.zoom = z; if (s.dataset.mkW) {{ if (turned) scrollTo(0, 0); return; }} s.style.minHeight = `${{100 / z}}vh`; s.style.minHeight = `${{100 / z}}vh`;
       // zoom shrinks the app's own viewport heights too (#root / .h-screen at 100vh end at zoom x the frame and
       // leave dead space under the screen) — whatever selector set them. Stretch every box that starts at the
       // screen's top and ends at the shrunk height back to the frame.
@@ -172,7 +183,9 @@ section[data-device]{{width:auto;min-height:0}}</style>
         }} }}
       // a screen whose subject sits elsewhere sets its own: mockStates may write screen.dataset.focusX
       const d = Math.max(0, Math.min(w * z - innerWidth, (+s.dataset.focusX || {focus_x}) * z - innerWidth / 2));
-      s.style.transform = d > 0 ? `translateX(${{-d / z}}px)` : ''; }});
+      if (!phone) {{ s.style.transform = d > 0 ? `translateX(${{-d / z}}px)` : ''; return; }}
+      s.style.transform = 'translateZ(0)';   // still anchors the fixed roots, so they scroll with the page
+      if (turned) scrollTo(d, 0); }}); }};
   window.mockifyFit = fit;   // the journey bar calls it on every step: a hidden screen has no boxes to measure
   addEventListener('resize', fit); addEventListener('DOMContentLoaded', fit);
 }})();</script>"""
