@@ -90,12 +90,12 @@ describe('React launched-instance isolation source policy', () => {
       "process.env.FLOWPAD_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')",
     );
     expect(CHATS_RECENCY).toContain("path.join(CLAUDE_HOME, 'projects'");
-    expect(CHATS_RECENCY).toMatch(/path\.join\(FLOW_HOME,\s*'instances',\s*FLOW_INSTANCE,\s*'react-fixtures'/s);
+    // The project fixture is in the system temp dir: the backend refuses a project inside its own state.
+    expect(CHATS_RECENCY).toMatch(/path\.join\(os\.tmpdir\(\),\s*'flowpad-react-fixtures'/s);
   });
 
-  it('materializes and removes the asset-loader fixture under the selected instance', () => {
-    expect(ASSET_LOADER).toContain("const FLOW_INSTANCE = process.env.FLOW_INSTANCE?.trim() || '';");
-    expect(ASSET_LOADER).toMatch(/path\.join\(FLOW_HOME,\s*'instances',\s*FLOW_INSTANCE,\s*'react-fixtures'/s);
+  it('materializes and removes the asset-loader fixture in a per-run temp dir, outside the instance state', () => {
+    expect(ASSET_LOADER).toMatch(/path\.join\(tmpdir\(\),\s*'flowpad-react-fixtures',\s*`asset-loader-\$\{randomUUID\(\)\}`/s);
     expect(ASSET_LOADER).toContain('rmSync(PROJECT_ROOT, { recursive: true, force: true })');
     expect(ASSET_LOADER).not.toContain("const PROJECT_ROOT = '/private/tmp'");
     expect(ASSET_LOADER).not.toContain("const SKILL_PATH = '/private/tmp");
