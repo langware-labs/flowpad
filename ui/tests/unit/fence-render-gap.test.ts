@@ -21,9 +21,11 @@ const fence = (language: string, code: string): PMNode => schema.nodes.code_bloc
 const para = (text: string): PMNode => schema.nodes.paragraph.create(null, schema.text(text));
 
 let view: EditorView | null = null;
-let host: HTMLElement | null = null;
+const hosts: HTMLElement[] = [];
 function mount(...content: PMNode[]): EditorView {
-  host = document.body.appendChild(document.createElement('div'));
+  view?.destroy();
+  const host = document.body.appendChild(document.createElement('div'));
+  hosts.push(host);
   view = new EditorView(host, {
     state: EditorState.create({ doc: schema.nodes.doc.create(null, content), plugins: [createFenceGapPlugin()] }),
   });
@@ -33,8 +35,7 @@ function mount(...content: PMNode[]): EditorView {
 beforeEach(() => registerFenceRenderer({ language: 'statements', tabLabel: 'Statements', render: () => {} }));
 afterEach(() => {
   view?.destroy();
-  host?.remove(); // destroy() leaves the mount div in the body the next file shares
-  host = null;
+  for (const host of hosts.splice(0)) host.remove(); // destroy() leaves the mount divs in the body the next file shares
   view = null;
   clearFenceRenderers();
 });
