@@ -93,7 +93,8 @@ const statement = z.unknown().superRefine(noIdNoRequirements).pipe(
 
 const requirement = z.object({ text: sentence }).strict();
 
-const notItself = (block: { tag: string; depends_on?: string[] }) => !(block.depends_on ?? []).includes(block.tag);
+// Typed loosely: inside the generic `blockOf` zod cannot prove `tag` is present.
+const notItself = (block: { tag?: string; depends_on?: string[] }) => !block.tag || !(block.depends_on ?? []).includes(block.tag);
 const NOT_ITSELF = { message: 'a block cannot depend on itself' };
 
 /** What every block has, around its own fields — the twin of `_BlockSpec`. */

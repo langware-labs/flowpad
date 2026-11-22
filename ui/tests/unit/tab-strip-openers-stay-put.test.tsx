@@ -37,10 +37,10 @@ const openerIndex = () =>
 describe('the strip openers stay put; Close All is last', () => {
   afterEach(cleanup);
 
-  it('one tab: no Close All, openers right after the tab row', () => {
+  it('one tab: no Close All, openers right after the tab row and its divider', () => {
     renderStrip([{ key: 'a', title: 'Alpha' }]);
     expect(screen.queryByTestId('close-all-tabs-button')).toBeNull();
-    expect(openerIndex()).toBe(1);
+    expect(openerIndex()).toBe(2); // the tab row, the tabs|controls divider, then the openers
   });
 
   it('two tabs: Close All appears AFTER the openers, which do not move', () => {
@@ -50,7 +50,7 @@ describe('the strip openers stay put; Close All is last', () => {
     ]);
     const closeAll = screen.getByTestId('close-all-tabs-button');
     const opener = screen.getByTestId('opener');
-    expect(openerIndex()).toBe(1);
+    expect(openerIndex()).toBe(2); // the tab row, the tabs|controls divider, then the openers
     expect(strip().lastElementChild?.contains(closeAll)).toBe(true);
     expect(opener.compareDocumentPosition(closeAll) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // The same shape as "+" (h-7, rounded, bordered) and a clear gap from the openers.
