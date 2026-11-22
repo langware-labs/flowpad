@@ -1,6 +1,7 @@
 import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { TypeId } from '../models/TypeId';
 import { ChannelTransport, type IChannelSpec } from '../models/ChannelSpec';
 import { DockPointerData } from '../models/DockPointer';
 import { ConnectionManager, DataOp } from '../websocket';
@@ -90,6 +91,33 @@ export interface ConversationParticipant {
    *  keys (`status`, `invitation_id`, …) pass through untouched. Without it
    *  Conversation fails its own `APIEntity<Conversation>` constraint. */
   [key: string]: unknown;
+}
+
+/** The roles an agent's deployment gets in a conversation: it reads what is written and may act on it. */
+export const DEPLOYMENT_MEMBER_ROLES = ['reader', 'runner'];
+
+/**
+ * An agent's deployment as a participant: ONE entry keyed `deployment-<id>`. It has no email and no
+ * user id -- the hub adds it as a `principal` and gives the role to the Identity its machine signs in as.
+ */
+export function deploymentParticipant(deploymentId: string, name: string): ConversationParticipant {
+  return {
+    kind: 'deployment',
+    typeid: `deployment-${deploymentId}`,
+    name,
+    user_id: null,
+    email: null,
+    roles: [...DEPLOYMENT_MEMBER_ROLES],
+  };
+}
+
+export function isDeploymentParticipant(p: ConversationParticipant): boolean {
+  return p.kind === 'deployment' && typeof p.typeid === 'string' && p.typeid.startsWith('deployment-');
+}
+
+/** The deployment a deployment participant stands for, or null for a person. */
+export function deploymentTypeIdOf(p: ConversationParticipant): TypeId | null {
+  return isDeploymentParticipant(p) ? new TypeId('deployment', (p.typeid as string).slice('deployment-'.length)) : null;
 }
 
 /** Mirrors ``flow_sdk.builtin.conversation.ConversationKind`` exactly.

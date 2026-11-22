@@ -1,7 +1,7 @@
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { ContactDialog } from '@src/components/conversation/ContactDialog';
 import { useOrgRoute } from '@src/components/organization/tabs/org-route';
-import { ContactsGroup, ConversationParticipant, normalizeEmail, Team, User } from '@sdk';
+import { Agent, ContactsGroup, ConversationParticipant, normalizeEmail, Team, User } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Input } from '@src/components/ui/input';
 import { Separator } from '@src/components/ui/separator';
@@ -11,6 +11,7 @@ import { EMAIL_RE, filterContacts, participantFromContact, participantKey, useCo
 import { filterGroups, mergeGroupMembers, useContactsGroups } from './use-contacts-groups';
 import { useRecentContacts } from './use-recent-contacts';
 import { filterTeams, useMessageableTeams, type MessageableTeam } from './use-team-suggestions';
+import { agentParticipant, filterAgents, useAgentSuggestions, type AgentSuggestion } from './use-agent-suggestions';
 import { participantSubtitle, personName } from '@src/components/conversation/participant-display';
 
 interface ContactPickerProps {
@@ -33,6 +34,9 @@ interface ContactPickerProps {
    *  roster the user may read. Selecting one adds every member as an individual
    *  chip (deduped); like a group, the team itself is never a chip. */
   includeTeams?: boolean;
+  /** Offer the agents the user may add to a conversation (default off). Unlike a team, a picked
+   *  agent IS a chip: the hub adds its deployment as one member. */
+  includeAgents?: boolean;
 }
 
 /**
@@ -55,6 +59,7 @@ export function ContactPicker({
   testId = 'contact-input',
   includeGroups = true,
   includeTeams = false,
+  includeAgents = false,
 }: ContactPickerProps) {
   const [filterText, setFilterText] = useState('');
   const typedEmail = filterText.trim();
@@ -70,6 +75,8 @@ export function ContactPicker({
   const { groups } = useContactsGroups(enabled && includeGroups);
   const { teams } = useMessageableTeams(enabled && includeTeams, excludeUserId);
   const TeamIcon = iconForType(Team.type);
+  const { agents } = useAgentSuggestions(enabled && includeAgents);
+  const AgentIcon = iconForType(Agent.type);
 
   const filteredContacts = useMemo(() => filterContacts(contacts, filterText), [contacts, filterText]);
   const filteredGroups = useMemo(
@@ -78,6 +85,7 @@ export function ContactPicker({
   );
 
   const filteredTeams = useMemo(() => filterTeams(teams, filterText), [teams, filterText]);
+  const filteredAgents = useMemo(() => filterAgents(agents, filterText), [agents, filterText]);
 
   const isFull = typeof max === 'number' && value.length >= max;
 
@@ -126,6 +134,14 @@ export function ContactPicker({
     setListOpen(false);
   };
 
+  const addAgent = (agent: AgentSuggestion) => {
+    const participant = agentParticipant(agent);
+    if (alreadyAdded(participant) || isFull) return;
+    onChange([...value, participant]);
+    setFilterText('');
+    setListOpen(false);
+  };
+
   const trimmed = filterText.trim();
   const showList = !isFull && (trimmed.length > 0 || listOpen);
   const listSource = trimmed.length > 0 ? filteredContacts : contacts;
@@ -139,6 +155,7 @@ export function ContactPicker({
   const groupSource = trimmed.length > 0 ? filteredGroups : groups;
   const visibleGroups = listOpen && !trimmed ? groupSource : groupSource.slice(0, 4);
   const visibleTeams = listOpen && !trimmed ? filteredTeams : filteredTeams.slice(0, 4);
+  const visibleAgents = listOpen && !trimmed ? filteredAgents : filteredAgents.slice(0, 4);
 
   const removeParticipant = (participant: ConversationParticipant) => {
     const key = participantKey(participant);
@@ -222,7 +239,11 @@ export function ContactPicker({
       )}
 
       {showList &&
-        (recentRows.length > 0 || visibleContacts.length > 0 || visibleGroups.length > 0 || visibleTeams.length > 0) && (
+        (recentRows.length > 0 ||
+          visibleContacts.length > 0 ||
+          visibleGroups.length > 0 ||
+          visibleTeams.length > 0 ||
+          visibleAgents.length > 0) && (
         <div className="max-h-40 overflow-y-auto rounded-md border border-border">
           {/* Groups first — one click adds every member. */}
           {visibleGroups.map((g) => (
@@ -273,6 +294,25 @@ export function ContactPicker({
                 testId={`contact-team-open-${team.id}`}
               />
             </div>
+          ))}
+          {/* Agents — one click adds the agent's deployment as a member. */}
+          {visibleAgents.map((agent) => (
+            <button
+              key={agent.id}
+              type="button"
+              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
+              onClick={() => addAgent(agent)}
+              disabled={alreadyAdded(agentParticipant(agent)) || disabled}
+              data-testid={`contact-agent-option-${agent.id}`}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <AgentIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <span className="truncate">{agent.name}</span>
+              </span>
+              <span className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground">
+                <Trans>Agent</Trans>
+              </span>
+            </button>
           ))}
           {recentRows.map(contactRow)}
           {recentRows.length > 0 && visibleContacts.length > 0 && (

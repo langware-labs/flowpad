@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LifeBuoy, Plus } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
-import { myHelpDesks, staffedHelpDesks, type User } from '@sdk';
+import { Agent, myHelpDesks, staffedHelpDesks, type User } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { ContactDialog } from '@src/components/conversation/ContactDialog';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -14,10 +15,11 @@ import { navigateTo } from '@src/notifications';
 import { ContactListBox, ContactRows, ContactsTitle } from './ContactRows';
 import { CreateContactsGroupDialog } from './CreateContactsGroupDialog';
 import { NewHelpDeskDialog } from './NewHelpDeskDialog';
+import { filterAgents, useAgentSuggestions } from './use-agent-suggestions';
 import { filterContacts, useContacts } from './use-contacts';
 import { filterGroups, useContactsGroups } from './use-contacts-groups';
 
-type Tab = 'people' | 'groups' | 'desks';
+type Tab = 'people' | 'groups' | 'agents' | 'desks';
 
 /** A help desk in the list: one this person answers on, or one they added to ask. */
 interface DeskRow {
@@ -43,6 +45,9 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
   const [creatingGroup, setCreatingGroup] = useState(false);
   const { contacts, refetch } = useContacts(excludeUserId, open);
   const { groups } = useContactsGroups(open);
+  // The agents this person may add to a conversation: read only while their tab shows.
+  const { agents } = useAgentSuggestions(open && tab === 'agents');
+  const AgentIcon = iconForType(Agent.type);
   const { cloudUser } = useAuth();
   const [creatingDesk, setCreatingDesk] = useState(false);
   const [desks, setDesks] = useState<DeskRow[]>([]);
@@ -72,6 +77,7 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
 
   const people = useMemo(() => filterContacts(contacts, query), [contacts, query]);
   const shownGroups = useMemo(() => filterGroups(groups, query), [groups, query]);
+  const shownAgents = useMemo(() => filterAgents(agents, query), [agents, query]);
 
   return (
     <>
@@ -85,6 +91,7 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
             options={[
               ['people', t`People`],
               ['groups', t`Groups`],
+              ['agents', t`Agents`],
               ['desks', t`Help desks`],
             ]}
             value={tab}
@@ -98,7 +105,9 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
 
           {tab !== 'desks' && (
             <Input
-              placeholder={tab === 'people' ? t`Search by name or email` : t`Search groups`}
+              placeholder={
+                tab === 'people' ? t`Search by name or email` : tab === 'agents' ? t`Search agents` : t`Search groups`
+              }
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               data-testid="contacts-search"
@@ -138,6 +147,19 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
             </>
           ) : tab === 'people' ? (
             <ContactRows contacts={people} testId="contacts" onOpen={setDetailFor} />
+          ) : tab === 'agents' ? (
+            <ContactListBox empty={<Trans>No agents you can add to a conversation yet.</Trans>}>
+              {shownAgents.map((agent) => (
+                <div
+                  key={agent.id}
+                  className="flex items-center gap-2 px-3 py-2 text-sm"
+                  data-testid={`contacts-agent-row-${agent.id}`}
+                >
+                  <AgentIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="flex-1 truncate">{agent.name}</span>
+                </div>
+              ))}
+            </ContactListBox>
           ) : (
             <>
               <ContactListBox empty={<Trans>No groups yet.</Trans>}>

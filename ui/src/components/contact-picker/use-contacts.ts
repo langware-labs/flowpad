@@ -1,5 +1,13 @@
 import { useMemo, useState } from 'react';
-import { ActionInfo, ConversationParticipant, dataManager, normalizeEmail, QueryRequest, User } from '@sdk';
+import {
+  ActionInfo,
+  ConversationParticipant,
+  dataManager,
+  isDeploymentParticipant,
+  normalizeEmail,
+  QueryRequest,
+  User,
+} from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { isTeamParticipant } from './use-team-suggestions';
 
@@ -14,10 +22,11 @@ export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * always agree on "the same person".
  *
  * A picked TEAM (`kind: 'team'`, see `use-team-suggestions`) is keyed by its
- * typeid (`team-<id>`) — never by its name, which a person may share.
+ * typeid (`team-<id>`) — never by its name, which a person may share. So is a
+ * picked agent's deployment (`deployment-<id>`).
  */
 export function participantKey(p: ConversationParticipant): string {
-  if (isTeamParticipant(p)) return String(p.typeid).trim().toLowerCase();
+  if (isTeamParticipant(p) || isDeploymentParticipant(p)) return String(p.typeid).trim().toLowerCase();
   return (p.user_id || p.email || p.name || '').trim().toLowerCase();
 }
 
