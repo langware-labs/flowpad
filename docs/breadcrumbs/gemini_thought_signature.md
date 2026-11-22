@@ -12,15 +12,20 @@ description: Gemini (Vertex's OpenAI-compatible surface, the default allowance's
 
 > Ground truth. Proven by the fix b25587ad3 (PR #814, 2026-11-10): the bound test's deepagents rows failed without it and pass with it. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.gemini_thought_signature.rules
 sites:
-  - rel_path: "tests/long_tests/test_process_mcp_multi_vendor.py"
+  - rel_path: tests/long_tests/test_process_mcp_multi_vendor.py
     line: 136
-    note: "FAILING? on a deepagents row, read this tag's rules before touching EchoingChatOpenAI or the tool-call extra_content echo"
-  - rel_path: "tests/long_tests/test_process_mcp_multi_vendor.py"
+    note: FAILING? on a deepagents row, read this tag's rules before touching EchoingChatOpenAI or the tool-call extra_content echo
+  - rel_path: tests/long_tests/test_process_mcp_multi_vendor.py
     line: 205
-    note: "FAILING? on a deepagents row, read this tag's rules before touching EchoingChatOpenAI or the tool-call extra_content echo"
+    note: FAILING? on a deepagents row, read this tag's rules before touching EchoingChatOpenAI or the tool-call extra_content echo
+proven: '2026-11-10'
+statements:
+  - text: Every tool call whose response carried `extra_content` is sent back with the same object, matched by tool-call id, in streaming and non-streaming modes.
+  - text: A provider that sends no `extra_content` gets an unchanged payload.
+  - text: The deepagents model stays a `ChatOpenAI` instance (never an `openai:<slug>` string, which forces the Responses API a gateway does not speak).
 ```
 
 ## Expected behavior
@@ -51,12 +56,6 @@ dummy MCP tool and then finishes the turn with the tool's token in its answer.
   default `--model-factory` (`runner.py:48`, `DEFAULT_MODEL_FACTORY`).
 
 ## Invariants
-
-* Every tool call whose response carried `extra_content` is sent back with the same
-  object, matched by tool-call id, in streaming and non-streaming modes.
-* A provider that sends no `extra_content` gets an unchanged payload.
-* The deepagents model stays a `ChatOpenAI` instance (never an `openai:<slug>`
-  string, which forces the Responses API a gateway does not speak).
 
 ## Failure modes
 

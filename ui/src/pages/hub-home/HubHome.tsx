@@ -7,11 +7,14 @@ import {
   dataContext,
   ExecutionEnvironmentStatus,
   PageId,
+  type RemoteControlStatus,
   ViewType,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { readRemoteControlStatus, useRemoteControlStatus } from '@src/components/remote-control/RemoteControlPanel';
 import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
 import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
@@ -23,6 +26,7 @@ import {
   isLaunched,
   isUserMachine,
   nextSandboxName,
+  splitOwnMachine,
   type SandboxDetails,
 } from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
@@ -32,6 +36,8 @@ import { ConnectMachineDialog } from './ConnectMachineDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
+import { AccessKeysSection, useAccessKeys } from './AccessKeysSection';
+import { TurnOnRemoteControlDialog } from './TurnOnRemoteControlDialog';
 import { HomeTiles, useHubHomeTiles } from '@src/components/home-tiles/HomeTiles';
 import { HomePropertiesPanel } from '@src/components/home-tiles/HomePropertiesPanel';
 import { hubProjectAssetDock } from '@src/lib/hub-page-url';
@@ -60,7 +66,7 @@ import {
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { isSignedInAsMe } from './signed-in-as-me';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 
@@ -283,6 +289,60 @@ function LoginLine({ loggedInUser, autoLogin }: { loggedInUser?: string | null; 
 
 const BULK_ICON: Record<BulkAction, typeof Trash2> = { upgrade: ArrowUpCircle, signout: LogOut, delete: Trash2 };
 
+/** What a connected computer last reported about its remote control (`node_config.remote_control`), if anything. */
+function remoteControlOf(node: ComputeNode): { on?: boolean; key_count?: number } | null {
+  const reported = node.node_config?.remote_control;
+  return reported && typeof reported === 'object' ? (reported as { on?: boolean; key_count?: number }) : null;
+}
+
+/**
+ * This machine's own remote control, inside the desktop app (null on the hub, and until read). The
+ * app lists its machine twice — its own `@local` card and the node it registered on the hub — and
+ * this is what lets the Machines page show it once: `node_typeid` names the hub node to leave out.
+ */
+function useOwnRemoteControl(enabled: boolean, keyCount: number | undefined): RemoteControlStatus | null {
+  // The same copy the top bar shows, so the card and the bar cannot disagree.
+  const status = useRemoteControlStatus();
+  const own = enabled && !isHubOnly();
+  useEffect(() => {
+    if (own) void readRemoteControlStatus();
+    // Read again when the account's keys change: adding the first one registers the machine on the hub.
+  }, [own, keyCount]);
+  return own ? status : null;
+}
+
+/**
+ * A connected computer's access-key line. "Access key set" is the ACCOUNT's keys (known before the
+ * machine reports anything); on/off is what the machine reported. Without a key nothing is on.
+ */
+function AccessKeyState({ hasKey, on }: { hasKey: boolean; on: boolean }) {
+  const { t } = useLingui();
+  const live = hasKey && on;
+  // Written here, not in a helper handed `t`: the Lingui macro only rewrites a `t` it can see come from the hook.
+  const text = !hasKey
+    ? t`No access key · remote control off`
+    : live
+      ? t`Access key set · remote control on`
+      : t`Access key set · remote control off`;
+  return (
+    <span
+      className={`flex min-w-0 items-center gap-1.5 text-xs ${
+        live
+          ? 'text-green-600 dark:text-green-400'
+          : hasKey
+            ? 'text-amber-600 dark:text-amber-400'
+            : 'text-muted-foreground'
+      }`}
+      data-testid="sandbox-access-key-state"
+      data-key={hasKey ? 'set' : 'none'}
+      data-remote-control={live ? 'on' : 'off'}
+    >
+      <KeyRound className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span className="truncate">{text}</span>
+    </span>
+  );
+}
+
 /** The one confirm every bulk action goes through: what will run, and how many are skipped. */
 function BulkActionConfirm({
   action,
@@ -337,7 +397,12 @@ function HubHomePage({ view }: { view: 'home' | 'machines' }) {
   const showMachines = view === 'machines';
   const { t } = useLingui();
   const { currentUser } = useAuth();
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
+  // Access keys open remote control of the person's own machines: read for the Machines page only.
+  const accessKeys = useAccessKeys(showMachines && !!currentUser);
+  const accessKeyRequest = currentDock?.accessKeyRequest ?? null;
+  const turnOnRequest = currentDock?.remoteControlConfirm ?? null;
+  const ownRemoteControl = useOwnRemoteControl(showMachines && !!currentUser, accessKeys.keys?.length);
 
   /** Open the Credentials view.
    *
@@ -375,6 +440,29 @@ function HubHomePage({ view }: { view: 'home' | 'machines' }) {
     details,
     refetch,
   } = useSandboxes({ pollMachines: showMachines });
+  // The machine an "Add access key" link came from, when the page was opened by one.
+  const requestNode = accessKeyRequest?.node ?? null;
+  const requestMachine = useMemo(
+    () => (requestNode ? (sandboxes.find((d) => d.typeId.toString() === requestNode) ?? null) : null),
+    [sandboxes, requestNode],
+  );
+  const turnOnNode = turnOnRequest?.node ?? null;
+  const turnOnMachine = useMemo(
+    () => (turnOnNode ? (sandboxes.find((d) => d.typeId.toString() === turnOnNode) ?? null) : null),
+    [sandboxes, turnOnNode],
+  );
+  // One card per machine inside the desktop app: the hub node this machine registered is the same computer as
+  // its own `@local` card, so that card carries the name and the access-key line and the hub node's is left out.
+  const ownHubNode = ownRemoteControl?.node_typeid ?? null;
+  const { localCard, machines } = useMemo(() => {
+    const own = splitOwnMachine(sandboxes, ownHubNode);
+    return {
+      localCard: own.localCard,
+      machines: own.hidden ? sandboxes.filter((d) => d !== own.hidden) : sandboxes,
+    };
+  }, [sandboxes, ownHubNode]);
+  const isOwnCard = (node: ComputeNode) => node === localCard;
+  const cardName = (node: ComputeNode) => (isOwnCard(node) && ownRemoteControl?.machine_name) || node.name;
   // Absent on older hubs that don't advertise the flag yet — treat as enabled.
   const sandboxesEnabled = dataContext.bootstrapInfo?.sandboxes_enabled !== false;
   // `sandboxes_enabled` says the hub can provision CLOUD sandboxes. A machine a
@@ -391,8 +479,8 @@ function HubHomePage({ view }: { view: 'home' | 'machines' }) {
   // Active hides machines the provider no longer has (Not found).
   const [wizardActive, setWizardActive] = useState(false);
   const [machineFilter, setMachineFilter] = useState<'active' | 'all'>('active');
-  const activeSandboxes = sandboxes.filter((d) => details[d.id]?.status !== ExecutionEnvironmentStatus.NOT_FOUND);
-  const shownSandboxes = machineFilter === 'all' ? sandboxes : activeSandboxes;
+  const activeSandboxes = machines.filter((d) => details[d.id]?.status !== ExecutionEnvironmentStatus.NOT_FOUND);
+  const shownSandboxes = machineFilter === 'all' ? machines : activeSandboxes;
 
   // Multi-select. Only cards on screen count: `selectedNodes` is derived from
   // what is shown, so a filter change can never send a hidden card to a bulk action.
@@ -528,6 +616,24 @@ function HubHomePage({ view }: { view: 'home' | 'machines' }) {
               </p>
             )}
 
+            {currentUser && (
+              <AccessKeysSection
+                keys={accessKeys.keys}
+                reload={accessKeys.reload}
+                email={currentUser.email ?? ''}
+                request={accessKeyRequest}
+                machineName={requestMachine?.name}
+                machineOn={!!requestMachine && remoteControlOf(requestMachine)?.on === true}
+              />
+            )}
+            {currentUser && (
+              <TurnOnRemoteControlDialog
+                request={turnOnRequest}
+                keys={accessKeys.keys}
+                machineName={turnOnMachine?.name}
+              />
+            )}
+
             {/* Machines — the full screen behind a machine card's deep link; Home lists them in its Machines tab. */}
             <div className="flex flex-col gap-3">
               <h2 className="text-sm font-medium text-muted-foreground">
@@ -657,7 +763,7 @@ function HubHomePage({ view }: { view: 'home' | 'machines' }) {
                     >
                       {f === 'active' ? t`Active` : t`All`}{' '}
                       <span className="ms-1.5 opacity-70">
-                        ({f === 'all' ? sandboxes.length : activeSandboxes.length})
+                        ({f === 'all' ? machines.length : activeSandboxes.length})
                       </span>
                     </button>
                   ))}
@@ -718,10 +824,10 @@ function HubHomePage({ view }: { view: 'home' | 'machines' }) {
                           }}
                           disabled={!cardEnabled(d)}
                           className="min-w-0 flex-1 truncate text-start text-sm font-semibold hover:underline disabled:pointer-events-none"
-                          title={d.name || t`Sandbox`}
+                          title={cardName(d) || t`Sandbox`}
                           data-testid="sandbox-name"
                         >
-                          {d.name || t`Sandbox`}
+                          {cardName(d) || t`Sandbox`}
                         </button>
                       )}
                     </div>
@@ -761,16 +867,20 @@ function HubHomePage({ view }: { view: 'home' | 'machines' }) {
                         : null}
                       {/* A connected machine's own shells: each click spins out one more
                       terminal session on it (the same path as the terminal strip). */}
-                      {isDisconnected(details[d.id]) && (
+                      {/* A machine that registered itself for remote control has no shell on the hub
+                      yet: connecting one is an extra, so the button steps back and says what it adds —
+                      on the hub only; inside the desktop app such a machine offers no Connect. */}
+                      {isDisconnected(details[d.id]) && (!remoteControlOf(d) || isHubOnly()) && (
                         <Button
                           size="sm"
+                          variant={remoteControlOf(d) ? 'secondary' : 'default'}
                           onClick={() => setConnecting(d)}
                           aria-label={t`Connect this machine`}
                           data-testid="machine-connect"
                           className="h-7 shrink-0 px-2.5 text-xs"
                         >
                           <Plug className="me-1.5 h-3 w-3" />
-                          <Trans>Connect</Trans>
+                          {remoteControlOf(d) ? <Trans>Connect a shell</Trans> : <Trans>Connect</Trans>}
                         </Button>
                       )}
                       {isUserMachine(d) && isOperable(details[d.id]) && (
@@ -921,6 +1031,13 @@ function HubHomePage({ view }: { view: 'home' | 'machines' }) {
                       autoLogin={d.auto_login}
                     />
                     <NodeAgents node={d} />
+                    {/* The app's own card says what the machine itself reports; any other, what it last told the hub. */}
+                    {(isUserMachine(d) || isOwnCard(d)) && accessKeys.keys && (
+                      <AccessKeyState
+                        hasKey={accessKeys.keys.length > 0}
+                        on={isOwnCard(d) ? ownRemoteControl?.on === true : remoteControlOf(d)?.on === true}
+                      />
+                    )}
                   </div>
                 ))}
               </div>

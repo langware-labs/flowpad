@@ -82,6 +82,9 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=3.1,<4",
     # NOT langchain's own MCPAdapter: it needs fastmcp>=4, and this project pins fastmcp<4.
     "langchain-mcp-adapters>=0.3,<1",
+    # Remote control: this machine verifies the owner's passkey answer itself
+    # (``flow_sdk/core/compute/access_key_verify.py``). Brings cbor2 and pyOpenSSL.
+    "webauthn>=2.8.0",
 ]
 
 [project.urls]

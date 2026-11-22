@@ -868,6 +868,15 @@ export const TabStrip: React.FC<TabStripProps> = ({
 
         {/* Opener toolbar — a fixed sibling (never overlaps or shrinks); the
             chips absorb all width pressure. */}
+        {/* Tabs | controls divider — thicker and stronger than the chip
+            separators so the openers don't read as one more tab. */}
+        {trailing && (
+          <div
+            aria-hidden
+            data-testid="tab-strip-controls-divider"
+            className="mx-1.5 h-5 w-0.5 shrink-0 self-center rounded-full bg-foreground/50"
+          />
+        )}
         {trailing && <div className="flex shrink-0 items-center self-stretch">{trailing}</div>}
 
         {/* Close All — the strip's LAST control, at a clear distance from the

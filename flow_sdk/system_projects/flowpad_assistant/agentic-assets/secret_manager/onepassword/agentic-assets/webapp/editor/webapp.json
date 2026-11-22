@@ -1,0 +1,7 @@
+{
+  "name": "editor",
+  "title": "1Password — editor",
+  "description": "The 1Password vaults of this project and this instance: where each one is, and its access here.",
+  "kind": "application.web.editor",
+  "build": "."
+}

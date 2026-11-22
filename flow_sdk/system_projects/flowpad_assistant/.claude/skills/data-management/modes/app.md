@@ -25,7 +25,7 @@ ComputeOp input/output use this same ShapeForm grammar; registered kinds must re
 
 ## The calls
 
-A static Flowpad-SDK app imports `/sdk/flowpad-sdk.js`:
+Loading the SDK, init, project scope and the page-state key: the **flow-js** skill. The dataset calls:
 
 | Need | TypeScript (`sdk.*`) | Python |
 | --- | --- | --- |

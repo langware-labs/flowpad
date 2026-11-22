@@ -275,14 +275,16 @@ def home(fresh_user_scope):
 
 @pytest.fixture
 def no_shipped_layers(tmp_path, monkeypatch):
-    """Empty the shipped ``common`` / ``common_ui`` system-prompt layers.
+    """Empty the shipped system-prompt layers: ``common`` / ``common_ui`` and the browser driver's own.
 
     For tests that pin another layer's exact text, or the "nothing to say → write-free"
     contract; where the shipped layers land is ``tests/unit/system_prompt_matrix``'s job.
     """
     from flow_sdk.builtin.agentic_process import system_prompt
+    from flow_sdk.core import browser_drivers
 
     monkeypatch.setattr(system_prompt, "SHIPPED_INSTRUCTIONS_DIR", tmp_path / "no-shipped-layers")
+    monkeypatch.setattr(browser_drivers, "instructions_for", lambda name: "")
 
 
 @pytest.fixture

@@ -787,3 +787,23 @@ def test_non_prod_instance_also_scans_prod_workspace(tmp_path, monkeypatch):
 
     names = {Path(cwd).name for cwd in ap.scan_project_cwds(include_temp=True)}
     assert {"mine", "prod_proj"} <= names, names
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_a_project_is_refused_where_flowpad_never_loads_one(project_db):
+    """A project under Flowpad's own state (``flow_home``) is refused at create: the startup sweep
+    (``ensure_project_namespace``) skips it, so its kinds would vanish on the next restart."""
+    from flow_sdk.builtin.project import Project, UnloadableProjectPathError
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+    from flow_sdk.instance_settings import get_instance_settings
+
+    def project_at(path):
+        project = Project(name=path.name, fs_storage_mount_path=canonical_posix_path(path))
+        project.id = Project.allocate_id(project.model_dump())
+        return project
+
+    inside_state = get_instance_settings().flow_home / f"unloadable-{uuid.uuid4().hex[:8]}"
+    with pytest.raises(UnloadableProjectPathError, match="never loaded as a project"):
+        await project_at(inside_state).save()
+    assert not inside_state.exists()

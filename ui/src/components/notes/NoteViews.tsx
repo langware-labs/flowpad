@@ -20,7 +20,7 @@ import { useNoteWorker } from './useNoteWorker';
 const SWATCHES = NOTE_COLOR_TOKENS.map((token) => ({ token, hex: NOTE_PALETTE[token].face[1] }));
 
 /** `null` is "no color", the composer's default; clicking the chosen swatch again goes back to it. */
-function NoteColorPicker({
+export function NoteColorPicker({
   value,
   onChange,
 }: {

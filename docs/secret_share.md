@@ -193,8 +193,11 @@ any process reads: a process still reads its deployment's binding (above).
 
 ### The active vault — the one an agent reads from
 
-`flow_sdk/secrets/active.py` answers "which vault applies here?" for any target, the most specific
-scope winning (`SecretScope`): the **entity**'s own (`secret_vault()` on the entity — a credential names
+`flow_sdk/secrets/active.py` answers "which vault applies here?" for any target. The person's own
+**pick** for the project on this computer comes first (`set_vault_pick`: a project vault's name or
+`global`, kept in `preferences.secrets.vault_pick` and never in the project; the footer's key menu
+sets it with "Use here", and the answer says `picked`). With no pick, the most specific
+scope wins (`SecretScope`): the **entity**'s own (`secret_vault()` on the entity — a credential names
 the vault its variables point into), else its **project**'s default (`default_secret_vault` in
 `project_manifest.json`, else the first of `secret_vaults` by name), else this instance's **global**
 vault (`preferences.secrets.vault` in `preferences.json`, written by `set_global_vault`, which refuses an
@@ -205,7 +208,8 @@ target)` is the read: from that vault, never a write, refused as `sealed` before
 An agent that lacks a secret in its environment reads it from there (the rule is in
 `instructions/common.md`): `flow secrets run NAME[,NAME] -- <command>` hands the values to that one
 command and saves nothing; `flow secrets active` says which vault is in use and prints its manager's
-own instructions (`agentic-assets/secret_manager/<name>/instructions.md`). `flow secrets vault default
+own instructions (`agentic-assets/secret_manager/<name>/instructions.md`) — the same text a session
+gets in its system prompt at launch (the `SECRET_MANAGER` layer, `docs/agent/system-prompt-layers.md`). `flow secrets vault default
 <name>` names the project's default. `GET …/credentials/active?project_id=&target=<typeid>` is the same
 answer over HTTP. `GET …/credentials/vaults` lists a project's vaults described (`rows`), the `global` one
 and the `active` one in one answer; the footer's key chip (`useSecretManager`) renders it.

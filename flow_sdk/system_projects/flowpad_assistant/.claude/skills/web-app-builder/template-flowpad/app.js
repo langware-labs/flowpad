@@ -1,12 +1,7 @@
 /**
  * Flowpad app starter.
  *
- * The three rules (see README.md):
- *   1. import the SDK from /sdk/flowpad-sdk.js — never bundle it, never write a
- *      backend URL. This page is served by Flowpad from its own origin.
- *   2. await initSdk() once, before any entity call.
- *   3. use entities (sdk.Task), not fetch — that is what makes writes real and
- *      updates live.
+ * SDK rules (import, init order, project scope, page-state key): the flow-js skill.
  */
 import * as sdk from '/sdk/flowpad-sdk.js';
 

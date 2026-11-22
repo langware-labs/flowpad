@@ -301,6 +301,13 @@ export interface BrowseableTreeProps {
   flat?: boolean;
 
   /**
+   * The roots draw no row of their own: their children are the first level.
+   * A root stays the container (its `onDrop` takes a drop on the list's empty
+   * space, its `reorderChildren` orders the first level) — it just isn't shown.
+   */
+  rootless?: boolean;
+
+  /**
    * Which side row previews open on. LOGICAL: 'end' (the default) is right
    * under LTR, 'start' is left. A panel pinned to the window's inline-end edge
    * (the bookmarks flyout) passes 'start', or its previews open off-screen.

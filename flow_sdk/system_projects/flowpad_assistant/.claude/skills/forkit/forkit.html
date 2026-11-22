@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>forkit</title>
+<link rel="stylesheet" href="/sdk/flowpad.css">
+<style>
+html, body { margin: 0; height: 100%; background: hsl(var(--background)); color: hsl(var(--foreground));
+  font-family: var(--font-sans, system-ui, sans-serif); }
+.fk { display: flex; height: 100vh; }
+.fk aside { width: 330px; flex: none; border-right: 1px solid hsl(var(--border)); overflow: auto; }
+.hd { padding: 12px; border-bottom: 1px solid hsl(var(--border)); display: grid; gap: 4px; }
+.hd span, .hd small, .it small { color: hsl(var(--muted-foreground)); font-size: 12px; }
+.pg { height: 4px; background: hsl(var(--muted)); border-radius: 2px; }
+.pg i { display: block; height: 100%; width: 0; background: #2da44e; border-radius: 2px; }
+.flt { display: flex; gap: 2px; background: hsl(var(--muted)); border-radius: 6px; padding: 2px; margin-top: 4px; }
+.flt button { flex: 1; border: 0; background: none; border-radius: 4px; padding: 3px 0; font-size: 12px; color: inherit; cursor: pointer; }
+.flt button.on { background: hsl(var(--background)); box-shadow: 0 1px 2px rgba(0,0,0,.15); font-weight: 600; }
+ul { list-style: none; margin: 0; padding: 4px; }
+.it { display: grid; grid-template-columns: 8px auto 1fr 20px 64px; gap: 6px; align-items: center; padding: 7px 8px;
+  border-radius: 6px; font-size: 13px; cursor: pointer; }
+.it:hover { background: hsl(var(--muted)); }
+.it.sel { background: hsl(var(--accent)); box-shadow: inset 3px 0 #58a6ff; }
+.it .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.it small { grid-column: 2 / 5; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--muted-foreground)); opacity: .5; }
+.dot.live { background: #2da44e; opacity: 1; }
+.dot.busy { background: #bf8700; opacity: 1; }
+.nf { border: 0; background: none; color: hsl(var(--muted-foreground)); cursor: pointer; font-size: 14px; padding: 0; }
+.nf.on { color: #58a6ff; }
+.st { grid-column: 5; grid-row: 1 / 3; border: 1px solid hsl(var(--border)); background: none; color: inherit;
+  border-radius: 6px; font-size: 11px; padding: 4px 0; font-weight: 600; cursor: pointer; }
+.st:hover { background: #2da44e; border-color: #2da44e; color: #fff; }
+.desc { grid-column: 2 / 6; margin: 4px 0 2px; font-size: 12px; line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.dn { opacity: .55; } .dn .t { text-decoration: line-through; }
+main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+main.empty { align-items: center; justify-content: center; color: hsl(var(--muted-foreground)); }
+main iframe { flex: 1; border: 0; width: 100%; }
+.tpl { display: grid; gap: 2px; font-size: 11px; color: hsl(var(--muted-foreground)); }
+.tpl input { font: inherit; font-size: 12px; padding: 4px 6px; border-radius: 5px; border: 1px solid hsl(var(--border));
+  background: hsl(var(--background)); color: hsl(var(--foreground)); }
+.ask { display: grid; gap: 8px; width: min(560px, 80%); color: hsl(var(--foreground)); font-size: 13px; }
+.ask label { color: hsl(var(--muted-foreground)); font-size: 12px; }
+.ask textarea { font: inherit; padding: 8px; border-radius: 6px; border: 1px solid hsl(var(--border));
+  background: hsl(var(--background)); color: inherit; resize: vertical; }
+.ask button { justify-self: start; border: 0; border-radius: 6px; padding: 7px 14px; font-weight: 600; cursor: pointer;
+  background: #2da44e; color: #fff; }
+.th { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid hsl(var(--border)); font-size: 13px; }
+.th span { color: hsl(var(--muted-foreground)); flex: 1; }
+.err { color: #cf222e; font-size: 12px; padding: 8px 12px; }
+</style>
+</head>
+<body>
+<div class="fk">
+  <aside>
+    <div class="hd">
+      <b id="title">forkit</b>
+      <span>root: <code id="root"></code></span>
+      <label class="tpl" title="The first message every fork starts with. {identifier} is the issue's id.">first message
+        <input id="tpl" spellcheck="false"></label>
+      <label class="tpl" title="Optional. ✓ Done sends this to the fork, moves the issue to Done at once, and closes the fork when it has finished. Empty: Done closes the fork right away.">done message (optional)
+        <input id="donetpl" spellcheck="false" placeholder="empty: Done closes the fork right away"></label>
+      <div class="pg"><i id="bar"></i></div>
+      <small id="count"></small>
+      <div class="flt" id="filter">
+        <button data-f="open" class="on">Open</button><button data-f="done">Done</button><button data-f="all">All</button>
+      </div>
+    </div>
+    <ul id="list"></ul>
+    <p class="err" id="err" hidden></p>
+  </aside>
+  <main id="main" class="empty"><div id="hint">Pick an issue.</div></main>
+</div>
+<script>window.FORKIT = /*FORKIT_CONFIG*/{};</script>
+<script type="module">
+/**
+ * forkit — a list of issues on the left, the live fork working the selected one in the centre.
+ *
+ * The rows (forkit.issue, one dataset) are the only state: status and the fork's process id live there,
+ * so another window, an agent or a reload sees the same thing (the two message templates are this browser's).
+ * A fork is made when the person approves the issue's first message (agentic_process/<root>/fork, the message
+ * into its queue, then /open); ✓ Done closes it.
+ */
+import * as sdk from '/sdk/flowpad-sdk.js';
+
+const CFG = window.FORKIT || {};
+const $ = (id) => document.getElementById(id);
+const state = { rows: [], filter: 'open', sel: null, info: null, busy: new Set(), ds: null };
+
+// The first-message template: one per run, kept in this browser. An issue with a prompt of its own ignores it.
+const TEMPLATE = 'lets focus on issue {identifier}';
+const TPL_KEY = `forkit.template.${CFG.run}`;
+const DONE_KEY = `forkit.done.${CFG.run}`;
+const stored = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+const keep = (key, value) => { try { localStorage.setItem(key, value); } catch { /* storage blocked: it holds for this page */ } };
+const template = () => $('tpl').value.trim() || TEMPLATE;
+const doneMessage = (row) => $('donetpl').value.trim().replaceAll('{identifier}', row.input.id);
+const firstMessage = (row) => row.input.prompt || template().replaceAll('{identifier}', row.input.id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// The page-state key (flow-js skill §4): a frame cannot inherit it, so its URL carries it.
+const pageKey = () => globalThis.__FLOWPAD_STATE_KEY__ || new URLSearchParams(location.search).get('state');
+const framed = (url) => { const k = pageKey(); if (!k || /[?&]state=/.test(url)) return url;
+  const [u, h] = url.split('#'); return `${u}${u.includes('?') ? '&' : '?'}state=${encodeURIComponent(k)}${h ? '#' + h : ''}`; };
+const fail = (msg) => { $('err').hidden = false; $('err').textContent = msg; console.error('[forkit]', msg); };
+const canStart = (row) => !row.input.process_id && row.input.status !== 'done' && !state.busy.has(row.key);
+const post = async (path, body) => {
+  const res = await sdk.apiClient.post(path, body || {});
+  const data = res?.data ?? res;
+  if (data?.status === 'fail' || data?.success === false) throw new Error(data?.message || `${path} failed`);
+  return data?.data ?? data;
+};
+const send = (pid, prompt) => post(`/graph/agentic_process/${pid}/enqueue`, { prompt, source: 'page' });
+
+async function load() {
+  const { rows } = await state.ds.query({ match: { 'input.run': CFG.run }, order_by: { 'input.order': 'asc' }, limit: 1000 });
+  state.rows = rows;
+  render();
+}
+
+/** The fork for an issue: made once, on Start. Two clicks never make two forks. */
+async function startFork(row, message) {
+  if (!canStart(row)) return;
+  state.busy.add(row.key);
+  render();
+  try {
+    const made = await post(`/graph/agentic_process/${row.input.root}/fork`, { visible: false });
+    if (!made?.id) throw new Error('the fork returned no process id');
+    // The first message goes in the fork's queue BEFORE anything opens it: whoever starts the worker first (this
+    // page, its terminal frame, a Flowpad tab) boots it with the queue head. An `/open {instruction}` that loses
+    // that race is answered "success" and the message is silently dropped.
+    await send(made.id, message);
+    await post(`/graph/agentic_process/${made.id}/open`, {});
+    await state.ds.put(row.key, { input: { ...row.input, process_id: made.id } }, { expected: row.version });
+  } catch (e) {
+    fail(`Could not fork #${row.input.id}: ${e?.message || e}`);
+  } finally {
+    state.busy.delete(row.key);
+    render();   // the write itself comes back through onRowsChanged
+  }
+}
+
+async function close(pid) {
+  try { await post(`/graph/agentic_process/${pid}/close`); }
+  catch (e) { console.warn('[forkit] close', e); }   // already gone: the row still moves on
+}
+
+/** Close the forks of finishing issues once each has done its done message: idle, nothing queued, three looks in a row. */
+const idle = new Map();
+async function finishOne(row) {
+  const pid = row.input.process_id;
+  let proc = null;
+  try { proc = await sdk.apiClient.get(`/graph/agentic_process/${pid}`); }
+  catch { /* gone */ }
+  const alive = proc?.status === 'running';
+  if (alive) {
+    const quiet = proc.worker_status !== 'working' && !(proc.queue?.entries || []).length;
+    const looks = quiet ? (idle.get(pid) || 0) + 1 : 0;
+    if (looks < 3) { idle.set(pid, looks); return; }
+  }
+  idle.delete(pid);
+  if (alive || !proc) await close(pid);
+  try { await state.ds.put(row.key, { input: { ...row.input, process_id: null } }, { expected: row.version }); }
+  catch (e) { console.warn('[forkit] finish', e); }
+}
+let finishing = false;
+async function finish() {
+  if (finishing) return;   // a slow pass is never doubled by the next tick
+  finishing = true;
+  try { await Promise.all(state.rows.filter((r) => r.input.status === 'done' && r.input.process_id).map(finishOne)); }
+  finally { finishing = false; }
+}
+
+async function setStatus(row, status) {
+  try {
+    const pid = row.input.process_id;
+    // Done with a done message: the fork gets it, the issue is done NOW, and the fork is closed when it has finished
+    // (a done row that still names its fork is "finishing"; `finish()` closes it). ↺ Open keeps a fork still alive.
+    const closing = status === 'done' && pid;
+    const wrapUp = closing && doneMessage(row);
+    if (wrapUp) await send(pid, wrapUp);
+    else if (closing) await close(pid);
+    await state.ds.put(row.key, { input: { ...row.input, status, process_id: closing && !wrapUp ? null : pid } }, { expected: row.version });
+  } catch (e) {
+    fail(`Could not change #${row.input.id}: ${e?.message || e}`);
+  }
+}
+
+function select(key) {
+  state.sel = key;
+  render();   // an issue with no fork shows its first message and waits for Start — nothing starts by itself
+}
+
+function renderMain() {
+  const main = $('main');
+  const row = state.rows.find((r) => r.key === state.sel);
+  const pid = row?.input.process_id;
+  const want = pid ? `/win/shell/agentic_process-${pid}` : null;
+  const frame = main.querySelector('iframe');
+  if (want && frame?.dataset.src === want) return;   // keep the live terminal; never reload it on a render
+  const asking = row && canStart(row);
+  if (asking && main.dataset.ask === row.key) return;   // keep the message being edited
+  delete main.dataset.ask;
+  main.className = want ? '' : 'empty';
+  if (asking) {
+    // The fork starts only when the person approves its first message.
+    main.dataset.ask = row.key;
+    main.innerHTML = `<div class="ask"><b>#${esc(row.input.id)} · ${esc(row.input.title)}</b>`
+      + `<label for="first">The fork starts with this message:</label>`
+      + `<textarea id="first" rows="3">${esc(firstMessage(row))}</textarea>`
+      + `<button id="start">Start fork</button></div>`;
+    return;
+  }
+  if (!want) {
+    const msg = !row ? 'Pick an issue.'
+      : row.input.status === 'done' ? `#${esc(row.input.id)} is done. ↺ Open returns it to the list.`
+        : `Forking #${esc(row.input.id)} from the root…`;
+    main.innerHTML = `<div>${msg}</div>`;
+    return;
+  }
+  main.innerHTML = `<div class="th"><b>#${esc(row.input.id)} · ${esc(row.input.title)}</b>`
+    + `<span>${esc(pid.slice(0, 8))} · forked from ${esc(row.input.root.slice(0, 8))}</span></div>`
+    + `<iframe data-src="${want}" src="${esc(framed(want))}" title="terminal"></iframe>`;
+}
+
+function render() {
+  const all = state.rows;
+  const done = all.filter((r) => r.input.status === 'done').length;
+  $('bar').style.width = `${all.length ? (100 * done) / all.length : 0}%`;
+  $('count').textContent = `${done} / ${all.length} done`;
+  const counts = { open: all.length - done, done, all: all.length };
+  for (const b of $('filter').children) {
+    b.classList.toggle('on', b.dataset.f === state.filter);
+    b.textContent = `${b.dataset.f[0].toUpperCase()}${b.dataset.f.slice(1)} ${counts[b.dataset.f]}`;
+  }
+  const shown = all.filter((r) => state.filter === 'all' || r.input.status === state.filter);
+  $('list').innerHTML = shown.map((r) => {
+    const i = r.input, isDone = i.status === 'done';
+    const dot = state.busy.has(r.key) ? 'busy' : i.process_id ? 'live' : '';
+    return `<li class="it${r.key === state.sel ? ' sel' : ''}${isDone ? ' dn' : ''}" data-key="${esc(r.key)}">`
+      + `<span class="dot ${dot}"></span><b>#${esc(i.id)}</b><span class="t" title="${esc(i.title)}">${esc(i.title)}</span>`
+      + `<button class="nf${state.info === r.key ? ' on' : ''}" data-info title="What is it about">ⓘ</button>`
+      + `<button class="st" data-status="${isDone ? 'open' : 'done'}" title="${isDone ? 'Change status to open' : 'Change status to done'}">${isDone ? '↺ Open' : '✓ Done'}</button>`
+      + `<small>${i.process_id ? (isDone ? 'finishing… ' : '') + `fork ${esc(i.process_id.slice(0, 8))}` : isDone ? 'closed' : 'not started'}</small>`
+      + (state.info === r.key ? `<p class="desc">${esc(i.desc || 'No description.')}</p>` : '')
+      + '</li>';
+  }).join('');
+  renderMain();
+}
+
+$('list').addEventListener('click', (ev) => {
+  const li = ev.target.closest('li[data-key]');
+  if (!li) return;
+  const row = state.rows.find((r) => r.key === li.dataset.key);
+  if (ev.target.closest('[data-info]')) { state.info = state.info === row.key ? null : row.key; render(); return; }
+  const st = ev.target.closest('[data-status]');
+  if (st) { setStatus(row, st.dataset.status); return; }
+  select(row.key);
+});
+$('main').addEventListener('click', (ev) => {
+  if (ev.target.id !== 'start') return;
+  const row = state.rows.find((r) => r.key === state.sel);
+  const message = $('first').value.trim();
+  if (row && message) startFork(row, message);
+});
+$('tpl').addEventListener('input', (ev) => {
+  keep(TPL_KEY, ev.target.value);
+  const row = state.rows.find((r) => r.key === state.sel);
+  if ($('first') && row) $('first').value = firstMessage(row);   // the open Start panel shows the new message
+});
+$('donetpl').addEventListener('input', (ev) => keep(DONE_KEY, ev.target.value));
+$('filter').addEventListener('click', (ev) => {
+  if (ev.target.dataset.f) { state.filter = ev.target.dataset.f; render(); }
+});
+
+(async () => {
+  $('title').textContent = CFG.title || 'forkit';
+  $('root').textContent = CFG.root || '';
+  $('tpl').placeholder = TEMPLATE;
+  $('tpl').value = stored(TPL_KEY) || TEMPLATE;
+  $('donetpl').value = stored(DONE_KEY) || '';
+  try {
+    sdk.applyHostTheme?.();
+    await sdk.initSdk();
+    const found = await sdk.Dataset.forKind(CFG.kind);
+    const ds = found.find((d) => d.id === CFG.dataset) || found[0];
+    if (!ds) throw new Error(`no ${CFG.kind} dataset — run scripts/forkit.py again`);
+    state.ds = ds;
+    ds.onRowsChanged(() => load());
+    setInterval(finish, 5000);
+    await load();
+  } catch (e) {
+    fail(`forkit could not load: ${e?.message || e}`);
+  }
+})();
+</script>
+</body>
+</html>

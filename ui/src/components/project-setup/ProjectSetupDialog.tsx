@@ -83,6 +83,9 @@ export function pointerForRequirement(req: ProjectSetupRequirement, projectId: s
 export const namesItself = (req: ProjectSetupRequirement) =>
   req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp' || req.kind === 'automation';
 
+/** The name a row goes by, on the row and on a button that acts on it. */
+export const nameOf = (req: ProjectSetupRequirement) => (namesItself(req) ? req.name : req.title || req.name);
+
 /**
  * What a row says beside its name: why it is not ready, else what the credential is needed for, else what is
  * missing — an either-or group of values as "A or B".
@@ -489,7 +492,7 @@ function SetupStatusLine({
   // How the last run ended decides both the words and the button.
   const failed = tree?.state === 'failed' || tree?.state === 'blocked';
   const unfinished = failed && tree?.root ? unfinishedUnder(tree.root) : 0;
-  const onlyName = only ? (namesItself(only) ? only.name : only.title || only.name) : '';
+  const onlyName = only ? nameOf(only) : '';
   // The button says what it does: one row is named, a web app is started rather than set up.
   const startLabel = !only ? t`Set up all` : only.kind === 'webapp' ? t`Start ${onlyName}` : t`Set up ${onlyName}`;
   return (
@@ -679,7 +682,7 @@ function RequirementRow({
 }) {
   const { t } = useLingui();
   const Icon = iconOf(req);
-  const name = namesItself(req) ? req.name : req.title || req.name;
+  const name = nameOf(req);
   const usedBy = usedByOf(req);
   const rowId = rowIdOf(req);
   const keyOpen = (event: KeyboardEvent) => {

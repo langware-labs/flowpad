@@ -56,3 +56,14 @@ async def test_every_step_of_a_wizard_runs_in_the_callers_session(tmp_path: Path
     assert all(step.ok for step in dict(result.steps or {}).values())
     sessions = {f.name: int(f.read_text()) for f in sorted(tmp_path.glob("*.ran")) + sorted(tmp_path.glob("*.checked"))}
     assert sessions == dict.fromkeys(sessions, os.getsid(0)) and len(sessions) == 4, sessions
+
+
+def test_the_shared_shell_starts_on_uvloop(tmp_path: Path) -> None:
+    """The backend runs on uvloop, whose subprocess refuses ``process_group=``: every check failed there."""
+    uvloop = pytest.importorskip("uvloop")
+
+    async def run() -> int:
+        async with SharedShell() as sh:
+            return (await sh("true", timeout_seconds=10, workdir=tmp_path)).exit_code
+
+    assert uvloop.run(run()) == 0

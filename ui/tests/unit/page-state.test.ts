@@ -60,6 +60,17 @@ describe('where the key comes from', () => {
   });
 });
 
+describe('a framed shell after it moves inside itself', () => {
+  it('still sends its key: the address then carries it as ?stateKey=, and a frame has no stored copy', async () => {
+    window.history.replaceState(null, '', `/win/shell/${PROCESS}?viewMode=standard&stateKey=${KEY}`);
+    const seen = server({ data: {} });
+
+    await apiClient.post(`/graph/${PROCESS.replace('-', '/')}/switch-mode`, {});
+
+    expect(seen[0].headers[STATE_HEADER]).toBe(KEY);
+  });
+});
+
 describe('what a refusal says', () => {
   it('reads the reason from the gate header', () => {
     expect(stateRefusal({ 'x-flowpad-gate': 'request=9c8daa; state=missing' })).toBe('missing');

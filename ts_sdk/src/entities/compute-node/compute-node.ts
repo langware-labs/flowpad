@@ -108,6 +108,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   name: string = '';
   runtime: RuntimeEnvironment = { name: '' };
   node_provider_type?: ComputeProviderType;
+  node_provider?: ComputeProviderType;
   node_provider_id?: string;
   node_config?: Record<string, unknown>;
   node_size?: ComputeNodeSize;
@@ -138,6 +139,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     this.name = entity.name || '';
     this.runtime = entity.runtime || { name: '' };
     this.node_provider_type = entity.node_provider_type;
+    this.node_provider = entity.node_provider;
     this.node_provider_id = entity.node_provider_id;
     this.node_config = entity.node_config;
     this.node_size = entity.node_size;
@@ -153,6 +155,17 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     this.allow_login = entity.allow_login;
     this.login_roles = entity.login_roles;
     this.logged_in_user = entity.logged_in_user;
+  }
+
+  /**
+   * `node_provider` is the hub's field and not one of the desktop schema's, so the base
+   * serializer leaves it out; a hub node keeps it through a serialize / rebuild round trip.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  public override toJSON(): any {
+    const json = super.toJSON();
+    if (this.node_provider !== undefined) json.node_provider = this.node_provider;
+    return json;
   }
 
   /**
@@ -460,11 +473,11 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * it, so it remains the marker separating an interactive workspace from a
    * provider's other compute nodes.
    *
-   * The provider field is read tolerantly because the hub spells it
-   * `node_provider` and this entity types it `node_provider_type`.
+   * The provider is read from both fields: the hub spells it `node_provider`,
+   * the desktop's own rows `node_provider_type`.
    */
   get isSandbox(): boolean {
-    const provider = (this as unknown as { node_provider?: string }).node_provider ?? this.node_provider_type;
+    const provider = this.node_provider ?? this.node_provider_type;
     const flavor = (this.node_config as { flavor?: string } | undefined)?.flavor;
     return SANDBOX_PROVIDERS.has(provider ?? '') && flavor === WORKSPACE_FLAVOR;
   }

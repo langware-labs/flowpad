@@ -8,25 +8,10 @@ import { describe, expect, it } from 'vitest';
 // icon/color come from the GENERIC pickers.
 const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf-8');
 
-const menuSource = read('../../src/components/prompt-library/PromptLibraryMenu.tsx');
 const dialogSource = read('../../src/components/prompt-library/PromptEditDialog.tsx');
 const sdkPromptSource = read('../../../ts_sdk/src/entities/prompt.ts');
 
 describe('prompt library is pure composition (zero logic)', () => {
-  it('menu composes the GENERIC groups adapter — no folder logic of its own', () => {
-    expect(menuSource).toContain('groupRoot');
-    expect(menuSource).toContain("'prompt-library'");
-    // no folder mechanics implemented here — they live in the generic layer
-    expect(menuSource).not.toMatch(/Group\.create|deleteGroup|\.move\(|setGroup/);
-    expect(menuSource).not.toMatch(/fetch\(|apiClient|QueryRequest/);
-  });
-
-  it('prompt→queue is exactly the SDK call', () => {
-    expect(menuSource).toContain('.enqueueTo(process)');
-    // never touches the queue actions/file directly
-    expect(menuSource).not.toMatch(/enqueue\(|clear-queue|set-queue-enabled|prompt_queue/);
-  });
-
   it('the SDK enqueueTo rides the existing queue path with source=library', () => {
     expect(sdkPromptSource).toContain("process.enqueue(this.text ?? '', 'library')");
   });

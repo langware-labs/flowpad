@@ -1,0 +1,20 @@
+{
+  "type": "agent",
+  "id": "20ce4a44-1496-4c95-8b40-0b8a3c0bf9dc",
+  "name": "linkedin-poster",
+  "description": "Sends a LinkedIn message on the user's behalf through the signed-in browser, and records what it sent. Delivery only — never composes, never edits.",
+  "avatar": "📮",
+  "worker_type": "claude",
+  "model": "sonnet",
+  "permission_mode": "bypassPermissions",
+  "disallowed_tools": [
+    "WebFetch",
+    "WebSearch",
+    "Agent",
+    "Task"
+  ],
+  "subagents": [
+    "linkedin_sender"
+  ],
+  "enabled": true
+}

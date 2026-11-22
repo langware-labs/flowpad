@@ -21,7 +21,7 @@ export interface AvatarValueProps {
  */
 export function AvatarValue({ value, imageUrl, fallback = null, className, alt }: AvatarValueProps): ReactNode {
   if (imageUrl) {
-    return <img src={imageUrl} alt={alt} className={className} />;
+    return <img src={imageUrl} alt={alt} referrerPolicy="no-referrer" className={className} />;
   }
   if (!value) return fallback;
   return <FlowIcon icon={value} className={className} fallback={fallback} />;

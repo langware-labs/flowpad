@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { dataManager } from '@sdk';
-import { QueryRequest } from '@sdk/FlowSync/query';
+import { type GroupLeafMatch } from '@sdk';
+import { QueryFilter, QueryRequest } from '@sdk/FlowSync/query';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 
 /**
@@ -13,7 +14,13 @@ import { refreshNode } from '@src/components/browseable-tree/refresh-store';
  * level. Local mutations already refresh explicitly from the adapter; this
  * hook covers everything that arrives over `data_op`.
  */
-export function useGroupTreeRefresh(rootId: string, leafTypes: string[], enabled: boolean = true): void {
+export function useGroupTreeRefresh(
+  rootId: string,
+  leafTypes: string[],
+  enabled: boolean = true,
+  /** Narrows the leaf watch to the tree's own leaves (the same match the listing uses). */
+  leafMatch?: GroupLeafMatch,
+): void {
   useEffect(() => {
     if (!enabled) return;
     const unsubs: Array<() => void> = [];
@@ -24,7 +31,7 @@ export function useGroupTreeRefresh(rootId: string, leafTypes: string[], enabled
         .watchQuery(
           new QueryRequest({
             type,
-            query: null,
+            query: leafMatch && type !== 'group' ? new QueryFilter({ type, match: leafMatch }) : null,
             name: `group-tree-refresh:${rootId}:${type}`,
             callback: () => refreshNode(rootId),
           }),
@@ -39,5 +46,5 @@ export function useGroupTreeRefresh(rootId: string, leafTypes: string[], enabled
       disposed = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [rootId, enabled, leafTypes.join(',')]);
+  }, [rootId, enabled, leafTypes.join(','), leafMatch]);
 }

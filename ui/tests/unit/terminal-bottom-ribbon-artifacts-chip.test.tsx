@@ -15,7 +15,6 @@ import { TerminalBottomRibbon } from '@src/components/terminal/interactive-termi
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@src/components/view-mode', () => ({ useIsAdvanced: () => false }));
-vi.mock('@src/components/prompt-library/PromptLibraryMenu', () => ({ PromptLibraryMenu: () => null }));
 
 const baseProps = {
   fileCount: 0,

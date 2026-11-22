@@ -207,7 +207,6 @@ describe('ProcessToolbar — one bar for every surface', () => {
     const items = screen.getAllByRole('menuitem').map((el) => el.getAttribute('data-testid'));
     expect(items).toEqual([
       'session-action-info',
-      'session-action-copy-details',
       'session-action-transcript',
       'session-action-command-options',
       'session-action-assets',
@@ -229,7 +228,6 @@ describe('ProcessToolbar — one bar for every surface', () => {
     const items = screen.getAllByRole('menuitem').map((el) => el.getAttribute('data-testid'));
     expect(items).toEqual([
       'session-action-info',
-      'session-action-copy-details',
       'session-action-transcript',
       'session-action-command-options',
       'session-action-assets',

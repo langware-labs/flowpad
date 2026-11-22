@@ -43,7 +43,7 @@ Find why something fails, **prove it**, and stop. No guessing, no estimating, no
 
    * reverting it makes the bug **come back**.
      Demonstrate *both* directions. One direction is a coincidence; both is a root cause.
-7. **Report inline and stop.** No file or memory artifact. The report is exactly two parts,
+7. **Report inline and stop.** No file or memory artifact. The report is exactly three parts,
    in this order — nothing else:
 
    1. **An ASCII flow chart** tracing the logical bug flow top-to-bottom, from the SYMPTOM down
@@ -53,6 +53,9 @@ Find why something fails, **prove it**, and stop. No guessing, no estimating, no
    2. **One line** stating the core of the issue *logically* — cause → effect in plain terms,
       e.g. "the query fails because the process is missing a flag" or "server restarted, so the
       cached PTY process id is stale." Not a restatement of the symptom; the mechanism.
+   3. **One line** stating the fix in simple, human-readable words — what changes and what that
+      does, e.g. "make user_id read-only, so nobody can move a rule onto another person." No file
+      paths, no code, no jargon; the EXPECTED FIX node in the chart carries those.
 
    Template:
 
@@ -72,6 +75,8 @@ Find why something fails, **prove it**, and stop. No guessing, no estimating, no
    ```
 
    **Core (one-liner):** \<logical cause → effect>.
+
+   **Fix (one-liner):** \<the fix in plain words>.
 
 **Never mask the symptom.** A slow / locked / flaky / 5xx failure *is* the bug to root-cause.
 Do not raise or add any timeout, retry, sleep, backoff, or poll budget to ride past it — that

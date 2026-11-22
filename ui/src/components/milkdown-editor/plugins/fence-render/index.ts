@@ -7,6 +7,7 @@
  *   - per-block Render | Code tab state (plugin-owned, remapped across edits)
  *   - a `code_block` NodeView hosting the tab strip, the rendered output, and
  *     the source pane
+ *   - a caret for the place between two rendered blocks (`fence-gap.ts`)
  *
  * Nothing here touches the schema, the parser, or the serializer. A NodeView is
  * render-only, so markdown output is byte-identical to not having this plugin
@@ -26,12 +27,14 @@ import { $view } from '@milkdown/utils';
 import { codeBlockSchema } from '@milkdown/preset-commonmark';
 import type { MilkdownPlugin } from '@milkdown/ctx';
 
+import { fenceGapPlugins } from './fence-gap';
 import { fenceModePlugin } from './fence-mode';
 import { fenceHostServicesCtx } from './host-services';
 import { createFenceNodeViewConstructor } from './node-view';
 
 export const fenceRenderPlugins: MilkdownPlugin[] = [
   fenceModePlugin,
+  ...fenceGapPlugins,
   fenceHostServicesCtx,
   // Read the slice per render rather than closing over its value here: the
   // plugin is built once, but navigation and the active project move under it.

@@ -34,14 +34,17 @@ def mock_input(row: dict) -> dict:
     return row.get("input", row)
 
 
+def load_rows(path: str) -> list:
+    """The rows in a file: `DM ds-rows` output, a list of rows, or one row."""
+    doc = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    if isinstance(doc, dict) and "rows" in doc:
+        doc = doc["rows"]
+    return doc if isinstance(doc, list) else [doc] if doc else []
+
+
 def load_row(row_path: str) -> dict:
     """The mock row's value from a file: the value itself, a row with `input`, or `DM ds-rows` output."""
-    row = json.loads(pathlib.Path(row_path).read_text(encoding="utf-8"))
-    if isinstance(row, dict) and "rows" in row:
-        row = row["rows"]
-    if isinstance(row, list):
-        row = row[0] if row else {}
-    return mock_input(row)
+    return mock_input((load_rows(row_path) or [{}])[0])
 
 
 def tree_of(row: dict) -> dict:
@@ -152,6 +155,9 @@ def _walk(tree: dict, mock: dict, problems: list) -> list:
                     kids.setdefault(sid, []).append(a)
         if mains > 1:
             problems.append(f"{sid}: {mains} main actions -- a screen continues one way; the others are branches")
+        for d in s.get("decisions") or []:
+            if not isinstance(d, dict) or not d.get("id") or not str(d.get("question") or "").strip():
+                problems.append(f"{sid}: decision {d!r} is not {{id, question}}")
         changes = s.get("changes") or []
         ids = [c.get("id") for c in changes]
         if len(set(ids)) != len(ids):

@@ -1,8 +1,9 @@
 /**
- * The bar's Record button and its dialog: the button sits LEFT of Share in both bar
- * branches and outside the cluster's fixed-width rule; idle it starts, recording it
- * stops and shows the time; the dialog's Share opens the standard share dialog on the
- * file where it sits, and Save moves it through the backend then leaves only Share.
+ * The recording's presence on the bar, and its dialog. Starting lives in the bar's menu
+ * (`top-bar-more-menu.test.tsx`); here: nothing on the bar while idle, a red stop button with
+ * the time while recording, and the dialog — mounted from the bar, not the menu — whose Share
+ * opens the standard share dialog on the file where it sits, and whose Save moves it through
+ * the backend then leaves only Share.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -48,26 +49,8 @@ vi.mock('@src/navigation/local-file-pointer', () => ({ dockPointerForFile: (p: s
 vi.mock('@src/utils/format-bytes', () => ({ formatBytes: (n: number) => `${n} B` }));
 const toasts = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock('@src/notifications/notify', () => ({ notify: toasts }));
-// The bar's other members: stubs that only need to be findable in order.
-vi.mock('@src/components/entity-actions/EntityActionsToolbar', () => ({
-  EntityActionsToolbar: ({ leading }: { leading?: React.ReactNode }) => (
-    <div>
-      {leading}
-      <button data-testid="entity-actions-share">share</button>
-    </div>
-  ),
-}));
-vi.mock('@src/components/top-nav-bar/PageShareButton', () => ({
-  PageShareButton: () => <button data-testid="entity-actions-share">share</button>,
-}));
-// The Context button pulls in navigation (and the whole SDK); this suite is about the record button.
-vi.mock('@src/components/entity-actions/ContextMenuButton', () => ({ ContextMenuButton: () => null }));
-vi.mock('@src/components/top-nav-bar/BookmarksStarButton', () => ({ BookmarksStarButton: () => <button>star</button> }));
-vi.mock('@src/components/favorites/favorite-target', () => ({ favoriteTargetForDock: () => null }));
-
-import { RecordScreenButton } from '@src/components/top-nav-bar/RecordScreenButton';
+import { RecordingIndicator } from '@src/components/top-nav-bar/RecordScreenButton';
 import { RecordingReadyDialog } from '@src/components/top-nav-bar/RecordingReadyDialog';
-import { TopBarActions } from '@src/components/top-nav-bar/TopBarActions';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const RECORDING = {
@@ -82,7 +65,7 @@ function wrap(ui: React.ReactElement) {
   return render(<TooltipProvider>{ui}</TooltipProvider>);
 }
 
-describe('RecordScreenButton', () => {
+describe('RecordingIndicator', () => {
   beforeEach(() => {
     rec.state = { phase: 'idle', busy: false, startedAt: null, recording: null };
     share.useFileShareSource.mockReturnValue(null);
@@ -93,38 +76,23 @@ describe('RecordScreenButton', () => {
     vi.clearAllMocks();
   });
 
-  it('leads the cluster, before Share, in the entity branch', () => {
-    wrap(<TopBarActions targetTypeId={{ toString: () => 'markdown-a1' } as never} targetTitle="Doc" dock={null} />);
-    const record = screen.getByTestId('top-nav-record-screen');
-    const shareBtn = screen.getByTestId('entity-actions-share');
-    expect(record.compareDocumentPosition(shareBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  it('idle: nothing on the bar', () => {
+    wrap(<RecordingIndicator />);
+    expect(screen.queryByTestId('top-nav-recording-stop')).toBeNull();
+    expect(screen.queryByTestId('recording-ready-dialog')).toBeNull();
   });
 
-  it('leads the cluster, before Share, in the dock-only branch too', () => {
-    wrap(<TopBarActions targetTypeId={null} targetTitle="" dock={{ vfsPath: null } as never} />);
-    const record = screen.getByTestId('top-nav-record-screen');
-    const shareBtn = screen.getByTestId('entity-actions-share');
-    expect(record.compareDocumentPosition(shareBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(record.closest('[data-testid=top-nav-actions]')).not.toBeNull();
-  });
-
-  it('idle: click starts a recording', () => {
-    wrap(<RecordScreenButton />);
-    const btn = screen.getByTestId('top-nav-record-screen');
-    expect(btn.getAttribute('aria-label')).toBe('Record screen');
-    fireEvent.click(btn);
-    expect(rec.startRecording).toHaveBeenCalledTimes(1);
-  });
-
-  it('recording: a wide cluster button with the elapsed time in red; click stops', () => {
+  it('recording: a wide, red, pulsing stop button with the elapsed time; click stops', () => {
     rec.state = { phase: 'recording', busy: false, startedAt: Date.now() - 42_000, recording: null };
-    wrap(<RecordScreenButton />);
-    const btn = screen.getByTestId('top-nav-record-screen');
+    wrap(<RecordingIndicator />);
+    const btn = screen.getByTestId('top-nav-recording-stop');
     expect(btn.getAttribute('aria-label')).toBe('Stop recording');
     expect(btn.getAttribute('data-recording')).toBe('true');
     expect(btn.hasAttribute('data-wide')).toBe(true);
     expect(btn.textContent).toContain('00:42');
     expect(btn.className).toContain('text-red-500');
+    expect(btn.className).toContain('animate-pulse');
+    expect(btn.className).toContain('motion-reduce:animate-none');
     fireEvent.click(btn);
     expect(rec.stopRecording).toHaveBeenCalledTimes(1);
   });
@@ -132,7 +100,7 @@ describe('RecordScreenButton', () => {
   it('ready: the dialog opens with the file, Share mounts the standard share dialog on it', async () => {
     rec.state = { phase: 'ready', busy: false, startedAt: null, recording: RECORDING };
     share.useFileShareSource.mockImplementation((_node: unknown, path: string | null) => (path ? { label: path.split('/').pop() } : null));
-    wrap(<RecordScreenButton />);
+    wrap(<RecordingIndicator />);
     expect(screen.getByTestId('recording-ready-dialog')).toBeTruthy();
     expect(screen.getByTestId('recording-file-name').textContent).toBe('screen-2026-11-02-13-26.webm');
     expect(screen.getByTestId('recording-preview').getAttribute('src')).toBe('blob:preview');

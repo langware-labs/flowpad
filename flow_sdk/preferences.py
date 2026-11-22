@@ -112,6 +112,24 @@ def write_instance_pref(key: str, value: Any) -> bool:
         return False
 
 
+def read_project_pick(key: str, project_id: Any) -> str:
+    """A person's own choice for one project on THIS computer, kept under ``key`` as
+    ``{<project id>: <name>}``; "" when there is none."""
+    picks = read_instance_pref(key, None)
+    return str(picks.get(str(project_id)) or "") if project_id and isinstance(picks, dict) else ""
+
+
+def write_project_pick(key: str, project_id: Any, name: str) -> None:
+    """Set (or, with "", clear) a person's choice for one project under ``key``."""
+    picks = read_instance_pref(key, None)
+    picks = dict(picks) if isinstance(picks, dict) else {}
+    if name:
+        picks[str(project_id)] = name
+    else:
+        picks.pop(str(project_id), None)
+    write_instance_pref(key, picks)
+
+
 def llm_source_order() -> tuple[str, ...]:
     """The source kinds in the user's order (``preferences.llm.source_order``), every known kind once.
 

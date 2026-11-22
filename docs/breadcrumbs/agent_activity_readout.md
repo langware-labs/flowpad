@@ -1,7 +1,8 @@
 ---
 id: 9445799d-e807-4cdf-80a5-3bfab86b335f
 title: Agent activity readout rules
-tags: ''
+tags:
+- breadcrumb.test.agent_activity_readout.rules
 description: The chat activity line sources its own frames from the process, may only
 version: 4
 ---
@@ -11,15 +12,32 @@ version: 4
 > Ground truth. Proven on 2026-08-13 (FLOWPAD-1980), extended 2026-08-19
 > (FLOWPAD-2008). Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.agent_activity_readout.rules
 sites:
-  - rel_path: "ui/tests/unit/chat-activity-readout.test.tsx"
+  - rel_path: ui/tests/unit/chat-activity-readout.test.tsx
     line: 49
-    note: "FAILING? read this tag's rules before editing — each case is a shipped bug, not a preference"
-  - rel_path: "ui/tests/unit/chat-activity-readout.test.tsx"
+    note: FAILING? read this tag's rules before editing — each case is a shipped bug, not a preference
+  - rel_path: ui/tests/unit/chat-activity-readout.test.tsx
     line: 231
-    note: "FAILING? read this tag's rules before editing — the 500ms floor and refinement pass-through are proven, not tunable"
+    note: FAILING? read this tag's rules before editing — the 500ms floor and refinement pass-through are proven, not tunable
+proven: 2026-08-13 · FLOWPAD-1980
+statements:
+  - text: Only the current turn may be read.
+  - text: When nothing qualifies, the slice is EMPTY, never the whole buffer.
+  - text: The newest tool call wins — not the newest unanswered one.
+  - text: Thinking supersedes the operation before it — via TWO independent signals, and is NAMED rather than blanked.
+  - text: Each shown operation gets ≥ `MIN_ACTIVITY_MS` (500 ms).
+  - text: Intermediate operations are skipped, never queued.
+  - text: A refinement of the SAME operation applies immediately, without resetting the floor.
+  - text: A held value never outlives its turn.
+  - text: A shell command's text is never shown.
+  - text: A terminal worker status is never rendered while the line is up.
+  - text: 'Layout: the detail is the only flexible item.'
+  - text: An assistant message ends the operation story, exactly as a reasoning frame does.
+  - text: The line takes the process and nothing else.
+    about:
+      - ui/src/components/entity-execution-panel/ChatActivityLine.tsx
 ```
 
 ## Expected behavior

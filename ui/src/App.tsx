@@ -152,6 +152,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
   // On the route, not at page start: the login callback lands on `/`, which redirects to the hub home.
   useEffect(() => loadGoogleTagManager(pathname, search), [pathname, search]);
 
+  // The desktop's own dialogs; the hub runtime has none of their APIs.
+  const desk = !isHubOnly();
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
@@ -184,24 +187,24 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <FirstRunGateRoot />
         <GlobalEvents />
         {/* One-click install from the hub lands here — desktop only (it writes files). */}
-        {!isHubOnly() && <AddAssetDialogRoot />}
+        {desk && <AddAssetDialogRoot />}
         <GitHubDeviceFlowModal />
         <OAuthCodeFlowModal />
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
             it has no place in hub mode. */}
-        {!isHubOnly() && <HarnessLoginModalRoot />}
+        {desk && <HarnessLoginModalRoot />}
         {/* A coding agent the server refused to start — one recovery card. */}
-        {!isHubOnly() && <LaunchFailureRoot />}
-        {!isHubOnly() && <HarnessSignInDialogRoot />}
-        {!isHubOnly() && (
+        {desk && <LaunchFailureRoot />}
+        {desk && <HarnessSignInDialogRoot />}
+        {desk && (
           <>
             <ProjectSetupDialogRoot />
             <ProjectLoadDialogRoot />
           </>
         )}
-        {!isHubOnly() && <SourceSetupDialogRoot />}
+        {desk && <SourceSetupDialogRoot />}
         {/* A required dependency of the open project is not on this machine. */}
-        {!isHubOnly() && <MissingDependenciesDialogRoot />}
+        {desk && <MissingDependenciesDialogRoot />}
         <MigrateLegacyKeychain />
         <SessionTakenOverOverlay />
         <SnifferActiveNotice />

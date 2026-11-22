@@ -1,7 +1,11 @@
-import { useState } from 'react';
-import type { Annotation } from '@sdk';
+import { useMemo, useRef, useState } from 'react';
+import { Annotation } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Briefcase, Check, Pencil, Plus, Trash2, User } from 'lucide-react';
+import { Briefcase, Check, FolderPlus, Pencil, Plus, Trash2, User } from 'lucide-react';
+import { BrowseableTree } from '@src/components/browseable-tree/BrowseableTree';
+import { groupRoot } from '@src/components/browseable-tree/adapters/groupRoot';
+import { useMenuDialogs } from '@src/components/ui/browseable-menu';
+import { useGroupTreeRefresh } from '@src/hooks/useGroupTreeRefresh';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useAuth } from '@src/hooks/useAuth';
@@ -9,17 +13,28 @@ import {
   addQuickPrompt,
   deleteNote,
   noteTitle,
+  quickPromptMatch,
   quickPromptTime,
+  reorderQuickPrompt,
   saveNote,
+  sortQuickPrompts,
   touchQuickPrompt,
   useQuickPrompts,
 } from '@src/hooks/use-entity-notes';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
+import { noteColor } from './note-palette';
+import { NoteColorPicker } from './NoteViews';
 import { StickyNoteShape } from './StickyNoteShape';
+
+/** The folder tree the quick prompts live in (docs/entities-groups.md). */
+export const QUICK_PROMPTS_NAMESPACE = 'quick-prompts';
+const EXPANDED_KEY = 'flowpad.quickPrompts.expanded';
+const LEAF_TYPES = [Annotation.type];
 
 /**
  * The terminal bar's quick prompts: saved notes (yours, and this project's) that one click types into
  * the session and submits. A Popover, not a tooltip — the inline box must survive the pointer leaving.
+ * Folders, moving and the manual order all come from the generic groups layer (`groupRoot`).
  */
 export function QuickPromptsMenu({
   projectId,
@@ -47,11 +62,43 @@ export function QuickPromptsMenu({
     void touchQuickPrompt(note);
   };
   const saveMine = (text: string) => {
-    if (user?.id) void addQuickPrompt(text, { type: 'user', id: user.id, name: user.name ?? '' });
+    if (user?.id) void addQuickPrompt(text, { type: 'user', id: user.id, name: user.name ?? '' }, prompts);
   };
 
+  const { requestName, confirm, dialogs, open: asking } = useMenuDialogs();
+  // The tree's rows outlive a render, so they reach the current `run` through a ref.
+  const runRef = useRef(run);
+  runRef.current = run;
+  const leafMatch = useMemo(() => quickPromptMatch({ userId: user?.id, projectId }), [user?.id, projectId]);
+  const tree = useMemo(
+    () =>
+      groupRoot({
+        namespace: QUICK_PROMPTS_NAMESPACE,
+        label: t`Quick prompts`,
+        leafTypes: LEAF_TYPES,
+        leafMatch,
+        order: {
+          sort: (members) => sortQuickPrompts(members as Annotation[]),
+          reorder: (siblings, dragId, anchor) => reorderQuickPrompt(siblings as Annotation[], dragId, anchor),
+        },
+        leafToBrowseable: (entity) => {
+          const note = entity as Annotation;
+          return {
+            label: noteTitle(note),
+            pointer: null,
+            content: <QuickPromptRow note={note} onRun={() => runRef.current(note)} />,
+          };
+        },
+        requestName,
+        confirm,
+      }),
+    [leafMatch, requestName, confirm, t],
+  );
+  const roots = useMemo(() => [tree.root], [tree]);
+  useGroupTreeRefresh(tree.root.id, LEAF_TYPES, open, leafMatch);
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={(next) => (next || !asking) && setOpen(next)}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -77,8 +124,18 @@ export function QuickPromptsMenu({
             <Trans>Quick prompts</Trans>
           </p>
           <span className="text-[10px] text-muted-foreground">
-            <Trans>Last used first · click to run</Trans>
+            <Trans>Click to run · drag to order</Trans>
           </span>
+          <button
+            type="button"
+            title={t`New folder`}
+            aria-label={t`New folder`}
+            onClick={() => void tree.newFolder()}
+            data-testid="quick-prompts-new-folder"
+            className={ROW_BUTTON}
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+          </button>
         </div>
         <div className="max-h-80 space-y-0.5 overflow-y-auto p-1.5">
           {prompts.length === 0 && (
@@ -86,9 +143,7 @@ export function QuickPromptsMenu({
               <Trans>No quick prompts yet. Type one below and press Enter.</Trans>
             </p>
           )}
-          {prompts.map((p) => (
-            <QuickPromptRow key={p.id} note={p} onRun={() => run(p)} />
-          ))}
+          {open && <BrowseableTree roots={roots} activePointer={null} persistKey={EXPANDED_KEY} rootless />}
           <div className="mt-1 flex items-center gap-1.5 border-t border-border px-1.5 pt-2">
             <ScopeIcon project={false} />
             <input
@@ -143,23 +198,48 @@ export function QuickPromptsMenu({
           )}
         </div>
       </PopoverContent>
+      {dialogs}
     </Popover>
   );
 }
 
 const ROW_BUTTON = 'shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground';
 
-/** One saved prompt: click runs it, the pencil edits its text in place, and delete takes two clicks. */
+/** One saved prompt: click runs it, its note picks its colour, the pencil edits its text in place, and
+ *  delete takes two clicks. */
 function QuickPromptRow({ note, onRun }: { note: Annotation; onRun: () => void }) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
+  const [picking, setPicking] = useState(false);
   // Delete takes two clicks: the first arms it (the bin turns into a check), the second deletes.
   const [armed, setArmed] = useState(false);
   const deleteLabel = armed ? t`Confirm: Delete` : t`Delete`;
 
   return (
-    <div data-testid="quick-prompt-row" className="flex w-full items-center gap-2 rounded px-1.5 py-1.5 hover:bg-muted">
+    <div data-testid="quick-prompt-row" className="flex w-full items-center gap-2">
       <ScopeIcon project={note.target_type === 'project'} />
+      <Popover open={picking} onOpenChange={setPicking}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            title={t`Color`}
+            aria-label={t`Color`}
+            data-testid="quick-prompt-color"
+            className="shrink-0 rounded hover:bg-muted"
+          >
+            <StickyNoteShape color={note.data?.color as string | undefined} size={18} />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent side="top" align="start" className="w-auto p-2" data-testid="quick-prompt-color-picker">
+          <NoteColorPicker
+            value={noteColor(note.data?.color).token}
+            onChange={(color) => {
+              if (color) void saveNote(note, { color });
+              setPicking(false);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
       {editing ? (
         <textarea
           autoFocus
@@ -181,9 +261,8 @@ function QuickPromptRow({ note, onRun }: { note: Annotation; onRun: () => void }
           type="button"
           onClick={onRun}
           data-testid="quick-prompt-run"
-          className="flex min-w-0 flex-1 items-center gap-2 text-start"
+          className="flex min-w-0 flex-1 items-center text-start"
         >
-          <StickyNoteShape color={note.data?.color as string | undefined} size={18} />
           <span className="block min-w-0 flex-1 truncate text-xs text-foreground">{noteTitle(note)}</span>
         </button>
       )}

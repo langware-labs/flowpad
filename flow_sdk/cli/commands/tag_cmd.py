@@ -18,6 +18,9 @@ Modes (LLMIndex summary tiers):
     block — a ≤60-word summary per doc (the working set)
     full  — whole doc bodies (size-capped; only when load-bearing)
 
+``flow tag tree|check|blocks|show|put|drop`` work on the statement blocks tags name in a
+project's docs (lw — ``tag_lw.py``, ``docs/lw.md``); they run in-process, with no server.
+
 Output is human-readable text — it is written to be pasted into an agent's
 context window, not parsed. Exit codes: 0 ok; 2 invalid args; 5 server error.
 """
@@ -45,6 +48,7 @@ from flow_sdk.cli.commands._common import (
 from flow_sdk.cli.commands._common import (
     post_graph_json as _post_graph_json,
 )
+from flow_sdk.cli.commands.tag_lw import register as register_statement_commands
 
 tag_app = typer.Typer(
     name="tag",
@@ -52,6 +56,8 @@ tag_app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
 )
+
+register_statement_commands(tag_app)  # tree / check / blocks / show / put / drop — in-process, no server
 
 EXIT_OK = 0
 EXIT_INVALID_ARG = 2

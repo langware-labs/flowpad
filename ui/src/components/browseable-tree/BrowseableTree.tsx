@@ -107,6 +107,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     hoverSeenMs,
     previewSide = 'end',
     flat = false,
+    rootless = false,
   } = props;
 
   const tree = useBrowseableTree(roots, { persistKey, defaultExpandedIds });
@@ -188,6 +189,14 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   useEffect(() => {
     selectionRef.current?.clear();
   }, [rootIdsKey]);
+
+  // A rootless tree has no row to open its roots with, so they are open: a
+  // restored expansion set that lacks them would otherwise leave them unlisted
+  // for refreshes and range selection.
+  useEffect(() => {
+    if (rootless) for (const root of roots) if (!tree.isExpanded(root.id)) void tree.expand(root);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootless, rootIdsKey]);
 
   const handleNavigate = useCallback(
     (pointer: DockPointer) => {
@@ -287,6 +296,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             hoverSeenMs={hoverSeenMs}
             previewSide={previewSide}
             flat={flat}
+            headless={rootless}
             tree={tree}
             selection={selection}
             activePointer={activePointer}
@@ -327,6 +337,8 @@ function useDwell(ms: number | undefined, run: () => void) {
 
 interface RowProps {
   node: Browseable;
+  /** The container this row is listed in — it owns the manual order of its children. */
+  parent?: Browseable;
   level: number;
   /** Id of the top-level root this row lives under — the multi-select scope. */
   rootId: string;
@@ -351,10 +363,13 @@ interface RowProps {
   previewSide?: 'start' | 'end';
   /** No row expands, so no chevron column — see BrowseableTreeProps. */
   flat?: boolean;
+  /** A root of a `rootless` tree: no row, always open, its children at its own level. */
+  headless?: boolean;
 }
 
 function BrowseableRow({
   node,
+  parent,
   level,
   rootId,
   tree,
@@ -372,12 +387,16 @@ function BrowseableRow({
   hoverSeenMs,
   previewSide = 'end',
   flat = false,
+  headless = false,
 }: RowProps) {
   const { t } = useLingui();
-  const expanded = tree.isExpanded(node.id);
+  const expanded = headless || tree.isExpanded(node.id);
+  const childLevel = headless ? level : level + 1;
   const loadState = tree.getLoadState(node.id);
   const children = tree.getChildren(node.id);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  /** The gap a reorder drop would land in — drawn as a line on that edge of the row. */
+  const [dropEdge, setDropEdge] = useState<'before' | 'after' | null>(null);
   const [isDropping, setIsDropping] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -557,6 +576,20 @@ function BrowseableRow({
   // (HTML5 hides the body pre-drop) — accept optimistically on MIME presence
   // and run the full canDrop check at drop time via readBrowseableDrag.
   const canAcceptDrop = !!(dragData && node.onDrop && (!node.canDrop || node.canDrop(dragData)));
+  // A leaf in a container that orders its children takes a drop on its upper or
+  // lower half: the dragged row lands before or after it. Containers keep the
+  // whole row for "drop into".
+  const reorderChildren = !node.listChildren ? parent?.reorderChildren : undefined;
+  const canReorder = !!(
+    reorderChildren &&
+    dragData &&
+    dragData.id !== node.dragData?.id &&
+    (!parent?.canDrop || parent.canDrop(dragData))
+  );
+  const edgeAt = (e: React.DragEvent): 'before' | 'after' => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return e.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+  };
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
       if (!node.dragData) return;
@@ -575,11 +608,19 @@ function BrowseableRow({
 
   const handleDragEnd = useCallback(() => {
     setIsDropTarget(false);
+    setDropEdge(null);
     onDragEnd();
   }, [onDragEnd]);
 
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
+      if (canReorder) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        setDropEdge(edgeAt(e));
+        return;
+      }
       const foreign = !dragData && !!node.onDrop && hasBrowseableDrag(e);
       // OS files from outside the app (only the 'Files' type is visible
       // pre-drop) — a copy into the node, not a move within the tree.
@@ -590,16 +631,29 @@ function BrowseableRow({
       e.dataTransfer.dropEffect = (external && !canAcceptDrop && !foreign) || e.altKey ? 'copy' : 'move';
       setIsDropTarget(true);
     },
-    [canAcceptDrop, dragData, node.onDrop, node.onExternalFilesDrop],
+    [canAcceptDrop, canReorder, dragData, node.onDrop, node.onExternalFilesDrop],
   );
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
     setIsDropTarget(false);
+    setDropEdge(null);
   }, []);
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
+      if (canReorder && dragData) {
+        e.preventDefault();
+        e.stopPropagation();
+        setDropEdge(null);
+        const anchorId = node.dragData?.id ?? node.id;
+        try {
+          await reorderChildren!(dragData.id, edgeAt(e) === 'before' ? { beforeId: anchorId } : { afterId: anchorId });
+        } finally {
+          onDragEnd();
+        }
+        return;
+      }
       // Payload: lifted state for intra-tree drags, MIME body for foreign ones.
       const payload = dragData ?? readBrowseableDrag(e);
       if (!payload) {
@@ -638,7 +692,7 @@ function BrowseableRow({
         onDragEnd();
       }
     },
-    [dragData, node, onDragEnd],
+    [dragData, node, onDragEnd, canReorder, reorderChildren],
   );
 
   /** Row previews open toward `previewSide`, a LOGICAL side: resolved against
@@ -684,6 +738,12 @@ function BrowseableRow({
         void handleDrop(e);
       }}
     >
+      {dropEdge && (
+        <div
+          data-testid={`browseable-drop-${dropEdge}`}
+          className={`pointer-events-none absolute inset-x-0 h-0.5 bg-primary ${dropEdge === 'before' ? 'top-0' : 'bottom-0'}`}
+        />
+      )}
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
         {hasChildrenHint ? (
           <button
@@ -824,8 +884,15 @@ function BrowseableRow({
       data-browseable-id={node.id}
       data-selection-key={node.selectionKey}
       data-resource-vfs={node.pointer?.resourceVfsPath?.uri}
+      // A headless root has no row, so the list itself takes its drops (the empty space under the rows).
+      {...(headless && {
+        className: `min-h-full pb-4 ${isDropTarget ? 'rounded-md bg-primary/10' : ''}`,
+        onDragOver: handleDragOver,
+        onDragLeave: handleDragLeave,
+        onDrop: (e: React.DragEvent) => void handleDrop(e),
+      })}
     >
-      {hasTip ? (
+      {headless ? null : hasTip ? (
         <Tooltip>
           {triggerEl}
           {/* Sideways, never below: rows stack vertically, so a bottom tooltip
@@ -853,17 +920,17 @@ function BrowseableRow({
       {expanded && (
         <div className="space-y-0.5">
           {loadState.status === 'loading' && children.length === 0 && (
-            <div className="p-1 text-xs text-muted-foreground" style={{ marginInlineStart: `${(level + 1) * 14}px` }}>
+            <div className="p-1 text-xs text-muted-foreground" style={{ marginInlineStart: `${childLevel * 14}px` }}>
               <Trans>Loading…</Trans>
             </div>
           )}
           {loadState.status === 'error' && (
-            <div className="p-1 text-xs text-destructive" style={{ marginInlineStart: `${(level + 1) * 14}px` }}>
+            <div className="p-1 text-xs text-destructive" style={{ marginInlineStart: `${childLevel * 14}px` }}>
               {loadState.message || t`Failed to load`}
             </div>
           )}
-          {loadState.status === 'ready' && children.length === 0 && (
-            <div className="p-1 text-xs text-muted-foreground" style={{ marginInlineStart: `${(level + 1) * 14}px` }}>
+          {loadState.status === 'ready' && children.length === 0 && !headless && (
+            <div className="p-1 text-xs text-muted-foreground" style={{ marginInlineStart: `${childLevel * 14}px` }}>
               <Trans>Empty</Trans>
             </div>
           )}
@@ -871,7 +938,8 @@ function BrowseableRow({
             <BrowseableRow
               key={child.id}
               node={child}
-              level={level + 1}
+              parent={node}
+              level={childLevel}
               rootId={rootId}
               hoverSeenMs={hoverSeenMs}
               previewSide={previewSide}

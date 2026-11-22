@@ -215,6 +215,8 @@ export interface ActiveVault {
   usable: boolean;
   /** A project vault: it is the project's default. */
   is_default: boolean;
+  /** The person chose it for this project on this computer; it wins over every other scope. */
+  picked?: boolean;
 }
 
 /** Whether this computer can read a vault right now (`VaultAccess`, `flow_sdk/secrets/managers.py`). */
@@ -485,6 +487,14 @@ export class CredentialsService {
   /** Make `name` the project's default vault ("" clears it). */
   async setDefaultVault(projectId: string, name: string): Promise<SecretVaultList> {
     const action = this.action('vault-default', 'POST');
+    action.bodyParameters = { project_id: projectId, name };
+    return this.asVaultList(await dataManager.callAction<unknown, Partial<SecretVaultList>>(action));
+  }
+
+  /** The person's own vault for the project on this computer: a project vault's name, `global`, or ""
+   *  to go back to the project's default. Saved on this instance, never in the project. */
+  async setVaultPick(projectId: string, name: string): Promise<SecretVaultList> {
+    const action = this.action('vault-pick', 'POST');
     action.bodyParameters = { project_id: projectId, name };
     return this.asVaultList(await dataManager.callAction<unknown, Partial<SecretVaultList>>(action));
   }

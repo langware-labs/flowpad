@@ -16,7 +16,8 @@ const SRC = 'about:blank#visibility';
 const frame = () => document.querySelector<HTMLIFrameElement>(`iframe[src="${SRC}"]`)!;
 const listen = (iframe: HTMLIFrameElement) => {
   const told: unknown[] = [];
-  const guest = { postMessage: (message: unknown) => told.push(message) };
+  // `close`: jsdom closes every frame still in the document when the file's environment is torn down.
+  const guest = { postMessage: (message: unknown) => told.push(message), close: () => {} };
   Object.defineProperty(iframe, 'contentWindow', { get: () => guest, configurable: true });
   return { told, guest };
 };

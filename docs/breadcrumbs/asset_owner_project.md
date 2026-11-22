@@ -12,12 +12,16 @@ description: assetDocumentAtOwner rebases an unscoped Assets document URL onto i
 
 > Ground truth. Proven by the fix 8c6d59b1b (PR #814, 2026-11-10): the bound test failed without it and passes with it. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.asset_owner_project.rules
 sites:
-  - rel_path: "ui/tests/e2e/llm-funding-setup/global_default.spec.ts"
+  - rel_path: ui/tests/e2e/llm-funding-setup/global_default.spec.ts
     line: 68
-    note: "FAILING? read this tag's rules before touching assetDocumentAtOwner's owner check"
+    note: FAILING? read this tag's rules before touching assetDocumentAtOwner's owner check
+proven: '2026-11-10'
+statements:
+  - text: The loader never redirects to `/dock/project/<P>/…` unless P is a project this backend can load.
+  - text: '"No owner" and "owner that is not a project" end the same way: the document opens unscoped.'
 ```
 
 ## Expected behavior
@@ -41,11 +45,6 @@ folder (not a project) opens the wizard viewer. It must not show "Project not fo
   Only a project that loads gets `DockPointer.rebaseAssetsOntoProject`.
 
 ## Invariants
-
-* The loader never redirects to `/dock/project/<P>/…` unless P is a project this backend
-  can load.
-* "No owner" and "owner that is not a project" end the same way: the document opens
-  unscoped.
 
 ## Failure modes
 

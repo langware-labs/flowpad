@@ -4,7 +4,7 @@
  */
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Annotation } from '@sdk';
+import { Annotation, Group } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const USER = '56cb3eae-77ff-5727-8d01-08fce10852e0';
@@ -27,6 +27,8 @@ vi.mock('@src/hooks/use-entity-notes', async (orig) => ({
   saveNote: notes.save,
 }));
 
+vi.mock('@src/hooks/useGroupTreeRefresh', () => ({ useGroupTreeRefresh: () => undefined }));
+
 import { QuickPromptsMenu } from '@src/components/notes/QuickPromptsMenu';
 
 const prompt = (content: string) =>
@@ -42,6 +44,8 @@ const prompt = (content: string) =>
 beforeEach(() => {
   notes.prompts = [prompt('Run the tests')];
   vi.clearAllMocks();
+  // The list is the group tree: its root level is what the SDK lists.
+  vi.spyOn(Group, 'listRoot').mockImplementation(async () => ({ groups: [], members: notes.prompts as Annotation[] }));
 });
 afterEach(() => cleanup());
 
@@ -49,6 +53,7 @@ async function open(lastPromptText: string | null = null) {
   const onSend = vi.fn();
   render(<QuickPromptsMenu projectId={PROJECT} isActive lastPromptText={lastPromptText} onSend={onSend} />);
   await userEvent.click(screen.getByTestId('quick-prompts-button'));
+  await screen.findByTestId('quick-prompt-row');
   return onSend;
 }
 
@@ -64,7 +69,7 @@ describe('QuickPromptsMenu', () => {
   it('Enter in the inline box saves a Mine prompt and sends nothing', async () => {
     const onSend = await open();
     await userEvent.type(screen.getByTestId('quick-prompt-input'), '  Commit it  {Enter}');
-    expect(notes.add).toHaveBeenCalledWith('Commit it', { type: 'user', id: USER, name: 'me' });
+    expect(notes.add).toHaveBeenCalledWith('Commit it', { type: 'user', id: USER, name: 'me' }, notes.prompts);
     expect(onSend).not.toHaveBeenCalled();
     expect((screen.getByTestId('quick-prompt-input') as HTMLInputElement).value).toBe('');
   });
@@ -72,7 +77,7 @@ describe('QuickPromptsMenu', () => {
   it("the session's last prompt is saved, not sent — and is not offered once saved", async () => {
     const onSend = await open('Say hi');
     await userEvent.click(screen.getByTestId('quick-prompt-last'));
-    expect(notes.add).toHaveBeenCalledWith('Say hi', { type: 'user', id: USER, name: 'me' });
+    expect(notes.add).toHaveBeenCalledWith('Say hi', { type: 'user', id: USER, name: 'me' }, notes.prompts);
     expect(onSend).not.toHaveBeenCalled();
     cleanup();
     await open('Run the tests');
@@ -86,6 +91,15 @@ describe('QuickPromptsMenu', () => {
     expect(screen.getByTestId('quick-prompt-delete').dataset.armed).toBe('true');
     await userEvent.click(screen.getByTestId('quick-prompt-delete'));
     expect(notes.del).toHaveBeenCalledWith(notes.prompts[0]);
+  });
+
+  it("a click on the prompt's note picks its colour and sends nothing", async () => {
+    const onSend = await open();
+    await userEvent.click(screen.getByTestId('quick-prompt-color'));
+    await userEvent.click(await screen.findByRole('option', { name: 'blue' }));
+    expect(notes.save).toHaveBeenCalledWith(notes.prompts[0], { color: 'blue' });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByTestId('quick-prompts-popover')).toBeTruthy();
   });
 
   it('edit changes the text in place and sends nothing', async () => {

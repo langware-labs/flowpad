@@ -1,4 +1,4 @@
-import { forwardRef, useMemo, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
+import { forwardRef, useMemo, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { Tag as TagIcon, X, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { FlowMessage, QueryRequest, Tag, tagIsWithin, tagTree } from '@sdk';
@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { errorMessage } from '@src/lib/error-message';
+import { tagChipStyle } from './tag-chip';
 import { TagInput } from './TagInput';
 import { TagOffIcon } from './TagOffIcon';
 import { messageTagContext, messageTagReturn } from './message-tag-navigation';
@@ -63,16 +64,7 @@ export function useTagAutomations() {
   }, [data]);
 }
 
-/** A tag colour remains readable in both themes; text uses the app foreground. */
-export function tagChipStyle(color?: string | null): CSSProperties | undefined {
-  return color
-    ? {
-        borderColor: color,
-        backgroundColor: `color-mix(in srgb, ${color} 18%, hsl(var(--background)))`,
-        color: 'hsl(var(--foreground))',
-      }
-    : undefined;
-}
+export { tagChipStyle };
 
 /** The tags under `root` as a tree: each node with its depth, intermediates included. */
 export function treeRows(names: string[], root: string): Array<{ name: string; depth: number }> {

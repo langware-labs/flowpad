@@ -1061,6 +1061,9 @@ server.add_router(worldview_router)
 from flow_sdk.server.routes.it_session import router as it_session_router  # noqa: E402
 
 server.add_router(it_session_router)
+from flow_sdk.server.routes.remote_control import router as remote_control_router  # noqa: E402
+
+server.add_router(remote_control_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

@@ -18,6 +18,9 @@ Order (each layer present only when its scope applies and it has text):
 ``AGENTS``          persona / embedded agents (vibe.md, standard.md, wizards…)
 ``AUTO_OPEN``       what a vibe session's ``auto_open`` already showed
 ``LANGUAGE``        the project's ``# Language`` directive (non-English locale)
+``BROWSER``         the session's browser driver: which browser it has and what drives it
+``CREDENTIALS``     the project's credentials, by name
+``SECRET_MANAGER``  the active vault's manager: how that vault behaves
 ``SUBJECT``         the file an app chat was opened about (``target_typeid_str``)
 ==================  ===============================================================
 """
@@ -34,6 +37,7 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.browser_choice import BrowserLaunch
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +62,9 @@ class LayerKey(StrEnum):
     AGENTS = "agents"
     AUTO_OPEN = "auto_open"
     LANGUAGE = "language"
+    BROWSER = "browser"
     CREDENTIALS = "credentials"
+    SECRET_MANAGER = "secret_manager"
     SUBJECT = "subject"
 
 
@@ -115,11 +121,14 @@ async def _language_layer(process: "AgenticProcess") -> str:
     return language_prompt_block(name) if name else ""
 
 
-async def compose_layers(process: "AgenticProcess", agents: dict | None = None) -> list[PromptLayer]:
+async def compose_layers(
+    process: "AgenticProcess", agents: dict | None = None, *, browser: "BrowserLaunch | None" = None,
+) -> list[PromptLayer]:
     """The process's system-prompt layers, in order, empty ones dropped.
 
     ``agents`` is the embedded-agents JSON (name → spec) the ``AGENTS`` and
-    ``AUTO_OPEN`` layers render from; without it they are empty.
+    ``AUTO_OPEN`` layers render from; without it they are empty. ``browser`` is the
+    launch's browser (``browser_choice``); without it there is no ``BROWSER`` layer.
     """
     from flow_sdk.builtin.agent_auto_open import auto_open_prompt_block  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.process_assets import (  # noqa: PLC0415
@@ -152,7 +161,9 @@ async def compose_layers(process: "AgenticProcess", agents: dict | None = None) 
         (LayerKey.AGENTS, agents_block),
         (LayerKey.AUTO_OPEN, auto_open),
         (LayerKey.LANGUAGE, await _language_layer(process)),
+        (LayerKey.BROWSER, browser.instructions() if browser is not None else ""),
         (LayerKey.CREDENTIALS, await _credentials_layer(process)),
+        (LayerKey.SECRET_MANAGER, await _secret_manager_layer(process)),
         (LayerKey.SUBJECT, subject_layer(process.target_typeid_str) if is_app_launch(data) else ""),
     )
     stripped = ((key, text.strip()) for key, text in candidates)
@@ -181,6 +192,21 @@ async def _credentials_layer(process: "AgenticProcess") -> str:
     )
 
     return await credentials_prompt_block(process) or ""
+
+
+async def _secret_manager_layer(process: "AgenticProcess") -> str:
+    """The active vault's manager, speaking for itself (its ``instructions.md``, the vault's config filled
+    in). Names and places only: composing a prompt never runs a manager, so it never raises an unlock."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import _process_project  # noqa: PLC0415
+    from flow_sdk.secrets import managers  # noqa: PLC0415
+    from flow_sdk.secrets.active import active_vault_of  # noqa: PLC0415
+
+    try:
+        active = await active_vault_of(await _process_project(process))
+        return managers.instructions_for(active.vault, name=active.name) if active is not None else ""
+    except Exception:  # noqa: BLE001 — a vault that cannot be described is no layer, never a failed launch
+        logger.exception("AgenticProcess %s: could not describe the active secret vault", process.id)
+        return ""
 
 
 def render(layers: list[PromptLayer]) -> str:

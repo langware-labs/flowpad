@@ -11,12 +11,20 @@ description: A worker is HANDED its interpreter as FLOWPAD_PYTHON — `uv run` r
 
 > Ground truth. Proven by RCA on 2026-08-12. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.worker_interpreter.rules
 sites:
-  - rel_path: "tests/cli/test_flow_diagnose_skill.py"
+  - rel_path: tests/cli/test_flow_diagnose_skill.py
     line: 140
-    note: "FAILING? read this tag's rules before editing - never assert on absence of the import error"
+    note: FAILING? read this tag's rules before editing - never assert on absence of the import error
+proven: '2026-08-12'
+statements:
+  - text: '`FLOWPAD_PYTHON` is assigned, never `setdefault`-ed.'
+  - text: '`FLOWPAD_PYTHON` is stripped from the restart payload.'
+  - text: No shipped skill runs Flowpad code through `uv run`, `python3`, or bare `python`.
+  - text: '`report.py`''s guard must never contain the literal `diagnosis_id`.'
+  - text: The test asserts on *reaching argparse*, not on the absence of `ModuleNotFoundError`.
+  - text: The test drops `VIRTUAL_ENV`.
 ```
 
 ## Expected behavior

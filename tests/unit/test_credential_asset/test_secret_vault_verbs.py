@@ -205,6 +205,29 @@ async def test_active_vault_most_specific_scope_wins(home, project, pid, monkeyp
         svc.set_global_vault({"manager": "no-such-manager"})
 
 
+async def test_the_persons_pick_wins_and_never_touches_the_project(home, project, pid, monkeypatch):
+    """A pick is this computer's: it beats the project default and an entity's own vault, and the manifest keeps its default."""
+    from flow_sdk.assets.project_manifest import read_secret_vault_setup
+    from flow_sdk.secrets import active
+
+    shared = active.describe(active.SecretScope.GLOBAL, "global", SecretVaultSpec(manager="memvault", config={"vault": "v-mine"}))
+    monkeypatch.setattr(active, "global_vault", lambda: shared)
+    await _vault(pid, "team")
+    await _vault(pid, "infra")
+    await svc.set_default_vault(pid, "team")
+    listed = await svc.set_vault_pick(pid, "infra")
+    assert (listed["active"]["name"], listed["active"]["picked"]) == ("infra", True)
+    await _cred(pid, {"ACME_KEY": "k"})
+    await svc.publish("acme", pid, "team")
+    assert (await active.active_vault_of(await svc.credential_named("acme", project))).name == "infra"
+    assert read_secret_vault_setup(Path(project.fs_storage_mount_path))[1] == "team"
+    assert (await svc.set_vault_pick(pid, "global"))["active"]["scope"] == "global"
+    cleared = (await svc.set_vault_pick(pid, ""))["active"]
+    assert (cleared["name"], cleared["picked"]) == ("team", False)
+    with pytest.raises(svc.CredentialError):
+        await svc.set_vault_pick(pid, "nope")
+
+
 async def test_a_vault_read_answers_values_refuses_a_sealed_vault_and_saves_nothing(home, project, pid, monkeypatch):
     from flow_sdk.secrets import active, managers
     from flow_sdk.secrets.errors import MissingSecrets

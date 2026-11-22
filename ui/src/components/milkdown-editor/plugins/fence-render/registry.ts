@@ -54,6 +54,35 @@ export interface FenceRenderContext {
    * terminates with one — can hand its output over as-is.
    */
   commit(nextSource: string): void;
+  /**
+   * Put keyboard focus back in the document. For an edit made with a control
+   * that then disappears (a delete button): without it focus is left nowhere,
+   * and undo, which the document owns, does not reach the edit.
+   */
+  focusDocument?(): void;
+  /**
+   * Which of the renderer's extra views to draw (a `FenceView.id` from its
+   * `chrome`), or `undefined` for the main one.
+   */
+  view?: string;
+}
+
+/** An extra tab of a block, beside its main one and "Code". */
+export interface FenceView {
+  id: string;
+  label: string;
+  /** Shown as a small counter after the label. */
+  count?: number;
+  /** `'warn'` draws the counter as something that needs attention. */
+  tone?: 'warn';
+}
+
+/** What a block shows in its tab row besides the main tab and "Code". */
+export interface FenceChrome {
+  /** Extra tabs, in order. A view with nothing to show is simply not listed. */
+  views?: FenceView[];
+  /** The tag the block is named by, drawn as a tag chip at the end of the row. */
+  tag?: string;
 }
 
 export interface FenceRenderer {
@@ -77,6 +106,12 @@ export interface FenceRenderer {
    * not flash to blank.
    */
   render(code: string, host: HTMLElement, ctx: FenceRenderContext): Promise<void> | void;
+  /**
+   * The block's tab row, derived from its source: extra views and its tag.
+   * Called before every render; throwing (a block that does not parse) keeps
+   * the row the last good render left.
+   */
+  chrome?(code: string): FenceChrome;
 }
 
 const RENDERERS = new Map<string, FenceRenderer>();

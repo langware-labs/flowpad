@@ -15,7 +15,7 @@ AGENT_ROOT = Path(flowpad_assistant_project_root()) / "agentic-assets" / "agent"
 
 EXPECTED = {
     "artifact-setup", "asset-cleanup", "capability-installer", "chrome-auth",
-    "cloud-error-fixer", "diagnose", "email-summarizer", "emailer", "git-setup", "stream-inbox-classifier",
+    "cloud-error-fixer", "diagnose", "email-summarizer", "emailer", "git-setup", "linkedin-poster", "linkedin-reader", "stream-inbox-classifier",
     "migration-runner", "prompt-runner", "provisioner", "setup-fixer", "slack-poster", "slack-summarizer", "task-analyze",
     "vibe",
 }
@@ -38,6 +38,10 @@ COSTLIER_BY_DESIGN = {
     # the same send-verb tool-calling pattern the emailer's incident documented.
     # Same reasoning, same tier.
     "slack-poster": "sonnet",
+    # LinkedIn has no API: both agents drive a signed-in browser page by page, and the poster's send is
+    # as irreversible as the slack-poster's. Browser driving is the tool-calling load haiku drops.
+    "linkedin-poster": "sonnet",
+    "linkedin-reader": "sonnet",
     # The main agent of a Stream Inbox classification reads nothing itself: one haiku
     # `conversation_tagger` per conversation does. What it decides is the tag
     # tree — approve a new tag or answer "use the existing one" across dozens of

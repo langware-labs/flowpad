@@ -267,16 +267,17 @@ async def test_forbidden_page_says_why(client, request_kwargs, cookie_line, tick
 
 @pytest.mark.asyncio
 async def test_forbidden_page_never_echoes_a_credential_or_markup(client):
-    sent = "v1.visitor|app|abc.1.deadbeef"
+    # Non-hex sentinels: the page shows a random hex grant id, which once read "50c7cafe".
+    sent = "v1.visitor|app|abc.1.wombatsig"
     with _armed():
         response = await client.get(
-            "/<script>alert(1)</script>", params={"ticket": "v1.secretish.1.cafe"}, cookies={COOKIE: sent}
+            "/<script>alert(1)</script>", params={"ticket": "v1.secretish.1.quokkasig"}, cookies={COOKIE: sent}
         )
 
     assert response.status_code == 403
     assert "<script>alert(1)" not in response.text
     assert "&lt;script&gt;" in response.text
-    assert "deadbeef" not in response.text and "cafe" not in response.text
+    assert "wombatsig" not in response.text and "quokkasig" not in response.text
 
 
 @pytest.mark.parametrize(
