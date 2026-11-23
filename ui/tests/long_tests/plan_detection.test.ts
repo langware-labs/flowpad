@@ -86,8 +86,12 @@ describe('AgenticProcess plan detection — end-to-end', () => {
         visible: true,
       }).save([]);
 
-      // Spawn Claude in interactive PTY mode and wait for the shell link.
-      await proc.start({ visible: true });
+      // Spawn Claude in interactive PTY mode and wait for the shell link, with the
+      // prompt as the launch argument — the product's own way to open a PTY worker
+      // on a prompt (``AgenticProcess.spawn`` does exactly this, and ``start_pty``
+      // "consumes a queued prompt as its launch arg"). Nothing is typed, so there
+      // is no composer to race.
+      await proc.start({ visible: true, instruction: PROMPT });
 
       // Subscribe to lines + plan events. Validate=true so the handler
       // receives the resolved Markdown (or null) once getPlan() runs.
@@ -129,17 +133,15 @@ describe('AgenticProcess plan detection — end-to-end', () => {
             `session_id now=${proc.session_id ?? 'null'}`,
         );
 
-        // Send the prompt as text, then Enter as a separate keystroke.
-        // Claude's TUI bracketed-paste-wraps any chunk we send, so a
-        // trailing \r in the same chunk is absorbed as paste content
-        // rather than treated as Enter-to-submit. Split into two writes
-        // with a long enough delay for the paste to settle.
-        const pty = proc.ptyConnection!;
-        await pty.sendInput(PROMPT);
-        await new Promise((r) => setTimeout(r, 1500));
-        await pty.sendInput('\r');
+        // The prompt went in as the launch argument above. It used to be typed
+        // here — sendInput(text), sleep 1500ms, sendInput('\r') — which raced the
+        // backend's own input gate: a raw write into a freshly-booted TUI is
+        // "silently dropped" (shell.py, ``wait_for_input_ready``), and
+        // ``ptyConnection.isLive`` only says the TRANSPORT is attached, not that
+        // Claude has painted its composer. The Enter was swallowed by the booting
+        // TUI and the prompt sat unsent, so no plan was ever made.
         // eslint-disable-next-line no-console
-        console.log(`[plan_detection] prompt sent + Enter. Polling getPlan...`);
+        console.log(`[plan_detection] prompt launched with the worker. Polling getPlan...`);
 
         // Poll getPlan() until the plan resolves or we hit the test budget.
         // Plan generation involves multiple model round-trips; budget
@@ -147,7 +149,16 @@ describe('AgenticProcess plan detection — end-to-end', () => {
         const deadline = Date.now() + 200_000;
         let resolved: Markdown | null = null;
         while (Date.now() < deadline) {
-          resolved = await proc.getPlan();
+          // ``force`` is required here, not an optimisation. ``getPlan`` is a
+          // cached transcript read keyed on session_id|shell_id|status|plan_path
+          // (``cachedTranscriptRead``), and polling for a plan moves none of
+          // them — status stays RUNNING and plan_path is null until a plan is
+          // found, which is the very thing being polled for. Unforced, the
+          // first null is cached and every later poll is handed that same
+          // promise, so the loop could never see the plan the worker went on to
+          // write. The SDK says as much: "a live refresh (the prompt just
+          // submitted) passes force".
+          resolved = await proc.getPlan({ force: true });
           if (resolved) break;
           if (hasClaudeLimitMessage(triggerLines)) {
             context.skip(`Claude unavailable for plan detection test: ${triggerLines.join('\n').slice(0, 240)}`);
