@@ -203,6 +203,20 @@ session id is one machine's, so no `trigger.json` can say it.
 - **Gone with the session.** Deleting a session deletes its waiting callbacks (`drop_callbacks`); a
   fired one stays, as every spent one-shot does.
 
+## A monitor on a session's goal
+
+`flow process monitor [-p <session>] --name <n> [--goal "<g>"] [--stop-condition "<s>"] --cron '<mask>'` writes, under
+one key `<session id>_monitor_<name>`, a `Monitor` (`agentic-assets/monitor/<key>/monitor.json`, `MonitorSpec`: the
+goal) and its cron trigger beside it (`agentic-assets/trigger/<key>/`, `recommended: false`, switched on). Each tick runs
+`flow process monitor-nudge <key>`: skipped while the session is `busy`; otherwise it forks the session and asks the fork
+in its own process (SDK, a second SQLite writer — accepted) for a `MonitorVerdict` (`goal_met` | `stop_condition_reached`
+| `continue_to_work`, retried 3× with pydantic's error). `continue_to_work` prompts the session through its `prompt`
+action (stream drained: a terminal turn is cancelled when its listener hangs up); met or reached removes both, quietly.
+A session that cannot fork is prompted to judge for itself. `flow process unmonitor <key>` removes both.
+The fork is deleted (`AgenticProcess.delete`: row and transcript) as soon as it has answered or failed to, so a check
+adds nothing to the session list. Each nudge's result is appended to `nudge_log` in `monitor.json` (the newest 100:
+a verdict, `skipped_busy`, `self_check`, or the failure's error code); it goes with the monitor when that is removed.
+
 ## Rules that are easy to break
 
 - **A one-shot whose time passed still runs, once.** The scheduler drops a run more than 60s late and a
