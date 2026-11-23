@@ -49,10 +49,10 @@ const evictionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let snapshot: ReadonlyArray<ActivityProgressSpec> = [];
 let attached = false;
 /**
- * The last root that FINISHED, kept until someone dismisses it or another root finishes.
+ * The last root that FINISHED, kept until another root finishes.
  * `RECEIPT_LINGER_MS` is right for the live list (it must not lie about what is running),
  * but two seconds is not enough to read how a long job ended — a QA cycle's verdict, an
- * index's error count. The receipt is that result, held where the footer can show it.
+ * index's error count. The receipt is that result, held for the open details modal.
  */
 let receipt: ActivityProgressSpec | null = null;
 
@@ -188,13 +188,6 @@ function forget(k: string): void {
   evictionTimers.delete(k);
   specs.delete(k);
   sortKeys.delete(k);
-  notify();
-}
-
-/** Forget the last finished root — the footer's dismiss. */
-export function dismissActivityReceipt(): void {
-  if (receipt === null) return;
-  receipt = null;
   notify();
 }
 

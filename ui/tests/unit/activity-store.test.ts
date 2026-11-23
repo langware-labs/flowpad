@@ -4,7 +4,6 @@ import { renderHook, act } from '@testing-library/react';
 import {
   RECEIPT_LINGER_MS,
   __resetActivityStoreForTest,
-  dismissActivityReceipt,
   dropActivity,
   getActivities,
   getActivity,
@@ -143,7 +142,7 @@ describe('activity store', () => {
     useAlertStore.setState({ alerts: [] });
   });
 
-  it('keeps the last finished root as a receipt past the linger, until dismissed', () => {
+  it('keeps the last finished root as a receipt past the linger', () => {
     const { result } = renderHook(() => useActivityReceipt());
     act(() => handleActivitySnapshot(spec({ seq: 2, state: 'failed', message: '1 RED' })));
     act(() => {
@@ -152,9 +151,6 @@ describe('activity store', () => {
 
     expect(getActivity('index')).toBeNull();
     expect(result.current?.message).toBe('1 RED');
-
-    act(() => dismissActivityReceipt());
-    expect(result.current).toBeNull();
   });
 
   it('a new activity at a recycled address replaces the receipt instead of being dropped', () => {
