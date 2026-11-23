@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 import pytest
 
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.cli.auth.secrets import write_secret
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.sync import sync_source
@@ -37,6 +38,10 @@ from tests.test_settings import test_service_config
 KEY = os.environ.get("AGENTMAIL_API_KEY", "")
 PROBE = os.environ.get("AGENTMAIL_PROBE_INBOX", "")
 BASE = "https://api.agentmail.to/v0"
+#: Where the agentmail driver reads its key from (its ``data_driver.json``
+#: ``auth.secrets.api_key``); mirrored here because the driver lives under
+#: ``flow_sdk/system_projects/`` and is not importable as a module path.
+AGENTMAIL_SECRET_NAME = "ingest_api.agentmail"
 
 pytestmark = [
     pytest.mark.skipif(
@@ -92,10 +97,17 @@ async def test_agentmail_roundtrip():
     watched = created.get("inbox_id") or created.get("address")
     assert watched, f"inbox create returned no address: {sorted(created)}"
     try:
+        # The key is a MACHINE SECRET, never a config field: the driver reads
+        # ``credentials.values["api_key"]`` out of ``ingest_api.agentmail``
+        # (its data_driver.json ``auth.secrets``), and ``SourceConfig`` refuses
+        # an ``api_key`` in the config -- "a config is value-free", pinned by
+        # tests/unit/test_secrets/test_data_source_bindings.py::
+        # test_secret_keys_load_from_the_bound_store_before_the_machine_secret_and_never_the_config.
+        write_secret(AGENTMAIL_SECRET_NAME, KEY)
         source = DataSource(
             name=f"AgentMail roundtrip {uuid.uuid4().hex[:8]}",
             provider="agentmail",
-            config={"inbox": watched, "api_key": KEY},
+            config={"inbox": watched},
         )
         await source.save()
         assert source.channel == "agentmail", "channel must be stamped at create"
