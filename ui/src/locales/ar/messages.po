@@ -3542,6 +3542,7 @@ msgstr "وكيل"
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/contact-picker/ContactPicker.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
@@ -3644,6 +3645,7 @@ msgstr "وكلاء"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/items/ItemsSection.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/components/top-nav-bar/AppButton.tsx
@@ -20234,6 +20236,10 @@ msgstr "لا يوجد وكيل بلا صندوق بريد"
 msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
 msgstr ""
 
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "No agents you can add to a conversation yet."
+msgstr "لا يوجد بعد وكلاء يمكنك إضافتهم إلى محادثة."
+
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No alert logs found"
 msgstr "لا توجد سجلات تنبيهات"
@@ -28820,6 +28826,10 @@ msgstr "بحث"
 #: src/components/conversation/task-it.tsx
 msgid "Search a contact or type an email"
 msgstr "ابحثوا عن جهة اتصال أو اكتبوا بريداً إلكترونياً"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Search agents"
+msgstr "البحث عن الوكلاء"
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"

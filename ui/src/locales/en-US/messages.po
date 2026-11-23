@@ -3542,6 +3542,7 @@ msgstr "agent"
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/contact-picker/ContactPicker.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
@@ -3644,6 +3645,7 @@ msgstr "agents"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/contact-picker/ContactsDialog.tsx
 #: src/components/items/ItemsSection.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/components/top-nav-bar/AppButton.tsx
@@ -20234,6 +20236,10 @@ msgstr "No agent without a mailbox"
 msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
 msgstr "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
 
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "No agents you can add to a conversation yet."
+msgstr "No agents you can add to a conversation yet."
+
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "No alert logs found"
 msgstr "No alert logs found"
@@ -28820,6 +28826,10 @@ msgstr "Search"
 #: src/components/conversation/task-it.tsx
 msgid "Search a contact or type an email"
 msgstr "Search a contact or type an email"
+
+#: src/components/contact-picker/ContactsDialog.tsx
+msgid "Search agents"
+msgstr "Search agents"
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"

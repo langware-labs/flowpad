@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "conversations",
   "title": "Conversations",
-  "icon_name": "MessageCircle",
+  "icon_name": "MessagesSquare",
   "description": "The Flowpad conversations an agent's deployment was added to. Each one is a conversation the agent answers as itself. Made with a deployment whose machine is signed in as the agent.",
   "kind": "datasource.hub.conversations",
   "reflect": [
