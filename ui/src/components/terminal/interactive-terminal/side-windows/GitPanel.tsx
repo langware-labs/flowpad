@@ -835,7 +835,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                     data-testid="git-panel-push"
                   >
                     <GitPushIcon busy={pushing} />
-                    <Trans>Push</Trans>
+                    <Trans>Push all</Trans>
                   </Button>
                 )}
                 <Button
