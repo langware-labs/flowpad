@@ -70,10 +70,20 @@ def _probe_messages() -> list[dict]:
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_blocks_snippet_receives_and_replies(local_project):
+async def test_blocks_snippet_receives_and_replies(local_project, tmp_path, monkeypatch):
     # local_project seeds the @local Project a live instance owns at boot —
     # in-process there is no backend, and without it the deployment cannot
     # resolve a workdir (headless prompt FAILs with "workdir is not set").
+    #
+    # ...and the snippet must run INSIDE that project: ``StreamInbox(api_key=…)``
+    # hands the key to ``ensure_source`` -> ``_store_secrets``, which saves it to
+    # "the default secret store (the current project's)". ``context.current_project()``
+    # resolves that from the CWD, not from the row, so from pytest's own cwd it
+    # raises ``NoCurrentProject`` ("run inside a project folder, or name one") before
+    # a single message is read. ``local_project`` mounts the project at ``tmp_path``,
+    # so standing in it is what makes this the snippet's real setting — an agent's
+    # workflow always runs in its project's folder.
+    monkeypatch.chdir(tmp_path)
     t0 = time.perf_counter()
 
     def mark(label: str) -> None:
