@@ -31,7 +31,7 @@ const CONFIRM = {
   // `ConfirmSpec` has no fields — this is what the real backend sends for it
   // (`fields_of_kind("confirm")`), not the bare string a coarser fixture might use.
   fields: {},
-  guide: 'Asks before installing Claude Code. Send means yes; Cancel means leave it uninstalled.',
+  guide: 'Asks before installing Claude Code. Install means yes; Skip means leave it uninstalled.',
   submit_label: 'Install',
   cancel_label: 'Skip',
 };

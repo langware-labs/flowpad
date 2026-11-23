@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgenticProcess, Project, TypeId, WorkerStatus } from '@sdk';
+import { AgenticProcess, dataContext, Project, TypeId, WebApp, WorkerStatus, type HostedApp } from '@sdk';
 import type { ActivityProgressSpec } from '@sdk/activity';
 import { Pencil } from 'lucide-react';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
@@ -22,8 +22,12 @@ import {
 } from '@src/store/pending-actions-store';
 import { cn } from '@src/lib/utils';
 import { useActivities } from '@src/store/activity-store';
+import { useHostedApps } from '@src/store/hosted-apps-store';
 import { ActivityRow } from './ActivityRow';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { HostedAppRow } from './HostedAppRow';
+import { appDock } from '@src/components/top-nav-bar/use-project-apps';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNotificationPulse } from './useNotificationPulse';
 import { workerStatusLabel } from './worker-status-label';
 
@@ -51,10 +55,12 @@ function buildWorkerRow(e: WorkerListEntry) {
 }
 
 type WorkerRowData = ReturnType<typeof buildWorkerRow>;
-type ActivityTab = 'overview' | 'processes' | 'errors';
+type ActivityTab = 'overview' | 'processes' | 'errors' | 'hosted';
 type ProcessFilter = 'all' | 'chat' | 'background';
 
 const ACTIVITY_TABS: readonly ActivityTab[] = ['overview', 'processes', 'errors'];
+/** The apps this machine serves and who has them open. A desk has them; the hub serves no local app. */
+const DESK_TABS: readonly ActivityTab[] = [...ACTIVITY_TABS, 'hosted'];
 const PROCESS_FILTERS: readonly ProcessFilter[] = ['all', 'chat', 'background'];
 const DISMISSED_COMPLETED_KEY = 'activity-panel-dismissed-completed';
 
@@ -66,14 +72,36 @@ function readDismissedCompleted(): Record<string, number> {
   }
 }
 
-function Counter({ label, value }: { label: string; value: number }) {
+/** A small uppercase list heading, with an optional count on the right. */
+function SectionHeading({ label, value, testId }: { label: ReactNode; value?: number; testId: string }) {
   return (
-    <div className="rounded-md border bg-muted/30 px-2 py-2" data-testid={`activity-count-${label.toLowerCase().replaceAll(' ', '-')}`}>
-      <div className="text-lg font-semibold tabular-nums">{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
+    <div
+      className="flex items-center justify-between px-2 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+      data-testid={testId}
+    >
+      <span>{label}</span>
+      {value !== undefined && <span className="tabular-nums">{value}</span>}
     </div>
   );
 }
+
+type WorkerState = WorkerListEntry['state'];
+
+/** Overview groups, in display order. `withActivities` also lists generic activities in the group;
+ *  `clearable` offers "Clear completed" under it. */
+const OVERVIEW_SECTIONS: readonly {
+  state: WorkerState;
+  label: string;
+  withActivities?: boolean;
+  clearable?: boolean;
+}[] = [
+  { state: 'waiting', label: 'Waiting for you' },
+  { state: 'running', label: 'Running', withActivities: true },
+  { state: 'error', label: 'Errors' },
+  { state: 'completed', label: 'Completed', clearable: true },
+];
+
+const activityKey = (spec: ActivityProgressSpec) => `${spec.subject_entity ?? ''}::${spec.path}`;
 
 function Empty({ label }: { label: string }) {
   return <div className="px-2 py-3 text-center text-xs text-muted-foreground">{label}</div>;
@@ -118,6 +146,10 @@ export function PendingActionsChip() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<ActivityTab>('overview');
   const [processFilter, setProcessFilter] = useState<ProcessFilter>('all');
+  const { t } = useLingui();
+  const hostedApps = useHostedApps();
+  const [openApp, setOpenApp] = useState<string | null>(null);
+  const toggleApp = useCallback((id: string) => setOpenApp((current) => (current === id ? null : id)), []);
   const [dismissedCompleted, setDismissedCompleted] = useState<Record<string, number>>(readDismissedCompleted);
   const { navigation } = useDockNavigation();
   const pulsing = useNotificationPulse(3000);
@@ -126,23 +158,15 @@ export function PendingActionsChip() {
     () => allRows.filter((entry) => dismissedCompleted[entry.processId] !== entry.lastStatusChangedAt),
     [allRows, dismissedCompleted],
   );
-  const counts = useMemo(() => {
-    const next = { running: 0, waiting: 0, completed: 0, error: 0 };
-    for (const entry of visibleRows) next[entry.state]++;
-    return next;
-  }, [visibleRows]);
   const filtered = useMemo(
     () => visibleRows.filter((entry) => processFilter === 'all' || entry.category === processFilter),
     [visibleRows, processFilter],
   );
-  const errors = useMemo(
-    () => visibleRows.filter((entry) => entry.state === 'error'),
-    [visibleRows],
-  );
   const clearCompleted = useCallback(() => {
     const next = { ...dismissedCompleted };
     for (const entry of visibleRows) {
-      if (entry.category === 'background' && entry.state === 'completed') next[entry.processId] = entry.lastStatusChangedAt;
+      if (entry.category === 'background' && entry.state === 'completed')
+        next[entry.processId] = entry.lastStatusChangedAt;
     }
     localStorage.setItem(DISMISSED_COMPLETED_KEY, JSON.stringify(next));
     setDismissedCompleted(next);
@@ -194,6 +218,20 @@ export function PendingActionsChip() {
   );
   // Stable so `memo(WorkerRow)` only re-renders rows whose data actually changed.
   const bumpNameTick = useCallback(() => setNameTick((t) => t + 1), []);
+  // Every visible row, built once and grouped by state — feeds the overview groups, the
+  // errors tab and the counts. Built rows are stable across renders so `memo(WorkerRow)` holds.
+  const byState = useMemo(() => {
+    const groups: Record<WorkerState, WorkerRowData[]> = { running: [], waiting: [], completed: [], error: [] };
+    for (const entry of visibleRows) groups[entry.state].push(buildWorkerRow(entry));
+    return groups;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nameTick re-reads the name cache
+  }, [visibleRows, nameTick]);
+  const errors = byState.error;
+  const counts = {
+    running: byState.running.length,
+    waiting: byState.waiting.length,
+    error: errors.length,
+  };
 
   // Route per execution mode (shared with the process line on notifications): an
   // Interactive worker attaches its live terminal; a Background / Error worker
@@ -215,6 +253,18 @@ export function PendingActionsChip() {
     [navigation],
   );
 
+  // A hosted app's page, in a Flowpad tab of the app's own project — the address a project's app button opens.
+  const handleOpenApp = useCallback(
+    (app: HostedApp) => {
+      setOpen(false);
+      const dock = app.project_id
+        ? appDock(app.webapp_id, app.project_id, app.project_id)
+        : DockPointer.forAppEntity(new TypeId(`${WebApp.type}-${app.webapp_id}`));
+      navigation.openDock(dock, undefined, { topLevel: true });
+    },
+    [navigation],
+  );
+
   // A wizard's own top-level activity is scoped to ITSELF when attended (see
   // `Wizard.run`: `subject_entity=None if unattended else str(self.typeid)`),
   // so its row can be picked straight back to the editor page it was
@@ -232,7 +282,7 @@ export function PendingActionsChip() {
 
   // Hide the chip only when there is nothing happening at all.
   // MUST come after every hook above — see the handlePick note.
-  if (visibleRows.length === 0 && activities.length === 0) return null;
+  if (visibleRows.length === 0 && activities.length === 0 && hostedApps.length === 0) return null;
 
   const count = counts.running + counts.waiting + counts.error + activities.length;
   const tooltipText =
@@ -274,9 +324,24 @@ export function PendingActionsChip() {
           data-testid="pending-actions-popover"
         >
           <div className="flex border-b px-1" role="tablist" aria-label="Activity panel views">
-            {ACTIVITY_TABS.map((item) => (
-              <button key={item} type="button" role="tab" aria-selected={tab === item} onClick={() => setTab(item)} className={cn('px-2 py-1.5 text-xs font-medium capitalize', tab === item ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground')}>
-                {item === 'errors' ? `Errors${counts.error ? ` (${counts.error})` : ''}` : item}
+            {(dataContext.caps.localFiles ? DESK_TABS : ACTIVITY_TABS).map((item) => (
+              <button
+                key={item}
+                type="button"
+                role="tab"
+                aria-selected={tab === item}
+                onClick={() => setTab(item)}
+                className={cn(
+                  'px-2 py-1.5 text-xs font-medium',
+                  item !== 'hosted' && 'capitalize',
+                  tab === item ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {item === 'hosted'
+                  ? t`Hosted apps`
+                  : item === 'errors'
+                    ? `Errors${counts.error ? ` (${counts.error})` : ''}`
+                    : item}
               </button>
             ))}
           </div>
@@ -285,62 +350,115 @@ export function PendingActionsChip() {
               changes, so the pinned filter bar above stays put. */}
           <div className="h-64 overflow-y-auto" data-testid="worker-list-body">
             {tab === 'overview' ? (
-              <div className="p-3" data-testid="activity-overview">
-                {counts.completed > 0 && <button type="button" onClick={clearCompleted} className="mb-2 text-xs text-muted-foreground hover:text-foreground">Clear completed</button>}
-                <div className="grid grid-cols-2 gap-2">
-                <Counter label="Running" value={counts.running + activities.length} />
-                <Counter label="Waiting for you" value={counts.waiting} />
-                <Counter label="Completed" value={counts.completed} />
-                <Counter label="Errors" value={counts.error} />
-                </div>
+              <div className="py-1" data-testid="activity-overview">
+                {visibleRows.length === 0 && activities.length === 0 && <Empty label="Nothing running" />}
+                {OVERVIEW_SECTIONS.map(({ state, label, withActivities, clearable }) => {
+                  const group = byState[state];
+                  const groupActivities = withActivities ? activities : [];
+                  if (group.length === 0 && groupActivities.length === 0) return null;
+                  return (
+                    <div key={state}>
+                      <SectionHeading
+                        label={label}
+                        value={group.length + groupActivities.length}
+                        testId={`activity-count-${label.toLowerCase().replaceAll(' ', '-')}`}
+                      />
+                      <ul className="flex flex-col">
+                        {group.map((row) => (
+                          <WorkerRow key={row.processId} row={row} onPick={handlePick} onRenamed={bumpNameTick} />
+                        ))}
+                        {groupActivities.map((spec) => (
+                          <ActivityRow key={activityKey(spec)} spec={spec} onPick={handlePickActivity} />
+                        ))}
+                      </ul>
+                      {clearable && (
+                        <button
+                          type="button"
+                          onClick={clearCompleted}
+                          className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Clear completed
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+            ) : tab === 'hosted' ? (
+              hostedApps.length === 0 ? (
+                <Empty label={t`No hosted apps`} />
+              ) : (
+                <ul className="flex flex-col" data-testid="hosted-apps-list">
+                  {hostedApps.map((app) => (
+                    <HostedAppRow
+                      key={app.webapp_id}
+                      app={app}
+                      open={openApp === app.webapp_id}
+                      onToggle={toggleApp}
+                      onOpen={handleOpenApp}
+                    />
+                  ))}
+                </ul>
+              )
             ) : tab === 'errors' ? (
-              errors.length === 0 ? <Empty label="No errors" /> : <ul className="flex flex-col">{errors.map((row) => <WorkerRow key={row.processId} row={buildWorkerRow(row)} onPick={handlePick} onRenamed={bumpNameTick} />)}</ul>
+              errors.length === 0 ? (
+                <Empty label="No errors" />
+              ) : (
+                <ul className="flex flex-col">
+                  {errors.map((row) => (
+                    <WorkerRow key={row.processId} row={row} onPick={handlePick} onRenamed={bumpNameTick} />
+                  ))}
+                </ul>
+              )
             ) : (
               <>
                 <div className="flex gap-1 border-b px-2 py-1.5" data-testid="process-filter">
-                  {PROCESS_FILTERS.map((item) => <button key={item} type="button" onClick={() => setProcessFilter(item)} className={cn('rounded px-2 py-0.5 text-xs capitalize', processFilter === item ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground')}>{item}</button>)}
+                  {PROCESS_FILTERS.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setProcessFilter(item)}
+                      className={cn(
+                        'rounded px-2 py-0.5 text-xs capitalize',
+                        processFilter === item ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground',
+                      )}
+                    >
+                      {item}
+                    </button>
+                  ))}
                 </div>
                 {rows.length === 0 && activities.length === 0 ? (
-              <div className="px-2 py-3 text-center text-xs text-muted-foreground" data-testid="worker-list-empty">
-                No processes match this filter
-              </div>
-            ) : (
-              <>
-                {rows.length > 0 && (
-                  <ul className="flex flex-col">
-                    {rows.map((row) => (
-                      <WorkerRow key={row.processId} row={row} onPick={handlePick} onRenamed={bumpNameTick} />
-                    ))}
-                  </ul>
-                )}
-                {activities.length > 0 && (
+                  <div className="px-2 py-3 text-center text-xs text-muted-foreground" data-testid="worker-list-empty">
+                    No processes match this filter
+                  </div>
+                ) : (
                   <>
-                    {/* A heading only when both kinds are present — a lone section needs
-                        no label to tell it apart from the other one. */}
                     {rows.length > 0 && (
-                      <div
-                        className="px-2 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-                        data-testid="activity-section-heading"
-                      >
-                        <Trans>Activity</Trans>
-                      </div>
+                      <ul className="flex flex-col">
+                        {rows.map((row) => (
+                          <WorkerRow key={row.processId} row={row} onPick={handlePick} onRenamed={bumpNameTick} />
+                        ))}
+                      </ul>
                     )}
-                    <ul className="flex flex-col" data-testid="activity-list">
-                      {/* Keyed by scope+path: an activity's address is its identity, and a
+                    {activities.length > 0 && (
+                      <>
+                        {/* A heading only when both kinds are present — a lone section needs
+                        no label to tell it apart from the other one. */}
+                        {rows.length > 0 && (
+                          <SectionHeading label={<Trans>Activity</Trans>} testId="activity-section-heading" />
+                        )}
+                        <ul className="flex flex-col" data-testid="activity-list">
+                          {/* Keyed by scope+path: an activity's address is its identity, and a
                           recycled address is a new activity rather than a moved row. */}
-                      {activities.map((spec) => (
-                        <ActivityRow
-                          key={`${spec.subject_entity ?? ''}::${spec.path}`}
-                          spec={spec}
-                          onPick={handlePickActivity}
-                        />
-                      ))}
-                    </ul>
+                          {activities.map((spec) => (
+                            <ActivityRow key={activityKey(spec)} spec={spec} onPick={handlePickActivity} />
+                          ))}
+                        </ul>
+                      </>
+                    )}
                   </>
                 )}
               </>
-            )}</>
             )}
           </div>
         </PopoverContent>

@@ -62,7 +62,7 @@ describe('PendingActionsChip — worker status list', () => {
     expect(container.querySelector('[data-testid="pending-actions-chip"]')).toBeNull();
   });
 
-  it('shows simple overview counters', async () => {
+  it('lists overview processes grouped by status', async () => {
     emit(uid(), { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.THINKING, process_type: 'chat' });
     emit(uid(), { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.IDLE, process_type: 'execution' });
     emit(uid(), { status: ProcessStatus.RUNNING, worker_status: WorkerStatus.ERROR, process_type: 'execution' });
@@ -74,7 +74,8 @@ describe('PendingActionsChip — worker status list', () => {
     await userEvent.click(chip);
     const popover = await screen.findByTestId('pending-actions-popover');
     expect(within(popover).getByTestId('activity-count-running')).toHaveTextContent('2');
-    expect(within(popover).getByTestId('activity-count-waiting-for-you')).toHaveTextContent('0');
+    expect(within(popover).queryByTestId('activity-count-waiting-for-you')).toBeNull();
+    expect(within(within(popover).getByTestId('activity-overview')).getAllByRole('listitem')).toHaveLength(3);
     expect(within(popover).getByTestId('activity-count-errors')).toHaveTextContent('1');
   });
 

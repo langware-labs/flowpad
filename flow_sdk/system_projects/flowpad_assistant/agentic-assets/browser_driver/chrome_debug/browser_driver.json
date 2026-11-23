@@ -1,0 +1,21 @@
+{
+  "name": "chrome_debug",
+  "title": "Chrome debug",
+  "icon": "bug",
+  "description": "Chrome Canary on a fixed debugging port, on a profile of its own. Other DevTools clients can attach to the same port.",
+  "workers": {
+    "*": {"attach": "mcp_server", "setup": "Install Chrome Canary. Flowpad starts it with the debugging port on the first browser call; a Canary you already started on that port is reused."}
+  },
+  "mcp": {"name": "chrome_debug", "command": "{python}", "args": ["-m", "flow_sdk.core.agent_browser", "mcp", "--driver", "{driver}"]},
+  "managed": true,
+  "apps": ["canary", "chrome", "edge", "brave", "chromium"],
+  "probe": "cdp",
+  "config_fields": [
+    {"name": "app", "label": "Browser app"},
+    {"name": "profile", "label": "Profile (Flowpad's own)"},
+    {"name": "port", "label": "Debugging port"}
+  ],
+  "defaults": {"app": "canary", "profile": "default", "port": "9222"},
+  "tool_prefixes": ["mcp__chrome_debug__"],
+  "install_url": "https://www.google.com/chrome/canary/"
+}

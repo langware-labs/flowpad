@@ -12,12 +12,18 @@ description: An agent that types a port collides with a sibling build — and on
 
 > Ground truth. Proven by RCA on 2026-08-18. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.dev_port_picking.rules
 sites:
-  - rel_path: "tests/cli/test_app_free_dev_port.py"
+  - rel_path: tests/cli/test_app_free_dev_port.py
     line: 60
-    note: "FAILING? read this tag's rules first - one probe per invocation, or the backlog is spent"
+    note: FAILING? read this tag's rules first - one probe per invocation, or the backlog is spent
+proven: '2026-08-18'
+statements:
+  - text: The port is asked for, never typed.
+  - text: '`--bare` prints one integer and nothing else.'
+  - text: The band is a preference, not a guarantee.
+  - text: The caller binds immediately.
 ```
 
 ## Expected behavior

@@ -36,6 +36,7 @@ from flow_sdk.schema.data_spec.compute_op_spec import (
     CallLogSpec,
     CliOp,
     DecisionOp,
+    EndpointOp,
     NavigateOp,
     OpSubkind,
     PromptOp,
@@ -70,8 +71,8 @@ class ComputeOp(Entity):
     label: str = APIField(default="", description="What a person calls this goal.")
     description: str = APIField(default="")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
-    subkind: OpSubkind = APIField(default=OpSubkind.CLI, description="Who does the work: navigate, cli, decision, prompt, agent or ask.")
-    exe_data: Union[NavigateOp, CliOp, PythonOp, DecisionOp, PromptOp, AgentOp, AskOp] = APIField(
+    subkind: OpSubkind = APIField(default=OpSubkind.CLI, description="Who does the work: navigate, cli, decision, endpoint, prompt, agent or ask.")
+    exe_data: Union[NavigateOp, CliOp, PythonOp, DecisionOp, EndpointOp, PromptOp, AgentOp, AskOp] = APIField(
         default=None, description="The one call, shaped by the subkind."
     )
     output_spec_kind: Optional[str] = APIField(default=None, description="The kind this op returns.")
@@ -288,7 +289,7 @@ class ComputeOp(Entity):
 
         return data_dir_for(EntityType.COMPUTE_OP.value, self.id) / "calls"
 
-    async def start(self, *, input: Any = MISSING, approved: bool = False,
+    async def start(self, *, input: Any = MISSING, approved: bool = False, workdir: Optional[Path] = None,
                     invocation_id: str | None = None, parent_call_id: str | None = None) -> CallRecord:
         """Persist admission and run independently of the requesting connection.
 
@@ -305,7 +306,7 @@ class ComputeOp(Entity):
             self._calls_folder(), block=str(self.typeid), project_id=self.project_id,
             input=None if input is MISSING else input, input_present=input is not MISSING,
             invocation_id=invocation_id, parent_call_id=parent_call_id,
-            execute=lambda identity, attach: self.call(input=input, approved=approved,
+            execute=lambda identity, attach: self.call(input=input, approved=approved, workdir=workdir,
                                                       invocation_id=invocation_id or identity, call_id=identity,
                                                       parent_call_id=parent_call_id, on_executor=attach),
         )

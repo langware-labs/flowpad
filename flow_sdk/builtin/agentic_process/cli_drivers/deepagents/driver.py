@@ -191,7 +191,8 @@ class DeepAgentsDriver:
             await process.get_project()
         except Exception:
             logger.debug("DeepAgentsDriver.headless_prompt: get_project failed", exc_info=True)
-        instruction_assets = await process.prepare_system_instruction_assets()
+        process_assets = await process.prepare_process_assets()
+        instruction_assets = process_assets.instruction_assets
         if not process.workdir:
             return ApiFailResponse(message="deepagents prompt: workdir is not set")
 
@@ -222,7 +223,7 @@ class DeepAgentsDriver:
             custom_instruction_dirs=(
                 [str(instruction_assets.assets_dir)] if getattr(instruction_assets, "assets_dir", None) else []
             ),
-            mcp_config_fragment=dict(self.prepare_process_mcp(process.resolved_mcp_servers()).config_fragment),
+            mcp_config_fragment=dict(process_assets.mcp_runtime.config_fragment),
         )
         from flow_sdk.builtin.agentic_process.cli_drivers import api_auth  # noqa: PLC0415
 

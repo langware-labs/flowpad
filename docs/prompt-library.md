@@ -10,6 +10,10 @@ process's prompt queue (`prompt_queue.md`). Folders are **entities groups**
 (`entities-groups.md`) — this feature contains zero folder logic; it only
 composes the generic layer.
 
+> **The ribbon popover is gone.** `PromptLibraryMenu` left the terminal ribbon and was deleted; the
+> ribbon's saved prompts are the Quick prompts (`QuickPromptsMenu`), which carry the folders now
+> (`entities-groups.md`). The `Prompt` entity, its dialog and pin-from-history remain.
+
 ## Prompt entity
 
 New record type `prompt` (the standard pairing: schema type +

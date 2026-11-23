@@ -1,0 +1,194 @@
+{
+ "participants": [
+  {
+   "id": "user",
+   "label": "User",
+   "sublabel": "finger, face or PIN",
+   "icon": "lucide.user"
+  },
+  {
+   "id": "page",
+   "label": "Hub page",
+   "sublabel": "browser, hub origin",
+   "icon": "lucide.app-window",
+   "note": "The browser adds the page's real origin to what gets signed, so a look-alike site cannot get a usable signature."
+  },
+  {
+   "id": "device",
+   "label": "Authenticator",
+   "sublabel": "secure chip, private key",
+   "icon": "lucide.key-round",
+   "note": "Touch ID / Windows Hello / phone / security key. Holds the private key; the fingerprint only unlocks it locally and is never sent anywhere."
+  },
+  {
+   "id": "svc",
+   "label": "AccessKey store",
+   "sublabel": "hub, public keys only",
+   "icon": "lucide.cloud",
+   "note": "Planned: flowpad/hub/builtin/access_key.py + flowpad/hub/app/services/access_keys.py. One AccessKey row per key, part of its user: kind (passkey today), credential id, public key, algorithm, sign count, backup flags, label. No secret in it."
+  },
+  {
+   "id": "verifier",
+   "label": "Verifier",
+   "sublabel": "hub action or machine",
+   "icon": "lucide.shield-check",
+   "note": "Whoever protects something: a hub action, or a machine checking an approval itself. Uses one shared verify function."
+  }
+ ],
+ "messages": [
+  {
+   "id": "m1",
+   "from": "user",
+   "to": "page",
+   "label": "Add access key",
+   "note": "Part 1 - register, once per passkey. The first key also needs a code emailed to the account; a later one needs a confirmation with an existing key."
+  },
+  {
+   "id": "m2",
+   "from": "page",
+   "to": "svc",
+   "label": "access_key_passkey_options"
+  },
+  {
+   "id": "m3",
+   "from": "svc",
+   "to": "page",
+   "label": "challenge, rp id, user id",
+   "style": "dashed",
+   "note": "Challenge: random, signed by the hub, valid 5 minutes. rp id: the hub's domain. userVerification: required. Algorithms: ES256, RS256. Attestation: none."
+  },
+  {
+   "id": "m4",
+   "from": "page",
+   "to": "device",
+   "label": "navigator.credentials.create()"
+  },
+  {
+   "id": "m5",
+   "from": "device",
+   "to": "user",
+   "label": "Ask for fingerprint",
+   "style": "dashed"
+  },
+  {
+   "id": "m6",
+   "from": "user",
+   "to": "device",
+   "label": "Fingerprint",
+   "note": "Matched on the device against the template stored in its secure chip. Only yes or no comes out."
+  },
+  {
+   "id": "m7",
+   "from": "device",
+   "to": "device",
+   "label": "Create key pair",
+   "note": "A new pair for this rp id only. The private key stays in the secure chip (or the user's synced keychain) and cannot be read out."
+  },
+  {
+   "id": "m8",
+   "from": "device",
+   "to": "page",
+   "label": "credential id, public key",
+   "style": "dashed",
+   "note": "attestationObject: rp id hash, flags (user present, user verified, backup state), sign count, credential id, public key. Plus clientDataJSON: type, challenge, origin."
+  },
+  {
+   "id": "m9",
+   "from": "page",
+   "to": "svc",
+   "label": "access_key_add"
+  },
+  {
+   "id": "m10",
+   "from": "svc",
+   "to": "svc",
+   "label": "Verify, save AccessKey",
+   "note": "Checks type webauthn.create, its own challenge, the origin, the rp id hash and the user-verified flag. Refuses a credential id it already has. Saves the row with kind = passkey, the backup-eligible and backup-state flags (synced or device-bound) and the authenticator's make for the label. Sends a security email."
+  },
+  {
+   "id": "m11",
+   "from": "page",
+   "to": "verifier",
+   "label": "Protected action",
+   "note": "Part 2 - confirm, every time a feature asks. Same steps whoever the verifier is."
+  },
+  {
+   "id": "m12",
+   "from": "verifier",
+   "to": "page",
+   "label": "challenge",
+   "style": "dashed",
+   "note": "Made by the verifier: hash of (verifier id, purpose, random nonce, expiry). Single use, 5 minutes. Binding the purpose stops a relay from reusing the answer for something else."
+  },
+  {
+   "id": "m13",
+   "from": "page",
+   "to": "device",
+   "label": "navigator.credentials.get()",
+   "note": "One call in ts_sdk: confirmPasskey(challenge)."
+  },
+  {
+   "id": "m14",
+   "from": "device",
+   "to": "user",
+   "label": "Ask for fingerprint",
+   "style": "dashed"
+  },
+  {
+   "id": "m15",
+   "from": "user",
+   "to": "device",
+   "label": "Fingerprint"
+  },
+  {
+   "id": "m16",
+   "from": "device",
+   "to": "device",
+   "label": "Sign with private key",
+   "note": "Signs authenticatorData + SHA-256(clientDataJSON). So the signature covers the challenge, the page's origin, the rp id, the user-verified flag and the sign count."
+  },
+  {
+   "id": "m17",
+   "from": "device",
+   "to": "page",
+   "label": "signed assertion",
+   "style": "dashed",
+   "note": "credential id, authenticatorData, clientDataJSON, signature."
+  },
+  {
+   "id": "m18",
+   "from": "page",
+   "to": "verifier",
+   "label": "signed assertion"
+  },
+  {
+   "id": "m19",
+   "from": "verifier",
+   "to": "svc",
+   "label": "Get user's access keys",
+   "note": "Skipped when the verifier already pinned them: a machine does, through set_machine_access_key() in the Python SDK."
+  },
+  {
+   "id": "m20",
+   "from": "svc",
+   "to": "verifier",
+   "label": "public keys",
+   "style": "dashed"
+  },
+  {
+   "id": "m21",
+   "from": "verifier",
+   "to": "verifier",
+   "label": "verify_assertion()",
+   "note": "Shared pure function, chosen by the key's kind. For kind passkey: signature valid for a known public key, challenge is its own and unused, origin and rp id are the hub's, user verified, sign count not going backwards."
+  },
+  {
+   "id": "m22",
+   "from": "verifier",
+   "to": "page",
+   "label": "confirmed",
+   "style": "dashed",
+   "note": "What happens next (a 1-hour window, one action) is the feature's business, not this piece's."
+  }
+ ]
+}

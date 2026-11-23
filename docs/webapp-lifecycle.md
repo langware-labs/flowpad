@@ -1,3 +1,6 @@
+---
+id: 04f8be33-ff82-40be-9fed-88626f93afe6
+---
 # A web app's lifecycle on this machine
 
 One record, one readiness rule, one coordinator. Everything that brings a web app up, checks it, or recovers it
@@ -99,5 +102,13 @@ A node may sit under another declared node (`"subject": "asset_setup:<name>"`). 
 - `project/<id>` actions: `load` / `load-state` map a web app's record onto a `project.load` value; `app-start`,
   `app-stop`, `app-lifecycle`, `app-handling`.
 - CLI: `flow app open|restart|stop|status`, `flow app handling add|test`.
+- Hosted now: `GET micro_app/hosted` (`webapp.hosted`) — every app this machine serves now, each with its live
+  connections (`webapp.page_presence`: which browser, who opened it, the page, since when). It is the activity
+  panel's **Hosted apps** tab. A connection is a page Flowpad served that is open now: every served HTML page
+  carries a script that keeps one socket open (`core/webapp/presence`), on the endpoint's `presence` route or,
+  for a dev server, on its reporter relay. Nothing is stored: a closed page is gone, and after a backend restart
+  a page is listed again when it is loaded again. An app with a process is listed only while that process still
+  serves it (`readiness.serving`: its pids alive, its ports answering) — the record alone can be days stale. Not listed: a page opened straight at a dev server's own port,
+  editors and viewers, and files Flowpad serves that nobody has open.
 - Validation: `ui/tests/e2e/webapp-lifecycle/` drives a real instance in a browser with stub apps and asserts record
   transitions, fixer-run counts and zero warm-return backend calls.

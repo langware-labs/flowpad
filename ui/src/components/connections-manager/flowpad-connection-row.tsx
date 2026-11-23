@@ -53,7 +53,7 @@ export function FlowpadConnectionRow() {
       await cloudManager.login();
     } catch (error) {
       notify.error({
-        title: t`Could not sign in to FlowPad`,
+        title: t`Could not sign in to Flowpad`,
         message: errorMessage(error, t`The login did not complete.`),
       });
     } finally {
@@ -68,7 +68,7 @@ export function FlowpadConnectionRow() {
       await cloudManager.logout();
     } catch (error) {
       notify.error({
-        title: t`Could not sign out of FlowPad`,
+        title: t`Could not sign out of Flowpad`,
         message: errorMessage(error, t`The logout did not complete.`),
       });
     } finally {

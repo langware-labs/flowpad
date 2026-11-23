@@ -32,7 +32,86 @@ from flow_sdk.flowpad_types.vendors import VENDORS
     ],
 )
 def test_resolve(override, legacy, project, ext, want):
-    assert bc.resolve(override=override, legacy_chrome=legacy, project_browser=project, supports_extension=ext) == want
+    assert bc.resolve(override=override, legacy_chrome=legacy, project_browser=project, worker="claude", has_switch=ext) == want
+
+
+def test_the_persons_pick_wins_and_says_so():
+    """pick > session > project > default; the harness cap still applies, and the answer names its rung."""
+    ask = dict(override="agent", legacy_chrome=False, project_browser="agent", worker="claude", has_switch=True)
+    picked = bc.decide(**ask, pick="extension")
+    assert (picked.kind, picked.source, picked.extension) == ("extension", "pick", True)
+    assert bc.decide(**ask, pick="bogus").source == "session", "a pick that names no driver is no pick"
+    assert bc.decide(**{**ask, "override": None, "project_browser": "extension"}).source == "project"
+    assert bc.decide(**{**ask, "override": None}).source == "default"
+    capped = bc.decide(**{**ask, "worker": "codex", "has_switch": False}, pick="extension")
+    assert (capped.kind, capped.source, capped.requested) == ("agent", "default", "extension"), "and it says what was asked"
+    debug = bc.decide(**{**ask, "worker": "codex", "has_switch": False}, pick="chrome_debug")
+    assert (debug.kind, debug.extension, debug.mcp_spec().name) == ("chrome_debug", False, "chrome_debug")
+
+
+def test_the_state_word_is_decided_once_on_the_backend(monkeypatch):
+    """What a menu shows for a driver, per worker — read without starting anything."""
+    from flow_sdk.core import agent_browser, browser_drivers as bd
+
+    monkeypatch.setattr(agent_browser, "status", lambda instance=None, driver="agent": agent_browser.AgentBrowserStatus(up=driver == "agent"))
+    monkeypatch.setattr(agent_browser, "executable_for", lambda driver="agent": None if driver == "chrome_debug" else "/bin/chrome")
+    assert [bd.state_of(name, "codex") for name in ("agent", "chrome_debug", "extension")] == ["running", "not_installed", "unsupported"]
+    ext = lambda **k: bd.state_of("extension", "claude", has_switch=True, **k)  # noqa: E731
+    assert ext() == "not_installed"
+    assert ext(extension_installed=True) == "not_connected"
+    assert ext(extension_installed=True, in_use=True) == "connected"
+    assert ext(last_use={"family": "extension", "failed": False}) == "connected", "a session's own call proves it"
+    assert ext(extension_installed=True, in_use=True, last_use={"family": "extension", "failed": True}) == "not_connected"
+
+
+def test_a_browser_is_a_folder(tmp_path, monkeypatch):
+    """A driver nothing in the code names: its folder alone makes it listed, pickable, attached with
+    its own server (config filled in) and limited to the workers it declares."""
+    from flow_sdk.core import browser_drivers as bd
+
+    root = tmp_path / "browser_driver"
+    for name in ("agent", "lynx"):
+        (root / name).mkdir(parents=True)
+    (root / "agent" / "browser_driver.json").write_text((bd.SHIPPED_ROOT / "agent" / "browser_driver.json").read_text())
+    (root / "lynx" / "browser_driver.json").write_text(json.dumps({
+        "name": "lynx", "title": "Lynx", "workers": {"codex": {"setup": "install lynx"}},
+        "mcp": {"name": "lynx", "command": "lynx-mcp", "args": ["--port", "{port}", "--as", "{driver}"]},
+        "config_fields": [{"name": "port"}], "defaults": {"port": "7000"}, "tool_prefixes": ["mcp__lynx__"],
+    }))
+    (root / "lynx" / "instructions.md").write_text("# Your browser\n\nLynx.")
+    monkeypatch.setattr(bd, "SHIPPED_ROOT", root)
+    bd._registry.cache_clear()
+    prefs: dict = {}
+    monkeypatch.setattr("flow_sdk.preferences.read_instance_pref", lambda key, default: prefs.get(key, default))
+    monkeypatch.setattr("flow_sdk.preferences.write_instance_pref", lambda key, value: prefs.__setitem__(key, value) or True)
+    try:
+        assert bd.names() == ("agent", "lynx")
+        ask = dict(override=None, legacy_chrome=False, project_browser="agent", pick="lynx")
+        on_codex = bc.decide(**ask, worker="codex")
+        assert (on_codex.kind, on_codex.instructions(), bc._family("mcp__lynx__open")) == ("lynx", "# Your browser\n\nLynx.", "lynx")
+        assert on_codex.mcp_spec().args == ["--port", "7000", "--as", "lynx"]
+        bd.write_config("lynx", {"port": "7100"})
+        assert bc.decide(**ask, worker="codex").mcp_spec().args[1] == "7100", "a saved setting fills the server's arguments"
+        with pytest.raises(bd.BrowserConfigError):
+            bd.write_config("lynx", {"port": "80"})
+        on_claude = bc.decide(**ask, worker="claude")
+        assert (on_claude.kind, on_claude.requested) == ("agent", "lynx"), "a worker it does not name gets the default"
+        assert bd.state_of("lynx", "claude") == "unsupported"
+    finally:
+        bd._registry.cache_clear()
+
+
+def test_a_pick_is_saved_on_this_instance_only(tmp_path, monkeypatch):
+    prefs: dict = {}
+    monkeypatch.setattr("flow_sdk.preferences.read_instance_pref", lambda key, default: prefs.get(key, default))
+    monkeypatch.setattr("flow_sdk.preferences.write_instance_pref", lambda key, value: prefs.__setitem__(key, value) or True)
+    bc.set_browser_pick("p1", "extension")
+    assert (bc.browser_pick("p1"), bc.browser_pick("p2")) == ("extension", "")
+    assert read_browser(tmp_path) == "agent" and not manifest_path(tmp_path).exists()
+    bc.set_browser_pick("p1", "")
+    assert bc.browser_pick("p1") == ""
+    with pytest.raises(ValueError):
+        bc.set_browser_pick("p1", "safari")
 
 
 def test_manifest_default_is_silent(tmp_path):
@@ -123,7 +202,7 @@ def test_each_worker_renders_the_launch_as_cli_switches(vendor, kind, no_global_
     driver = get_driver(vendor.key)
     opts = driver.cli_options(process)
     opts.session_id = "00000000-0000-4000-8000-000000000000"  # deepagents' runner needs one
-    launch = bc.resolve(override=kind, legacy_chrome=False, project_browser="agent", supports_extension=opts.EXTENSION_FLAG is not None)
+    launch = bc.resolve(override=kind, legacy_chrome=False, project_browser="agent", worker=vendor.key, has_switch=opts.EXTENSION_FLAG is not None)
     runtime = driver.prepare_process_mcp([mcp_spec()] if launch == "agent" else [])
     if launch == "agent":
         runtime = runtime.model_copy(update={"strict": False})
@@ -156,6 +235,23 @@ def test_scan_extension_finds_the_profile_it_is_installed_in(tmp_path, monkeypat
     assert not scan.denied
     (root / "Local State").write_text("{}")  # unreadable shape ⇒ unknown, not absent
     assert bp.scan_extension("ext-id").denied
+
+
+def test_last_browser_use_opencode_and_deepagents(tmp_path):
+    """OpenCode names a tool ``<server>_<tool>``; Deep Agents names it bare, so the session's own driver is credited."""
+    oc = tmp_path / "opencode_transcript.jsonl"
+    oc.write_text(json.dumps({"type": "tool_use", "timestamp": 1795208705729, "part": {
+        "type": "tool", "tool": "chrome_debug_browser_navigate", "state": {"status": "completed", "input": {"url": "https://a.example"}}}}) + "\n")
+    use = bc.last_browser_use(oc)
+    assert (use["family"], use["url"], use["failed"], use["at"][:4]) == ("chrome_debug", "https://a.example", False, "2026")
+    da = tmp_path / "deepagents_transcript.jsonl"
+    da.write_text("".join(json.dumps(r) + "\n" for r in (
+        {"type": "tool_call", "timestamp": "2026-11-20T21:05:13+00:00", "tool_call_id": "t1", "name": "browser_navigate", "input": {"url": "https://b.example"}},
+        {"type": "tool_result", "tool_call_id": "t1", "name": "browser_navigate", "is_error": True},
+    )))
+    assert bc.last_browser_use(da) is None, "a bare name belongs to no driver by itself"
+    use = bc.last_browser_use(da, unnamed="agent")
+    assert (use["family"], use["url"], use["failed"]) == ("agent", "https://b.example", True)
 
 
 def test_last_browser_use_copilot(tmp_path):
@@ -204,7 +300,7 @@ _CALL = {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "browser_n
 
 
 def test_agent_browser_list_opens_no_window(monkeypatch, tmp_path):
-    def ensure():
+    def ensure(**_):
         raise AssertionError("no window before the first call")
 
     replies, spawned = _serve(monkeypatch, tmp_path, [_INIT, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}], ensure)
@@ -213,14 +309,14 @@ def test_agent_browser_list_opens_no_window(monkeypatch, tmp_path):
 
 def test_agent_browser_first_call_starts_it_once(monkeypatch, tmp_path):
     calls = []
-    ensure = lambda: calls.append(1) or ab.AgentBrowserStatus(up=True, port=1234)  # noqa: E731
+    ensure = lambda **_: calls.append(1) or ab.AgentBrowserStatus(up=True, port=1234)  # noqa: E731
     _, spawned = _serve(monkeypatch, tmp_path, [_INIT, {**_CALL, "id": 3}, {**_CALL, "id": 4}], ensure)
     assert calls == [1] and len(spawned) == 1
     assert [m.get("id") for m in spawned[0].sent] == ["proxy-init", None, 3, 4]
 
 
 def test_agent_browser_start_failure_is_a_tool_error(monkeypatch, tmp_path):
-    def ensure():
+    def ensure(**_):
         raise ab.AgentBrowserError("NO_BROWSER: neither Chrome nor Edge is installed")
 
     replies, _ = _serve(monkeypatch, tmp_path, [_INIT, {**_CALL, "id": 3}, {"jsonrpc": "2.0", "id": 5, "method": "ping"}], ensure)

@@ -23,7 +23,7 @@ export interface ApiKeysViewProps {
  * assumes one double-pads in the other.
  */
 export const ApiKeysView: React.FC<ApiKeysViewProps> = ({ className, header = true }) => {
-  // `?name=WAHA_API_KEY`: a service's own setup link names the key it needs (upper-case letters, digits, _).
+  // `?name=BRIDGE_API_KEY`: a service's own setup link names the key it needs (upper-case letters, digits, _).
   const asked = new URLSearchParams(window.location.search).get('name') ?? '';
   const keyName = /^[A-Z][A-Z0-9_]{2,63}$/.test(asked) ? asked : undefined;
   const keys = useUserApiKeys({ keyName });

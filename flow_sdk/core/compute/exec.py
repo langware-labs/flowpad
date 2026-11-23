@@ -30,6 +30,10 @@ from flow_sdk import toplog
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, last_line  # noqa: F401 -- last_line is re-exported
 from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
+# Spawn kwargs for a child in its own process GROUP but this process's SESSION. ``preexec_fn``, not
+# ``process_group=0``: uvloop's subprocess refuses ``process_group`` ("unexpected kwargs").
+OWN_GROUP: dict = {"preexec_fn": os.setpgrp} if CAN_KILLPG else {}
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,8 +64,9 @@ async def _spawn(command: str, *, cwd: str, env: dict, platform: str):
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         stdin=asyncio.subprocess.DEVNULL,
-        # Own process GROUP so a timeout can kill the whole tree.
-        start_new_session=CAN_KILLPG,
+        # Its own process GROUP, so a timeout can kill the whole tree — and never its own SESSION: a tool
+        # that grants a sign-in to the session that asked (1Password's CLI) would ask again on every command.
+        **OWN_GROUP,
     )
 
 

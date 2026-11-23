@@ -1,21 +1,23 @@
 import { useLingui } from '@lingui/react/macro';
 import type { TypeId } from '@sdk';
-import { ContextMenuButton } from '@src/components/entity-actions/ContextMenuButton';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
 import { chromeActionClusterClassName } from '@src/components/entity-actions/action-button-styles';
 import { BookmarksStarButton } from './BookmarksStarButton';
 import { PageShareButton } from './PageShareButton';
-import { RecordScreenButton } from './RecordScreenButton';
+import { RecordingIndicator } from './RecordScreenButton';
+import { TopBarMoreMenu } from './TopBarMoreMenu';
 import type { DockPointer } from '@src/navigation/DockPointer';
 
 /**
- * Record / bookmark / share / pop-out for whatever the bar is currently addressing.
+ * Bookmark / share / pop-out for whatever the bar is currently addressing, then the menu.
  *
  * Every one of these is an existing surface — this only picks the target and
  * mounts them. In particular the cluster is the SAME `EntityActionsToolbar` the
  * asset editor header uses, in the same order, so the actions don't drift into
- * two dialects of themselves. Record screen leads the row in both branches.
+ * two dialects of themselves. The menu (`TopBarMoreMenu`: Record screen, Context,
+ * Remote control) is last in both branches, after the star; a running recording
+ * shows its stop button before the cluster.
  *
  * Chat about a document is NOT here: it is per viewer (`ViewerChatToggle`).
  */
@@ -41,22 +43,28 @@ export function TopBarActions({
 
   if (targetTypeId) {
     return (
-      <EntityActionsToolbar
-        typeId={targetTypeId}
-        favoriteTitle={targetTitle}
-        variant="compact"
-        // The chrome size is applied from the bar, not inside the toolbar —
-        // the toolbar's compact size belongs to the entity headers that share
-        // it.
-        className={`shrink-0 ${chromeActionClusterClassName}`}
-        leading={<RecordScreenButton />}
-        // The bar owns the star (it carries the bookmarks menu), so the toolbar
-        // must not draw a second one. Riding the `trailing` slot keeps it inside
-        // the toolbar's own row rather than in a wrapper repeating its classes.
-        hideFavorite
-        showContext
-        trailing={favorite && <BookmarksStarButton favorite={favorite} />}
-      />
+      <>
+        <RecordingIndicator />
+        <EntityActionsToolbar
+          typeId={targetTypeId}
+          favoriteTitle={targetTitle}
+          variant="compact"
+          // The chrome size is applied from the bar, not inside the toolbar —
+          // the toolbar's compact size belongs to the entity headers that share
+          // it.
+          className={`shrink-0 ${chromeActionClusterClassName}`}
+          // The bar owns the star (it carries the bookmarks menu), so the toolbar
+          // must not draw a second one. Riding the `trailing` slot keeps it inside
+          // the toolbar's own row rather than in a wrapper repeating its classes.
+          hideFavorite
+          trailing={
+            <>
+              {favorite && <BookmarksStarButton favorite={favorite} />}
+              <TopBarMoreMenu contextTypeId={targetTypeId} contextTitle={targetTitle} />
+            </>
+          }
+        />
+      </>
     );
   }
 
@@ -69,11 +77,16 @@ export function TopBarActions({
   // A transcript opened by file has no entity target, but the page still shows one session.
   const transcript = dock.transcriptSessionTypeId;
   return (
-    <div className={`flex shrink-0 items-center gap-0.5 ${chromeActionClusterClassName}`} data-testid="top-nav-actions">
-      <RecordScreenButton />
-      {transcript && <ContextMenuButton typeId={transcript} title={targetTitle} />}
-      <PageShareButton dock={dock} />
-      {favorite && <BookmarksStarButton favorite={favorite} />}
-    </div>
+    <>
+      <RecordingIndicator />
+      <div
+        className={`flex shrink-0 items-center gap-0.5 ${chromeActionClusterClassName}`}
+        data-testid="top-nav-actions"
+      >
+        <PageShareButton dock={dock} />
+        {favorite && <BookmarksStarButton favorite={favorite} />}
+        <TopBarMoreMenu contextTypeId={transcript} contextTitle={targetTitle} />
+      </div>
+    </>
   );
 }

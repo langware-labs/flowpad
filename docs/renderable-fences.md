@@ -79,7 +79,7 @@ ProseMirror's own editable check, so nothing else stops a user editing a
 read-only document (the vibe display, any `view`-mode asset). `commit` refuses
 the write too, as defence in depth.
 
-## The three renderers
+## The renderers
 
 **`mermaid`** draws diagrams, lazily importing a heavy dependency and
 re-rendering on theme change. The chart editor already writes these blocks
@@ -91,7 +91,33 @@ rewrite the block through `yaml`'s Document API rather than regenerating it, so
 comments, key order and quoting survive.
 
 **`breadcrumb`** renders the tests a rules doc governs — see [Live refresh](#live-refresh)
-below, and the `tagit` skill that writes these blocks.
+below. It is the older form: the `tagit` skill now writes a `test_debug` block.
+
+**`test_debug`** is what `tagit` writes in a rules doc (`renderers/lw.ts`): the tag, when the rules
+were proven, what they depend on and the bound tests (refreshed from the tag index like
+`breadcrumb`), then the rules as statements. Its tab reads "Test debug".
+
+**`statements`** renders the lw (langware) block of a statement doc
+([lw.md](lw.md)) — `renderers/lw.ts`. A statements card lists each sentence with `stated` or
+`proven`; in an editable doc the sentence is click-to-edit and the typed text is written into the
+block (`renderers/lw-edit.ts`). The issues that violate the statements and the files they are about
+are extra tabs of the block (below), and so are its requirements. Everything but a sentence is written by `flow tag put`, which checks a block against
+every other block of the project, or by hand in the Code pane. The schema (`renderers/lw-schema.ts`)
+is the TS twin of `flow_sdk/schema/data_spec/lw_spec.py`; `tests/fixtures/lw_blocks_contract.json`
+pins that the two agree on which blocks are valid. Strict like `interface`: a block that does not
+match shows the error with the source one tab away.
+
+**Extra tabs and the tag.** A renderer may declare `chrome(code)`: extra views of the block, each a
+tab with an optional counter between the main tab and Code, and the block's tag, drawn as the app's
+tag chip at the end of the tab row. The NodeView passes the view on screen to `render` as
+`ctx.view`, keeps it across re-renders, and falls back to the main view when a view is no longer
+declared (a statements block has an Issues tab only while it has issues). An extra view is still
+`render` mode: only Code shows the source.
+
+**Between two blocks.** A rendered block hides its source, so two of them in a row leave no place for
+a text caret between them, and neither does one at the end of the doc. `fence-gap.ts` adds
+ProseMirror's gap cursor and puts it there on a click; typing at it starts a paragraph in that
+place, and Enter an empty one.
 
 The Code pane is the authoritative structural editor in Editor mode: it is the
 real ProseMirror code-block content, not a detached textarea, so typing, undo,

@@ -2,7 +2,7 @@
  "spec_kind": "flowmap.map",
  "skill": "mockify",
  "line": "Turns a product idea into a clickable mock you can walk and comment on.",
- "source_hash": "0a91740b9e7eded8",
+ "source_hash": "da7a15dc9a06d741",
  "entries": [
   {
    "id": "e_mock",
@@ -43,6 +43,37 @@
    "gives": "A revised mock, shown again",
    "lane": 2,
    "row": 11
+  },
+  {
+   "id": "e_approve",
+   "name": "Approve the mock",
+   "say": [
+    "is approved",
+    "approved, build it"
+   ],
+   "gives": "The build list: one item for everything the mock owes the product",
+   "lane": 1,
+   "row": 11
+  },
+  {
+   "id": "e_plan",
+   "name": "Plan the build",
+   "say": [
+    "mockify plan"
+   ],
+   "gives": "Every item of the list with the place it is built in",
+   "lane": 1,
+   "row": 13
+  },
+  {
+   "id": "e_impl",
+   "name": "Build it",
+   "say": [
+    "mockify implement"
+   ],
+   "gives": "The product, built and proven against each screen",
+   "lane": 1,
+   "row": 15
   }
  ],
  "steps": [
@@ -51,7 +82,7 @@
    "title": "Set up the mock project",
    "type": "code",
    "takes": "Your repo",
-   "gives": "A mock project with two lists: mocks and feedback",
+   "gives": "A mock project with three lists: mocks, feedback and the build list",
    "source": "scripts/mock_project.py ensure",
    "match": [
     "mock_project.py ensure"
@@ -191,6 +222,62 @@
    "match": [
     "mock_project.py save"
    ]
+  },
+  {
+   "id": "buildlist",
+   "title": "Make the build list",
+   "type": "code",
+   "takes": "The approved mock and its comments",
+   "gives": "One item per screen, change, decision and action, in order",
+   "source": "scripts/build_list.py make",
+   "match": [
+    "build_list.py make"
+   ]
+  },
+  {
+   "id": "plan",
+   "title": "Find where each item is built",
+   "type": "instructions",
+   "takes": "The build list",
+   "gives": "The place in the product for every item — or a flag",
+   "source": "SKILL.md · mockify plan",
+   "match": [
+    "--where"
+   ]
+  },
+  {
+   "id": "implement",
+   "title": "Build the next item",
+   "type": "instructions",
+   "takes": "The first item still open",
+   "gives": "That item, in the product",
+   "source": "SKILL.md · mockify implement",
+   "match": [
+    "build_list.py next"
+   ]
+  },
+  {
+   "id": "prove",
+   "title": "Prove it beside the mock",
+   "type": "instructions",
+   "takes": "The running product and the mock screen",
+   "gives": "Matches, with a picture — or what differs",
+   "source": "SKILL.md · mockify implement",
+   "match": [
+    "--shot",
+    "differs"
+   ]
+  },
+  {
+   "id": "report",
+   "title": "Report every item",
+   "type": "code",
+   "takes": "The build list",
+   "gives": "The table, and done or not done",
+   "source": "scripts/build_list.py report",
+   "match": [
+    "build_list.py report"
+   ]
   }
  ],
  "links": [
@@ -258,10 +345,6 @@
   },
   {
    "from": "mock",
-   "to": "o_ok"
-  },
-  {
-   "from": "mock",
    "to": "testmd",
    "label": "test approved"
   },
@@ -286,13 +369,64 @@
   {
    "from": "save",
    "to": "o_saved"
+  },
+  {
+   "from": "mock",
+   "to": "buildlist",
+   "label": "approved"
+  },
+  {
+   "from": "e_approve",
+   "to": "buildlist"
+  },
+  {
+   "from": "buildlist",
+   "to": "plan"
+  },
+  {
+   "from": "e_plan",
+   "to": "plan"
+  },
+  {
+   "from": "plan",
+   "to": "build",
+   "label": "cannot be built as drawn: redraw",
+   "loop": true
+  },
+  {
+   "from": "plan",
+   "to": "implement"
+  },
+  {
+   "from": "e_impl",
+   "to": "implement"
+  },
+  {
+   "from": "implement",
+   "to": "prove"
+  },
+  {
+   "from": "prove",
+   "to": "implement",
+   "label": "differs, or the next item",
+   "loop": true
+  },
+  {
+   "from": "prove",
+   "to": "report"
+  },
+  {
+   "from": "report",
+   "to": "implement",
+   "label": "not done",
+   "loop": true
+  },
+  {
+   "from": "report",
+   "to": "o_built"
   }
  ],
  "outcomes": [
-  {
-   "id": "o_ok",
-   "title": "Approved — nothing left to change"
-  },
   {
    "id": "o_test",
    "title": "A test scenario file"
@@ -300,6 +434,10 @@
   {
    "id": "o_saved",
    "title": "The mock is in your repo"
+  },
+  {
+   "id": "o_built",
+   "title": "Built as the mock shows — every item proven"
   }
  ]
 }

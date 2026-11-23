@@ -213,6 +213,13 @@ async def stamp_identity(row: Any, *, account_key: str, identities: list[str]) -
     await row.save_runtime()
 
 
+def message_files_root(source_id: Any) -> Path:
+    """Where a source's message files live on this machine — durable, purged with the source."""
+    from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+
+    return data_dir_for("data_source", source_id) / "files"
+
+
 def ingest_run_context(row: Any) -> dict[str, str]:
     """The provenance every ingest-spawned worker carries."""
     return {RUN_SOURCE_KEY: str(getattr(row, "id", "") or "")}
@@ -629,10 +636,7 @@ class DriverRuntime:
 
     # ── files on messages ───────────────────────────────────────────────────
     def files_root(self, row: Any) -> Path:
-        """Where this source's message files live on this machine — durable, purged with the source."""
-        from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
-
-        return data_dir_for("data_source", row.id) / "files"
+        return message_files_root(row.id)
 
     def _file_home(self, row: Any, origin: CloudOrigin, name: str) -> Path:
         digest = hashlib.sha256(f"{origin.kind}|{origin.namespace}|{origin.key}".encode()).hexdigest()[:32]

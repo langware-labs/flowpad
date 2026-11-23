@@ -21,6 +21,10 @@ const h = vi.hoisted(() => ({
   sandboxes: [] as Array<Record<string, unknown>>,
   details: {} as Record<string, Record<string, unknown>>,
   sandboxesEnabled: true,
+  hubOnly: false,
+  // This machine's own remote control (the desktop's local route) and the account's access keys.
+  ownStatus: vi.fn(),
+  listAccessKeys: vi.fn(),
 }));
 
 vi.mock('@sdk', async (importOriginal) => {
@@ -28,8 +32,14 @@ vi.mock('@sdk', async (importOriginal) => {
   // Only `delete` is replaced. `dataContext` is left ALONE and mutated in
   // `beforeEach` instead: spreading it into a plain object drops its prototype,
   // and HubHome's subtree calls `dataContext.on(...)`.
-  return { ...actual, dataManager: { ...(actual.dataManager as object), delete: vi.fn(() => Promise.resolve()) } };
+  return {
+    ...actual,
+    dataManager: { ...(actual.dataManager as object), delete: vi.fn(() => Promise.resolve()) },
+    remoteControlService: { status: h.ownStatus },
+    listAccessKeys: h.listAccessKeys,
+  };
 });
+vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => h.hubOnly }));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({
@@ -74,6 +84,8 @@ vi.mock('@src/hooks/use-sandboxes', async (importOriginal) => ({
   // Real too: the hub sends `node_provider`, the TS type says `node_provider_type`,
   // and only the real reader bridges the two.
   isUserMachine: (await importOriginal<typeof import('@src/hooks/use-sandboxes')>()).isUserMachine,
+  isLocalMachine: (await importOriginal<typeof import('@src/hooks/use-sandboxes')>()).isLocalMachine,
+  splitOwnMachine: (await importOriginal<typeof import('@src/hooks/use-sandboxes')>()).splitOwnMachine,
   nextSandboxName: () => 'Sandbox 2',
 }));
 vi.mock('@src/pages/hub-home/NewSandboxDialog', () => ({ NewSandboxDialog: () => null }));
@@ -98,6 +110,10 @@ function renderHome() {
 beforeEach(() => {
   vi.clearAllMocks();
   h.sandboxesEnabled = true;
+  h.hubOnly = false;
+  // By default the machine answers nothing and the account's keys are not read, as before these existed.
+  h.ownStatus.mockRejectedValue(new Error('no backend'));
+  h.listAccessKeys.mockRejectedValue(new Error('no backend'));
   (dataContext as unknown as { bootstrapInfo: unknown }).bootstrapInfo = { sandboxes_enabled: true };
   h.sandboxes.length = 0;
   for (const k of Object.keys(h.details)) delete h.details[k];
@@ -301,5 +317,81 @@ describe('a connected machine that is disconnected', () => {
     expect(await screen.findByTestId('sandbox-open')).toBeTruthy();
     expect(screen.getByTestId('machine-terminal')).toBeTruthy();
     expect(screen.queryByTestId('machine-connect')).toBeNull();
+  });
+});
+
+describe('one card per machine inside the desktop app', () => {
+  // The app lists its machine twice: its own `@local` card and the node it registered on the hub.
+  beforeEach(() => {
+    h.sandboxes.length = 0;
+    h.sandboxes.push(
+      {
+        id: 'local-1',
+        name: '@local',
+        node_provider_type: 'local_machine',
+        node_provider_id: 'local-1',
+        typeId: { toString: () => 'compute_node-local-1' },
+      },
+      {
+        id: 'node-m',
+        name: '@MacBook Pro',
+        node_provider: 'user_machine',
+        node_provider_id: 'node-m',
+        typeId: { toString: () => 'compute_node-node-m' },
+        node_config: { remote_control: { on: false, key_count: 1 } },
+      },
+    );
+    h.details['node-m'] = { status: 'DISCONNECTED' };
+    h.ownStatus.mockResolvedValue({
+      available: true,
+      on: false,
+      node_typeid: 'compute_node-node-m',
+      machine_name: 'MacBook Pro',
+    });
+    h.listAccessKeys.mockResolvedValue([{ id: 'k1', label: 'iCloud Keychain', code: '3f9ac271', request_id: null }]);
+  });
+
+  it('shows the machine once: its own card, named, with the access-key line; the hub node card and its Connect are gone', async () => {
+    renderHome();
+
+    expect((await screen.findByTestId('sandbox-access-key-state')).textContent).toBe(
+      'Access key set · remote control off',
+    );
+    const cards = screen.getAllByTestId('sandbox-card');
+    expect(cards).toHaveLength(1);
+    expect(cards[0].getAttribute('data-node-id')).toBe('local-1');
+    expect(screen.getByTestId('sandbox-name').textContent).toBe('MacBook Pro');
+    expect(screen.queryByTestId('machine-connect')).toBeNull();
+    expect(screen.getByTestId('machine-filter-all').textContent).toContain('(1)');
+  });
+
+  it('on the hub nothing changes: the hub node keeps its card, its line and Connect a shell', async () => {
+    h.hubOnly = true;
+    h.sandboxes.shift();
+    renderHome();
+
+    expect((await screen.findByTestId('sandbox-access-key-state')).textContent).toBe(
+      'Access key set · remote control off',
+    );
+    expect(screen.getByTestId('sandbox-name').textContent).toBe('@MacBook Pro');
+    expect(screen.getByTestId('machine-connect').textContent).toBe('Connect a shell');
+    expect(h.ownStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("which listed node is a person's own machine", () => {
+  it('reads the provider from either field, and falls back to the enrolment stamp when a list names none', async () => {
+    const { isUserMachine, isLocalMachine } =
+      await vi.importActual<typeof import('@src/hooks/use-sandboxes')>('@src/hooks/use-sandboxes');
+    const node = (fields: Record<string, unknown>) => fields as never;
+
+    expect(isUserMachine(node({ node_provider: 'user_machine' }))).toBe(true);
+    expect(isUserMachine(node({ node_provider_type: 'user_machine' }))).toBe(true);
+    expect(isUserMachine(node({ node_config: { machine_id: 'm-1' } }))).toBe(true);
+    expect(isUserMachine(node({ node_provider_type: 'e2b', node_config: { machine_id: 'm-1' } }))).toBe(false);
+    expect(isUserMachine(node({ node_provider: 'e2b' }))).toBe(false);
+    expect(isUserMachine(node({}))).toBe(false);
+    expect(isLocalMachine(node({ node_provider_type: 'local_machine' }))).toBe(true);
+    expect(isLocalMachine(node({ node_provider: 'user_machine', name: '@MacBook Pro' }))).toBe(false);
   });
 });

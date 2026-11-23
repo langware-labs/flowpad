@@ -2,6 +2,7 @@ import { Annotation, ExpressionNode, QueryFilter, QueryRequest, TypeId, type Ann
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { DEFAULT_NOTE_COLOR, type NoteColorToken } from '@src/components/notes/note-palette';
 import { isHubOnly } from '@src/navigation/hub-runtime';
+import { computeReorder } from '@sdk/tabs/tab-order';
 import { useMemo } from 'react';
 
 /**
@@ -132,8 +133,8 @@ export function useNotesAndMarks(enabled = true): { notes: Annotation[]; marks: 
 
 /**
  * Quick prompts are notes too — subkind `quick_prompt` counts as a note, so they keep every note
- * behaviour. Scope is the target: the user (`Mine`, every project) or the project. `data.last_used_at`
- * orders the list; a click or a "save last prompt" stamps it.
+ * behaviour. Scope is the target: the user (`Mine`, every project) or the project. `data.order` is the
+ * manual order (a drag stamps it); a prompt never dragged sorts after those, last used first.
  */
 export interface QuickPromptOwners {
   userId?: string | null;
@@ -145,24 +146,71 @@ export function quickPromptTime(note: Annotation): string {
   return used || noteTime(note);
 }
 
-/** This user's and this project's quick prompts, last used first. */
+function quickPromptOrder(note: Annotation): number | null {
+  const order = (note.data as { order?: unknown } | undefined)?.order;
+  return typeof order === 'number' ? order : null;
+}
+
+/** Manual order first; the never-ordered ones after, last used first. */
+export function sortQuickPrompts<T extends Annotation>(notes: readonly T[]): T[] {
+  const placed = notes.filter((n) => quickPromptOrder(n) !== null);
+  const rest = notes.filter((n) => quickPromptOrder(n) === null);
+  return [
+    ...placed.sort((a, b) => quickPromptOrder(a)! - quickPromptOrder(b)!),
+    ...rest.sort((a, b) => quickPromptTime(b).localeCompare(quickPromptTime(a))),
+  ];
+}
+
+/** Put `dragId` next to its anchor among `siblings` (one folder's prompts); only the rows that moved are saved. */
+export async function reorderQuickPrompt(
+  siblings: readonly Annotation[],
+  dragId: string,
+  anchor: { afterId?: string; beforeId?: string },
+): Promise<void> {
+  const byId = new Map(siblings.map((n) => [String(n.id), n]));
+  const next = computeReorder([...byId.keys()], dragId, anchor.afterId ?? null, anchor.beforeId ?? null);
+  await Promise.all(
+    next.map((id, i) => {
+      const note = byId.get(id)!;
+      return quickPromptOrder(note) === i + 1 ? undefined : saveNote(note, { data: { order: i + 1 } });
+    }),
+  );
+}
+
+/** Which annotations are this user's and this project's quick prompts — the server-side twin of `quickPromptsFor`. */
+export function quickPromptMatch(owners: QuickPromptOwners): ExpressionNode {
+  const owner = (type: string, id: string) => new ExpressionNode({ target_type: type, target_id: id });
+  const mine = [
+    ...(owners.userId ? [owner('user', owners.userId)] : []),
+    ...(owners.projectId ? [owner('project', owners.projectId)] : []),
+  ];
+  return new ExpressionNode({
+    op: '$AND',
+    operands: [new ExpressionNode({ subkind: 'quick_prompt' }), new ExpressionNode({ op: '$OR', operands: mine })],
+  });
+}
+
+/** This user's and this project's quick prompts, in their order. */
 export function quickPromptsFor(annotations: readonly Annotation[], owners: QuickPromptOwners): Annotation[] {
   const ownerOf: Record<string, string | null | undefined> = { user: owners.userId, project: owners.projectId };
-  return annotations
-    .filter((a) => {
+  return sortQuickPrompts(
+    annotations.filter((a) => {
       const id = a.target_type ? ownerOf[a.target_type] : null;
       return !!id && a.target_id === id && a.subkind === 'quick_prompt';
-    })
-    .sort((a, b) => quickPromptTime(b).localeCompare(quickPromptTime(a)));
+    }),
+  );
 }
 
 export async function addQuickPrompt(
   content: string,
   owner: { type: 'user' | 'project'; id: string; name: string },
+  /** The prompts already listed: the new one goes above them all. */
+  existing: readonly Annotation[] = [],
 ): Promise<void> {
   const target = { typeId: new TypeId(owner.type, owner.id), name: owner.name };
-  const used = { last_used_at: new Date().toISOString() };
-  await newNote(target, content, DEFAULT_NOTE_COLOR, { subkind: 'quick_prompt', data: used }).save([]);
+  const first = Math.min(1, ...existing.map((n) => quickPromptOrder(n) ?? 1)) - 1;
+  const data = { last_used_at: new Date().toISOString(), order: first };
+  await newNote(target, content, DEFAULT_NOTE_COLOR, { subkind: 'quick_prompt', data }).save([]);
 }
 
 export async function touchQuickPrompt(note: Annotation): Promise<void> {

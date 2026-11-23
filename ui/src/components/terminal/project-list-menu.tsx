@@ -12,6 +12,7 @@ import {
   tabManager,
   TypeId,
 } from '@sdk';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
@@ -793,11 +794,11 @@ function SharedProjectRows() {
   return (
     <ul>
       {rows.map(({ project, setUp }) => (
-        <li key={project.id}>
+        <li key={project.id} className="group flex items-center gap-1 rounded pe-1 hover:bg-muted">
           <button
             type="button"
             onClick={() => setPendingProject(setUp)}
-            className="flex w-full items-center gap-2 rounded py-1.5 pe-1 ps-2 text-left text-sm hover:bg-muted"
+            className="flex min-w-0 flex-1 items-center gap-2 py-1.5 ps-2 text-left text-sm"
             data-testid={`project-shared-new-${project.id}`}
           >
             <ProjectIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -806,6 +807,23 @@ function SharedProjectRows() {
               <Trans>new</Trans>
             </span>
           </button>
+          {/* Remove it from this computer's list without setting it up. Only the
+              row here goes: it has no files, and the hub's copy is untouched. */}
+          <CloseRowButton
+            closing={false}
+            label={t`Remove from this computer`}
+            testId={`project-shared-remove-${project.id}`}
+            onClick={() =>
+              showDeleteAssetModal({
+                name: setUp.projectName,
+                description: t`This removes the project from the list on this computer. It has no files here, and it stays available to everyone it is shared with.`,
+                confirmLabel: () => t`Remove`,
+                onConfirm: async () => {
+                  await project.deleteWithChildren();
+                },
+              })
+            }
+          />
         </li>
       ))}
     </ul>

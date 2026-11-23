@@ -1,3 +1,6 @@
+---
+id: 0cdd3257-a288-4ab0-ad2c-ff2126547126
+---
 # Self-protection: a FlowPad activity never kills the FlowPad it runs inside
 
 ## The incident (FLOWPAD-2112)

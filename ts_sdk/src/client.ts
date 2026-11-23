@@ -3,7 +3,7 @@ import { ApiFailResponse, ApiWarning } from './ApiResponse';
 import { alert } from './alert';
 import { APIStats } from './apiStats';
 import config from './config';
-import { STATE_HEADER, showPageStateError, stateKey, stateRefusal } from './page-state';
+import { STATE_HEADER, hideOfflineTag, showOfflineTag, showPageStateError, stateKey, stateRefusal } from './page-state';
 import { API_PREFIX } from './config/SDKConfig';
 
 //@ts-ignore
@@ -199,6 +199,7 @@ function initApiClient(client: ApiAxiosInstance) {
     (response: AxiosResponse) => {
       const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
       apiStats.incrementSuccessful(method);
+      hideOfflineTag();
       // The interceptor unwraps to `data`, so anything else on the envelope is
       // dropped here. `warnings` is a SUCCESS response saying part of the work
       // did not land (e.g. a record saved to disk whose DB row failed) — the
@@ -245,6 +246,7 @@ function initApiClient(client: ApiAxiosInstance) {
         // Add a custom flag to identify service unavailable errors
         error.isServiceUnavailable = true;
         error.status = 503; // Service Unavailable HTTP status code
+        showOfflineTag();
         throw error;
       }
 

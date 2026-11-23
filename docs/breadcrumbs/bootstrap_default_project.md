@@ -12,15 +12,23 @@ description: The browser's remembered project outranks everything; below it defa
 
 > Ground truth. Proven by RCA on 2026-08-18. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.bootstrap_default_project.rules
 sites:
-  - rel_path: "tests/api/test_default_project_once.py"
+  - rel_path: tests/api/test_default_project_once.py
     line: 143
-    note: "FAILING? read this tag's rules before editing \u2014 default_project has a strict source order and must stay per-caller, not cached"
-  - rel_path: "ui/tests/api/setup_project_stale_memory.test.ts"
+    note: FAILING? read this tag's rules before editing — default_project has a strict source order and must stay per-caller, not cached
+  - rel_path: ui/tests/api/setup_project_stale_memory.test.ts
     line: 128
-    note: "FAILING? read this tag's rules before editing \u2014 a dead browser memory must defer to default_project, never pick by list order"
+    note: FAILING? read this tag's rules before editing — a dead browser memory must defer to default_project, never pick by list order
+proven: '2026-08-18'
+statements:
+  - text: '`default_project` is stamped in `_with_runtime`, never baked into the cached payload.'
+  - text: The one-shot instruction stays one-shot.
+  - text: '`_last_active_project` reads fresh, never `get_cached_projects()`.'
+  - text: '`@local` is the last resort, not the default.'
+  - text: An SDK-shipped `system` project is never the opening project.
+  - text: The browser's memory outranks all of the above and is never merged with it.
 ```
 
 ## Expected behavior

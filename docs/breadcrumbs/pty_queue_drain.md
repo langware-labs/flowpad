@@ -14,12 +14,19 @@ description: A prompt enqueued in PTY mode never drained at all. The turn-end se
 
 > Ground truth. Proven by RCA on 2026-08-26. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.pty_queue_drain.rules
 sites:
-  - rel_path: "tests/unit/test_agentic_process/test_prompt_queue_drain_after_pty_turn.py"
+  - rel_path: tests/unit/test_agentic_process/test_prompt_queue_drain_after_pty_turn.py
     line: 137
-    note: "FAILING? the prompt queue did not drain in PTY mode - read this tag's rules before touching the turn-end edge or _last_broadcast_key"
+    note: FAILING? the prompt queue did not drain in PTY mode - read this tag's rules before touching the turn-end edge or _last_broadcast_key
+proven: '2026-08-26'
+statements:
+  - text: Anything the transcript-flush path must remember across events is process-scoped, never an instance attribute.
+  - text: PTY and headless must both have a turn-end drain.
+  - text: Every decline needs an owner for the retry.
+  - text: Do not move the retry into the bail.
+  - text: Re-firing the drain must stay safe.
 ```
 
 ## Expected behavior

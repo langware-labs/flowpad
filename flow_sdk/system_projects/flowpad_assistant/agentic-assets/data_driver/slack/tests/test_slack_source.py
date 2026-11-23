@@ -657,12 +657,14 @@ async def test_verify_names_a_channel_still_waiting_on_an_invite(serve):
     serve([{"ok": False, "error": "not_in_channel"}])
     verdict = await DataDriver.loaded("slack").verify(_source())
     assert verdict.ready is False and verdict.pending == (CHANNEL,) and CHANNEL in verdict.detail
+    assert not verdict.refused  # the token is fine: an invite is owed, not a new token
 
 
 async def test_verify_separates_a_missing_scope_from_a_missing_invite(serve):
     serve([{"ok": False, "error": "missing_scope"}])
     verdict = await DataDriver.loaded("slack").verify(_source())
     assert verdict.ready is False and verdict.pending == () and "channels:history" in verdict.detail
+    assert verdict.refused
 
 
 async def test_verify_of_everything_needs_a_persons_token_not_a_bots(serve):
@@ -672,6 +674,7 @@ async def test_verify_of_everything_needs_a_persons_token_not_a_bots(serve):
     source.config = {"base_url": BASE}
     verdict = await DataDriver.loaded("slack").verify(source)
     assert verdict.ready is False and "xoxp-" in verdict.detail and "bot" in verdict.detail.lower()
+    assert verdict.refused
 
 
 async def test_verify_of_everything_names_the_missing_scopes_and_the_person_it_reads_as(serve):
@@ -685,7 +688,7 @@ async def test_verify_of_everything_names_the_missing_scopes_and_the_person_it_r
     source.config = {"base_url": BASE}
     refused = await DataDriver.loaded("slack").verify(source)
     ready = await DataDriver.loaded("slack").verify(source)
-    assert refused.ready is False and "im:history" in refused.detail and "reinstall" in refused.detail
+    assert refused.ready is False and refused.refused and "im:history" in refused.detail and "reinstall" in refused.detail
     assert ready.ready is True and "@eran" in ready.detail and "DMs" in ready.detail
     assert [r.split("?")[0] for r in slack.requests] == ["/auth.test", "/users.conversations"] * 2
 

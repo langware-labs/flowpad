@@ -79,6 +79,27 @@ async def test_failing_action_is_recorded_on_the_run():
 
 
 @async_context
+async def test_a_real_run_that_fails_says_so_once_and_a_test_run_never():
+    from flow_sdk.automations.execution import run_automation
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.builtin.flow_message import FlowMessage
+
+    trigger = rule(TriggerType.SCHEDULE, actions=_calls("test_automation_boom"))
+    await trigger.save()
+    key = {"channel": "automations", "channel_source_id": f"trigger-{trigger.id}"}
+    await run_once(trigger)
+    await settle()
+    assert await Conversation.get_one(key) is None, "a test run posts nothing"
+
+    await run_automation(trigger)
+    await run_automation(trigger)  # the same failure again: already said
+
+    [said] = await FlowMessage.sent_in((await Conversation.get_one(key)).id)
+    assert said.card()["status"] == "failed" and said.text == f"{trigger.name} could not run."
+    assert said.card()["details"] == [{"label": "Error", "value": "the agent is not set up"}]
+
+
+@async_context
 async def test_schedule_runs_when_off_without_a_counter_bump():
     trigger = rule(TriggerType.SCHEDULE, enabled=False, actions=_calls("test_automation_record_call"))
     await trigger.save()

@@ -105,7 +105,7 @@ async def test_also_delivering_to_a_cloud_placement_adds_a_second_claim_for_the_
 
 
 async def test_also_delivering_a_number_of_ones_own_adds_an_account_claim(hub, cloud_agent):
-    """A WhatsApp number proven as an ACCOUNT (a Cloud API source, or a WAHA service speaking its API) gets its
+    """A WhatsApp number proven as an ACCOUNT (a Cloud API source, or a bridge service speaking its API) gets its
     second place as an account claim too — the hub's sibling rule is per kind."""
     source = DataSource(provider="whatsapp", name="wa", owner=f"agent-{cloud_agent}")
     hub["claims"] = [{**_claim(source, kind="desktop", instance_id="inst-1"), "provider": "whatsapp",

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from flow_sdk.ingest.envelope_lift import lift, origin_of
+from flow_sdk.ingest.envelope_lift import envelope_of, lift, origin_of
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.sources import CloudOrigin, EmailMessageData, FeedItemData, MessageData
 
@@ -44,3 +44,12 @@ def test_a_chat_is_a_message_and_anything_else_a_feed_item():
 def test_what_the_envelope_already_carries_is_kept():
     given = CloudOrigin(kind="k", namespace="n", key="x")
     assert lift(GMAIL, _env(origin=given)).origin is given
+
+
+def test_files_the_caller_already_saved_ride_the_message_and_survive_the_round_trip(tmp_path):
+    saved = str(tmp_path / "clip.mp4")  # never written: the lift reads the path, not the disk
+    item = lift(GMAIL, _env(kind="content.message.chat", files=[saved]))
+    (file,) = item.data.attachments
+    assert (file.data.as_, file.data.name, file.data.path, file.data.size) == ("video", "clip.mp4", saved, None)
+    assert file.origin == CloudOrigin(kind="gmail", namespace="me@x.test", key="m1#0"), "named beside its message, not by a machine path"
+    assert envelope_of(item, data_source_id="ds", provider="agent").files == [saved]

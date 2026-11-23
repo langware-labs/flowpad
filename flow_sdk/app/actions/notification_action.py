@@ -1001,7 +1001,9 @@ async def handle_add_message(
     # accept it as an alias for ``message`` so the canonical SDK path works
     # without callers having to hand-roll a raw ``{message}`` body.
     message = (body.get("message") or body.get("text") or "").strip()
-    is_draft = bool(body.get("is_draft"))
+    # A private message is a draft the conversation shows: written here, sent only when shared.
+    private = bool(body.get("private"))
+    is_draft = bool(body.get("is_draft")) or private
     prompt_text_preview = (body.get("prompt_text") or "").strip()
     prompt_files_preview = body.get("prompt_files") or []
     if not isinstance(prompt_files_preview, list):
@@ -1085,6 +1087,8 @@ async def handle_add_message(
 
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
+    if private and (is_prompt_send or remote_worker_session_id):
+        return ApiFailResponse(message="a private message cannot carry a prompt or belong to a live session", status_code=400)
     reply_to_id = (body.get("reply_to_id") or "").strip() or None
     # Writing INTO a thread without quoting anyone (the composer of an open thread): a message of
     # that thread — its root, normally. A reply_to_id, when given, decides the thread instead.
@@ -1212,6 +1216,11 @@ async def handle_add_message(
             reply_to_id=reply_to_id,
             thread_root_id=thread_root_id,
         )
+    if private:
+        from flow_sdk.schema.data_spec.message_draft_spec import MessageDraftOptions  # noqa: PLC0415
+
+        reply_fm.draft_options = MessageDraftOptions(private=True)
+        reply_fm.is_read = False  # it arrives for the person to read, like a received message
     if origin_process:
         # Link the writing session BEFORE the message is announced: a session's `--on-reply` wait
         # tells its own sends from replies by this link, and the check runs on the save's event.
@@ -1384,6 +1393,10 @@ async def handle_add_message(
     if is_draft:
         # Local-only draft: skip jsonl append and hub push.
         # The UI surfaces the draft via an entity query on (conversation_id, delivery_status=draft).
+        if private:
+            from flow_sdk import stream_inbox  # noqa: PLC0415
+
+            stream_inbox.touch("private-message")
         return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))
 
     conv = await _finalize_message_dispatch(

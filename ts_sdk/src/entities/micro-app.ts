@@ -68,6 +68,36 @@ export interface WebAppLifecycle {
   setup_owed: string;
 }
 
+/** Where a page is open (`webapp.page_presence.browser`). */
+export type PageBrowser = 'flowpad' | 'agent' | 'chrome' | 'edge' | 'firefox' | 'safari' | 'other';
+
+/** One open page of a served app — a live connection (`webapp.page_presence`). */
+export interface PagePresence {
+  webapp_id: string;
+  endpoint_id: string;
+  /** The page inside the app. */
+  path: string;
+  browser: PageBrowser;
+  /** The session that showed it (`agentic_process-<id>`); '' = the person. */
+  opened_by: string;
+  since: string;
+}
+
+/** One app this machine serves now, with its live connections (`webapp.hosted`). */
+export interface HostedApp {
+  webapp_id: string;
+  title: string;
+  project_id: string;
+  state: WebAppLifecycleState;
+  since: string | null;
+  port: number | null;
+  pid: number | null;
+  connections: PagePresence[];
+}
+
+/** The FlowData element that says the hosted list changed; it carries nothing — read `WebApp.hosted()` again. */
+export const HOSTED_APPS_ELEMENT = 'hosted_apps';
+
 export const isAppShowable = (record: WebAppLifecycle | null | undefined): boolean =>
   !!record && SHOWABLE_STATES.includes(record.state);
 export const isAppBusy = (record: WebAppLifecycle | null | undefined): boolean =>
@@ -224,6 +254,12 @@ export class WebApp extends APIEntity<WebApp> implements IWebApp {
     const info = new ActionInfo('setup-rule', WebApp.type, this.typeId.id, 'POST');
     info.bodyParameters = { rule, rule_action: action };
     return (await dataManager.callAction<unknown, WebAppSetupState>(info)) ?? null;
+  }
+
+  /** Every app this machine serves now, each with its live connections (`GET micro_app/hosted`). */
+  static async hosted(): Promise<HostedApp[]> {
+    const info = new ActionInfo('hosted', WebApp.type, null, 'GET');
+    return (await dataManager.callAction<void, HostedApp[]>(info)) ?? [];
   }
 
   /** The app's record, read now (`GET micro_app/<id>/lifecycle`). */

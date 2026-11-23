@@ -22,7 +22,7 @@ function ContactDetails({ user }: { user: User }) {
     <div className="flex flex-col gap-3 text-sm" data-testid="contact-details-tab">
       <div className="flex items-center gap-3">
         {user.picture ? (
-          <img src={user.picture} alt="" className="h-10 w-10 rounded-full object-cover" />
+          <img src={user.picture} alt="" referrerPolicy="no-referrer" className="h-10 w-10 rounded-full object-cover" />
         ) : (
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <UserIcon className="h-5 w-5" />

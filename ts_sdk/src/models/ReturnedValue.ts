@@ -119,6 +119,14 @@ export interface DecisionVerdict extends ReturnedValue {
   latency_ms?: number;
 }
 
+/** An endpoint block's answer: the capability's result as `value`, or why there is none. */
+export interface EndpointAnswer extends ReturnedValue {
+  /** The closed word a caller branches on; empty when the value was produced. */
+  reason?: string;
+  /** The vendor job the call had started, when it got that far. */
+  job_id?: string;
+}
+
 /** What the `smart-navigator` block answered: `value` is the `navigation.outcome`; the rest is how it
  *  was decided. Opening a dock and handing the request to the assistant are both OK. */
 export interface NavigatorResult extends ReturnedValue {
@@ -152,6 +160,7 @@ export const ANSWER_KIND = {
   ask: 'compute.returned.ask',
   wizard: 'compute.returned.wizard',
   decision: 'compute.returned.decision',
+  endpoint: 'compute.returned.endpoint',
   navigator: 'compute.returned.navigator',
   navigate: 'compute.returned.navigate',
   collection: 'compute.returned.collection',

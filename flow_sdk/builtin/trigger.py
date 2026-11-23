@@ -492,6 +492,10 @@ class Trigger(ProjectedFields, Entity):
     #: What it does, as a WIZARD (`trigger.then`): a ref, inline steps, or the run_agent / run_script sugar.
     #: Runs instead of `actions` when set.
     then: Optional[dict[str, Any]] = APIField(None, description="What runs on a fire, as a wizard: {ref} | {steps, ops} | {run_agent} | {run_script}.")
+    #: Where a real run's answer is posted: ``conversation`` -- the conversation of the message that fired it,
+    #: as a private message -- or ``automations`` -- the rule's own conversation on the Automations channel.
+    #: Unset: the message's conversation when the run has one, else nothing is posted for it.
+    report_to: Optional[str] = APIField(None, description="Where a run's answer is posted: conversation | automations.")
     #: A session waiting for the reply to one message (``flow conversation send --on-reply``): the
     #: message, ``flow_message-<id>``. Row-only, like every callback (builtin/reply_callbacks.py).
     awaits_reply: Optional[str] = APIField(None, description="The message (flow_message-<id>) whose reply fires this rule (TAG only).")

@@ -7,7 +7,8 @@
 | `mockify.decision` | one open question a screen asks the person reviewing it (D1, D2…) |
 | `mockify.anchor` | where on a screen a comment applies: the element the reviewer pointed at (selector, label, HTML, position) |
 | `mockify.feedback` | one comment a reviewer left on one screen of one mock: text, optionally an image, optionally the decision it answers |
+| `mockify.build_item` | one thing an approved mock owes the product (a screen, a state, an action, a change, a decision), with where it is built and whether it matches |
 
 Mocks live in the project's `mocks` dataset (row key = the mock's slug); feedback in `mock-feedback`
-(row key = `<mock>-<step>-<n>`). Written only through the SDK / `dm_ctl` — by the mockify skill and
+(row key = `<mock>-<step>-<n>`); the build list of an approved mock in `mock-build` (row key = `<mock>-<nnn>`). Written only through the SDK / `dm_ctl` — by the mockify skill and
 by the mock page itself.

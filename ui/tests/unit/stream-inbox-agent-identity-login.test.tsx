@@ -4,6 +4,8 @@
  * overlay on `cloudUser`, so the signed-in agent box was told to log in.
  */
 import { TooltipProvider } from '@radix-ui/react-tooltip';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,7 +39,7 @@ describe("a data source's stream inbox on an agent's box", () => {
   it('asks to log in until the hub signs the box in as its agent Identity, then stops asking', async () => {
     vi.spyOn(apiClient, 'get').mockResolvedValue(null as never);
     vi.spyOn(apiClient, 'post').mockResolvedValue(null as never);
-    render(<StreamInboxView sourceId="1eedfa10-bb0d-48cc-b3ae-57153bb8c298" embedded />, { wrapper: TooltipProvider });
+    render(<StreamInboxView sourceId="1eedfa10-bb0d-48cc-b3ae-57153bb8c298" embedded />, { wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={new QueryClient()}><TooltipProvider>{children}</TooltipProvider></QueryClientProvider> });
     expect(screen.getByTestId('login-required-overlay')).toBeTruthy();
 
     // The box's bootstrap seed: signed in, no person, the agent's Identity as the principal.

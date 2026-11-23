@@ -336,11 +336,9 @@ to record a child executor rather than searching by process name or start time.
 steps (a diagnosis finished, a fix is ready, "report it") are messages in the conversation, never a custom
 notification with its own buttons. The message's arrival raises the standard new-message notification — that's it.
 
-**The one exception: the desktop's "Update Ready" toast** (`ui/src/components/update-ready/`). It is app status,
-not a conversation result: there is no conversation to put it in, and the update flow must not block on a modal.
-It is raised only by `electron/main.js` when a downloaded or prepared update is ready (and on its 90-minute
-reminder), with id `update-ready` (one at a time), Restart / Later actions, and a top-bar indicator that keeps
-the update reachable after the toast closes. Don't use it as a precedent for other custom notifications.
+**App status is not a notification.** A ready desktop update shows as the top bar's "Update ready" indicator and
+a green dot on the footer's version chip (`ui/src/components/update-ready/`); both open the version popover,
+where the update is applied.
 
 **Email rules are the hub's, never per-machine preferences.** Every system email has a kind (a dot path, hub
 `app/services/email_kinds.py`); muting is the hub `notification_rule` entity `{rule_key, muted}`, shown by ONE view,

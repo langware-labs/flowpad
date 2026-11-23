@@ -171,7 +171,7 @@ export function CredentialTestButton({
     try {
       const answer = await credentialsService.test(name, projectId ?? '');
       seenAt.current = answer.at;
-      if (answer.state === 'ok') notify.success({ title: t`${title}: the provider took the key` });
+      if (answer.state === 'ok') notify.success({ title: t`${title}: the provider accepted it` });
       else if (answer.state === 'invalid') notify.error({ title: t`${title}: key rejected`, message: answer.detail });
       else notify.error({ title: t`${title}: the test could not run`, message: answer.detail });
       await onChanged();
@@ -196,7 +196,7 @@ export function CredentialTestButton({
   const Verdict = busy ? Loader2 : state === 'ok' ? CheckCircle2 : failed ? XCircle : FlaskConical;
   const hint =
     state === 'ok'
-      ? t`The provider took the key (${result?.at})`
+      ? t`The provider accepted it (${result?.at})`
       : state
         ? result?.detail || state
         : hasTest

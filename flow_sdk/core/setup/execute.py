@@ -87,7 +87,7 @@ async def execute_setup(
     try:
         lock.acquire(blocking=False)
     except Timeout:
-        return SetupTreeResult(state=SetupState.HELD, detail=f"{root_id} is already being set up on this machine.")
+        return SetupTreeResult(state=SetupState.HELD, detail=f"{root_id} is already being set up on this computer.")
 
     async def changed(tree: SetupTreeResult) -> None:
         # The lock above is held for the whole run — re-taking it here would self-deadlock (``_mutate``).

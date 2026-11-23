@@ -5,6 +5,7 @@
 import { useLingui } from '@lingui/react/macro';
 import { ArrowLeft, Menu, PanelLeft } from 'lucide-react';
 import { setPhoneNavigatorOpen, useHasPhoneNavigator } from '@src/components/navigator-panel/phone-navigator';
+import { StalePageIndicator } from '@src/components/top-nav-bar/StalePageIndicator';
 import { useEntityBreadcrumbs } from '@src/components/top-nav-bar/use-entity-breadcrumbs';
 import { useSidebar } from '@src/components/ui/sidebar';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
@@ -82,6 +83,7 @@ function Bar() {
           <PanelLeft className="h-5 w-5 rtl:-scale-x-100" />
         </button>
       )}
+      <StalePageIndicator />
       <PhoneMenuButton />
     </div>
   );

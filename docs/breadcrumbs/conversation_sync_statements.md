@@ -11,15 +11,21 @@ description: The 2,400-conversation sync benchmark failed on loaded CI runners a
 
 > Ground truth. Proven by RCA on 2026-11-09. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.conversation_sync_statements.rules
 sites:
-  - rel_path: "tests/unit/hub_proxy/test_conversation_sync_benchmark.py"
+  - rel_path: tests/unit/hub_proxy/test_conversation_sync_benchmark.py
     line: 71
-    note: "FAILING? never raise the 12 s cap - read this tag's rules first; the cost is SQL statements per created row, not the logic"
-  - rel_path: "tests/unit/test_save_is_one_write.py"
+    note: FAILING? never raise the 12 s cap - read this tag's rules first; the cost is SQL statements per created row, not the logic
+  - rel_path: tests/unit/test_save_is_one_write.py
     line: 111
-    note: "FAILING? a row mirror_batch proved absent must be created without an existence read or an FTS delete - read this tag's rules"
+    note: FAILING? a row mirror_batch proved absent must be created without an existence read or an FTS delete - read this tag's rules
+proven: '2026-11-09'
+statements:
+  - text: Never raise the 12 s cap.
+  - text: Each statement is the cost.
+  - text: Only a row `mirror_batch` read as absent, under the writer lock, skips the reads.
+  - text: A wrong skip fails loudly.
 ```
 
 ## Expected behavior

@@ -91,6 +91,8 @@ export enum PrefKey {
   COMMAND_LINK_MODE = 'preferences.terminal.command_link_mode',
   COMMAND_LINK_BROWSER = 'preferences.terminal.command_link_browser',
   COMMAND_LINK_CONFIRM = 'preferences.terminal.command_link_confirm',
+  /** This instance's secret vault, used where no project or entity names one: `{manager, config}`. */
+  SECRETS_VAULT = 'preferences.secrets.vault',
   // files
   FILES_SHOW_HIDDEN = 'preferences.files.show_hidden',
   // assets / skills
@@ -686,6 +688,14 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     category: 'terminal',
     label: 'Browser profile for links and sign-in',
     // `{browser, profile}`; null is the system default browser.
+    dataType: PrefDataType.JSON,
+    defaultValue: null,
+  },
+  [PrefKey.SECRETS_VAULT]: {
+    key: PrefKey.SECRETS_VAULT,
+    category: 'secrets',
+    label: 'Global secret vault',
+    // `{manager, config}`; null is none.
     dataType: PrefDataType.JSON,
     defaultValue: null,
   },

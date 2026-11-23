@@ -288,51 +288,31 @@ export interface BrowseableTreeProps {
   /** Top-level roots. */
   roots: BrowseableRoot[];
 
-  /** Dwell (ms) before hovering a row expands it — menu mode. Undefined (the
-   *  default) schedules nothing, so ordinary navigators never expand on hover.
-   *  Hover only ever EXPANDS; collapse stays on the chevron/click, and an
-   *  explicit collapse suppresses hover until the pointer leaves the row. */
-  hoverExpandMs?: number;
-
   /** Dwell (ms) before hovering a row fires its `onHoverSeen` — menu mode.
    *  Undefined (the default) never fires it, so ordinary navigators stamp
    *  nothing on hover. Mouse only, and the dwell restarts on every entry, so a
    *  pointer sweeping down a menu stamps nothing it merely crosses. */
   hoverSeenMs?: number;
 
-  /** Rendered as the FIRST row of every level: once above the roots ('') and
-   *  once at the head of each expanded folder's children (its id). Its use is a
-   *  build-as-you-browse toolbar — "add into THIS level" — so the parent id is
-   *  handed in, and returning null opts a level out. Leading the level (rather
-   *  than trailing it) is what keeps nested footers apart: a trailing one
-   *  renders after the whole expanded subtree, so several open levels pile
-   *  their footers up together at the bottom with nothing to distinguish them.
-   *
-   *  The tree's own `mirrored` is handed in too, because the footer sits inside
-   *  a wrapper the tree indents on the MIRRORED edge — a footer laid out
-   *  leading-first ignores that indent and draws at the same x on every level.
-   *  Passing it beats asking each author to remember to thread the flag through
-   *  from wherever the tree got it.
-   *
-   *  Undefined ⇒ no footer, unchanged for ordinary navigators. */
-  levelFooter?: (parentId: string, mirrored: boolean) => ReactNode;
+  /**
+   * A flat list: no row expands, so the rows drop the chevron column and start
+   * at the list's own edge. For a caller that shows one level at a time.
+   */
+  flat?: boolean;
 
   /**
-   * Lay the rows out mirrored — for a menu that grows against the reading
-   * direction, i.e. the bookmarks flyout hanging off the top bar's right edge.
-   *
-   * The tree was built for a panel anchored on the LEFT (the rail's flyout):
-   * glyphs lead the label, indentation grows away from the panel, the collapsed
-   * chevron points right and row previews open right — all "into open space".
-   * Pinned to the window's right edge every one of those points back at the
-   * panel, and the preview opens off-screen.
-   *
-   * Implemented as a flex-axis reversal, NOT by setting `dir`: direction is a
-   * property of the LANGUAGE, owned solely by `locale-context.tsx`, and which
-   * way a panel happens to grow is not a statement about language. Reversing
-   * also composes with an RTL locale rather than cancelling against it.
+   * The roots draw no row of their own: their children are the first level.
+   * A root stays the container (its `onDrop` takes a drop on the list's empty
+   * space, its `reorderChildren` orders the first level) — it just isn't shown.
    */
-  mirrored?: boolean;
+  rootless?: boolean;
+
+  /**
+   * Which side row previews open on. LOGICAL: 'end' (the default) is right
+   * under LTR, 'start' is left. A panel pinned to the window's inline-end edge
+   * (the bookmarks flyout) passes 'start', or its previews open off-screen.
+   */
+  previewSide?: 'start' | 'end';
 
   /** The currently-active pointer (from URL). Drives exact row selection and
    *  remains the navigation cursor. */

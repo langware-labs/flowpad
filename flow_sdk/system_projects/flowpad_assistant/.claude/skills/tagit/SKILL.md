@@ -35,7 +35,7 @@ it. This is ground truth, and it changes only with the user's approval.
 | tag     | `breadcrumb.test.<slug>.rules` — `<slug>` is **≤3 words**, snake\_case, a *topic*, not the pytest function name |
 | capsule | name `tag`, on top of the failing test, one per test                                                            |
 | doc     | `docs/breadcrumbs/<slug>.md`, frontmatter `tags: [<tag>]`                                                       |
-| fence   | a ` ```breadcrumb ` block at the TOP of the doc — renders the bound tests as clickable chips                    |
+| block   | a ` ```test_debug ` block at the TOP of the doc — the bound tests as clickable chips, then the rules as statements |
 
 The slug is a topic so a test rename does not orphan the tag. `breadcrumb` is
 not a reserved root, so the tag can be blessed.
@@ -68,9 +68,13 @@ description: <one line — this is ALL that `--mode line` shows, make it carry w
 
 > Ground truth. Proven by RCA on <YYYY-MM-DD>. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.<slug>.rules
-sites: <paste from step 4 — leave the fence out until you have it>
+sites: <the `sites` lines step 4 prints — leave the block out until you have them>
+proven: <YYYY-MM-DD> · <ticket, when there is one>
+statements:
+  - text: <one invariant, one sentence>
+    about: ["<the production file it is about, optionally :line>"]
 ```
 
 ## Expected behavior
@@ -79,8 +83,18 @@ sites: <paste from step 4 — leave the fence out until you have it>
 ## Failure modes
 ````
 
-The fence renders as a card of bound tests, each a chip that peeks at its test
-at the capsule's line. It sits at the top because whoever opens this doc arrived
+**One `test_debug` block holds what tagit owns and the rules.** `sites` are the bound
+tests and `proven` is when the rules were proven; `tag`, the optional `depends_on` and
+`statements` are the one statement format every Flowpad doc uses (the `langit` skill;
+`docs/lw.md`). One sentence per invariant, with the production file under `about` when
+there is one. Why an invariant holds goes as prose under `## Invariants`, never inside
+`text`. Write and change the block with
+`flow tag put --doc docs/breadcrumbs/<slug>.md --kind test_debug --tag breadcrumb.test.<slug>.rules --json '<the whole block>'`;
+after it `flow tag check` must print `OK`. Expected behavior, Internals and Failure modes
+stay prose.
+
+The block renders as a card: the bound tests, each a chip that peeks at its test
+at the capsule's line, then the rules. It sits at the top because whoever opens this doc arrived
 from a failing test: the way back to it should be the first thing on screen, and
 prose below a card still reads in order.
 
@@ -108,8 +122,8 @@ decorator and test-class hoisting, and merging into an existing breadcrumb — a
 of which fail *silently* when done by hand (an indented or duplicated block
 removes the whole file from `flow tag get` with no error anywhere).
 
-`--print-fence` emits the doc's \`\`\`breadcrumb block, already carrying the line
-it just wrote. **Paste it verbatim** at the top of the doc, under the banner.
+`--print-fence` prints the tag and its `sites`, already carrying the line it just
+wrote. **Copy its `sites` lines verbatim** into the doc's `test_debug` block.
 Retyping it by hand is how the capsule and the card drift apart — the same
 reason the capsule itself goes through the script.
 
@@ -119,7 +133,7 @@ reason the capsule itself goes through the script.
 flow record index docs/breadcrumbs/<slug>.md
 ```
 
-Index *after* the fence is pasted, not before — otherwise the indexed body is
+Index *after* the block is written, not before — otherwise the indexed body is
 the one without it.
 
 **6 — Prove the chain.**
@@ -190,7 +204,7 @@ itself failed. Only 7 means something is broken.
 | Need                                             | Where                                    |
 | ------------------------------------------------ | ---------------------------------------- |
 | how the tag system binds docs and code           | `docs/tags.md`                           |
-| how the `breadcrumb` fence renders and refreshes | `docs/renderable-fences.md`              |
+| how the `test_debug` block renders and refreshes | `docs/renderable-fences.md`              |
 | what cloud sharing does and does not upload      | `docs/collab/cloud-sharing.md`           |
 | capsule carriers, grammar, repeatable names      | `docs/data-management/asset-capsules.md` |
 | reading a tag back                               | the `tag-context` skill                  |

@@ -25,63 +25,57 @@ import shlex
 import shutil
 import subprocess
 import sys
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Mapping, Optional, Union
-
-from pydantic import Field
+from typing import Any, ClassVar, Mapping, Optional, Union
 
 from flow_sdk.assets.python_module import load_package_module
-from flow_sdk.schema.data_spec.frontmatter import AssetDocumentSpec
+from flow_sdk.schema.data_spec.secret_manager_spec import OsCommandsSpec, SecretManagerSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.secrets.errors import SecretStoreError
 from flow_sdk.secrets.store import SecretStore
+from flow_sdk.utils.templates import Keep
 
 logger = logging.getLogger(__name__)
 
 SHIPPED_ROOT = Path(__file__).resolve().parents[1] / "system_projects" / "flowpad_assistant" / "agentic-assets" / "secret_manager"
-MANIFEST_FILE = "secret_manager.json"
+MANIFEST_FILE = SecretManagerSpec.main_file
 STORE_FILE = "store.py"
 PACKAGE_PREFIX = "flowpad_secret_manager_"
-OPS = ("install", "login", "check", "grant")
+OPS = ("install", "login", "check", "grant", "status", "close")
 OSES = ("darwin", "linux", "win32")
 
 
-class ConfigFieldSpec(DataSpec):
-    """One field a vault of this manager is configured with."""
+class VaultAccess(StrEnum):
+    """Whether this machine can read a vault right now."""
 
-    name: str = Field(min_length=1)
-    label: str = ""
-    required: bool = False
-
-
-class OsCommandsSpec(DataSpec):
-    """One command per OS (``""``: none on that OS)."""
-
-    darwin: str = ""
-    linux: str = ""
-    win32: str = ""
+    OPEN = "open"
+    SEALED = "sealed"
+    NOT_INSTALLED = "not_installed"
+    #: The manager declares no ``status``: only a read tells.
+    UNKNOWN = "unknown"
 
 
-class SecretManagerSpec(AssetDocumentSpec):
-    """``secret_manager.json`` — what a manager is and the commands that set it up."""
+class AccessChange(StrEnum):
+    """What a person asks of a vault's access."""
 
-    name: str = Field(min_length=1)
-    title: str = ""
-    icon: str = ""
-    description: str = ""
-    config_fields: list[ConfigFieldSpec] = Field(default_factory=list)
-    install: OsCommandsSpec = Field(default_factory=OsCommandsSpec)
-    login: OsCommandsSpec = Field(default_factory=OsCommandsSpec)
-    #: Exits 0 when this machine can read the vault.
-    check: str = ""
-    #: Gives ``{email}`` read access to the vault.
-    grant: str = ""
-    #: Environment for every command, filled like a command (``{"OP_ACCOUNT": "{account}"}``); a
-    #: variable whose placeholder the vault's config does not fill is left out.
-    env: dict[str, str] = Field(default_factory=dict)
-    #: What the person does when sign-in fails (a desktop-app setting, an approval): shown by the setup wizard.
-    login_help: str = ""
+    OPEN = "open"
+    CLOSE = "close"
+
+
+class VaultAccessSpec(DataSpec):
+    """A vault's access on this machine, and what can be done about it. Never a value."""
+
+    spec_kind: ClassVar[str] = "secrets.vault_access"
+
+    state: VaultAccess
+    #: It is not open and the manager has a sign-in to run (``login`` on this OS).
+    can_open: bool = False
+    #: It is open and the manager can seal it (``close``).
+    can_close: bool = False
+    #: Why an open or a close did not work — the tool's last line, or the manager's own sign-in help.
+    detail: str = ""
 
 
 class UnknownSecretManager(SecretStoreError, KeyError):
@@ -225,6 +219,34 @@ def shell_line(argv: list[str], env: Mapping[str, str], os: Optional[str] = None
     return " ".join([*(f"{k}={shlex.quote(v)}" for k, v in env.items()), shlex.join(argv)])
 
 
+def instructions_for(vault: Any, *, name: str = "") -> str:
+    """The manager's own instructions for an agent using this vault (its folder's ``instructions.md``, the
+    vault's config filled in like a command, ``{name}`` the vault's name in the project); "" when it ships none."""
+    spec, values = _prepared(vault, name)
+    try:
+        text = (SHIPPED_ROOT / spec.name / "instructions.md").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    return text.strip().format_map(_Keep({**{k: str(v) for k, v in values.items()}, "name": name}))
+
+
+def title_of(manager: str) -> str:
+    """The manager's title for a screen; its name when it has none or is unknown here."""
+    try:
+        return get_manager(manager).title or manager
+    except UnknownSecretManager:
+        return manager
+
+
+def missing_tool(vault: Any) -> str:
+    """What this computer lacks to use ``vault``: its manager's command line, or the manager's own name when
+    it is unknown here; "" when nothing. Runs nothing."""
+    try:
+        return tool_missing(vault)
+    except UnknownSecretManager:
+        return _vault_parts(vault)[0]
+
+
 def tool_missing(vault: Any) -> str:
     """The tool the vault's manager drives (its ``check``'s program) when it is not on this machine, else "".
     Runs nothing — no unlock prompt — so it is cheap enough for every status read."""
@@ -237,6 +259,45 @@ async def run_check(vault: Any) -> bool:
     spec, values = _prepared(vault)
     code, _ = await _run(spec.check, values, spec.env)
     return code == 0
+
+
+def _access(vault: Any, state: VaultAccess, detail: str = "") -> VaultAccessSpec:
+    """``state`` with what can be done from it: open what is not open, close what is."""
+    try:
+        spec, _ = _prepared(vault)
+    except UnknownSecretManager:
+        return VaultAccessSpec(state=VaultAccess.NOT_INSTALLED, detail=detail)
+    return VaultAccessSpec(
+        state=state, detail=detail,
+        can_open=state in (VaultAccess.SEALED, VaultAccess.UNKNOWN) and bool(cli_command(spec, "login")),
+        can_close=state == VaultAccess.OPEN and bool(spec.close),
+    )
+
+
+async def access_of(vault: Any, *, detail: str = "") -> VaultAccessSpec:
+    """Is ``vault`` open on this machine? Runs the manager's ``status`` — nothing that prompts."""
+    if missing_tool(vault):
+        return _access(vault, VaultAccess.NOT_INSTALLED, detail)
+    spec, values = _prepared(vault)
+    if not spec.status:
+        return _access(vault, VaultAccess.UNKNOWN, detail)
+    code, _ = await _run(spec.status, values, spec.env)
+    return _access(vault, VaultAccess.OPEN if code == 0 else VaultAccess.SEALED, detail)
+
+
+async def change_access(vault: Any, change: AccessChange) -> VaultAccessSpec:
+    """Open ``vault``'s access on this machine (the manager's ``login``: it may ask the person in its own app
+    or browser) or seal it (its ``close``), and answer the state after. A change that worked IS the state; one
+    that did not asks the manager where it stands."""
+    spec, values = _prepared(vault)
+    op = "login" if change == AccessChange.OPEN else "close"
+    template = cli_command(spec, op)
+    if not template:
+        return await access_of(vault, detail=f"{spec.title or spec.name} has no {change.value} on this machine")
+    code, err = await _run(template, values, spec.env)
+    if code == 0:
+        return _access(vault, VaultAccess.OPEN if change == AccessChange.OPEN else VaultAccess.SEALED)
+    return await access_of(vault, detail=(spec.login_help if change == AccessChange.OPEN else "") or err or "failed")
 
 
 async def run_grant(vault: Any, email: str) -> None:
@@ -269,11 +330,7 @@ async def _run(template: str, values: Mapping[str, Any], env: Optional[Mapping[s
     return proc.returncode or 0, (lines[-1] if lines else "")
 
 
-class _Keep(dict):
-    """``format_map`` that leaves an unknown placeholder as it is."""
-
-    def __missing__(self, key: str) -> str:
-        return "{" + key + "}"
+_Keep = Keep
 
 
 def _with_defaults(manager: str, config: Mapping[str, Any]) -> dict[str, Any]:
@@ -297,6 +354,7 @@ def _vault_name(vault: Any, config: Mapping[str, Any]) -> str:
 
 
 __all__ = [
-    "OSES", "SecretManagerSpec", "UnknownSecretManager", "cli_command", "get_manager", "list_managers", "load_managers",
-    "run_check", "run_grant", "shell_line", "store_class", "store_for", "tool_missing", "vault_command",
+    "OSES", "AccessChange", "SecretManagerSpec", "UnknownSecretManager", "VaultAccess", "VaultAccessSpec", "access_of",
+    "change_access", "cli_command", "get_manager", "instructions_for", "list_managers",
+    "load_managers", "missing_tool", "run_check", "run_grant", "shell_line", "store_class", "store_for", "title_of", "tool_missing", "vault_command",
 ]

@@ -5,6 +5,7 @@ import { gfmSlug } from '@src/lib/heading-slug';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { MilkdownEditor, type CommentLayer, type RequestChangeOpts, type RequestedChange } from '@src/components/milkdown-editor/MilkdownEditor';
 import type { ChangeMark } from '@src/components/milkdown-editor/plugins/change-marks';
+import { docTagsOf } from '@src/components/milkdown-editor/plugins/doc-tags';
 import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurface';
 import { Button } from '@src/components/ui/button';
 import { WikiToolbar } from '@src/components/wiki-toolbar';
@@ -381,6 +382,7 @@ function MarkdownEditorContent({
 
   const {
     fields,
+    typedFields,
     hasFields,
     body,
     bodyStartLine,
@@ -744,6 +746,7 @@ function MarkdownEditorContent({
   // between the plain doc and the full editor.
   // 'markdown' renders through Monaco, never Milkdown — excluded so `editorMode`
   // below stays within MilkdownEditorMode without a cast.
+  const docTags = docTagsOf(typedFields);
   const milkdownBody = (mode: Exclude<ViewMode, 'markdown'>) => (
     <MilkdownEditor
       content={body}
@@ -758,6 +761,7 @@ function MarkdownEditorContent({
       onCursorLineChange={handleEditorLineChange}
       initialLine={initialBodyLine}
       direction={normalizeDirection(fields.direction)}
+      docTags={docTags}
       toolbarPortalTarget={mode === 'editor' ? editorToolbarTarget : undefined}
       toolbarRight={
         mode === 'editor' ? (

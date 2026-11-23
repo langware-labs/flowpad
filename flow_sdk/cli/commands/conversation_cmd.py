@@ -499,12 +499,18 @@ def send_message(
     ] = None,
     on_reply: Annotated[Optional[str], typer.Option("--on-reply", help=_ON_REPLY_HELP)] = None,
     wait: Annotated[Optional[str], typer.Option("--wait", help="How long to wait for the reply: 30m, 2h, 3d (default 3d).")] = None,
+    private: Annotated[
+        bool,
+        typer.Option("--private", help="Show it in the conversation to the user only; they share it with everyone or dismiss it."),
+    ] = False,
 ) -> None:
     cid = _conversation_id(conversation_id)
     if not (message or "").strip():
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message is required")
     port = _discover_port()
     body: dict = {"text": message, **_origin_session()}
+    if private:
+        body["private"] = True
     if reply_to:
         body["reply_to_id"] = _message_id(reply_to)
     if prompt and prompt.strip():

@@ -1,0 +1,23 @@
+{
+  "type": "compute_op",
+  "id": "d09fb6e0-92bd-493f-a3ee-0f8616f11399",
+  "name": "stream-inbox-classifier",
+  "label": "Classify conversations",
+  "description": "One agent reads each given Stream Inbox conversation and proposes its tag; the main agent keeps the tag tree small. Answers one proposal — conversation x tag plus the tag tree changes. Writes nothing.",
+  "subkind": "agent",
+  "exe_data": {
+    "agent": "stream-inbox-classifier",
+    "prompt": "Classify the conversations your input names (ids in `conversations`, or the window `since` / `until`) with the stream-inbox-classifier skill. Submit the checked value as the skill says and answer with the reference it gives you and the number of conversations."
+  },
+  "input": {
+    "conversations": [
+      "string"
+    ],
+    "since": "?date",
+    "until": "?date"
+  },
+  "output": {
+    "ref": "string",
+    "conversations": "int"
+  }
+}

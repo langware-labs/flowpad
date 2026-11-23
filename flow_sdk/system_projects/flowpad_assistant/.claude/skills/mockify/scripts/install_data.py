@@ -1,11 +1,12 @@
-"""Put mockify's kinds and its two datasets into the MOCK project (never the repo), under its namespace.
+"""Put mockify's kinds and its three datasets into the MOCK project (never the repo), under its namespace.
 
 Usage: python -I install_data.py <project root> [--force]
 
 - copies ``schema/agentic-assets/data_schema/mockify`` to ``<project>/agentic-assets/data_schema/mockify``
   with its ``"ns"`` set to the project's own (two projects never define one kind twice);
 - writes ``<project>/agentic-assets/dataset/mocks/dataset.json`` (rows: ``mockify.mock``) and
-  ``.../mock-feedback/dataset.json`` (rows: ``mockify.feedback``), the kinds written in full;
+  ``.../mock-feedback/dataset.json`` (rows: ``mockify.feedback``) and ``.../mock-build/dataset.json``
+  (rows: ``mockify.build_item``), the kinds written in full;
 - leaves what is already there alone unless ``--force`` (the schema is refreshed then; datasets'
   rows are never touched -- rows go through the SDK / dm_ctl only).
 
@@ -28,6 +29,9 @@ DATASETS = {
     "mock-feedback": ("Mock feedback",
                       "One row per comment a reviewer left on a mock screen (mockify); key = <mock>-<step>-<id>.",
                       "mockify.feedback"),
+    "mock-build": ("Mock build list",
+                   "One row per thing an approved mock owes the product (mockify); key = <mock>-<nnn>.",
+                   "mockify.build_item"),
 }
 
 
@@ -37,7 +41,7 @@ def fail(message: str) -> None:
 
 
 def install(root: Path, force: bool = False) -> dict:
-    """Put the kinds and the two datasets into ``root`` (the mock project). Raises ValueError with no ``ns``."""
+    """Put the kinds and the three datasets into ``root`` (the mock project). Raises ValueError with no ``ns``."""
     manifest = root / "agentic-assets" / "project_manifest" / "project_manifest.json"
     try:
         ns = json.loads(manifest.read_text(encoding="utf-8")).get("ns")
@@ -75,11 +79,12 @@ def install(root: Path, force: bool = False) -> dict:
     datasets = root / "agentic-assets" / "dataset"
     return {
         "ns": ns, "wrote": wrote,
-        "kinds": {k: f"--{ns}--.mockify.{k}" for k in ("mock", "step", "decision", "anchor", "feedback")},
+        "kinds": {k: f"--{ns}--.mockify.{k}" for k in ("mock", "step", "decision", "anchor", "feedback", "build_item")},
         "next": [
             f'flow schema apply "{root / "agentic-assets" / "data_schema"}"',
             f'flow record index "{datasets / "mocks"}" --types dataset',
             f'flow record index "{datasets / "mock-feedback"}" --types dataset',
+            f'flow record index "{datasets / "mock-build"}" --types dataset',
         ],
     }
 

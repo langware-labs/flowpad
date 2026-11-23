@@ -8,7 +8,8 @@ every page they show, must carry a state key (``flow_sdk/server/page_state.py``)
 What is guarded is what a page can USE the API for: requests it makes from script (`fetch`, XHR, a
 WebSocket — `Sec-Fetch-Mode: cors|websocket`) and anything that is not a plain read. A browser's own
 GET navigation (a login redirect, a download, a page in a frame) and its passive resource loads (`<img>`,
-`<video>`, classic `<script>`/`<link>`: `no-cors`) carry no key — they cannot send a header — and pass: a
+`<video>`, classic `<script>`/`<link>`: `no-cors`; a served app's own ES-module imports: `script`) carry no key —
+they cannot send a header, and an import's Referer is the importing module, not the page — and pass: a
 page can act through them only by triggering a route that already acts on a GET, and cannot read what
 they return. A navigation that POSTs (a form a page submits) is NOT passed.
 
@@ -35,6 +36,14 @@ _MESSAGE = "This page was not opened by Flowpad on this computer, so it may not 
 _PLAIN_MODES = ("navigate", "no-cors")
 
 
+def _is_plain_read(scope: Scope, conn: HTTPConnection) -> bool:
+    headers = conn.headers
+    return scope["type"] == "http" and scope["method"] in ("GET", "HEAD") and (
+        headers.get("sec-fetch-mode") in _PLAIN_MODES
+        or (headers.get("sec-fetch-dest") == "script" and headers.get("sec-fetch-site") == "same-origin")  # module import
+    )
+
+
 class StateKeyMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -55,8 +64,7 @@ class StateKeyMiddleware:
         state = page_state.lookup(key)
         if state is not None:
             scope.setdefault("state", {}).update(page_state=state, page_state_key=key)
-        plain = scope["type"] == "http" and scope["method"] in ("GET", "HEAD") and conn.headers.get("sec-fetch-mode") in _PLAIN_MODES
-        if state is None and not plain:
+        if state is None and not _is_plain_read(scope, conn):
             await deny(scope, receive, send, _MESSAGE, details={"state": "missing" if not key else "unknown"})
             return
         await self.app(scope, receive, send)

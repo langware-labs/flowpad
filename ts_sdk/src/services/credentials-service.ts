@@ -196,6 +196,64 @@ export interface SecretVault {
   config: Record<string, unknown>;
 }
 
+/** Where the vault in use was declared: the most specific wins. */
+export enum SecretScope {
+  ENTITY = 'entity',
+  PROJECT = 'project',
+  GLOBAL = 'global',
+}
+
+/** One vault as the server describes it (`ActiveVaultSpec`, `flow_sdk/secrets/active.py`). Never a value. */
+export interface ActiveVault {
+  scope: SecretScope;
+  name: string;
+  vault: SecretVault;
+  manager_title: string;
+  /** The manager's command line when it is not on this computer, else "". */
+  missing_tool: string;
+  /** This computer has the manager's command line. */
+  usable: boolean;
+  /** A project vault: it is the project's default. */
+  is_default: boolean;
+  /** The person chose it for this project on this computer; it wins over every other scope. */
+  picked?: boolean;
+}
+
+/** Whether this computer can read a vault right now (`VaultAccess`, `flow_sdk/secrets/managers.py`). */
+export enum VaultAccess {
+  OPEN = 'open',
+  SEALED = 'sealed',
+  NOT_INSTALLED = 'not_installed',
+  /** The manager has no status of its own: only a read tells. */
+  UNKNOWN = 'unknown',
+}
+
+/** A vault's access on this computer and what can be done about it (`VaultAccessSpec`). */
+export interface VaultAccessState {
+  state: VaultAccess;
+  can_open: boolean;
+  can_close: boolean;
+  /** Why an open or a close did not work. */
+  detail: string;
+}
+
+/** A vault by where it was declared: a project's by name, or this instance's (`SecretScope.GLOBAL`). */
+export interface VaultRef {
+  name: string;
+  scope: SecretScope;
+}
+
+/** The project's vaults as the server lists them. */
+export interface SecretVaultList {
+  vaults: Record<string, SecretVault>;
+  /** Each vault described, the default first. */
+  rows: ActiveVault[];
+  /** This instance's vault, used where a project names none. */
+  global: ActiveVault | null;
+  /** The vault in use for the project: its default, else the global one. */
+  active: ActiveVault | null;
+}
+
 /** A secret manager installed here (its `secret_manager.json`). */
 export interface SecretManagerInfo {
   name: string;
@@ -247,11 +305,6 @@ export interface SecretFetchResult {
 export type CredentialTestState = CredentialTestResult['state'];
 
 /** Whether a vault is reachable from this computer. */
-export interface SecretVaultCheck {
-  vault: string;
-  ready: boolean;
-  reason: string;
-}
 
 /** What "use mine" copied into a deployment's store, and what this computer does not hold. Names only. */
 export interface UseMineResult {
@@ -403,12 +456,63 @@ export class CredentialsService {
     return res?.managers ?? [];
   }
 
-  /** The project's vaults by name. */
-  async vaults(projectId: string): Promise<Record<string, SecretVault>> {
+  /** The project's vaults described, this instance's global one and the one in use. Runs no manager,
+   *  so it never raises an unlock prompt. */
+  async vaultList(projectId: string): Promise<SecretVaultList> {
     const action = this.action('vaults', 'GET');
     action.queryParameters = { project_id: projectId };
-    const res = await dataManager.callAction<unknown, { vaults?: Record<string, SecretVault> }>(action);
-    return res?.vaults ?? {};
+    return this.asVaultList(await dataManager.callAction<unknown, Partial<SecretVaultList>>(action));
+  }
+
+  private asVaultList(res: Partial<SecretVaultList> | null | undefined): SecretVaultList {
+    return { vaults: res?.vaults ?? {}, rows: res?.rows ?? [], global: res?.global ?? null, active: res?.active ?? null };
+  }
+
+  /** Name (or, with null, clear) this instance's vault — the one used where a project names none. */
+  async setGlobalVault(vault: SecretVault | null): Promise<ActiveVault | null> {
+    const action = this.action('vault-global', 'POST');
+    action.bodyParameters = { spec: vault };
+    return (await dataManager.callAction<unknown, { global?: ActiveVault | null }>(action))?.global ?? null;
+  }
+
+  /** The vault `target` (a typeid; default: the project) uses — entity, else project, else this instance's —
+   *  with its manager's own instructions. `active` is null when nothing names one. */
+  async activeVault(projectId?: string | null, target?: string | null): Promise<{ active: ActiveVault | null; instructions: string }> {
+    const action = this.action('active', 'GET');
+    action.queryParameters = { ...(projectId ? { project_id: projectId } : {}), ...(target ? { target } : {}) };
+    const res = await dataManager.callAction<unknown, { active?: ActiveVault | null; instructions?: string }>(action);
+    return { active: res?.active ?? null, instructions: res?.instructions ?? '' };
+  }
+
+  /** Make `name` the project's default vault ("" clears it). */
+  async setDefaultVault(projectId: string, name: string): Promise<SecretVaultList> {
+    const action = this.action('vault-default', 'POST');
+    action.bodyParameters = { project_id: projectId, name };
+    return this.asVaultList(await dataManager.callAction<unknown, Partial<SecretVaultList>>(action));
+  }
+
+  /** The person's own vault for the project on this computer: a project vault's name, `global`, or ""
+   *  to go back to the project's default. Saved on this instance, never in the project. */
+  async setVaultPick(projectId: string, name: string): Promise<SecretVaultList> {
+    const action = this.action('vault-pick', 'POST');
+    action.bodyParameters = { project_id: projectId, name };
+    return this.asVaultList(await dataManager.callAction<unknown, Partial<SecretVaultList>>(action));
+  }
+
+  /** Where the vault opens in its manager's own screen; "" when that manager has none. */
+  async vaultLink(projectId: string, vault: VaultRef): Promise<string> {
+    const action = this.action('vault-link', 'POST');
+    action.bodyParameters = { project_id: projectId, vault: vault.name, scope: vault.scope };
+    return (await dataManager.callAction<unknown, { url?: string }>(action))?.url ?? '';
+  }
+
+  /** The vault's access on this computer: as it is (asks nothing of the person), or after `change` — `open`
+   *  runs the manager's sign-in, which may ask the person in its own app or browser; `close` seals it. */
+  async vaultAccess(projectId: string, vault: VaultRef, change: '' | 'open' | 'close' = ''): Promise<VaultAccessState> {
+    const action = this.action('vault-access', 'POST');
+    action.bodyParameters = { project_id: projectId, vault: vault.name, scope: vault.scope, change };
+    const res = await dataManager.callAction<unknown, Partial<VaultAccessState>>(action);
+    return { state: res?.state ?? VaultAccess.UNKNOWN, can_open: !!res?.can_open, can_close: !!res?.can_close, detail: res?.detail ?? '' };
   }
 
   /** Add or replace the project's vault `name`; answers every vault. */
@@ -426,14 +530,6 @@ export class CredentialsService {
     action.bodyParameters = body;
     const res = await dataManager.callAction<unknown, { vaults?: Record<string, SecretVault> }>(action);
     return res?.vaults ?? {};
-  }
-
-  /** Is `vault` reachable from this computer (manager installed, signed in)? */
-  async checkVault(projectId: string, vault: string): Promise<SecretVaultCheck> {
-    const action = this.action('vault-check', 'POST');
-    action.bodyParameters = { project_id: projectId, vault };
-    const res = await dataManager.callAction<unknown, Partial<SecretVaultCheck>>(action);
-    return { vault, ready: res?.ready ?? false, reason: res?.reason ?? '' };
   }
 
   /** Copy this computer's values of credential `name` into `vault`, recording each variable's

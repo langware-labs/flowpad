@@ -68,10 +68,10 @@ import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchStreamInbox, watchMessageTags } from './stream-inbox-api';
-import { TagFilterBar } from '@src/components/assets/TagFilterBar';
+import { TagFilterButton } from './TagFilterButton';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { MessageTags } from '@src/components/tags/MessageTags';
-import { ClassifyDialog } from '@src/components/tags/ClassifyTable';
+import { ClassifyDialog, useClassifyRun } from '@src/components/tags/ClassifyTable';
 import {
   type ChannelAttribution,
   SourceChip,
@@ -99,6 +99,7 @@ import {
 } from './channel-owner';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
 import { StreamInboxPager } from './StreamInboxPager';
+import { OpenTasksButton } from './OpenTasksButton';
 import { useContext } from '@src/hooks/useContext';
 import { useStreamInboxManager } from '@src/hooks/useStreamInboxManager';
 import {
@@ -1012,8 +1013,8 @@ export function StreamInboxView({
   // Constrained to currently-visible rows when actions run, so a stale id left
   // over from a view switch can never act on a hidden conversation.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  // The ticked rows' messages, open in the dry-run classification table.
-  const [classifying, setClassifying] = useState<string[] | null>(null);
+  // The ticked conversations' classification run, open in its table (`classify=<call id>` in the URL).
+  const classifying = useClassifyRun();
   const [selDeleteOpen, setSelDeleteOpen] = useState(false);
 
   // Text search over message bodies — server-side, via the `stream-inbox-search`
@@ -1545,10 +1546,10 @@ export function StreamInboxView({
   const renderViewPill = (mode: StreamInboxViewMode, label: string, Icon: typeof InboxIcon) => {
     const active = viewMode === mode;
     // Unread in the user's own Stream Inbox: the backend total, on the pill whether or not it is active —
-    // but that total spans every channel, so it is not shown while the list is narrowed to some of them.
+    // but that total spans every channel and tag, so it is not shown while the list is narrowed to some of them.
     // Otherwise the rows on this page — a full page holds more than it shows, so it reads "N+".
     let badge: string | null = null;
-    if (mode === 'unread' && ownStreamInbox && channelFilter.size === 0)
+    if (mode === 'unread' && ownStreamInbox && channelFilter.size === 0 && tagFilters.length === 0)
       badge = streamInboxUnread > 0 ? String(streamInboxUnread) : null;
     else if (active && visibleCount > 0)
       badge = visibleCount >= STREAM_INBOX_PAGE_SIZE ? `${STREAM_INBOX_PAGE_SIZE}+` : String(visibleCount);
@@ -1587,6 +1588,12 @@ export function StreamInboxView({
       onClick={() => setView(inInvitesView ? 'all' : 'invites')}
     />
   );
+  const leadingMarks = (
+    <>
+      <TagFilterButton tags={tagFilters} matches={matchIds.size} />
+      {invitesChip}
+    </>
+  );
   const channelButtons = (
     <>
       {channelsOwner && !embedded ? (
@@ -1602,11 +1609,11 @@ export function StreamInboxView({
           selected={channelFilter}
           onSelectedChange={setChannelFilter}
           className="shrink-0"
-          leading={invitesChip}
+          leading={leadingMarks}
         />
         </>
       ) : (
-        invitesChip
+        leadingMarks
       )}
     </>
   );
@@ -1632,12 +1639,13 @@ export function StreamInboxView({
             <SquarePen />
             <Trans>New conversation</Trans>
           </Button>
-          {desktopStreamInbox && <ProjectUploadMessageButton variant="outline" size="default" />}
+          <OpenTasksButton />
           {/* Contacts (people, groups, help desks) is the same on the hub page and the desktop. */}
           <Button variant="outline" onClick={() => setShowContacts(true)} data-testid="stream-inbox-contacts-button">
             <BookUser />
             <Trans>Contacts</Trans>
           </Button>
+          {desktopStreamInbox && <ProjectUploadMessageButton variant="outline" size="default" />}
           <div className="ms-auto flex min-w-0 items-center gap-2">{channelButtons}</div>
         </div>
       )}
@@ -1688,7 +1696,7 @@ export function StreamInboxView({
                   variant="ghost"
                   size="sm"
                   className="h-7 text-xs"
-                  onClick={() => setClassifying(selectedConvs.map(latestMessageId).filter((id): id is string => !!id))}
+                  onClick={() => classifying.start(selectedConvs.map((conv) => conv.id).filter((id): id is string => !!id))}
                   data-testid="stream-inbox-selection-classify"
                 >
                   <Tags className="me-1 h-3.5 w-3.5" />
@@ -1721,11 +1729,6 @@ export function StreamInboxView({
           <>
             {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
             <div className="flex flex-1 items-center max-md:flex-wrap max-md:gap-y-1">
-              {tagFilters.length > 0 && <div data-testid="stream-inbox-tag-filter" className="me-2 max-w-64">
-                <TagFilterBar tags={tagFilters} onTagsChange={(tags) => {
-                  if (currentDock) navigation.openDock(currentDock.withPageBefore(null).withOption('tags', tags.length ? tags.join(',') : null));
-                }} />
-              </div>}
               <div
                 className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
                 role="tablist"
@@ -1755,7 +1758,7 @@ export function StreamInboxView({
                     data-testid="stream-inbox-search-input"
                     aria-label={t`Search messages`}
                   />
-                  {searchActive && (
+                  {needle !== '' && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1845,7 +1848,7 @@ export function StreamInboxView({
             row's px-3 / gap-3 / w-44 so each filter sits over its column. */}
         {!initialLoading && (
           <div
-            className="flex min-h-10 items-center gap-3 border-b border-border/40 bg-muted/20 px-3"
+            className="sticky top-0 z-10 flex min-h-10 items-center gap-3 border-b border-border/40 bg-background px-3"
             data-testid="stream-inbox-select-all-row"
           >
             <span className="flex w-3.5 shrink-0 items-center">
@@ -2028,7 +2031,7 @@ export function StreamInboxView({
         <ContactsDialog open={showContacts} onOpenChange={setShowContacts} excludeUserId={cloudUser?.id ?? null} />
       )}
 
-      {classifying && <ClassifyDialog messageIds={classifying} onClose={() => setClassifying(null)} />}
+      {classifying.callId && <ClassifyDialog callId={classifying.callId} onClose={classifying.close} />}
 
       <BulkConfirmDialog
         open={bulkDialogOpen}

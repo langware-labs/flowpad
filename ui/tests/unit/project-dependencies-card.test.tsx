@@ -82,7 +82,7 @@ describe('ProjectDependenciesCard', () => {
       ['specs', 'unreachable'],
       ['extras', 'not_installed'],
     ]);
-    expect(screen.getByText('1 optional dependency not installed')).toBeInTheDocument();
+    expect(screen.getByText('1 optional package not installed')).toBeInTheDocument();
   });
 
   it('does not call a dependency ready while its required setup is incomplete', async () => {

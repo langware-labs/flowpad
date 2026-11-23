@@ -18,6 +18,7 @@ PATTERN = re.compile(r"os\.walk\(|\.rglob\(|\.walk\(\)")
 
 #: file → why a raw recursive walk is acceptable there.
 ALLOWED: dict[str, str] = {
+    "flow_sdk/assets/projection.py": "checks ONE pushed asset folder for symlinks that leave the checkout; reads no file",
     "flow_sdk/core/webapp/stamps.py": (
         "walks ONE app's folder for its newest mtime, pruning generated dirs, dot dirs and the app's "
         "own build output on every level, and gives up past WALK_LIMIT files"

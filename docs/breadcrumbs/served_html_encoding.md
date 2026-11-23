@@ -14,15 +14,22 @@ description: App HTML is UTF-8 by definition; serving must never consult the hos
 > Ground truth. Proven by RCA on 2026-08-17 (FLOWPAD-1991), toggled both
 > directions against a live instance. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.served_html_encoding.rules
 sites:
-  - rel_path: "tests/unit/test_serve_static_encoding.py"
+  - rel_path: tests/unit/test_serve_static_encoding.py
     line: 88
-    note: "FAILING? read this tag's rules before editing — a UTF-8 CI cannot see this bug, do not relax the assertion"
-  - rel_path: "tests/api/test_static_endpoint_serving.py"
+    note: FAILING? read this tag's rules before editing — a UTF-8 CI cannot see this bug, do not relax the assertion
+  - rel_path: tests/api/test_static_endpoint_serving.py
     line: 66
-    note: "FAILING? read this tag's rules before editing — a 200 is not a pass, assert the served text matches disk"
+    note: FAILING? read this tag's rules before editing — a 200 is not a pass, assert the served text matches disk
+proven: 2026-08-17 · FLOWPAD-1991
+statements:
+  - text: Never open a served document in text mode without `encoding=`.
+  - text: A 200 is not a pass.
+  - text: Binary stays binary.
+  - text: Test fixtures must state their own encoding.
+  - text: '`errors="replace"` is not a fix.'
 ```
 
 ## Expected behavior

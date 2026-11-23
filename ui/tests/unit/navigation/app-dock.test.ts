@@ -33,6 +33,7 @@ describe('appDockAddress', () => {
       route: null,
       runtime: null,
       options: {},
+      stateKey: null,
     });
   });
 
@@ -57,7 +58,9 @@ describe('appDockAddress', () => {
   });
 
   it('keeps the state key out of the app\'s input — it is the frame\'s address, not what the app acts on', () => {
-    expect(appDockAddress(assetDock({ source: 'abc', stateKey: 'k'.repeat(32) }))?.options).toEqual({ source: 'abc' });
+    const addr = appDockAddress(assetDock({ source: 'abc', stateKey: 'k'.repeat(32) }));
+    expect(addr?.options).toEqual({ source: 'abc' });
+    expect(addr?.stateKey).toBe('k'.repeat(32));
   });
 
   it('reads a bare dev server by its endpoint', () => {
@@ -69,6 +72,7 @@ describe('appDockAddress', () => {
       route: null,
       runtime: 'dev',
       options: {},
+      stateKey: null,
     });
     expect(endpointDock({ runtime: 'dev' }).tabHash).toBe(`app|service_endpoint-${ENDPOINT}`);
   });
@@ -88,6 +92,7 @@ describe('appDockAddress', () => {
       route: null,
       runtime: null,
       options: {},
+      stateKey: null,
     });
     expect(assetDock().tabHash).toBe(`app|micro_app-${MICRO_APP}`);
   });

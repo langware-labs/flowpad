@@ -63,6 +63,16 @@ def test_a_sentence_round_trips_as_a_sentence():
     validate(doc)
 
 
+def test_where_it_reports_travels_and_is_left_out_when_unset():
+    fields = row_fields(TriggerSpec.model_validate({**DOC, "report_to": "automations"}))
+    assert fields["report_to"] == "automations"
+    doc = apply_patch(dict(DOC), {"report_to": "conversation"})
+    assert doc["report_to"] == "conversation"
+    validate(doc)
+    assert "report_to" not in apply_patch(doc, {"report_to": None})
+    assert row_fields(TriggerSpec.model_validate(DOC))["report_to"] is None
+
+
 def test_then_and_actions_are_one_or_the_other():
     with pytest.raises(ValueError, match="`then` or `actions`, not both"):
         TriggerSpec.model_validate({**DOC, "actions": [{"callback": "x"}]})

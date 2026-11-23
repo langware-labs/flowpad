@@ -65,6 +65,7 @@ import { ConversationActions, ConversationEndedLine } from './ConversationAction
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
 import { useMarkIssuesSeen } from './useMarkIssuesSeen';
+import { PrivateMessageFrame } from './PrivateMessageFrame';
 import { useMarkLatestRead } from './useMarkLatestRead';
 import { useMembers } from '@src/hooks/use-members';
 import {
@@ -187,6 +188,9 @@ const isHelpRequestMessage = (fm?: FlowMessage | null): boolean =>
 const isDiagnosisMessage = (fm?: FlowMessage | null): boolean =>
   !!fm && !isHelpRequestMessage(fm) && (fm.kind === FlowMessageKind.DIAGNOSIS || carriesFile(fm, DIAGNOSIS_FILE));
 
+/** No drafts: one array, so a query with nothing to show hands the feed the same list every render. */
+const NO_DRAFTS: FlowMessage[] = [];
+
 export function ConversationView({
   conversationId,
   task,
@@ -263,26 +267,37 @@ export function ConversationView({
     [conversation?.message_ids, allowedMessageIds],
   );
 
-  // The replies held for review in this conversation: drafts of a live session, each drawn as its
-  // own editable bubble. The draft typed in the composer is NOT one of them — the composer holds it —
-  // so typing never touches this query. Match is built as an explicit $AND tree — the SDK's multi-key
-  // plain-object shorthand doesn't recursively wrap operands, which makes real-time validate() crash.
-  const draftsRequest = useMemo(() => {
-    const eqClauses: Array<{ op: string; operands: unknown[] }> = [
-      { op: '$EQ', operands: ['conversation_id', conversationId] },
-      { op: '$EQ', operands: ['delivery_status', 'draft'] },
-      { op: '$IS_NOT_NULL', operands: ['remote_worker_session_id'] },
-    ];
-    return new QueryRequest({
-      type: FlowMessage.type,
-      scope: [],
-      name: `drafts:${conversationId}`,
-      query: new QueryFilter({
-        match: { op: '$AND', operands: eqClauses } as Record<string, unknown>,
+  // The drafts this conversation shows in its feed: a live session's replies held for review (each its own
+  // editable bubble) and private messages (messages only this person sees — PrivateMessageFrame). The
+  // draft typed in the composer is NOT one of them — the composer holds it — so typing never touches this
+  // query. Match is an explicit operator tree — the SDK's multi-key plain-object shorthand doesn't
+  // recursively wrap operands, which makes real-time validate() crash.
+  const draftsRequest = useMemo(
+    () =>
+      new QueryRequest({
+        type: FlowMessage.type,
+        scope: [],
+        name: `drafts:${conversationId}`,
+        query: new QueryFilter({
+          match: {
+            op: '$AND',
+            operands: [
+              { op: '$EQ', operands: ['conversation_id', conversationId] },
+              { op: '$EQ', operands: ['delivery_status', 'draft'] },
+              {
+                op: '$OR',
+                operands: [
+                  { op: '$IS_NOT_NULL', operands: ['remote_worker_session_id'] },
+                  { op: '$EQ', operands: ['draft_options.private', true] },
+                ],
+              },
+            ],
+          } as Record<string, unknown>,
+        }),
       }),
-    });
-  }, [conversationId]);
-  const { data: draftMessages = [] } = useEntitiesQuery<FlowMessage>(draftsRequest, {
+    [conversationId],
+  );
+  const { data: draftMessages = NO_DRAFTS } = useEntitiesQuery<FlowMessage>(draftsRequest, {
     // Drafts are local rows: only a runtime that keeps a local store has any to show.
     enabled: !!conversationId && dataContext.caps.localFiles,
   });
@@ -926,24 +941,31 @@ export function ConversationView({
       );
     }
     const id = item.draft.id ?? '';
+    const draftBubble = {
+      messageId: id,
+      fm: item.draft,
+      timestamp:
+        item.draft.created_date instanceof Date ? item.draft.created_date.toISOString() : (item.draft.created_date ?? ''),
+      task,
+      participants,
+      rosterReady,
+      attachmentProjectId,
+    };
+    if (item.draft.is_private) {
+      return (
+        <PrivateMessageFrame key={item.key} fm={item.draft} channel={!!channel} onDone={() => void refetch()}>
+          <FlowMessageBubble {...draftBubble} />
+        </PrivateMessageFrame>
+      );
+    }
     return (
       <FlowMessageBubble
         key={item.key}
-        messageId={id}
-        fm={item.draft}
-        timestamp={
-          item.draft.created_date instanceof Date
-            ? item.draft.created_date.toISOString()
-            : (item.draft.created_date ?? '')
-        }
-        task={task}
-        participants={participants}
-        rosterReady={rosterReady}
+        {...draftBubble}
         isDraft
         onDraftSent={() => void refetch()}
         isSelected={!!id && (selectedMessageIds ?? []).includes(id)}
         onSelect={onSelectMessage && id ? () => onSelectMessage(id) : undefined}
-        attachmentProjectId={attachmentProjectId}
       />
     );
   };

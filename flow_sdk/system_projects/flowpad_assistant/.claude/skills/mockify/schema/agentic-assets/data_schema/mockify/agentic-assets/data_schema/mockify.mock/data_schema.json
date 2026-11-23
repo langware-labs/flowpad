@@ -34,8 +34,12 @@
       "description": "The agentic process that builds the mock — where submitted feedback is sent."
     },
     "status": {
-      "shape": "enum:draft|in_review|submitted|revised",
-      "description": "draft: being built; in_review: shown, collecting feedback; submitted: feedback sent; revised: the mock changed after feedback."
+      "shape": "enum:draft|in_review|submitted|revised|approved",
+      "description": "draft: being built; in_review: shown, collecting feedback; submitted: feedback sent; revised: the mock changed after feedback; approved: the person approved it -- it is the contract, and its build list exists. Any change to the mock moves it back to in_review."
+    },
+    "approved_at": {
+      "shape": "?string",
+      "description": "When the person approved the mock (ISO 8601). Absent on a mock that is not approved."
     },
     "journey": {
       "shape": "?[mockify.step]",

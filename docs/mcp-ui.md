@@ -118,8 +118,8 @@ origin does not execute generated MCP UI code directly.
   supporting context, not the final delivery trigger by itself.
 - Tool calls from the guest are not routed through the Vibe MCP preview today;
   unsupported tool calls return an error result.
-- A page on a local install also needs the state key its opener minted (`__FLOWPAD_STATE_KEY__`, set in the same
-  prelude); `PageAllowGate` asks the user before a page opened by a link runs, and `McpAppPreview` says above
+- A page on a local install also needs a state key — the app's own, or one an agent opened it with
+  (`__FLOWPAD_STATE_KEY__`, set in the same prelude); `PageAllowGate` asks the user before a page opened by a link runs, and `McpAppPreview` says above
   the page when a submission reached no session. `sdk.htmlPage()` returns the page's context
   (`docs/interface/agentic-process.md`, "State key").
 - A guest may use the Flowpad SDK instead: the host sets

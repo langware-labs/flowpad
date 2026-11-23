@@ -135,7 +135,7 @@ async def test_a_running_step_shows_the_commands_latest_line(runs):
 
     async def shell(command, *, on_output=None, **_kw):
         if command.startswith("install"):
-            on_output("pulling image waha:latest")
+            on_output("pulling image bridge:latest")
             await asyncio.sleep(0)
             installed.append(command)
         return CliResult.of_process(command, 0 if installed else 1)
@@ -146,7 +146,7 @@ async def test_a_running_step_shows_the_commands_latest_line(runs):
     result = await _execute("project-1", shell=shell, on_change=watch)
 
     assert result.ok
-    assert any("pulling image waha:latest" in line for line in lines), lines
+    assert any("pulling image bridge:latest" in line for line in lines), lines
     assert read_setup("project-1").ok, "the live line never lands after the final record"
 
 

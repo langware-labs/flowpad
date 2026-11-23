@@ -220,7 +220,7 @@ class SourceItem(ProjectedFields, Entity):
 
     derived_fields: ClassVar[frozenset[str]] = frozenset({
         "kind", "provider", "external_id", "name", "body", "occurred_at", "author_external_id",
-        "author_display", "permalink", "thread_key", "reply_to_external_id", "recipients",
+        "author_display", "permalink", "thread_key", "reply_to_external_id", "recipients", "files",
         "conversation_id", "message_id", "origin_kind", "origin_namespace", "origin_key",
     })
     derived_writer: ClassVar[str] = "flow_sdk.ingest.envelope_lift.envelope_of (via the ingest upsert)"
@@ -263,6 +263,7 @@ class SourceItem(ProjectedFields, Entity):
     author_external_id: Optional[str] = APIField(default=None)
     author_display: Optional[str] = APIField(default=None)
     recipients: list[str] = APIField(default_factory=list, description="Addressees as the provider printed them")
+    files: list[str] = APIField(default_factory=list, description="Local paths of the files the message carried, as the caller saved them")
 
     # ── body ───────────────────────────────────────────────────────────────
     # `name` (declared on Entity) is the FTS title. `body` must reach FTS, which

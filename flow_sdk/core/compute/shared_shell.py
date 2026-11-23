@@ -1,11 +1,21 @@
 """One shell for a whole wizard / compute-op run — ``run_shell``'s contract, one start.
 
-``run_shell`` starts a fresh shell per command. On macOS and Linux that costs milliseconds; on
-Windows it is a new ``powershell.exe`` each time, which on a slow box costs many times the check
-it runs. ``SharedShell`` starts one PowerShell host for the run (``ControlShells``) and runs every
-command in it; elsewhere it IS ``run_shell``.
+``run_shell`` starts a fresh shell per command. ``SharedShell`` starts ONE for the run and runs
+every command in it: a PowerShell host on Windows (``ControlShells``), where a new
+``powershell.exe`` per check costs many times the check it runs, and one ``sh`` on macOS and
+Linux (``_PosixHost``), where what one step leaves must be there for the next — an exported
+variable, and a sign-in a tool grants to the process session that asked (1Password's CLI: a step
+in a session of its own is asked to approve again, every time). That host has its own process
+GROUP, so a timeout kills its whole tree, and stays in THIS process's session, so a sign-in a step
+obtained is this process's too.
 
-A host runs many commands, so each must leave it as it found it:
+What a command leaves behind differs by host, and this is the one place that says so. The POSIX
+``sh`` KEEPS it (exports, functions; the working folder is set per command, and the caller's
+``extra_env`` is put back). The PowerShell host puts every environment variable back after each
+command, for the reasons below — so a step that relies on a variable an earlier step exported
+works on macOS and Linux only.
+
+A PowerShell host runs many commands, so each must leave it as it found it:
 
 * ``exit N`` — run as a scriptblock inside the host loop, ``exit`` ends the HOST. Run as a script
   FILE (``& <file>.ps1``) it ends only that script and sets ``$LASTEXITCODE = N``, so each command
@@ -28,14 +38,17 @@ import asyncio
 import contextlib
 import logging
 import os
+import re
+import shlex
 import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import AsyncIterator, Callable, Optional
 
-from flow_sdk.core.compute.exec import command_env, last_line, run_shell
+from flow_sdk.core.compute.exec import OWN_GROUP, command_env, last_line, run_shell
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+from flow_sdk.utils.process_tree import kill_process_tree
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +77,113 @@ def _script(script_file: Path, cwd: str, extra_env: dict) -> str:
     )
 
 
+_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class _PosixHost:
+    """One ``sh`` that runs a run's commands one after another, each sourced into it.
+
+    A command is written to a file and sourced with stdin closed (the host's stdin is its protocol
+    pipe), in its own working folder, with the caller's ``extra_env`` put back afterwards — a value
+    handed to one step is not the next step's. Everything else the command leaves in the shell
+    stays. The end of a command is a marker line on both streams, so nothing is polled. A command
+    that calls ``exit`` ends the host with that code: it is the command's result, and the next
+    command starts a fresh host."""
+
+    def __init__(self) -> None:
+        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._lock = asyncio.Lock()
+
+    async def close(self) -> None:
+        proc, self._proc = self._proc, None
+        if proc is not None and proc.returncode is None:
+            kill_process_tree(proc)
+            await proc.wait()
+
+    async def _host(self) -> asyncio.subprocess.Process:
+        if self._proc is None or self._proc.returncode is not None:
+            self._proc = await asyncio.create_subprocess_exec(
+                "/bin/sh", stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                env=command_env(), limit=2**22,
+                # Its own GROUP (a timeout kills the tree), never its own SESSION (see the module docstring).
+                **OWN_GROUP,
+            )
+        return self._proc
+
+    @staticmethod
+    def _line(script: Path, workdir: Path, extra_env: dict, mark: str) -> str:
+        keep = "".join(f"__fp_had_{k}=${{{k}+x}}; __fp_old_{k}=${{{k}-}}; export {k}={shlex.quote(str(v))}; " for k, v in extra_env.items())
+        back = "".join(
+            f'if [ -n "$__fp_had_{k}" ]; then export {k}="$__fp_old_{k}"; else unset {k}; fi; unset __fp_had_{k} __fp_old_{k}; '
+            for k in extra_env
+        )
+        return (
+            f"{keep}cd {shlex.quote(str(workdir))} && . {shlex.quote(str(script))} </dev/null; __fp_rc=$?; {back}"
+            f"printf '\\n%s %s\\n' {mark} \"$__fp_rc\"; printf '\\n%s\\n' {mark} >&2\n"
+        )
+
+    async def run(self, command: str, *, timeout_seconds: float, workdir: Path, extra_env: dict,
+                  stop: Optional[asyncio.Event], on_output: Optional[Callable[[str], None]]) -> CliResult:
+        t0 = time.monotonic()
+        mark = f"__flowpad_done_{os.urandom(8).hex()}__"
+        fd, name = tempfile.mkstemp(prefix="flowpad-", suffix=".sh")
+        script = Path(name)
+
+        async def read(stream: asyncio.StreamReader, into: list[str]) -> Optional[int]:
+            """Lines up to the marker, answering the code printed after it (stdout's); None at EOF —
+            the command ended the host."""
+            while raw := await stream.readline():
+                line = raw.decode("utf-8", "replace")
+                if line.startswith(mark):
+                    if into and into[-1] == "\n":  # the newline the marker was printed after
+                        into.pop()
+                    return int(line[len(mark):].strip() or 0)
+                into.append(line)
+                if on_output is not None and line.strip():
+                    try:
+                        on_output(last_line(line))
+                    except Exception:  # noqa: BLE001 -- an observer must not fail the command
+                        logger.debug("shared shell: on_output raised", exc_info=True)
+            return None
+
+        try:
+            async with self._lock:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(command + "\n")
+                proc = await self._host()
+                proc.stdin.write(self._line(script, workdir, extra_env, mark).encode())
+                await proc.stdin.drain()
+                out: list[str] = []
+                err: list[str] = []
+                running = asyncio.ensure_future(asyncio.gather(read(proc.stdout, out), read(proc.stderr, err)))
+                stopper = asyncio.ensure_future(stop.wait()) if stop is not None else None
+                try:
+                    await asyncio.wait({running} if stopper is None else {running, stopper}, timeout=timeout_seconds,
+                                       return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    if stopper is not None:
+                        stopper.cancel()
+                    cut = not running.done()
+                    if cut:
+                        # Timed out, stopped or cancelled: the host and its tree go; the kill closes the pipes.
+                        await self.close()
+                        await asyncio.gather(running, return_exceptions=True)
+                code = None if cut else running.result()[0]
+                if code is None and not cut:
+                    code = await proc.wait()  # no marker: the command called ``exit``, and the host's code is its own
+                stopped = cut and stop is not None and stop.is_set()
+                return CliResult.of_process(
+                    command, code, "".join(out), "".join(err), timed_out=cut and not stopped,
+                    duration_s=time.monotonic() - t0, detail="The run was stopped." if stopped else "",
+                )
+        except (OSError, ValueError) as exc:
+            logger.warning("shared shell: could not run %r: %s", command, exc)
+            await self.close()
+            return CliResult.of_process(command, None, stderr=str(exc), duration_s=time.monotonic() - t0)
+        finally:
+            script.unlink(missing_ok=True)
+
+
 class SharedShell(contextlib.AbstractAsyncContextManager):
     """A ``Shell`` (``run_shell``'s signature) that runs every command in one shell.
 
@@ -74,6 +194,7 @@ class SharedShell(contextlib.AbstractAsyncContextManager):
 
     def __init__(self) -> None:
         self._pool = None
+        self._posix: Optional[_PosixHost] = None
 
     async def __aexit__(self, *_exc) -> None:
         await self.close()
@@ -82,6 +203,9 @@ class SharedShell(contextlib.AbstractAsyncContextManager):
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
+        if self._posix is not None:
+            await self._posix.close()
+            self._posix = None
 
     def _hosts(self):
         if self._pool is None:
@@ -107,7 +231,13 @@ class SharedShell(contextlib.AbstractAsyncContextManager):
         on_spawn: Optional[Callable[[int], None]] = None,
         fresh: bool = False,
     ) -> CliResult:
-        if fresh or (platform or sys.platform) != "win32":
+        posix = (platform or sys.platform) != "win32"
+        if posix and not fresh and os.name == "posix" and all(_NAME.match(k) for k in (extra_env or {})):
+            if self._posix is None:
+                self._posix = _PosixHost()
+            return await self._posix.run(command, timeout_seconds=timeout_seconds, workdir=workdir,
+                                         extra_env=extra_env or {}, stop=stop, on_output=on_output)
+        if fresh or posix:
             # ``on_spawn`` is told the pid of a process of its own. A command run in the shared host has none
             # to report (the host is not the command), and is never an install: installs ask for ``fresh``.
             return await run_shell(
