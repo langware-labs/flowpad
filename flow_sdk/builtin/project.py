@@ -457,13 +457,11 @@ class Project(SetupSkippable, Entity):
     #: (``SetupSkipSpec``, ``core/setup/skip_mark``). PRIVATE: a dependency has no row of its own here — the
     #: project's flow.json declares it — so the project carries its mark.
     setup_skipped: dict[str, SetupSkipSpec] = APIField(default_factory=dict, sharing=Sharing.PRIVATE)
-    #: A working folder a tool keeps for itself (the mockify skill's mock project). Still a real project -- its
-    #: kinds load and its tabs open -- but left out of the list of projects the user works in. Stored, never
-    #: read off the path: a test project lives under the temp dir too. Not ``hidden``, which would also stop its
-    #: namespace loading at startup (``ensure_project_namespace``).
+    #: Stored, never read off the path: a test project lives under the temp dir too. Not ``hidden``, which would
+    #: also stop its namespace loading at startup (``ensure_project_namespace``).
     scratch: bool = APIField(
         default=False,
-        description="True for a tool's own working folder, left out of the user's project list",
+        description="True for a tool's own working folder (a mockify mock project), left out of the user's project list",
         sharing=Sharing.PRIVATE,
     )
     artifacts: List[str] = APIField(

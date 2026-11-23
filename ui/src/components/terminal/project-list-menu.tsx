@@ -506,7 +506,6 @@ export function useProjectListMenu({
   // cache and re-filters once known.
   // The agent mount ROOT (~/Flowpad workspace) is excluded on the backend
   // (never minted, never listed), so no new tab can open on it here.
-  // A tool's own working folder (`scratch`: a mockify mock project) is not a project the user works in either.
   // And only the ACTIVE workspace's projects; Global tabs belong to every workspace.
   const { contains } = useActiveWorkspace();
   const buckets = useMemo(

@@ -621,8 +621,7 @@ export class Project extends APIEntity<Project> {
    *  or from the uname: the portal is recognised by where it LIVES, and
    *  `system` means the narrower "SDK-shipped". See `isHiddenProject`. */
   hidden: boolean = false;
-  /** True for a tool's own working folder (a mockify mock project): a real project whose tabs open, left out
-   *  of the list of projects the user works in. Mirror of the backend stored `Project.scratch`. */
+  /** Mirror of the backend stored `Project.scratch`: a tool's own working folder, left out of the project list. */
   scratch: boolean = false;
   /** The folder's own name when it is not the project's name (a rename changes the
    *  name, never the folder), else null. Mirror of the backend computed
