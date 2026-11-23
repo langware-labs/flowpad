@@ -38,6 +38,35 @@ class _CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
+_QUOTED_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
+
+
+def _unquote_path(path: str) -> str:
+    """A path as git prints it → the real path.
+
+    git wraps a path in double quotes, C-escaped, when it holds a space (status),
+    a control character, a quote, a backslash or — unless ``core.quotePath`` is
+    off — a non-ASCII byte (``\\327\\251``). Anything else comes through as is.
+    """
+    if len(path) < 2 or not (path.startswith('"') and path.endswith('"')):
+        return path
+    raw = bytearray()
+    body = path[1:-1]
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch != "\\" or i + 1 == len(body):
+            raw += ch.encode()
+            i += 1
+        elif body[i + 1 : i + 4].isdigit() and len(body[i + 1 : i + 4]) == 3:
+            raw.append(int(body[i + 1 : i + 4], 8) & 0xFF)
+            i += 4
+        else:
+            raw.append(_QUOTED_ESCAPES.get(body[i + 1], ord(body[i + 1])))
+            i += 2
+    return raw.decode("utf-8", errors="replace")
+
+
 def _parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
     """``git --numstat`` lines → ``{path: (insertions, deletions)}``.
 
@@ -51,7 +80,7 @@ def _parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
             try:
                 ins: int | None = int(cols[0]) if cols[0] != "-" else None
                 dels: int | None = int(cols[1]) if cols[1] != "-" else None
-                result[cols[2]] = (ins, dels)
+                result[_unquote_path(cols[2])] = (ins, dels)
             except ValueError:
                 pass
     return result
@@ -768,17 +797,20 @@ class GitRepo:
                 continue
             x = line[0]  # staged status char
             y = line[1]  # unstaged status char
+            # git quotes a path holding a space or a non-ASCII byte; each side of
+            # a rename is quoted by itself. Unquoted here, so every per-file
+            # action gets the path that is on disk.
             path_part = line[3:]
-            if line[:2] in _UNMERGED_XY:
-                unmerged.append(path_part)
 
             # Handle renames: "old -> new"
-            display_path = path_part
-            lookup_path = path_part
             if " -> " in path_part:
-                old, new = path_part.split(" -> ", 1)
+                old, new = (_unquote_path(side) for side in path_part.split(" -> ", 1))
                 display_path = f"{old} → {new}"
                 lookup_path = new
+            else:
+                display_path = lookup_path = _unquote_path(path_part)
+            if line[:2] in _UNMERGED_XY:
+                unmerged.append(lookup_path)
 
             # Staged takes priority over unstaged
             if x not in (" ", "?"):
