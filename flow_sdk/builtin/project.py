@@ -435,7 +435,8 @@ def _sharer_name(members: list) -> Optional[str]:
 class Project(SetupSkippable, Entity):
     @classmethod
     async def get_last_active(cls, workspace_id: str | None = None) -> Optional["Project"]:
-        """The most recently opened visible project; hydrate only the winner."""
+        """The most recently opened project the user works in (not hidden, not ``scratch``); hydrate only the
+        candidates down to the winner."""
         from flow_sdk.config import is_hidden_project, path_in_workspace
 
         for row in await cls._db.get_entity_locations(cls.get_type(), active_only=True):
@@ -443,7 +444,7 @@ class Project(SetupSkippable, Entity):
                 continue
             if not is_hidden_project(row.fs_storage_mount_path or "", row.system):
                 project = await cls.get_by_id(row.id)
-                if project is not None:
+                if project is not None and not project.scratch:
                     return project
         return None
 
