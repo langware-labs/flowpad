@@ -969,6 +969,12 @@ msgstr "{0} מתוך {1} מוגדרים"
 msgid "{0} of {1} set up"
 msgstr "{0} מתוך {1} הוגדרו"
 
+#. placeholder {0}: formatUsd(Math.min(cost.used, cost.limit))
+#. placeholder {1}: formatUsd(cost.limit)
+#: src/components/upgrade/UpgradeScreen.tsx
+msgid "{0} of {1} used"
+msgstr ""
+
 #. placeholder {0}: tries.data.filter((r) => caughtWord(r.verdict).kind === 'yes').length
 #. placeholder {1}: tries.data.length
 #: src/components/automations/MessageRulePage.tsx
@@ -1279,12 +1285,20 @@ msgid "{cloudPlaces} cloud deployments"
 msgstr "{cloudPlaces} פריסות בענן"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} budget_used {Your Flowpad budget is used up} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
 msgstr ""
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+#~ msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+#~ msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} budget_used {You're out of tokens} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
 msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+#~ msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+#~ msgstr ""
 
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "{completedCount}/{totalCount} completed"
@@ -1440,7 +1454,11 @@ msgid "{firstName} is still uploading the bundle. Try again in a moment."
 msgstr "{firstName} עדיין מעלה את החבילה. נסו שוב בעוד רגע."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} other {Try again}}"
+#~ msgid "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} other {Try again}}"
+#~ msgstr ""
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} upgrade {Upgrade} other {Try again}}"
 msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
@@ -3444,6 +3462,7 @@ msgid "Add project"
 msgstr "הוספת פרויקט"
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
 msgid "Add row"
 msgstr "הוספת שורה"
 
@@ -4235,6 +4254,10 @@ msgstr "כבר מחוברים — הפעילו סנדבוקס"
 msgid "Already up to date"
 msgstr "כבר מעודכן"
 
+#: src/components/upgrade/UpgradeScreen.tsx
+msgid "Already upgraded? Check again"
+msgstr ""
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Also"
 msgstr "בנוסף"
@@ -4652,6 +4675,7 @@ msgstr "מפתח API"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/llm-endpoints/SourcePicker.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "API key"
 msgstr "מפתח API"
@@ -6168,6 +6192,7 @@ msgstr "כתיבה לזיכרון: {0}"
 msgid "call"
 msgstr "קריאה"
 
+#: src/components/llm-endpoints/PricesList.tsx
 #: src/components/voice/CallControls.tsx
 #: src/notifications/error-detail.ts
 msgid "Call"
@@ -6920,6 +6945,7 @@ msgid "checking…"
 msgstr "בדיקה…"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/upgrade/UpgradeScreen.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "בבדיקה…"
@@ -7022,6 +7048,7 @@ msgstr "בחרו תיקייה…"
 msgid "Choose how Flowpad's AI is paid for"
 msgstr ""
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Choose the endpoint this one draws from."
 msgstr "בחרו את נקודת הקצה שממנה זו נשענת."
@@ -18184,6 +18211,7 @@ msgstr "מגבלות"
 msgid "Limits are optimistic: usage already in flight can overshoot slightly. Windows are UTC."
 msgstr "המגבלות אופטימיות: שימוש שכבר בדרך עלול לחרוג מעט. החלונות הם ב-UTC."
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
 #: src/components/llm-endpoints/endpoint-catalog.ts
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
@@ -23394,6 +23422,7 @@ msgstr "מספיק אחד מאלה"
 msgid "One per line. Empty means every method."
 msgstr "אחת בכל שורה. ריק פירושו כל שיטה."
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "One per line. Empty means everything the sources allow."
 msgstr "אחד בכל שורה. ריק פירושו כל מה שהמקורות מאפשרים."
@@ -25132,6 +25161,7 @@ msgstr "נתיב"
 msgid "Path copied to clipboard"
 msgstr "הנתיב הועתק ללוח"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Paths allowed (globs)"
 msgstr "נתיבים מותרים (תבניות glob)"
@@ -27466,6 +27496,7 @@ msgstr "remote: {remote}"
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
@@ -28667,6 +28698,7 @@ msgstr "החדר אינו זמין"
 msgid "root"
 msgstr "שורש"
 
+#: src/components/llm-endpoints/PricesList.tsx
 #: src/components/token-plan/FundingChain.tsx
 msgid "Root"
 msgstr "שורש"
@@ -30498,6 +30530,9 @@ msgid "server.py in this asset — runs immediately"
 msgstr "server.py בנכס הזה — יופעל מיד"
 
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/llm-endpoints/PricesList.tsx
 msgid "Serves"
 msgstr "משרת"
 
@@ -36685,6 +36720,8 @@ msgstr "מעדכן תוכנית"
 msgid "Updating…"
 msgstr "מתעדכן…"
 
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+#: src/components/upgrade/UpgradeScreen.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Upgrade"
@@ -36894,6 +36931,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Use mine"
 msgstr "השתמשו בשלכם"
+
+#: src/components/upgrade/UpgradeScreen.tsx
+msgid "Use my own AI account"
+msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Use suggestion"
@@ -38625,6 +38666,11 @@ msgstr "תוסרו מרשימת המשתתפים. חברים אחרים שומר
 msgid "You're doing great!"
 msgstr "עבודה נהדרת עד כה!"
 
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+#: src/components/upgrade/UpgradeScreen.tsx
+msgid "You're out of tokens"
+msgstr ""
+
 #: src/components/llm-setup/LlmSetupView.tsx
 msgid "You're set up"
 msgstr "הכול מוכן"
@@ -38712,6 +38758,14 @@ msgstr "בקשת האבחון שלכם חזרה"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Your display name"
 msgstr "שם התצוגה שלכם"
+
+#: src/components/upgrade/UpgradeScreen.tsx
+msgid "Your Flowpad budget is used up, so the assistant has paused. Your work is saved — upgrade to pick up right where you left off."
+msgstr ""
+
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "Your Flowpad budget is used up. Upgrade to keep going — your work is saved."
+msgstr ""
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Your group status report is ready"

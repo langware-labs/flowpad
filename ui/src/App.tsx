@@ -24,6 +24,7 @@ import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import { LaunchFailureRoot } from '@src/components/launch-failure/LaunchFailureCard';
+import { UpgradeScreenRoot } from '@src/components/upgrade/UpgradeScreen';
 import { HarnessSignInDialogRoot } from '@src/components/harness-login/HarnessSignInDialog';
 import { ProjectLoadDialogRoot } from '@src/components/project-setup/ProjectLoadDialog';
 import { ProjectSetupDialogRoot } from '@src/components/project-setup/ProjectSetupDialog';
@@ -195,6 +196,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         {desk && <HarnessLoginModalRoot />}
         {/* A coding agent the server refused to start — one recovery card. */}
         {desk && <LaunchFailureRoot />}
+        {/* Out of tokens: opened by the bus (`agent.no_token_source`) or by the chat's own card. */}
+        <UpgradeScreenRoot />
         {desk && <HarnessSignInDialogRoot />}
         {desk && (
           <>

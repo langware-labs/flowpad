@@ -2,6 +2,8 @@ import type { FlowData } from '@sdk';
 import { AlertTriangle } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 
+import { Button } from '@src/components/ui/button';
+import { openUpgradeScreen } from '@src/components/upgrade/upgrade-store';
 import { WorkerTypeSelect } from '@src/components/workers/WorkerTypeSelect';
 import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
@@ -28,7 +30,12 @@ export function WorkerUnavailableNotice({
   const unavailableWorker = normalizeWorkerType(workerType);
   const payloadMessage = typeof payload?.message === 'string' ? payload.message.trim() : '';
   const textMessage = typeof flowData.data === 'string' ? flowData.data.trim() : '';
-  const message = payloadMessage || textMessage || t`This worker cannot continue the chat right now.`;
+  // The hub budget that was paying is spent. The vendor's sentence ("API Error: … 429 …") says
+  // nothing a person can act on, so this case has its own words and its own way out.
+  const outOfTokens = flowData.attributes['reason'] === 'budget_used';
+  const message = outOfTokens
+    ? t`Your Flowpad budget is used up. Upgrade to keep going — your work is saved.`
+    : payloadMessage || textMessage || t`This worker cannot continue the chat right now.`;
 
   return (
     <div
@@ -41,9 +48,16 @@ export function WorkerUnavailableNotice({
           <AlertTriangle className="h-4 w-4" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-foreground">{t`${workerLabel(unavailableWorker)} is unavailable`}</p>
+          <p className="text-sm font-medium text-foreground">
+            {outOfTokens ? t`You're out of tokens` : t`${workerLabel(unavailableWorker)} is unavailable`}
+          </p>
           <p className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{message}</p>
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            {outOfTokens && (
+              <Button size="sm" onClick={openUpgradeScreen} data-testid="worker-unavailable-upgrade">
+                {t`Upgrade`}
+              </Button>
+            )}
             <span className="text-xs text-muted-foreground">{t`Choose another worker`}</span>
             <WorkerTypeSelect
               value={unavailableWorker}

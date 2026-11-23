@@ -36,6 +36,7 @@ describe('launch failure', () => {
     [{ code: 'key_rejected', fix: 'replace_key', facts: { provider: 'X' } }, 'X key **** was rejected', 'Replace key'],
     [{ code: 'not_installed', fix: 'install' }, "Claude isn't installed on this computer", 'Install'],
     [{ code: 'cli_crashed', fix: 'reinstall' }, 'Claude crashed on start', 'Reinstall'],
+    [{ code: 'budget_used', fix: 'upgrade' }, "You're out of tokens", 'Upgrade'],
     [{ code: 'whatever' }, "Claude couldn't start", 'Try again'],
   ])('card %o', (lf, title, button) => {
     card(lf);

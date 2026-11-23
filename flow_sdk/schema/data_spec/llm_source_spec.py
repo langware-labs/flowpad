@@ -118,6 +118,7 @@ class LLMSourceRefusal(StrEnum):
     KEY_REJECTED = "key_rejected"  # the provider refused the stored key; cleared on replace
     CLI_CRASHED = "cli_crashed"  # on disk but cannot start
     BUDGET_NOT_READY = "budget_not_ready"  # signed in to the hub, budget list not fetched yet
+    BUDGET_USED = "budget_used"  # the hub refused a turn: this budget is spent; cleared when the hub reports money left
 
 
 class LLMSource(DataSpec):

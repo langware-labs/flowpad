@@ -184,7 +184,7 @@ export interface TokenUsageEntry extends BaseEntry {
 }
 
 /** A worker cannot continue this chat, but another configured worker may. */
-export type WorkerUnavailableReason = 'quota_exhausted' | 'rate_limited';
+export type WorkerUnavailableReason = 'quota_exhausted' | 'rate_limited' | 'budget_used';
 
 export interface WorkerUnavailableEntry extends BaseEntry {
   kind: 'worker_unavailable';

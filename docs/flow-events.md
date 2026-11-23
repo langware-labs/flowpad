@@ -740,3 +740,23 @@ Forwarded to the app (`FORWARDED_TAG_PATTERNS`); the UI listener (`ts_sdk/src/se
 an expiry is not announced (it takes effect on the next bootstrap). Not stored and not replayed (laws 4 and 5): a page
 that missed it reads the right value from its next bootstrap. It replaces a `sentry_info_msg` WebSocket type that was
 never released, so no migration is needed.
+
+## `agent.no_token_source` — nothing can fund a process's harness  ✅ (2026-11-22)
+
+| site | tag | target | data |
+|---|---|---|---|
+| `cli_drivers/llm_source.py`: `note_budget_used` (the hub refused a turn — a `worker-unavailable` frame whose reason is `budget_used` — and no other source can take over) and `resolve_llm_endpoint` (a spawn found no usable source) | `agent.no_token_source` | `agentic_process:<id>` | `{worker_type, code, endpoint_typeid}` — `code` is the `LLMSourceRefusal` that names the fix, `endpoint_typeid` the source it is about |
+
+**Detection.** Whether a hub budget has money is the hub's answer, given at invoke time, so a spent
+budget is learnt from a refused turn: the hub's 429 sentence (`limit 'cost_usd_total' exceeded on
+endpoint …`) is classified `budget_used` (`classify_limit_reason`), and `latch_turn_failure` — the
+one seam every harness's frames pass — marks the endpoint that was funding the process
+(`BUDGETS_USED`). A marked budget is an ineligible `LLMSource` (`reason_code: budget_used`), so the
+funding record, the footer chip and the next spawn's launch failure (`budget_used`, fix `upgrade`)
+all say the same thing. The mark is dropped when the hub reports money left on the chain again
+(`recheck_budgets_used`, asked on a spawn and on a funding refresh).
+
+One event per refused turn or spawn, forwarded to the app (`FORWARDED_TAG_PATTERNS`). The UI listener
+(`ui/src/components/upgrade/UpgradeScreen.tsx`) re-reads the funding record and, when `code` is
+`budget_used`, opens the Upgrade screen. Not stored and not replayed (laws 4 and 5): after a reload
+the same state is in the funding record, and the chat's own card opens the screen.

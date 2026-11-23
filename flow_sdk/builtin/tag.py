@@ -176,6 +176,11 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
         "Agent launch failed",
         "A worker could not be spawned (code names why; health says whether to retry)",
     ),
+    (
+        "agent.no_token_source",
+        "No token source",
+        "Nothing can fund an agentic process's harness (code names why: budget_used = the hub budget is spent)",
+    ),
     ("graph_workflow", "Graph workflow lifecycle", "Graph-workflow run boundary events"),
     ("graph_workflow.started", "Graph workflow started", "A graph-workflow run started"),
     ("graph_workflow.step.done", "Graph workflow step done", "A graph-workflow node finished"),

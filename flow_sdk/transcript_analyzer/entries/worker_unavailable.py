@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
@@ -13,7 +14,7 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
 from .._helpers import render_block
 from ..entry import EntryKind, TranscriptEntry
 
-WorkerUnavailableReason = Literal["quota_exhausted", "rate_limited"]
+WorkerUnavailableReason = Literal["quota_exhausted", "rate_limited", "budget_used"]
 
 # The vendor-blind vocabulary every parser classifies a provider limit with.
 # One owner, so ``reason`` means the same thing whichever CLI reported it.
@@ -26,11 +27,16 @@ _QUOTA_EXHAUSTED_MARKERS = (
     "credits exhausted",
 )
 _RATE_LIMIT_MARKERS = ("rate limit", "too many requests", "429")
+# The hub's own sentence for a spent ``LLMEndpoint`` budget (its ``check_limits``): a cost or a token
+# window of some hop on the chain. The per-minute cap reads the same way and stays a rate limit.
+_HUB_BUDGET_USED = re.compile(r"limit '(?:cost_usd|tokens)_\w+' exceeded on endpoint ")
 
 
 def classify_limit_reason(message: str) -> WorkerUnavailableReason | None:
     """The limit ``reason`` a provider message states, or None if it states none."""
     folded = message.casefold()
+    if _HUB_BUDGET_USED.search(folded):
+        return "budget_used"
     if any(marker in folded for marker in _QUOTA_EXHAUSTED_MARKERS):
         return "quota_exhausted"
     if any(marker in folded for marker in _RATE_LIMIT_MARKERS):

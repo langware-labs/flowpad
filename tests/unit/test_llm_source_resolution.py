@@ -315,6 +315,53 @@ async def test_a_bound_box_funds_an_unprobed_harness_from_its_endpoint(env, monk
     assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP1
 
 
+async def test_a_spent_budget_leaves_no_token_source_until_the_hub_has_money_again(env, monkeypatch) -> None:
+    """The onboarding case: a sandbox funded by its hub budget alone, and the budget runs out mid-turn.
+    The refused turn's frame marks the budget and says ``agent.no_token_source`` on the bus; so does the
+    next spawn; and once the hub reports money left (an upgrade) the same budget funds again."""
+    from flow_sdk.builtin.agentic_process.agent_on_tag import NO_TOKEN_SOURCE
+    from flow_sdk.builtin.agentic_process.cli_drivers import hub_endpoint_binding as binding
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import latch_turn_failure
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (
+        LLMSourceError,
+        llm_picker_view,
+        resolve_llm_endpoint,
+    )
+    from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+    from flow_sdk.instance_settings.llm_endpoint import BUDGETS_USED
+    from flow_sdk.tags.bus import event_bus
+    from flow_sdk.tags.ws_forward import FORWARDED_TAG_PATTERNS
+
+    _bind(monkeypatch)
+    left = {"limit": 0.05, "used": 0.052, "remaining": 0.0}
+
+    async def hub_chain(typeid):
+        return {"hops": [{"remaining": {"cost_usd_total": left, "requests_per_minute": {"remaining": 0}}}]}
+
+    monkeypatch.setattr(binding, "chain_hub_llm_endpoint", hub_chain)
+    process = _process()
+    process.id = "p1"
+    refused = FlowData(
+        flow_value={"message": "limit 'cost_usd_total' exceeded on endpoint Team pool"},
+        attributes={"element-type": "worker-unavailable", "reason": "budget_used"},
+    )
+    heard: list = []
+    off = event_bus.on(NO_TOKEN_SOURCE, lambda event: heard.append((event.target, event.data)))
+    try:
+        await latch_turn_failure(process, None, refused)
+        view = await llm_picker_view("claude")
+        assert (view.chosen, view.blocked_code, view.blocked) == (None, "budget_used", "the budget of Team pool is used up")
+        with pytest.raises(LLMSourceError):  # the next spawn asks the hub, which still says spent
+            await resolve_llm_endpoint(process)
+        left["remaining"] = 0.05  # an upgrade
+        assert (await resolve_llm_endpoint(process)).source.endpoint_typeid == EP1
+    finally:
+        off()
+        BUDGETS_USED.clear()
+    said = ("agentic_process:p1", {"worker_type": "claude", "code": "budget_used", "endpoint_typeid": EP1})
+    assert heard == [said, said] and NO_TOKEN_SOURCE in FORWARDED_TAG_PATTERNS
+
+
 async def test_a_granted_budget_outranks_a_harness_nobody_has_signed_into(env, monkeypatch) -> None:
     """A budget you can spend beats a login nobody has verified — bound or not.
 

@@ -63,9 +63,10 @@ import logging
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
-from flow_sdk.builtin.agentic_process.launch_health import CLI_CRASHES
+from flow_sdk.builtin.agentic_process.launch_health import CLI_CRASHES, WINNING_REFUSALS
 from flow_sdk.cli.auth.lm_api_keys import KEY_REJECTIONS
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
+from flow_sdk.instance_settings.llm_endpoint import BUDGETS_USED
 from flow_sdk.schema.data_spec.llm_source_spec import (
     LLMScope,
     LLMSource,
@@ -317,6 +318,8 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool) -> list[Candi
             reason, code = "this box is not logged in to the hub", LLMSourceRefusal.HUB_SIGNED_OUT.value
         elif not endpoint.enabled:
             reason, code = f"endpoint {name} is disabled", LLMSourceRefusal.ENDPOINT_DISABLED.value
+        elif typeid in BUDGETS_USED:  # the hub refused a turn on it: spent until the hub says otherwise
+            reason, code = f"the budget of {name} is used up", LLMSourceRefusal.BUDGET_USED.value
         out.append(
             Candidate(
                 endpoint,
@@ -758,23 +761,32 @@ async def picker_view_for(worker_type: str, constraint: Constraint | None) -> Pi
         return PickerView([], None, "")
     overlaid = _overlay(inventory, cap, worker_type, constraint)
     chosen = pick_llm_candidate(overlaid)
-    top = None if chosen else next((c.source for c in overlaid if c.source.reason), None)
+    code, named = ("", None) if chosen else _blocked(overlaid, worker_type)
     return PickerView(
         offers=sorted(inventory, key=lambda c: c.source.rank),
         chosen=chosen,
-        blocked=top.reason if top else "",
+        blocked=named.reason if named else "",
         note=_ignored_preference_note(worker_type, cap, constraint),
-        blocked_code=_blocked_code(top, overlaid, worker_type) if not chosen else "",
+        blocked_code=code,
     )
 
 
+def _blocked(overlaid: list[Candidate], worker_type: str) -> tuple[str, LLMSource | None]:
+    """Why nothing funds the harness: the code that names the fix, and the source to name with it
+    (the one carrying that code, so the sentence and the code agree; else the top refusal)."""
+    top = next((c.source for c in overlaid if c.source.reason), None)
+    code = _blocked_code(top, overlaid, worker_type)
+    return code, next((c.source for c in overlaid if c.source.reason_code == code), top)
+
+
 def _blocked_code(top: LLMSource | None, overlaid: list[Candidate], worker_type: str) -> str:
-    # The top refusal — but a rejected key wins, and signed in with no budget list yet is budget_not_ready.
+    # The top refusal — but a rejected key or a spent budget wins, and signed in with no budget list yet is budget_not_ready.
     code, spec = (top.reason_code if top else ""), driver_api_auth_spec(worker_type)
     if code in ("not_installed", "cli_crashed", "pinned_elsewhere"):
         return code
-    if any(c.source.reason_code == "key_rejected" for c in overlaid):
-        return "key_rejected"
+    codes = {c.source.reason_code for c in overlaid}
+    if won := next((w for w in WINNING_REFUSALS if w in codes), None):
+        return won
     return "budget_not_ready" if spec and spec.hub_endpoint_binding and _hub_budget_pending() else code
 
 
@@ -802,6 +814,10 @@ def _ignored_preference_note(worker_type: str, cap, constraint) -> str:
     )
 
 
+def _worker_type_of(process) -> str:
+    return getattr(getattr(process, "driver", None), "name", None) or getattr(process, "worker_type", "")
+
+
 async def resolve_llm_endpoint(process) -> Candidate:
     """The endpoint that funds this spawn, and the verdict that chose it.
 
@@ -809,13 +825,46 @@ async def resolve_llm_endpoint(process) -> Candidate:
     row, so handing back only the verdict would make the caller look the row up again — and
     a second lookup is a second chance to disagree with the answer.
     """
-    worker_type = getattr(getattr(process, "driver", None), "name", None) or getattr(process, "worker_type", "")
+    worker_type = _worker_type_of(process)
     await check_unchecked_login(worker_type)
+    if BUDGETS_USED:  # a spawn is an action: ask the hub whether a spent budget has money again
+        from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
+            recheck_budgets_used,
+        )
+
+        await recheck_budgets_used()
     candidates = await list_llm_candidates(worker_type, LLMScope.of_process(process))
     chosen = pick_llm_candidate(candidates)
     if chosen is None:
+        _announce_no_token_source(process, worker_type, candidates)
         raise LLMSourceError(worker_type, [c.source for c in candidates])
     return chosen
+
+
+def _announce_no_token_source(process, worker_type: str, candidates: list[Candidate]) -> None:
+    """``agent.no_token_source``, with the picker's own blocked code and the source it names."""
+    from flow_sdk.builtin.agentic_process.agent_on_tag import emit_no_token_source  # noqa: PLC0415
+
+    code, named = _blocked(candidates, worker_type)
+    emit_no_token_source(str(getattr(process, "id", "") or ""), worker_type, code, named.endpoint_typeid if named else "")
+
+
+async def note_budget_used(process) -> None:
+    """The hub refused this process's turn because its budget is spent. Remember it on the endpoint
+    that was funding the process — the hop that ran out may be a pool further up its chain — and
+    announce ``agent.no_token_source`` when no other source can take over."""
+    worker_type = _worker_type_of(process)
+    scope = LLMScope.of_process(process)
+    chosen = pick_llm_candidate(await list_llm_candidates(worker_type, scope))
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
+
+    if chosen is None or chosen.endpoint.kind != LLMEndpointKind.HUB:
+        return  # not a hub budget's refusal: nothing here to mark
+
+    BUDGETS_USED.add(chosen.source.endpoint_typeid)
+    candidates = await list_llm_candidates(worker_type, scope)
+    if pick_llm_candidate(candidates) is None:
+        _announce_no_token_source(process, worker_type, candidates)
 
 
 async def check_unchecked_login(worker_type: str) -> None:
