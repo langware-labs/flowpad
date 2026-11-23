@@ -46,6 +46,7 @@ import { getHistoryPosition } from './history-position-store';
 import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
+import { onServedPage } from './supported-pages';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 import { contentAssetTargetForDock, isContentAssetDock, offersDocChat } from './content-asset-dock';
 import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
@@ -219,6 +220,15 @@ function notifyLinkError(error: unknown): void {
   notify.error({ title: t`Could not open link`, message: errorMessage(error, t`Unknown error`), transient: true });
 }
 
+/** `pointer` as a dock on a page this server serves (see `onServedPage`) — applied wherever a
+ *  pointer becomes a URL. Before bootstrap has said which pages those are, the page is left as
+ *  the caller built it. */
+function servedDock(pointer: IDockPointer | DockPointer): DockPointer {
+  const dock = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+  const supported = dataContext.bootstrapInfo?.supported_pages;
+  return supported ? onServedPage(dock, supported) : dock;
+}
+
 /**
  * NavigationActions - Navigation actions implementation
  *
@@ -381,7 +391,7 @@ export class NavigationActions {
    * a param reordering counted as a different URL and re-pushed.
    */
   static commitDetached(pointer: IDockPointer): void {
-    let target = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+    let target = servedDock(pointer);
     let here: DockPointer | null = null;
     try {
       here = DockPointer.fromUrl(NavigationActions.getCurrentBrowserUrl());
@@ -424,8 +434,9 @@ export class NavigationActions {
    * back what we are trying to drop. Composition happens on the pointer, so there is
    * no URL string to get stale.
    */
-  private commitPointer(dock: DockPointer): void {
+  private commitPointer(pointer: DockPointer): void {
     NavigationActions.clearCommittedPendingNavigation();
+    const dock = servedDock(pointer);
     const url = dock.toUrl(window.location.pathname);
     if (NavigationActions.getCurrentBrowserUrl() === url) return;
     // `via=commit`: a param edit, a journey close or the dock closing — not a click.
@@ -595,7 +606,7 @@ export class NavigationActions {
       return;
     }
 
-    const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+    const base = servedDock(pointer);
     let dock =
       extraOptions && Object.keys(extraOptions).length > 0
         ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout, base.page)
@@ -714,8 +725,7 @@ export class NavigationActions {
    * Pure helper — used by share/copy-link flows and openInBrowserTab.
    */
   getDockUrl(pointer: IDockPointer | DockPointer): string {
-    const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    const fullUrl = base.toUrl(window.location.pathname);
+    const fullUrl = servedDock(pointer).toUrl(window.location.pathname);
     return `${window.location.origin}${fullUrl}`;
   }
 
