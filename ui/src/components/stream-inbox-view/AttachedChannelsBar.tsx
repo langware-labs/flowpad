@@ -79,7 +79,7 @@ import {
   ownerOf,
 } from './channel-owner';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
-import { MARK, MARK_BADGE, MARK_SELECTED } from './marks';
+import { MARK, MARK_BADGE, MARK_SELECTED, MARK_TOOL } from './marks';
 
 const EMPTY: DataSource[] = [];
 const NO_OFFERS: ChannelOffer[] = [];
@@ -425,7 +425,11 @@ function ChannelWarningsChip({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="relative me-2 grid size-7 shrink-0 place-items-center rounded-full border-[1.5px] border-yellow-500/60 bg-background text-yellow-600 transition-colors hover:border-yellow-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-yellow-400"
+          className={cn(
+            MARK,
+            MARK_TOOL,
+            'border-yellow-500/60 bg-background text-yellow-600 hover:border-yellow-500 dark:text-yellow-400',
+          )}
           aria-label={t`${count} channels need attention`}
           title={t`${count} channels need attention`}
           data-testid="channel-warnings-chip"
