@@ -22,7 +22,7 @@ the details being discussed written ON the screens; the reviewer walks it, leave
 and submits them back to you. It is not the product: no backend of its own, no real data.
 
 **A mock never lives in the repo.** Every mock, its kinds, its datasets and its feedback live in the
-**mock project** — `$TMPDIR/mockify/<repo folder name>/`, a Flowpad project of its own outside the repo.
+**mock project** — `$TMPDIR/mockify/<repo folder name>/`, a Flowpad project of its own outside the repo. It is marked `scratch`, so it stays out of the user's project list.
 Nothing is written into the repo until the person presses **💾 Save to repo** (the journey bar's popup toolbar) (or asks for it in
 words) — then "Save to repo" below copies that one mock in. Never `install_data.py`, `DM ds-put` or a mock folder into the repo.
 

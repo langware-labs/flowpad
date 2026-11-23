@@ -67,13 +67,17 @@ def flow(*args: str) -> dict:
 
 
 def project_for(root: Path) -> str:
-    """The Flowpad project mounted at ``root``: found, else registered."""
+    """The Flowpad project mounted at ``root``: found, else registered. Marked ``scratch`` either way (one made
+    before the mark existed gets it here), so it stays out of the user's project list."""
     from flow_sdk import local_client as lc  # noqa: PLC0415
 
     for project in lc.graph_get("project", {"match": {"fs_storage_mount_path": str(root)}}) or []:
         if Path(str(project.get("fs_storage_mount_path") or "")).resolve() == root:
+            if not project.get("scratch"):
+                lc.request("PUT", f"graph/project/{project['id']}", body={"scratch": True})
             return str(project["id"])
-    created = lc.graph_post("project", {"type": "project", "name": f"mocks · {root.name}", "fs_storage_mount_path": str(root)})
+    created = lc.graph_post("project", {"type": "project", "name": f"mocks · {root.name}", "scratch": True,
+                                        "fs_storage_mount_path": str(root)})
     return str(created["id"])
 
 

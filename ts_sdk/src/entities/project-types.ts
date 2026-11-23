@@ -194,5 +194,6 @@ export interface IProject extends IEntity {
   context_dir_infos?: ProjectContextDirInfo[];
   customization?: ProjectCustomization;
   hidden?: boolean;
+  scratch?: boolean;
   folder_name_mismatch?: string | null;
 }
