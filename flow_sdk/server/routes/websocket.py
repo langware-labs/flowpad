@@ -565,6 +565,39 @@ def _dispatch_pty_ws_lifecycle(connection_id: str, event: str, reason: str | Non
         logger.warning(f"PTY membership FSM '{event}' failed for {connection_id}: {e}")
 
 
+async def _cleanup_connection(connection_id: str, disconnect_reason: str) -> None:
+    """Drop everything held for a connection id whose socket ended."""
+    # Clean up connection
+    _active_connections.pop(connection_id, None)
+    remove_registry_connection(connection_id)
+
+    # Clean up watches
+    from flow_sdk.app.actions.watch_registry import cleanup_connection
+
+    cleanup_connection(connection_id)
+
+    # A file watch owns a task and a thread, not just a registry row: end
+    # the folder loops this connection was the last to listen to.
+    from flow_sdk.actions.fs.file_watch import release_unwatched
+
+    release_unwatched()
+
+    # Release this connection's hub context-watches (unwatch any entity no
+    # other connection still holds in context).
+    from flow_sdk.cloud_client.context_watch import browser_context_watch
+
+    await browser_context_watch.on_disconnect(connection_id)
+
+    # Park this connection's PTY subscriptions (kept, not closed) so a
+    # reconnect of the same id auto-restores delivery. PTYs stay alive.
+    _dispatch_pty_ws_lifecycle(connection_id, "disconnect", disconnect_reason)
+
+    logger.info(
+        f"Client {connection_id} removed (reason={disconnect_reason}). "
+        f"Remaining connections: {len(_active_connections)}"
+    )
+
+
 @websocket_router.websocket("/api/v1/connect/ws/{connection_id}")
 async def websocket_endpoint(websocket: WebSocket, connection_id: str):
     """
@@ -712,35 +745,18 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
         disconnect_reason = f"error:{type(e).__name__}"
         logger.error(f"Error in WebSocket connection {connection_id}: {e}")
     finally:
-        # Clean up connection
-        _active_connections.pop(connection_id, None)
-        remove_registry_connection(connection_id)
-
-        # Clean up watches
-        from flow_sdk.app.actions.watch_registry import cleanup_connection
-
-        cleanup_connection(connection_id)
-
-        # A file watch owns a task and a thread, not just a registry row: end
-        # the folder loops this connection was the last to listen to.
-        from flow_sdk.actions.fs.file_watch import release_unwatched
-
-        release_unwatched()
-
-        # Release this connection's hub context-watches (unwatch any entity no
-        # other connection still holds in context).
-        from flow_sdk.cloud_client.context_watch import browser_context_watch
-
-        await browser_context_watch.on_disconnect(connection_id)
-
-        # Park this connection's PTY subscriptions (kept, not closed) so a
-        # reconnect of the same id auto-restores delivery. PTYs stay alive.
-        _dispatch_pty_ws_lifecycle(connection_id, "disconnect", disconnect_reason)
-
-        logger.info(
-            f"Client {connection_id} removed (reason={disconnect_reason}). "
-            f"Remaining connections: {len(_active_connections)}"
-        )
+        # A newer socket may hold this connection id by now (a page that redialed
+        # after sleep while this one was still open). The cleanup is keyed by the
+        # id, so running it for a superseded socket would unregister the live
+        # one and park its terminals: the page stays connected and hears nothing.
+        current = _active_connections.get(connection_id)
+        if current is not None and current.ws is not websocket:
+            logger.info(
+                f"Client {connection_id}: superseded socket closed (reason={disconnect_reason}); "
+                "a newer socket holds this id, nothing to clean up"
+            )
+        else:
+            await _cleanup_connection(connection_id, disconnect_reason)
 
 
 def get_connection_count() -> int:
