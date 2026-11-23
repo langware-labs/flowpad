@@ -146,7 +146,7 @@ async def test_snippet_5_an_agent_on_several_sources(tmp_path, monkeypatch):
         await run_fence_until(
             fence_under(doc("pipes.md"), "5."), {"KEY": "k", "SRC": str(src)}, mail.settled, filename="pipes.md §5"
         )
-    assert worker.received_prompts == ["please triage"], "the folder page was acked, not answered"
+    assert worker.received_messages == ["please triage"], "the folder page was acked, not answered"
     assert len(mail.sent) == 1
 
 

@@ -138,7 +138,7 @@ async def test_6_serve_it_your_way(monkeypatch, tmp_path):
 
     assert [r["to"] for r in wa.sent()] == [wa.sender]
     assert [r["to"] for r in tg.sent()] == [tg.sender, tg.sender], "the stranger got nothing"
-    assert worker.received_prompts == ["hi, is anyone there?", "my invoice is wrong", "invoice again, still wrong"]
+    assert worker.received_messages == ["hi, is anyone there?", "my invoice is wrong", "invoice again, still wrong"]
 
     billing_here = await billing.deploy("local")
     sessions = await AgenticProcess.local_rows({"match": {"deployment_id": billing_here.id}})

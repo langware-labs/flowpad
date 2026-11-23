@@ -71,7 +71,7 @@ async def test_a_pull_channel_without_a_fast_lane_is_asked_only_when_it_is_due(w
             await server.stop()
             await agent.delete()
 
-    assert reply["text"].startswith("Mock reply") and worker.received_prompts == ["is anyone there?"]
+    assert reply["text"].startswith("Mock reply") and worker.received_messages == ["is anyone there?"]
     assert syncs.count(str(source.id)) == 1, "the heartbeat's one poll — and nothing else"
 
 
@@ -86,7 +86,7 @@ async def test_a_fast_lane_channel_is_polled_by_the_lane_while_an_agent_serves_i
             await server.stop()
             await agent.delete()
 
-    assert reply["text"].startswith("Mock reply") and worker.received_prompts == ["where is my order?"]
+    assert reply["text"].startswith("Mock reply") and worker.received_messages == ["where is my order?"]
     polls = [m for m, _ in double.bot.requests if m == "getUpdates"]
     assert 2 <= len(polls) <= 4, f"the lane's pace (the first pass, then one per 5s), not a 3s loop: {len(polls)}"
 
