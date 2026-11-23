@@ -120,6 +120,19 @@ def test_claude_deleted_transcript_stops_reporting(worker_session_stores):
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_claude_stopped_without_a_clean_end_ages_to_inactive(worker_session_stores):
+    """Read while the file is fresh, a session stopped mid-turn has no final status yet; that answer must not stick."""
+    stores = worker_session_stores
+    process = _proc(WorkerType.CLAUDE_CODE, status="stopped", session_id=str(uuid.uuid4()))
+    path = stores.claude_repo / f"{process.session_id}.jsonl"
+    _claude_lines(path, _USER, _THINKING)
+    assert view(process)["worker_status"] is None
+    day_ago = path.stat().st_mtime - 86400
+    os.utime(path, (day_ago, day_ago))
+    assert _assert_parity(process)["worker_status"] == "inactive"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_claude_stopped_without_transcript_then_recovered(worker_session_stores):
     stores = worker_session_stores
     process = _proc(WorkerType.CLAUDE_CODE, status="stopped", session_id=str(uuid.uuid4()))
