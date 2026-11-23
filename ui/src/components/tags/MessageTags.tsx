@@ -34,7 +34,7 @@ export function useTagDefinitions() {
 }
 
 /** Each tag's colour by name, for the chips and icons that draw it. */
-export function useTagColors(): Map<string, string | null | undefined> {
+function useTagColors(): Map<string, string | null | undefined> {
   const definitions = useTagDefinitions();
   return useMemo(() => new Map(definitions.map((tag) => [tag.name ?? '', tag.color])), [definitions]);
 }

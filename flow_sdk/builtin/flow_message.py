@@ -25,6 +25,7 @@ from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
+from flow_sdk.schema.data_spec.message_app_spec import MessageAppSpec
 from flow_sdk.schema.data_spec.message_draft_spec import MessageDraftOptions
 from flow_sdk.schema.data_spec.message_invite_spec import MessageInvite
 from flow_sdk.schema.data_spec.message_processing_spec import MessageProcessing
@@ -482,6 +483,9 @@ HELP_REQUEST_FILE = "help_request.value.json"
 #: The value a message is drawn by, when it carries one: a ``<kind>`` value its kind's viewer shows in place
 #: of the text (``FlowMessage.card``).
 CARD_FILE = "card.value.json"
+#: The nano-app an app message carries: the conversation draws its ``block`` slot in place of the text, opened
+#: on the ``<kind>.value.json`` beside it (``FlowMessage.app``).
+APP_FILE = "app.html"
 
 
 def carrier_attachment(fm: "FlowMessage") -> "Attachment | None":
@@ -884,6 +888,9 @@ class FlowMessage(Entity):
     # cause, machine, opened_at, resolved_at}`` (``follow_up`` marks the "Resolved: …" line posted after it).
     # The hub updates the same message as the issue moves (count, status). PRIVATE, re-derived like ``it_reply``.
     issue_reply: Optional[dict] = APIField(None, sharing=Sharing.PRIVATE)
+    # An app message (it carries ``APP_FILE``): its status and its app's header slot as text, written when it
+    # is posted (``post_app_message``). PRIVATE: a message posted on this machine, never the hub's to reset.
+    app: Optional[MessageAppSpec] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)

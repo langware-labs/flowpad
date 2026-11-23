@@ -72,6 +72,30 @@ throws (read `e.response?.data?.message`, or `sdk.errorText(e)`). It sends the p
 | talk to the parent | `sdk.postToHost({type, …})`, `sdk.onHostMessage(type, fn)` — no secrets in a host message |
 | query options the dock passed | `sdk.appOption(name)` |
 
+## Nano-app — one `.html` file with slots
+
+A nano-app is a page that says what it is and can be shown in three sizes. The file carries its manifest and its
+slots; the host asks for one with `?slot=`:
+
+```html
+<script type="application/json" id="nano-app">{"name": "review", "title": "Review", "input": "crm.lead"}</script>
+<template data-slot="header">{{status}} · {{summary}}</template>   <!-- one line of TEXT, filled by the backend; no scripts -->
+<template data-slot="block">…</template>                           <!-- inside a message or a section -->
+<main data-slot="page">…</main>                                     <!-- a tab: the default, and what a bare browser shows -->
+<script type="module">
+  import * as sdk from '/sdk/flowpad-sdk.js';
+  const app = await sdk.nano.start();   // theme, the slot mounted, initSdk, the input read, its height reported
+  app.slot;                             // 'block' | 'page'
+  app.input;                            // {kind, value} of the value file it was opened on, or null
+  app.open('page');                     // ask the host for the full page
+</script>
+```
+
+`sdk.nano.start()` replaces `applyHostTheme()` + `initSdk()` — call it once, first. Write each slot as a whole:
+the block's markup lives in its `<template>`, so query it only after `start()`. Keep the block short (the host
+caps its height and it scrolls inside). Python reads the same file: `read_nano_app(html)`, `render_header(html, data)`
+(`flow_sdk.schema.data_spec.nano_app_spec`).
+
 ## Dev server
 
 A Vite dev server proxies `/api` and `/sdk` to the backend, so the same imports work. Never replace the proxy with

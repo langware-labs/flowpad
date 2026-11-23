@@ -1,4 +1,4 @@
-import { FSRef, VFSPath } from '@sdk';
+import { FSRef, readValue, VFSPath } from '@sdk';
 import { Trans } from '@lingui/react/macro';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -6,14 +6,7 @@ import { useFSRefContent } from '@src/hooks/use-fs-ref-content';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { KindValue } from './KindValue';
 
-/** A value file's content: the value, and the kind it carries in its `spec_kind` (a dump's tag). */
-export function readValue(raw: unknown): { kind: string; value: unknown } {
-  const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not a value: expected an object');
-  const { spec_kind: kind, ...value } = parsed as Record<string, unknown>;
-  if (typeof kind !== 'string' || !kind) throw new Error('the file names no spec_kind');
-  return { kind, value };
-}
+export { readValue };
 
 function parsed(content: string): { kind: string; value: unknown } | { error: string } {
   try {

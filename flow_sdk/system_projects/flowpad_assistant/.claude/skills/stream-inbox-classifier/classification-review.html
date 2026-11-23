@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review classification</title>
+<!-- A nano-app (docs/glossary.md): the proposal of a Stream Inbox classification run, reviewed and applied
+     where it is shown — a message's block, or a tab. It opens on a `stream_inbox.classification` value and
+     writes nothing until Apply. -->
+<script type="application/json" id="nano-app">
+{"name": "classification-review", "title": "Review classification", "icon": "Tags", "input": "stream_inbox.classification"}
+</script>
+<link rel="stylesheet" href="/sdk/flowpad.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font: 14px/1.4 "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif; background: hsl(var(--background)); color: hsl(var(--foreground)); }
+  .app { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+  html[data-slot="page"] .app { padding: 16px; }
+  h1 { margin: 0; font-size: 18px; font-weight: 600; line-height: 1; }
+  .muted { color: hsl(var(--muted-foreground)); }
+  .small { font-size: 12px; }
+  .tiny { font-size: 11px; }
+  .box { border: 1px solid hsl(var(--border)); border-radius: 6px; }
+  .rows { overflow: auto; }
+  html[data-slot="block"] .rows { max-height: 300px; }   /* about 8 rows, then it scrolls inside */
+  table { width: 100%; border-collapse: collapse; }
+  th { height: 36px; padding: 0 12px; text-align: start; font-size: 12px; font-weight: 500; color: hsl(var(--muted-foreground)); }
+  td { padding: 8px 12px; border-top: 1px solid hsl(var(--border)); vertical-align: middle; }
+  tr.ticked td { background: hsl(var(--primary) / .1); }
+  td.title { max-width: 28rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proposed { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .rejected .chips { text-decoration: line-through; opacity: .6; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border: 1px solid hsl(var(--border)); border-radius: 999px; font-size: 11px; line-height: 20px; min-height: 22px; }
+  .chip.none { border-style: dashed; border-color: hsl(var(--foreground) / .6); }
+  .state { font-size: 11px; font-weight: 500; color: hsl(var(--primary)); }
+  .state.off { color: hsl(var(--muted-foreground)); }
+  button { font: inherit; color: inherit; cursor: pointer; background: transparent; }
+  button:disabled { opacity: .5; cursor: default; }
+  .btn { height: 24px; padding: 0 8px; border: 1px solid hsl(var(--border)); border-radius: 6px; font-size: 11px; font-weight: 500; }
+  .btn:hover:not(:disabled), .why:hover { background: hsl(var(--accent)); }
+  .btn.lg { height: 32px; padding: 0 12px; font-size: 12px; }
+  .btn.primary { border-color: transparent; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+  .btn.on { background: hsl(var(--accent)); }
+  .why { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px; border: 0; border-radius: 6px; font-size: 11px; color: hsl(var(--muted-foreground)); }
+  .why.on { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+  .trace td { background: hsl(var(--muted) / .2); padding: 16px; }
+  .trace dl { display: grid; grid-template-columns: 7.5rem 1fr; gap: 8px 16px; margin: 0; }
+  .trace dt { font-size: 12px; color: hsl(var(--muted-foreground)); }
+  .trace dd { margin: 0; }
+  .bar { display: flex; align-items: center; gap: 8px; }
+  .bar.selection { padding: 4px 8px; }
+  .grow { flex: 1; }
+  .tree { align-self: flex-end; width: 24rem; max-width: 100%; padding: 12px; }
+  .tree .node { display: flex; align-items: center; gap: 6px; padding: 4px 8px; }
+  .tree .note { margin-inline-start: 30px; padding-bottom: 4px; font-size: 11px; color: hsl(var(--muted-foreground)); }
+  .tree .gone { text-decoration: line-through; color: hsl(var(--muted-foreground)); }
+  .err { margin: 0; padding: 6px 8px; border: 1px solid hsl(var(--destructive)); border-radius: 6px; background: hsl(var(--destructive) / .12); font-size: 12px; }
+  svg { width: 12px; height: 12px; flex: none; }
+  input[type=checkbox] { appearance: none; display: inline-block; flex: none; box-sizing: border-box; width: 14px; min-width: 14px; height: 14px; min-height: 0; padding: 0; margin: 0; border: 1px solid hsl(var(--muted-foreground)); border-radius: 999px; cursor: pointer; vertical-align: middle; }
+  input[type=checkbox]:checked { border-color: hsl(var(--primary)); background: hsl(var(--primary)); box-shadow: inset 0 0 0 2px hsl(var(--background)); }
+</style>
+</head>
+<body>
+<template data-slot="header">{{conversations}} conversations · {{changing}} would change · {{tag_changes}} tag changes</template>
+<template data-slot="block"><div class="app" data-testid="classification-review"></div></template>
+<main data-slot="page"><div class="app" data-testid="classification-review"></div></main>
+<script type="module">
+  import * as sdk from '/sdk/flowpad-sdk.js';
+
+  const app = await sdk.nano.start();
+  const root = document.querySelector(app.slot === 'block' ? '[data-slot-mounted="block"] .app' : '[data-slot="page"] .app');
+  const value = app.input?.value;
+  const TAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>';
+  const OFF = TAG.replace('</svg>', '<path d="M3 3l18 18"/></svg>');   // the crossed tag: no tag
+  const WHY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M7 16h8"/><path d="M7 11h12"/><path d="M7 6h3"/></svg>';
+  const MARK = { added: '+', updated: '~', moved: '→', removed: '−' };
+  const TINT = { added: 'hsl(142 70% 45%)', updated: 'hsl(var(--primary))', moved: 'hsl(38 92% 50%)', removed: 'hsl(var(--destructive))' };
+  /** The tag tree's changes per kind: [[op, count]]; and the tags the proposal adds. */
+  const counts = Object.keys(MARK).map((op) => [op, (value?.tree_changes ?? []).filter((c) => c.op === op).length]);
+  const added = new Set((value?.tree_changes ?? []).filter((c) => c.op === 'added').map((c) => c.tag));
+  const esc = (text) => String(text ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const leaf = (name) => name.split('.').at(-1);
+  const same = (a, b) => a.length === b.length && a.every((tag) => b.includes(tag));
+
+  // What the page knows beyond the proposal: each message's tags as they are NOW (live), and the tag colours.
+  const state = { tags: new Map(), colors: new Map(), names: [], ticked: new Set(), rejected: new Set(), opened: null, tree: false, treeDone: false, busy: false, error: '' };
+
+  let queued = false;   // a redraw is already on its way (`schedule`)
+
+  if (!value) {
+    root.innerHTML = '<p class="err" role="alert">This page opens on a classification proposal; none was given.</p>';
+  } else {
+    for (const change of value.tree_changes) if (change.color) state.colors.set(change.tag, change.color);
+    root.addEventListener('click', onClick);
+    root.addEventListener('change', onClick);
+    draw();
+    // Each message as it is now and on every change (the subscription reads it first), and the tag tree, live.
+    for (const row of value.conversations)
+      sdk.dataManager.subscribe(new sdk.TypeId('flow_message', row.message_id),
+        (message) => { state.tags.set(row.conversation_id, message ? (message.tags ?? []) : null); schedule(); }, true);
+    void sdk.dataManager.watchQuery(new sdk.QueryRequest({ type: 'tag', scope: [], name: 'classification-review:tags',
+      callback: (tags) => {
+        state.names = tags.filter((tag) => !tag.deprecated).map((tag) => tag.name ?? '');
+        for (const tag of tags) if (tag.color) state.colors.set(tag.name, tag.color);
+        schedule();
+      } }));
+  }
+
+  /** Draw once for a burst of updates (Apply all changes every message at once). */
+  function schedule() {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(() => { queued = false; draw(); });
+  }
+
+  /** The tags of this tree the message carries now; null while the message is not known. */
+  function current(row) {
+    const tags = state.tags.get(row.conversation_id);
+    return tags && tags.filter((tag) => tag !== value.root && sdk.tagIsWithin(tag, value.root));
+  }
+  function applied(row) { const now = current(row); return !!now && same(now, row.proposed); }
+  /** The rows still to decide: not rejected, and not carrying their proposal yet. */
+  function open() { return value.conversations.filter((row) => !state.rejected.has(row.conversation_id) && !applied(row)); }
+  function allTicked(left) { return left.length > 0 && left.every((row) => state.ticked.has(row.conversation_id)); }
+
+  function chip(name) {
+    const color = state.colors.get(name);
+    const style = color ? ` style="border-color:${esc(color)};background:color-mix(in srgb, ${esc(color)} 18%, hsl(var(--background)))"` : '';
+    return `<span class="chip" title="${esc(name)}"${style}>${TAG}${esc(leaf(name))}</span>`;
+  }
+  function chips(tags) { return tags.length ? tags.map(chip).join(' ') : `<span class="chip none" title="No tags">${OFF}</span>`; }
+
+  function rowHtml(row) {
+    const id = esc(row.conversation_id), now = current(row) ?? [], done = applied(row), no = state.rejected.has(row.conversation_id);
+    const fresh = row.proposed.some((tag) => added.has(tag));
+    const word = done ? (row.action === 'keep' ? '' : '<span class="state">✓ applied</span>')
+      : no ? '<span class="state off">rejected</span>' : `<span class="state">${fresh ? 'new tag' : 'changed'}</span>`;
+    const proposed = row.proposed.length ? row.proposed.map(chip).join(' ') : `<span class="small muted" style="display:inline-flex;align-items:center;gap:4px">${OFF}no tag fits</span>`;
+    const asked = row.asked ? `<dt>Asked for</dt><dd><span class="chip none">${TAG}${esc(leaf(row.asked.tag))}</span> <span class="small muted">“${esc(row.asked.meaning)}”</span></dd>
+      <dt>Main agent</dt><dd>${row.asked.answer === 'approved' ? 'Approved as a new tag.' : `Use ${chip(row.asked.use ?? '')} instead.`}</dd>` : '';
+    return `<tr data-row="${id}" class="${state.ticked.has(row.conversation_id) ? 'ticked' : ''}" data-testid="classify-row-${id}">
+      <td style="width:28px">${done || no ? '' : `<input type="checkbox" data-act="tick" aria-label="Select conversation" ${state.ticked.has(row.conversation_id) ? 'checked' : ''}>`}</td>
+      <td class="title">${esc(row.title)}</td>
+      <td data-testid="classify-row-current">${chips(now)}</td>
+      <td><div class="proposed ${no ? 'rejected' : ''}" data-testid="classify-row-new"><span class="chips">${proposed}</span>${word}
+        ${done || no ? '' : `<button class="btn" data-act="apply" data-testid="classify-row-apply" title="Make this the conversation's tag. No automation runs." ${state.busy ? 'disabled' : ''}>Apply</button>`}
+        ${done ? '' : `<button class="btn" data-act="reject" data-testid="classify-row-reject">${no ? 'Undo' : 'Reject'}</button>`}</div></td>
+      <td style="width:64px;text-align:end"><button class="why ${state.opened === row.conversation_id ? 'on' : ''}" data-act="why" data-testid="classify-row-why" title="How it was decided">${WHY} Why</button></td>
+    </tr>${state.opened === row.conversation_id ? `<tr class="trace"><td colspan="5"><dl data-testid="classify-row-trace"><dt>Agent</dt><dd>${esc(row.reason)}</dd>${asked}</dl></td></tr>` : ''}`;
+  }
+
+  function treeHtml() {
+    const moved = new Set(value.tree_changes.filter((c) => c.op === 'moved').map((c) => c.was));
+    const names = [...new Set([...state.names.filter((name) => !moved.has(name)), ...value.tree_changes.map((c) => c.tag)])].filter((name) => name !== value.root && sdk.tagIsWithin(name, value.root));
+    const kids = sdk.tagTree(names), by = new Map(value.tree_changes.map((c) => [c.tag, c])), out = [];
+    const walk = (parent, depth) => { for (const name of kids[parent] ?? []) { out.push([name, depth]); walk(name, depth + 1); } };
+    walk(value.root, 1);
+    const node = ([name, depth]) => {
+      const c = by.get(name), color = state.colors.get(name);
+      const note = !c ? '' : `<div class="note">${c.op === 'updated' ? `<div class="gone">${esc(c.was)}</div>` : ''}${c.op === 'added' || c.op === 'updated' ? `<div style="color:hsl(var(--foreground))">${esc(c.meaning)}</div>` : ''}
+        ${c.op === 'moved' ? `was ${esc(c.was)}` : ''}${c.op === 'removed' && c.merged_into ? `its conversations go to ${esc(leaf(c.merged_into))}` : ''}<div>${esc(c.reason)}</div></div>`;
+      return `<div style="margin-inline-start:${depth * 16}px" data-testid="classify-tree-row-${esc(name)}"><div class="node"><span style="color:${esc(color ?? 'inherit')};display:inline-flex">${TAG}</span>
+        <span class="${c?.op === 'removed' ? 'gone' : ''}">${esc(leaf(name))}</span>${c ? `<span class="tiny" style="font-weight:500;color:${TINT[c.op]}">${c.op}</span>` : ''}</div>${note}</div>`;
+    };
+    return `<div class="box tree" data-testid="classify-tree-panel"><div class="bar"><b>Tag tree</b><span class="grow"></span><span class="tiny muted">${counts.map(([op, n]) => `${n} ${op}`).join(' · ')}</span>
+      <button class="why" data-act="tree" data-testid="classify-tree-close" aria-label="Close the tag tree">✕</button></div>
+      <div class="node muted"><span style="display:inline-flex">${TAG}</span><i>${esc(value.root)}</i></div>${out.map(node).join('')}
+      <div class="bar" style="justify-content:flex-end;margin-top:8px;padding-top:8px;border-top:1px solid hsl(var(--border))">
+      ${state.treeDone ? '<span class="state">✓ applied</span>' : `<button class="btn lg" data-act="apply-tree" data-testid="classify-tree-apply" ${state.busy ? 'disabled' : ''}>Apply tag changes</button>`}</div></div>`;
+  }
+
+  function draw() {
+    if (!value) return;
+    const rows = value.conversations, left = open();
+    const changing = rows.filter((row) => row.action !== 'keep').length, done = rows.filter(applied).length;
+    const marks = counts.filter(([, n]) => n)
+      .map(([op, n]) => `<span class="tiny" style="font-weight:500;color:${TINT[op]}" title="${op}">${MARK[op]}${n}</span>`).join(' ');
+    root.innerHTML = `<div><h1>Classify ${rows.length} conversations</h1>
+      <p class="muted" style="margin:6px 0 0">A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth.</p></div>
+      ${state.ticked.size ? `<div class="box bar selection" data-testid="classify-selection-bar"><span class="small muted">${state.ticked.size} selected</span>
+        <button class="btn" data-act="apply-ticked" data-testid="classify-selection-apply" ${state.busy ? 'disabled' : ''}>Apply</button><span class="grow"></span>
+        <button class="why" data-act="clear" title="Clear selection" aria-label="Clear selection">✕</button></div>` : ''}
+      <div class="box rows"><table data-testid="classify-table"><thead><tr>
+        <th style="width:28px"><input type="checkbox" data-act="tick-all" aria-label="Select all" ${allTicked(left) ? 'checked' : ''}></th>
+        <th>Conversation</th><th>Current</th><th>Proposed</th><th></th></tr></thead><tbody>${rows.map(rowHtml).join('')}</tbody></table></div>
+      ${state.error ? `<p class="err" role="alert" data-testid="classify-error">${esc(state.error)}</p>` : ''}
+      <div class="bar"><span class="small muted" data-testid="classify-summary">${rows.length} classified · ${changing} would change · ${done} applied</span><span class="grow"></span>
+        ${value.tree_changes.length ? `<button class="btn lg ${state.tree ? 'on' : ''}" data-act="tree" data-testid="classify-tree-changes">Tag changes ${marks}</button>` : ''}
+        ${left.length ? `<button class="btn lg primary" data-act="apply-all" data-testid="classify-apply-all" title="Apply every row you did not reject, with the tag changes they need" ${state.busy ? 'disabled' : ''}>Apply all</button>` : ''}
+        ${app.slot === 'block' ? '<button class="btn lg" data-act="page" data-testid="classify-open-page">Open full page</button>' : ''}</div>
+      ${state.tree ? treeHtml() : ''}`;
+  }
+
+  /** Make rows (ids; none = no row) and, with `tree`, the tag tree changes real. The messages' own updates redraw. */
+  async function apply(conversations, tree) {
+    state.busy = true; state.error = ''; draw();
+    try {
+      const done = await sdk.FlowMessage.applyStreamInboxClassification(value, { conversations, tree });
+      const failed = Object.values(done.failed ?? {});
+      if (failed.length) state.error = failed[0];
+      if (tree) state.treeDone = true;
+      state.ticked.clear();
+    } catch (error) {
+      state.error = sdk.errorText(error);
+    }
+    state.busy = false; draw();
+  }
+
+  function onClick(event) {
+    const act = event.target.closest('[data-act]')?.dataset.act;
+    if (!act || (event.type === 'change') !== act.startsWith('tick')) return;
+    const id = event.target.closest('[data-row]')?.dataset.row;
+    const flip = (set, key) => (set.has(key) ? set.delete(key) : set.add(key));
+    if (act === 'tick') flip(state.ticked, id);
+    else if (act === 'tick-all') { const left = open(); state.ticked = new Set(allTicked(left) ? [] : left.map((row) => row.conversation_id)); }
+    else if (act === 'clear') state.ticked.clear();
+    else if (act === 'reject') { flip(state.rejected, id); state.ticked.delete(id); }
+    else if (act === 'why') state.opened = state.opened === id ? null : id;
+    else if (act === 'tree') state.tree = !state.tree;
+    else if (act === 'page') return app.open('page');
+    else if (act === 'apply') return void apply([id], false);
+    else if (act === 'apply-ticked') return void apply([...state.ticked], false);
+    else if (act === 'apply-tree') return void apply([], true);
+    // Every row not rejected — the "no tag fits" ones too, so that judgement is kept as ground truth.
+    else if (act === 'apply-all') return void apply(value.conversations.filter((row) => !state.rejected.has(row.conversation_id)).map((row) => row.conversation_id), true);
+    draw();
+  }
+</script>
+</body>
+</html>

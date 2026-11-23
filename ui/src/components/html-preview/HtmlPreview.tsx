@@ -69,9 +69,10 @@ import { localHtmlRef, OpenInBrowserButton } from '@src/lib/open-in-browser';
  * The frame is an app's MECHANISM, not an app's powers: it keeps the page's own short
  * sandbox and asks for no browser features (camera, microphone, clipboard, location).
  */
-const PREVIEW_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads';
+export const PREVIEW_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads';
 
-export function HtmlPreview({ path, stateKey }: { path: string; stateKey?: string }) {
+/** `input`: the value file a nano-app's page opens on (`?input=`, read by `sdk.nano.start()`). */
+export function HtmlPreview({ path, stateKey, input }: { path: string; stateKey?: string; input?: string }) {
   const { computeNode, flowId } = useAgentContext();
   const fs = useFS(computeNode?.typeId);
 
@@ -84,9 +85,9 @@ export function HtmlPreview({ path, stateKey }: { path: string; stateKey?: strin
   // `__FLOWPAD_PROCESS_ID__`, so the page's SDK can reach that process
   // (`setDisplayContext`, `enqueue`). The id, not the loaded process: it is in
   // the URL from the first render, so the frame loads once, already bound.
-  const processQuery = flowId ? `?process=${encodeURIComponent(flowId)}` : '';
+  const query = new URLSearchParams({ ...(flowId ? { process: flowId } : {}), ...(input ? { input } : {}) }).toString();
   // The key this page was opened with rides the same address: the server answers a page's calls only for it.
-  const src = computeNode?.typeId && fs ? withStateKey(`${fs.getServeUrl(path)}${processQuery}`, stateKey) : null;
+  const src = computeNode?.typeId && fs ? withStateKey(`${fs.getServeUrl(path)}${query && `?${query}`}`, stateKey) : null;
   const frameRef = useRef<PersistentIframeHandle>(null);
   const htmlRef = localHtmlRef(path, computeNode?.typeId);
   const contentEpoch = useContext(ContentEpochContext);

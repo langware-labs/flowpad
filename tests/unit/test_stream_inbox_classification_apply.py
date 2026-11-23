@@ -116,3 +116,15 @@ async def test_a_run_hands_its_proposal_in_by_reference_and_the_tree_decides_wha
     assert await classification.problems(good) == []
     ref = await classification.submit(good)
     assert ref.startswith("stream_inbox.classification.id.") and classification.submitted(ref) == good
+    # A new tag that came with no colour gets one when the proposal is handed in: what is shown is what is applied.
+    fresh = StreamInboxClassification.model_validate({"tree_changes": [{"op": "added", "tag": f"{base}.refund", "meaning": "x", "reason": "y"}]})
+    assert classification.submitted(await classification.submit(fresh)).tree_changes[0].color in classification._PALETTE
+
+
+def test_the_review_app_is_a_nano_app_whose_header_says_what_the_run_proposes():
+    from flow_sdk.schema.data_spec.nano_app_spec import read_nano_app, render_header
+
+    page = classification.review_app().read_text(encoding="utf-8")
+    app = read_nano_app(page)
+    assert (app.name, app.input, app.slots) == ("classification-review", "stream_inbox.classification", ["header", "block", "page"])
+    assert render_header(page, {"conversations": 6, "changing": 5, "tag_changes": 2}) == "6 conversations · 5 would change · 2 tag changes"

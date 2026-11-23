@@ -34,6 +34,7 @@ from flow_sdk.builtin.user import User
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.schema.data_spec.message_app_spec import MessageAppSpec
     from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.cloud_client.hub_proxy import HubProxy
@@ -976,6 +977,7 @@ async def handle_add_message(
     pending_send: bool = False,
     origin_process: Optional[str] = None,
     draft: Optional["FlowMessage"] = None,
+    app: Optional["MessageAppSpec"] = None,
 ) -> ApiResponse:
     """Append a message to a Conversation — the single message-send handler.
 
@@ -991,6 +993,9 @@ async def handle_add_message(
     conversation.jsonl outbox until ``Conversation.deliver_pending_messages``
     pushes it, from ``share()`` or from the hub-session transition in
     ``flow_sdk.stream_inbox.catchup`` (see that module's docstring).
+
+    ``app``: the message is an app message (``post_app_message``): the row is written with its ``app``. A
+    server-side argument, never read from the body.
 
     ``draft``: send THIS row instead of building one (``handle_send_draft``). Its files, assets and
     session carrier are already on it; the body restates its text, quote and thread, so the send
@@ -1216,6 +1221,8 @@ async def handle_add_message(
             reply_to_id=reply_to_id,
             thread_root_id=thread_root_id,
         )
+    if app is not None:
+        reply_fm.app = app
     if private:
         from flow_sdk.schema.data_spec.message_draft_spec import MessageDraftOptions  # noqa: PLC0415
 

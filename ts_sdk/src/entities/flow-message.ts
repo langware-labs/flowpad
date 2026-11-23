@@ -99,6 +99,17 @@ export const HELP_REQUEST_FILE = 'help_request.value.json';
  *  Mirrors flow_sdk.builtin.flow_message.CARD_FILE. */
 export const CARD_FILE = 'card.value.json';
 
+/** The nano-app an app message carries: its block slot is drawn in place of the text.
+ *  Mirrors flow_sdk.builtin.flow_message.APP_FILE. */
+export const APP_FILE = 'app.html';
+
+/** What an app message says before its app is opened (`MessageAppSpec`): a status word and its header line. */
+export interface MessageApp {
+  /** `AutomationResultStatus`: done | expired | cancelled | needs_review | failed. */
+  status?: string | null;
+  header: string;
+}
+
 /** Single source of truth for the body filename on the hub blob store.
  *  Must match flow_sdk.builtin.flow_message.BODY_FILENAME exactly — the
  *  parity unit test asserts this literal. */
@@ -409,6 +420,8 @@ export interface IFlowMessage extends IEntity {
   it_request?: ItRequestMeta | null;
   /** An Issue in a project's Monitoring conversation: the hub's `metadata.issue` (kept locally as `issue_reply`). */
   issue_reply?: IssueReplyMeta | null;
+  /** An app message: its status and its app's header slot as text. Local only. */
+  app?: MessageApp | null;
   /** Hub-relayed opaque metadata (a hub-page read carries it raw). */
   metadata?: Record<string, unknown> | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
@@ -536,6 +549,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   it_reply?: ItReplyMeta | null;
   it_request?: ItRequestMeta | null;
   issue_reply?: IssueReplyMeta | null;
+  /** An app message: its status and its app's header slot as text. Local only. */
+  app?: MessageApp | null;
   /** Sender, recipients, subject and event time of the cached record; projection-owned. */
   envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
@@ -663,6 +678,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.it_request = entity.it_request ?? itRequestOf(entity.metadata);
     // The hub rewrites `metadata.issue` as the issue moves; a raw hub read's metadata is the newest copy.
     this.issue_reply = issueReplyOf(entity.metadata) ?? entity.issue_reply ?? null;
+    this.app = entity.app ?? null;
     this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;

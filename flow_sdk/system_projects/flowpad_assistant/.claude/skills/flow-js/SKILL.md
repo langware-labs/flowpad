@@ -24,6 +24,9 @@ A skill Flowpad ships declares its kinds once, in `flowpad_assistant/agentic-ass
 name is plain (`forkit.issue`), one for the whole system, nothing to copy or apply per project. A page of your own
 project uses that project's kinds (`--<ns>--.<kind>`, the data-management skill). The forkit skill is the example.
 
+A page meant to be embedded (in a message, a section) or passed along is a **nano-app**: the same one file, with a
+manifest and `header` / `block` / `page` slots, started with `sdk.nano.start()` — `reference/api.md` "Nano-app".
+
 ## 1. Load it — pick by where the page runs
 
 | page | load |

@@ -6,7 +6,7 @@ import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
 import { TaskChips, type TaskPeople } from './task-it';
-import { MessageActionsMenu } from './MessageActionsMenu';
+import { MessageActionsMenu, type MessageMenuExtra } from './MessageActionsMenu';
 import {
   MESSAGE_ROW_ICON_BUTTON_CLASS,
   OpenSessionButton,
@@ -56,6 +56,9 @@ interface MessageBubbleProps {
   onForwardMessage?: () => void;
   /** Start a worker pinned to this message (⋮ menu, the header's launch bar). */
   onLaunchWorker?: (worker: WorkerType) => void;
+  /** Set when the message's body is its own surface (an app message): the tag cell and the Reply / Forward row
+   *  are not drawn, and what they offered is here, first in ⋮. */
+  extraItems?: MessageMenuExtra[];
   /** The session started from this message, if any: an Open button with its name on the header row. */
   messageSession?: { name: string; onOpen: () => void } | null;
   /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
@@ -319,6 +322,7 @@ export function MessageBubble({
   deleteLocalCopyOnly = false,
   onForwardMessage,
   onLaunchWorker,
+  extraItems,
   messageSession,
   taskIt,
   onAutomate,
@@ -470,7 +474,7 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage ?? undefined} />}
-          {!editing && flowMessage && <MessageTags message={flowMessage} />}
+          {!editing && flowMessage && !extraItems && <MessageTags message={flowMessage} />}
           {!editing && onAutomate && (
             <button
               type="button"
@@ -493,6 +497,7 @@ export function MessageBubble({
                 forwarded={!!flowMessage?.cloned_from_id}
                 onReact={onReact ? (emoji) => onReact(emoji, false) : undefined}
                 onLaunchWorker={onLaunchWorker}
+                extraItems={extraItems}
                 onTaskIt={taskIt && !taskIt.task ? taskIt.onClick : undefined}
                 onAutomate={onAutomate}
                 onEditName={!isBot && onEditName ? startEdit : undefined}
@@ -523,7 +528,7 @@ export function MessageBubble({
           />
         )}
         {footer}
-        {!editing && (onReply || onForwardMessage || messageSession || (flowMessageId && onLaunchWorker)) && (
+        {!editing && !extraItems && (onReply || onForwardMessage || messageSession || (flowMessageId && onLaunchWorker)) && (
           <div className="mt-1.5 flex items-center gap-1.5" data-testid="message-reply-forward">
             {onReply && (
               <button type="button" onClick={onReply} className={LABELED_ACTION_CLASS} data-testid="message-reply">

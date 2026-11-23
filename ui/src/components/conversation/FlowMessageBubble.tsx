@@ -43,12 +43,13 @@ import {
   AttachmentType,
   BodyStatus,
   FlowMessageKind,
+  APP_FILE,
   CARD_FILE,
   HELP_REQUEST_FILE,
   forwardMessage,
   isAttachmentMissing,
 } from '@sdk/entities/flow-message';
-import { Download, File, Loader2, Play, X } from 'lucide-react';
+import { Braces, Download, File, Forward, Loader2, Play, X, Zap } from 'lucide-react';
 import { useValueKind, valueKindMeta } from '@src/components/value-viewer/useValueKind';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
@@ -63,8 +64,10 @@ import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
-import { AutomationMessageActions } from './AutomationMessageActions';
+import { AutomationMessageActions, useAutomationRule } from './AutomationMessageActions';
 import { MessageValueCard } from './MessageValueCard';
+import { NanoAppFrame } from '@src/components/nano-app/NanoAppFrame';
+import type { MessageMenuExtra } from './MessageActionsMenu';
 import { DiagnosisCard } from './DiagnosisCard';
 import { IssueReplyLine } from './IssueReplyLine';
 import { ItReplyLine } from './ItReplyLine';
@@ -383,6 +386,8 @@ export function FlowMessageBubble({
     [agentSenderId],
   );
   const { data: agentSender } = useEntity<Agent>(agentSenderTypeId);
+  // An app message names the rule that posted it through its conversation (read only for such a message).
+  const { rule: appRule } = useAutomationRule(fm?.app ? fm.conversation_id : null);
   const { localUser, updateName } = useLocalUser();
   const { t } = useLingui();
   // `created_by` on receiver-materialized rows is whoever ran the local sync
@@ -579,14 +584,18 @@ export function FlowMessageBubble({
   const issueCard = fm.issue_reply ?? null;
   // A message that carries a value to be drawn by (`card.value.json`, on this machine) is that value's
   // card (MessageValueCard) instead of its text, which stays the fallback.
-  const cardPath = dataContext.caps.localFiles
-    ? (attachmentItems.find((i) => i.filename === CARD_FILE && !!i.localPath)?.localPath ?? null)
-    : null;
+  const localFile = (match: (filename: string) => boolean) =>
+    dataContext.caps.localFiles ? (attachmentItems.find((i) => match(i.filename) && !!i.localPath)?.localPath ?? null) : null;
+  const cardPath = localFile((name) => name === CARD_FILE);
+  // An app message (`fm.app`, set only for a message posted on this machine) is its nano-app's block slot
+  // (NanoAppFrame), opened on the value beside it; its text — the app's header as text — stays the fallback.
+  const appPath = fm.app ? localFile((name) => name === APP_FILE) : null;
+  const appInputPath = appPath ? localFile((name) => name.endsWith('.value.json') && name !== CARD_FILE) : null;
   const message: ConversationMessage = {
     role,
     content:
       // A help request and a diagnosis are their card (DiagnosisCard), which says the text in a line.
-      isConvIdPointer || issueCard || diagnosisCard || cardPath ? '' : (fm.text ?? ''),
+      isConvIdPointer || issueCard || diagnosisCard || cardPath || appPath ? '' : (fm.text ?? ''),
     sender_id: fm.sender_id ?? '',
     timestamp,
   };
@@ -861,10 +870,12 @@ export function FlowMessageBubble({
       {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {diagnosisCard && <DiagnosisCard conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {cardPath && <MessageValueCard localPath={cardPath} fallback={fm.text ?? ''} />}
-      {fm.kind === FlowMessageKind.AUTOMATION_RESULT && (
+      {appPath && <NanoAppFrame path={appPath} input={appInputPath ?? undefined} title={fm.text ?? undefined} />}
+      {fm.kind === FlowMessageKind.AUTOMATION_RESULT && !appPath && (
         <AutomationMessageActions conversationId={fm.conversation_id ?? ''} entities={entities} />
       )}
-      {attachmentFooter}
+      {/* An app message's files are the app and its value: the block shows them, ⋮ opens the value. */}
+      {!appPath && attachmentFooter}
       {lostChannelFiles.map((a) => (
         <p
           key={a.data}
@@ -880,6 +891,18 @@ export function FlowMessageBubble({
   );
 
   const canForward = !mobile && !fm.is_draft && fm.kind !== FlowMessageKind.INVITATION && !!fm.conversation_id;
+  // What an app message keeps out of its body, offered in ⋮ instead.
+  const appMenuItems: MessageMenuExtra[] | undefined = appPath
+    ? [
+        ...(canForward ? [{ key: 'forward', label: t`Forward`, icon: Forward, onSelect: () => setForwardOpen(true) }] : []),
+        ...(appInputPath
+          ? [{ key: 'value', label: t`Open the value`, icon: Braces, onSelect: () => navigation.openDock(dockPointerForLocalFile(appInputPath)) }]
+          : []),
+        ...(appRule
+          ? [{ key: 'automation', label: t`Open the automation`, icon: Zap, onSelect: () => navigation.openDock(DockPointer.forAutomations({ trigger: appRule.id })) }]
+          : []),
+      ]
+    : undefined;
 
   return (
     <>
@@ -928,6 +951,7 @@ export function FlowMessageBubble({
         onDeleteMessage={onDeleteMessage && canDelete ? () => onDeleteMessage(messageId) : undefined}
         deleteLocalCopyOnly={!!fm.origin && !deleteForEveryone}
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
+        extraItems={appMenuItems}
         onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
         messageSession={
           session

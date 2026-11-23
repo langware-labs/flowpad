@@ -8,6 +8,7 @@ against. A person changing a labelled message's tags afterwards is moderation: t
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 from flow_sdk.core.log_dataset import KeptDataset, rows, spawn
@@ -113,24 +114,51 @@ async def problems(value: StreamInboxClassification) -> list[str]:
     return out
 
 
+#: The contrast-tested entity palette (``ui/src/lib/color-palette.ts``), spread so consecutive picks look apart.
+_PALETTE = ("#dc2626", "#65a30d", "#0284c7", "#db2777", "#d97706", "#059669", "#6366f1", "#64748b", "#ea580c",
+            "#16a34a", "#3b82f6", "#e11d48", "#a16207", "#0d9488", "#8b5cf6", "#0891b2", "#c026d3")
+
+
+def review_app() -> Path:
+    """The nano-app a proposal is reviewed and applied in: one HTML file, shipped beside the classifier skill."""
+    from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+
+    return flowpad_assistant_project_root() / ".claude" / "skills" / "stream-inbox-classifier" / "classification-review.html"
+
+
+async def _with_colors(value: StreamInboxClassification) -> StreamInboxClassification:
+    """``value`` with a colour on every tag it adds: one the tree does not use yet. Chosen once, here, so what a
+    person sees before applying is what is applied."""
+    if all(change.color for change in value.tree_changes if change.op == "added"):
+        return value
+    from flow_sdk.builtin.tag import Tag  # noqa: PLC0415
+
+    used = {(t.color or "").lower() for t in await Tag.get_all({"deprecated": False})} | {c.color for c in value.tree_changes}
+    free = iter([hex_ for hex_ in _PALETTE if hex_ not in used] or _PALETTE)
+    changes = [c.model_copy(update={"color": next(free, _PALETTE[0])}) if c.op == "added" and not c.color else c
+               for c in value.tree_changes]
+    return value.model_copy(update={"tree_changes": changes})
+
+
 async def submit(value: StreamInboxClassification) -> str:
-    """A run hands in its proposal: kept on this instance, and posted as the classifier automation's
-    message (its arrival is the one notification). Answers the value's reference -- what the run returns,
-    since the value itself is bigger than a block may return."""
-    from flow_sdk.app.automation_message import post_automation_result  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.automation_spec import AutomationRef, AutomationResult  # noqa: PLC0415
+    """A run hands in its proposal: kept on this instance, and posted as the classifier automation's APP
+    MESSAGE -- the review nano-app opened on the proposal, so it is read and applied in the conversation
+    (its arrival is the one notification). Answers the value's reference -- what the run returns, since the
+    value itself is bigger than a block may return."""
+    from flow_sdk.app.automation_message import post_app_message  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.automation_spec import AutomationRef  # noqa: PLC0415
     from flow_sdk.stream_inbox.message_tags import classifier  # noqa: PLC0415
     from flow_sdk.values import save_value  # noqa: PLC0415
 
+    value = await _with_colors(value)
     ref = save_value(value, _values())
     rule = await classifier()
     if rule is not None:
         changing = sum(row.action != "keep" for row in value.conversations)
-        line = f"Classified {len(value.conversations)} conversations: {changing} would change, {len(value.tree_changes)} tag changes. Nothing is applied yet."
-        result = AutomationResult.of("needs_review", line, {
-            "Conversations read": len(value.conversations), "Would change": changing,
-            "Tag changes": len(value.tree_changes), "Applied": "Nothing yet. Open the classification to review and apply it."})
-        await post_automation_result(AutomationRef(trigger_id=str(rule.id), name=rule.name or ""), result, value)
+        await post_app_message(
+            AutomationRef(trigger_id=str(rule.id), name=rule.name or ""), review_app().read_text(encoding="utf-8"), value,
+            status="needs_review",
+            data={"conversations": len(value.conversations), "changing": changing, "tag_changes": len(value.tree_changes)})
     return ref
 
 

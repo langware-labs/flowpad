@@ -45,6 +45,7 @@ import {
   conversationRowMessageIds,
   isProcessFailed,
   isProcessLive,
+  tagIsWithin,
   type AgenticProcess,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
@@ -70,7 +71,8 @@ import { formatTimeAgo } from '@src/components/project-activity-strip/project-ac
 import { updateMessage, bulkUpdateMessages, searchStreamInbox, watchMessageTags } from './stream-inbox-api';
 import { TagFilterButton } from './TagFilterButton';
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { MessageTags } from '@src/components/tags/MessageTags';
+import { MessageTags, useClassificationSettings } from '@src/components/tags/MessageTags';
+import { AppStatusChip } from '@src/components/nano-app/AppStatusChip';
 import { ClassifyDialog, useClassifyRun } from '@src/components/tags/ClassifyTable';
 import {
   type ChannelAttribution,
@@ -87,6 +89,7 @@ import {
 } from './AttachedChannelsBar';
 import { needsPerson } from '@src/components/data-sources/source-attention';
 import {
+  AUTOMATIONS_CHANNEL,
   BUILT_IN_CHANNELS,
   FLOWPAD_CHANNEL,
   channelKeyOf,
@@ -195,6 +198,15 @@ function readStoredChannels(key: string | null): string[] {
 // Date on the conversation's last activity. URL-owned (`?from=&subject=&date=`), like the search.
 const NO_COLUMN_FILTER: StreamInboxColumns = { from: '', subject: '', date: 'any' };
 
+/** `ids` with `id` in or out; the same set when nothing changes, so a row's report costs no render. */
+function withId(ids: Set<string>, id: string, on: boolean): Set<string> {
+  if (ids.has(id) === on) return ids;
+  const next = new Set(ids);
+  if (on) next.add(id);
+  else next.delete(id);
+  return next;
+}
+
 function sameColumns(a: StreamInboxColumns, b: StreamInboxColumns): boolean {
   return a.from === b.from && a.subject === b.subject && a.date === b.date;
 }
@@ -291,6 +303,10 @@ interface ConversationListRowProps {
   /** Reports whether this row will actually render so the parent can decide
    *  whether to show the "No conversations" empty state. */
   onVisibilityChange: (convId: string, visible: boolean) => void;
+  /** The tag tree a message is classified into, and the report of a shown row whose latest message has
+   *  no tag in it yet — the parent's Classify button counts those. */
+  classifyRoot: string;
+  onUnclassifiedChange: (convId: string, unclassified: boolean) => void;
   /** Set while the list is narrowed to some channels: does this message's source pass? */
   channelMatch?: (message: FlowMessage, conversation: Conversation) => boolean;
   /** Set while a header column filter is engaged. */
@@ -355,6 +371,8 @@ export const ConversationListRow = memo(function ConversationListRow({
   onRequestDelete,
   cloudUserId,
   onVisibilityChange,
+  classifyRoot,
+  onUnclassifiedChange,
   channelMatch,
   columnFilter,
   attributionFor,
@@ -560,6 +578,7 @@ export const ConversationListRow = memo(function ConversationListRow({
     });
   }
 
+  const appHeader = latestMessage?.app?.header;
   const convId = conv.id ?? '';
   // useLayoutEffect (not useEffect) so the parent's `visibleIds` state is
   // updated before the browser paints — otherwise a row that ends up visible
@@ -570,6 +589,20 @@ export const ConversationListRow = memo(function ConversationListRow({
     onVisibilityChange(convId, !isHidden);
     return () => onVisibilityChange(convId, false);
   }, [convId, isHidden, onVisibilityChange]);
+  // Waiting for a tag: a shown message with none of this tree's tags that nobody has classified yet. An
+  // automation's own conversation never waits, and a message judged "no tag fits" was classified.
+  const unclassified =
+    !isHidden &&
+    !isInvitationRow &&
+    !!latestMessage &&
+    conv.channel !== AUTOMATIONS_CHANNEL &&
+    latestMessage.message_processing?.classification !== 'succeeded' &&
+    !(latestMessage.tags ?? []).some((tag) => tagIsWithin(tag, classifyRoot));
+  useEffect(() => {
+    if (!convId) return;
+    onUnclassifiedChange(convId, unclassified);
+    return () => onUnclassifiedChange(convId, false);
+  }, [convId, unclassified, onUnclassifiedChange]);
 
   if (isHidden) return null;
 
@@ -718,11 +751,17 @@ export const ConversationListRow = memo(function ConversationListRow({
         <span dir="auto" className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>
           {subject}
         </span>
-        {snippet && (
+        {/* An app message says its status and its app's header slot (text) in place of the snippet. */}
+        {(appHeader ?? snippet) && (
           <>
             <span className="mx-1 text-muted-foreground">—</span>
-            <span dir="auto" className="text-muted-foreground">
-              {snippet}
+            <AppStatusChip status={latestMessage?.app?.status} className="me-1.5" />
+            <span
+              dir="auto"
+              className="text-muted-foreground"
+              data-testid={appHeader != null ? 'stream-inbox-row-app-header' : undefined}
+            >
+              {appHeader ?? snippet}
             </span>
           </>
         )}
@@ -1015,6 +1054,9 @@ export function StreamInboxView({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // The ticked conversations' classification run, open in its table (`classify=<call id>` in the URL).
   const classifying = useClassifyRun();
+  // The shown conversations still waiting for a tag: the Classify button's count and its default set.
+  const [unclassifiedIds, setUnclassifiedIds] = useState<Set<string>>(new Set());
+  const { root: classifyRoot } = useClassificationSettings();
   const [selDeleteOpen, setSelDeleteOpen] = useState(false);
 
   // Text search over message bodies — server-side, via the `stream-inbox-search`
@@ -1169,16 +1211,14 @@ export function StreamInboxView({
     return [...ids];
   }, [batchedMessages]);
 
-  const handleRowVisibility = useCallback((convId: string, visible: boolean) => {
-    setVisibleIds((prev) => {
-      const has = prev.has(convId);
-      if (visible === has) return prev;
-      const next = new Set(prev);
-      if (visible) next.add(convId);
-      else next.delete(convId);
-      return next;
-    });
-  }, []);
+  const handleRowVisibility = useCallback(
+    (convId: string, visible: boolean) => setVisibleIds((prev) => withId(prev, convId, visible)),
+    [],
+  );
+  const handleRowUnclassified = useCallback(
+    (convId: string, unclassified: boolean) => setUnclassifiedIds((prev) => withId(prev, convId, unclassified)),
+    [],
+  );
 
   const visibleCount = visibleIds.size;
 
@@ -1646,6 +1686,25 @@ export function StreamInboxView({
             <Trans>Contacts</Trans>
           </Button>
           {desktopStreamInbox && <ProjectUploadMessageButton variant="outline" size="default" />}
+          {/* Classify every shown conversation that has no tag yet; drawn only while there is one. */}
+          {desktopStreamInbox && unclassifiedIds.size > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => classifying.start([...unclassifiedIds])}
+              data-testid="stream-inbox-classify-button"
+            >
+              <Tags className="me-1 h-3.5 w-3.5" />
+              <Trans>Classify</Trans>
+              <span
+                className="rounded-full bg-muted px-1.5 text-xs tabular-nums text-muted-foreground"
+                data-testid="stream-inbox-classify-count"
+              >
+                {unclassifiedIds.size}
+              </span>
+            </Button>
+          )}
           <div className="ms-auto flex min-w-0 items-center gap-2">{channelButtons}</div>
         </div>
       )}
@@ -2012,6 +2071,8 @@ export function StreamInboxView({
               onRequestDelete={handleRowDelete}
               cloudUserId={cloudUserId}
               onVisibilityChange={handleRowVisibility}
+              classifyRoot={classifyRoot}
+              onUnclassifiedChange={handleRowUnclassified}
               channelMatch={channelMatch}
               columnFilter={columnFilterActive ? columnFilter : undefined}
               attributionFor={attributionFor}

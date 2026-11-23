@@ -98,12 +98,14 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
     import flow_sdk.schema.data_spec.media_spec  # noqa: F401  — registers ``image.request`` / ``image.result`` / ``video.request`` / ``video.result``
     import flow_sdk.schema.data_spec.md_sync_spec  # noqa: F401  — registers ``md_sync.status``
+    import flow_sdk.schema.data_spec.message_app_spec  # noqa: F401  — registers ``message.app``
     import flow_sdk.schema.data_spec.message_form_spec  # noqa: F401  — registers ``message.form`` / ``message.form_answers``
     import flow_sdk.schema.data_spec.message_invite_spec  # noqa: F401  — registers ``message.invite``
     import flow_sdk.schema.data_spec.message_processing_spec  # noqa: F401  — registers ``stream_inbox.message.processing``
     import flow_sdk.schema.data_spec.message_reaction_spec  # noqa: F401  — registers ``message.reaction``
     import flow_sdk.schema.data_spec.message_sender_spec  # noqa: F401  — registers ``message.sender``
     import flow_sdk.schema.data_spec.message_state_spec  # noqa: F401  — registers ``stream_inbox.message.state``
+    import flow_sdk.schema.data_spec.nano_app_spec  # noqa: F401  — registers ``nano_app``
     import flow_sdk.schema.data_spec.navigator_spec  # noqa: F401  — registers ``navigator.route`` / ``navigator.target``
     import flow_sdk.schema.data_spec.page_state_spec  # noqa: F401  — registers ``page.state``
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``

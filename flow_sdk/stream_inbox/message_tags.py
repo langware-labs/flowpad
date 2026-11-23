@@ -517,6 +517,10 @@ async def retag_as_classification(message_id: str, *, add, remove, rules=None):
 
     async def change(m, s):
         s.suppressed_tags = [t for t in s.suppressed_tags if t not in add]
+        # A person settled where this message belongs -- "no tag fits" included -- so it is classified,
+        # and no longer waits for a classification. One already under way keeps its own state.
+        if s.classification not in {"pending", "running"}:
+            s.classification, s.classification_error = "succeeded", ""
         return apply_delta(m.tags, s, add=add, remove=remove(m, s) if callable(remove) else remove,
                            source=TagAssignment(source="classification"),
                            rules=await scoped_rules(m, rules), start_automations=False)
