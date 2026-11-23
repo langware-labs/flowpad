@@ -23,6 +23,7 @@ import logging
 import os
 import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import urlsplit
@@ -147,6 +148,10 @@ class BrowserProfile(DataSpec):
     id: str
     name: str
     email: Optional[str] = None
+    #: ISO times read off the profile's folder; None where the OS keeps none (Linux has no
+    #: creation time) or the profile never browsed.
+    created: Optional[str] = None
+    last_used: Optional[str] = None
 
 
 class Browser(DataSpec):
@@ -218,6 +223,37 @@ def _profile_sort_key(profile: BrowserProfile) -> tuple[int, int, str]:
     return (1, int(num), head) if num.isdigit() else (2, 0, profile.id)
 
 
+#: How far :func:`probe_chromium_profiles` looks: Chromium numbers its folders and leaves gaps.
+_PROBED_PROFILES = 64
+
+
+def _stamp(path: Path, field: str) -> Optional[str]:
+    """One time of ``path`` as ISO UTC; None when the path or the field is not there."""
+    try:
+        stamp = getattr(path.stat(), field, None)
+    except OSError:
+        return None
+    return datetime.fromtimestamp(stamp, tz=timezone.utc).isoformat(timespec="seconds") if stamp else None
+
+
+def folder_times(folder: Path, history: Path) -> dict[str, Optional[str]]:
+    """``created`` (the folder's birth time; Linux keeps none) and ``last_used`` (``history``'s
+    modified time — a Chromium profile rewrites its ``History`` whenever it browses)."""
+    return {"created": _stamp(folder, "st_birthtime"), "last_used": _stamp(history, "st_mtime")}
+
+
+def _chromium_profile(root: Path, folder: str, name: str = "", email: Optional[str] = None) -> BrowserProfile:
+    return BrowserProfile(id=folder, name=name or folder, email=email, **folder_times(root / folder, root / folder / "History"))
+
+
+def probe_chromium_profiles(root: Path) -> list[BrowserProfile]:
+    """The profiles under ``root`` found by their folders alone, named by folder id. For a root
+    whose ``Local State`` this process may not read (macOS privacy): asking about one named
+    folder is still answered there, listing the root is not."""
+    folders = ["Default", *(f"Profile {n}" for n in range(1, _PROBED_PROFILES + 1))]
+    return [_chromium_profile(root, folder) for folder in folders if (root / folder).is_dir()]
+
+
 def read_chromium_profiles(root: Path) -> list[BrowserProfile]:
     """``<root>/Local State`` → ``profile.info_cache``; ``[]`` when absent or unreadable."""
     try:
@@ -231,7 +267,7 @@ def read_chromium_profiles(root: Path) -> list[BrowserProfile]:
     if not isinstance(cache, dict):
         return []
     profiles = [
-        BrowserProfile(id=d, name=str(info.get("name") or d), email=info.get("user_name") or None)
+        _chromium_profile(root, d, str(info.get("name") or d), info.get("user_name") or None)
         for d, info in cache.items()
         if isinstance(info, dict)
     ]
@@ -367,13 +403,15 @@ class ExtensionProfile(DataSpec):
     """One browser profile and whether a given extension is installed in it."""
 
     browser: str
+    #: The browser's catalog id (``chrome``), where ``browser`` is its name for a person.
+    browser_id: str = ""
     profile: BrowserProfile
     installed: bool
 
 
 class ExtensionScan(DataSpec):
     """``denied``: a browser's profile list exists but this process may not read it
-    (macOS privacy), so its profiles are unknown — not absent."""
+    (macOS privacy), so its profiles are known by their folders only — not by name."""
 
     profiles: list[ExtensionProfile]
     denied: bool = False
@@ -393,11 +431,14 @@ def scan_extension(extension_id: str) -> ExtensionScan:
                 continue
             profiles = read_chromium_profiles(root) if os.access(root / "Local State", os.R_OK) else []
             if not profiles:
+                # The names are unknown; the folders still say which profiles there are.
                 denied = True
+                profiles = probe_chromium_profiles(root)
+            if not profiles:
                 continue
             for profile in profiles:
                 installed = (root / profile.id / "Extensions" / extension_id).is_dir()
-                found.append(ExtensionProfile(browser=browser.name, profile=profile, installed=installed))
+                found.append(ExtensionProfile(browser=browser.name, browser_id=browser.id, profile=profile, installed=installed))
             break
     return ExtensionScan(profiles=found, denied=denied)
 

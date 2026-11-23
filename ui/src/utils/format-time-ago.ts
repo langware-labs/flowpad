@@ -50,6 +50,14 @@ export function formatTimeAgoShort(value: string | number | Date | null | undefi
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** A day alone, in the app's language (`Feb 14, 2026`). Null for an absent or unparseable value. */
+export function formatDay(iso: string | Date | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(i18n.locale || undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 /**
  * The moment itself, to sit beside a "X ago": the clock time for today
  * (`13:24`), the date with it for any other day (`Nov 11, 09:12`). Null for an

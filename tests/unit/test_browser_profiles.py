@@ -268,7 +268,8 @@ def test_route_lists_and_opens(mac, launched, monkeypatch):
     body = client.get("/api/v1/browser-profiles").json()
     assert body["status"] == "SUCCESS"
     assert [b["id"] for b in body["data"]["browsers"]] == ["chrome", "firefox"]
-    assert body["data"]["browsers"][0]["profiles"][1] == {"id": "Profile 2", "name": "Work", "email": "me@work.test"}
+    work = body["data"]["browsers"][0]["profiles"][1]
+    assert {k: work[k] for k in ("id", "name", "email")} == {"id": "Profile 2", "name": "Work", "email": "me@work.test"}
 
     ok = client.post("/api/v1/browser-profiles/open", json={"browser": "chrome", "profile": "Default", "url": "https://a.test"})
     assert ok.json()["data"] == {"opened": True}

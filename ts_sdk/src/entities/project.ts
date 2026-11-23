@@ -542,6 +542,25 @@ export interface BrowserDriverInfo {
   config: Record<string, string>;
 }
 
+/** One browser a session can be given: an app, the way it is driven and one profile (`BrowserKindSpec`). */
+export interface BrowserKindInfo {
+  /** `<browser>.<driving>.name.<profile>` — what names it everywhere. */
+  kind: string;
+  browser: string;
+  driving: 'cdp' | 'extension';
+  /** The profile's folder id. */
+  profile: string;
+  name: string;
+  /** The driver that drives it, and what a menu draws from it. */
+  driver: SessionBrowser;
+  icon: string;
+  install_url: string;
+  state: BrowserDriverState;
+  /** ISO times of the profile's folder; null where the OS keeps none or it never browsed. */
+  created: string | null;
+  last_used: string | null;
+}
+
 export interface BrowserStatus {
   /** What the project recommends. */
   setting: SessionBrowser;
@@ -556,6 +575,8 @@ export interface BrowserStatus {
   /** This session's worker, by vendor key. */
   worker: string;
   drivers: BrowserDriverInfo[];
+  /** One per browser profile on this machine: the menu's rows, and what `flow browser list` prints. */
+  kinds: BrowserKindInfo[];
   extension: {
     installed: boolean;
     device: string;

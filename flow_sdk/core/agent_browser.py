@@ -65,6 +65,11 @@ def _profile_dir(base: Path, profile: str) -> Path:
     return base / "profile" if profile in ("", "default") else base / "profiles" / profile
 
 
+def profile_dir(driver: str = browser_drivers.DEFAULT, instance: str | None = None) -> Path:
+    """Where the driver's window keeps its profile on this machine."""
+    return _profile_dir(_driver_dir(instance, driver), browser_drivers.read_config(driver).get("profile") or "")
+
+
 def _state_path(instance: str | None = None, driver: str = browser_drivers.DEFAULT) -> Path:
     return _driver_dir(instance, driver) / "state.json"
 
@@ -149,20 +154,28 @@ class AgentBrowserError(RuntimeError):
     pass
 
 
-def executable_for(driver: str = browser_drivers.DEFAULT) -> Optional[str]:
-    """The program the driver's window runs: the app its config names, else the first of its
-    ``apps`` installed here. None when none is."""
+def app_for(driver: str = browser_drivers.DEFAULT) -> str:
+    """The browser app the driver's window runs, by ``browser_profiles`` id: the one its config
+    names, else the first of its ``apps`` installed here, else the first it could run."""
     from flow_sdk.core.browser_profiles import app_binary  # noqa: PLC0415
 
     spec = browser_drivers.get(driver)
     if spec is None:
-        return None
+        return ""
     chosen = browser_drivers.read_config(driver).get("app") or ""
-    if chosen:
-        return app_binary(chosen)
-    if driver == browser_drivers.DEFAULT and (found := find_browser()):
+    return chosen or next((app for app in spec.apps if app_binary(app)), "") or next(iter(spec.apps), "")
+
+
+def executable_for(driver: str = browser_drivers.DEFAULT) -> Optional[str]:
+    """The program the driver's window runs (:func:`app_for`). None when it is not installed."""
+    from flow_sdk.core.browser_profiles import app_binary  # noqa: PLC0415
+
+    if browser_drivers.get(driver) is None:
+        return None
+    if driver == browser_drivers.DEFAULT and not browser_drivers.read_config(driver).get("app") and (found := find_browser()):
         return found
-    return next((exe for exe in map(app_binary, spec.apps) if exe), None)
+    app = app_for(driver)
+    return app_binary(app) if app else None
 
 
 def ensure_running(instance: str | None = None, driver: str = browser_drivers.DEFAULT) -> AgentBrowserStatus:
@@ -176,7 +189,7 @@ def ensure_running(instance: str | None = None, driver: str = browser_drivers.DE
         wanted = browser_drivers.read_config(driver).get("app") or ", ".join(spec.apps if spec else ())
         raise AgentBrowserError(f"NO_BROWSER: none of these is installed: {wanted}")
     base = _driver_dir(instance, driver)
-    profile = _profile_dir(base, browser_drivers.read_config(driver).get("profile") or "")
+    profile = profile_dir(driver, instance)
     profile.mkdir(parents=True, exist_ok=True)
     port = _fixed_port(driver) or free_port()
     with open(base / "browser.log", "w") as log:

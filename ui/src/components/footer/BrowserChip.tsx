@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { BrowserDriverInfo, BrowserDriverState, BrowserStatus, SessionBrowser } from '@sdk';
+import type { BrowserDriverInfo, BrowserDriverState, BrowserKindInfo, BrowserStatus, SessionBrowser } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useProjectLocation } from '@src/hooks/use-project-location';
@@ -8,6 +8,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { lucideByName } from '@src/lib/lucide-by-name';
+import { formatDay } from '@src/utils/format-time-ago';
 import { Check } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -36,7 +37,7 @@ export function chipState(s: BrowserStatus, now: number): ChipState {
 }
 
 /** A driver a session of this worker can pick right now. */
-export function usable(d: BrowserDriverInfo): boolean {
+export function usable(d: Pick<BrowserDriverInfo, 'state'>): boolean {
   return d.state !== 'unsupported' && d.state !== 'not_installed';
 }
 
@@ -177,6 +178,30 @@ function useProfileNote(status: BrowserStatus | null) {
     );
 }
 
+/** What a kind's row says beside its name: how it is driven, and when its profile was last used
+ *  and created. */
+function KindNote({ kind }: { kind: BrowserKindInfo }) {
+  const used = formatDay(kind.last_used);
+  const created = formatDay(kind.created);
+  return (
+    <span className="flex gap-1.5">
+      <span>
+        {kind.browser} · {kind.driving}
+      </span>
+      {used && (
+        <span data-testid={`browser-row-${kind.kind}-used`}>
+          <Trans>used {used}</Trans>
+        </span>
+      )}
+      {created && (
+        <span data-testid={`browser-row-${kind.kind}-created`}>
+          <Trans>created {created}</Trans>
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** Add browser: every browser this Flowpad ships, what it needs for this session's worker, and
  *  "Use it". Nothing here knows a browser by name: each one describes itself. */
 function AddBrowserDialog({
@@ -267,7 +292,6 @@ export function BrowserChip() {
   const { project, status, refresh } = useBrowserStatus();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  const profileNote = useProfileNote(status);
   if (!project || !status) return null;
 
   const state = chipState(status, Date.now());
@@ -288,26 +312,28 @@ export function BrowserChip() {
         : status.source === 'project'
           ? t`Recommended by this project`
           : t`Default`;
-  const row = (d: BrowserDriverInfo) => {
-    const Glyph = lucideByName(d.icon);
+  // One row per browser kind: a driver's window, or one of the machine's browser profiles.
+  const row = (k: BrowserKindInfo) => {
+    const Glyph = lucideByName(k.icon);
+    const pickable = usable(k);
     return (
       <Row
-        key={d.name}
-        testId={`browser-row-${d.name}`}
+        key={k.kind}
+        testId={`browser-row-${k.kind}`}
         icon={<Glyph className="h-3.5 w-3.5" />}
-        name={d.title}
-        note={<StateNote state={d.state} />}
-        tone={TONE[d.state]}
-        profile={usable(d) ? profileNote(d) : undefined}
-        selected={d.name === status.effective}
-        disabled={!usable(d)}
-        onSelect={() => void choose(d.name)}
+        name={k.name}
+        note={<StateNote state={k.state} />}
+        tone={TONE[k.state]}
+        profile={<KindNote kind={k} />}
+        selected={pickable && k.driver === status.effective}
+        disabled={!pickable}
+        onSelect={() => void choose(k.driver)}
         action={
-          d.state === 'not_installed' && d.install_url ? (
-            <a className={smallBtn} href={d.install_url} target="_blank" rel="noreferrer">
+          k.state === 'not_installed' && k.install_url ? (
+            <a className={smallBtn} href={k.install_url} target="_blank" rel="noreferrer">
               <Trans>Install</Trans>
             </a>
-          ) : d.state === 'not_connected' ? (
+          ) : k.state === 'not_connected' ? (
             <button type="button" className={primaryBtn} onClick={() => void refresh()}>
               <Trans>Reconnect</Trans>
             </button>
@@ -348,7 +374,7 @@ export function BrowserChip() {
             </span>
           </button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-96 p-0" data-testid="browser-picker">
+        <PopoverContent align="end" className="w-[34rem] max-w-[95vw] p-0" data-testid="browser-picker">
           <div className="flex items-baseline justify-between gap-2 px-3 py-2 text-xs">
             <span className="font-semibold">
               <Trans>Browser</Trans>
@@ -357,7 +383,7 @@ export function BrowserChip() {
               {why}
             </span>
           </div>
-          {status.drivers.map(row)}
+          {(status.kinds ?? []).map(row)}
           {state === 'dropped' && fallback && (
             <div className="flex gap-1.5 border-t px-3 py-1.5" data-testid="browser-dropped">
               <button type="button" className={smallBtn} onClick={() => void choose(fallback.name)}>

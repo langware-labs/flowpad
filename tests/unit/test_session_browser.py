@@ -234,7 +234,37 @@ def test_scan_extension_finds_the_profile_it_is_installed_in(tmp_path, monkeypat
     assert {(p.profile.name, p.installed) for p in scan.profiles} == {("Shlomo", False), ("Work", True)}
     assert not scan.denied
     (root / "Local State").write_text("{}")  # unreadable shape ⇒ unknown, not absent
-    assert bp.scan_extension("ext-id").denied
+    (root / "Profile 1/History").write_text("")
+    blind = bp.scan_extension("ext-id")
+    assert blind.denied
+    by_folder = {p.profile.id: p for p in blind.profiles}
+    assert {k: (p.profile.name, p.installed) for k, p in by_folder.items()} == {
+        "Default": ("Default", False), "Profile 1": ("Profile 1", True)}, "an unreadable list is read off the folders"
+    assert by_folder["Profile 1"].profile.last_used and not by_folder["Default"].profile.last_used
+
+
+def test_the_kinds_are_one_per_profile(tmp_path, monkeypatch):
+    """The list the footer menu and `flow browser list` share: a managed driver's own window, and
+    one entry per real profile for the driver that rides the worker's extension."""
+    from flow_sdk.core import agent_browser, browser_drivers as bd, browser_profiles as bp
+
+    root = tmp_path / "Google/Chrome"
+    (root / "Profile 2/Extensions/ext-id").mkdir(parents=True)
+    (root / "Default").mkdir(parents=True)
+    (root / "Local State").write_text(json.dumps({"profile": {"info_cache": {"Default": {"name": "Home"}, "Profile 2": {"name": "Work"}}}}))
+    monkeypatch.setattr(bp, "_profile_roots", lambda b, os_name: [root] if b.id == "chrome" else [])
+    monkeypatch.setattr(bp, "app_binary", lambda app, os_name=None: "/bin/chrome" if app == "chrome" else None)
+    monkeypatch.setattr(agent_browser, "profile_dir", lambda driver="agent", instance=None: tmp_path / driver)
+    monkeypatch.setattr(bd, "read_config", lambda name: {"app": "", "profile": "default"})
+
+    states = {"agent": "ready", "chrome_debug": "ready", "extension": "not_connected"}
+    kinds = bd.list_kinds(states, bp.scan_extension("ext-id"))
+    assert {k.kind: (k.name, k.driver, k.state) for k in kinds} == {
+        "chrome.cdp.name.agent-default": ("Embedded", "agent", "ready"),
+        "chrome.cdp.name.chrome_debug-default": ("Chrome debug", "chrome_debug", "ready"),
+        "chrome.extension.name.Default": ("Home", "extension", "not_installed"),
+        "chrome.extension.name.Profile 2": ("Work", "extension", "not_connected"),
+    }
 
 
 def test_last_browser_use_opencode_and_deepagents(tmp_path):

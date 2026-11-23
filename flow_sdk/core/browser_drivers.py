@@ -27,6 +27,7 @@ from flow_sdk.schema.data_spec.browser_driver_spec import (
     ANY_WORKER,
     BrowserAttach,
     BrowserDriverSpec,
+    BrowserKindSpec,
     BrowserProbe,
     WorkerSetupSpec,
 )
@@ -234,3 +235,39 @@ def state_of(
             return "not_installed"
         return "connected" if in_use and not failed else "not_connected"
     return window or window_state(name)
+
+
+# ── kinds ──────────────────────────────────────────────────────────────────
+
+
+def list_kinds(states: Mapping[str, str], scan: Any = None) -> list[BrowserKindSpec]:
+    """Every browser a session could be given on this machine, one per profile: the list a person
+    sees in the footer menu and an agent reads with ``flow browser list``.
+
+    A driver that rides the worker's extension gives one entry per real browser profile
+    (``scan``: :func:`browser_profiles.scan_extension`); a managed driver gives its own window,
+    on the profile of Flowpad's it is configured with. ``states``: each driver's
+    :func:`state_of`, read once by the caller."""
+    from flow_sdk.core import agent_browser  # noqa: PLC0415
+    from flow_sdk.core.browser_profiles import folder_times  # noqa: PLC0415
+
+    kinds: list[BrowserKindSpec] = []
+    for spec in list_drivers():
+        state = states.get(spec.name, "")
+        common = {"driving": spec.probe, "driver": spec.name, "icon": spec.icon, "install_url": spec.install_url}
+        if spec.probe is BrowserProbe.EXTENSION:
+            for found in scan.profiles if scan is not None else ():
+                profile = found.profile
+                kinds.append(BrowserKindSpec(
+                    browser=found.browser_id, profile=profile.id, name=profile.name,
+                    state=state if found.installed or state == "unsupported" else "not_installed",
+                    created=profile.created, last_used=profile.last_used, **common,
+                ))
+            continue
+        folder = agent_browser.profile_dir(spec.name)
+        # Qualified by the driver: two managed drivers on "default" are two folders.
+        kinds.append(BrowserKindSpec(
+            browser=agent_browser.app_for(spec.name), profile=f"{spec.name}-{read_config(spec.name).get('profile') or 'default'}",
+            name=spec.title or spec.name, state=state, **folder_times(folder, folder / "Default" / "History"), **common,
+        ))
+    return kinds

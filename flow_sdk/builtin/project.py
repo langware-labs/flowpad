@@ -834,7 +834,7 @@ class Project(SetupSkippable, Entity):
                                        project_browser=setting, worker=worker, has_switch=has_switch)
         )
 
-        def _probe() -> tuple[dict, dict | None, list[dict]]:
+        def _probe() -> tuple[dict, dict | None, list[dict], list[dict]]:
             last_use = None
             if process is not None:
                 from flow_sdk.builtin.agentic_process.transcript_cache import transcript_path  # noqa: PLC0415
@@ -846,6 +846,7 @@ class Project(SetupSkippable, Entity):
                 last_use = max(uses, key=lambda u: u["at"] or "") if uses else None
             # Extension facts only for a worker that has one.
             extension: dict = {"installed": False, "device": ""}
+            scan = None
             if options.EXTENSION_ID:
                 from flow_sdk.core.browser_profiles import scan_extension  # noqa: PLC0415
 
@@ -867,9 +868,10 @@ class Project(SetupSkippable, Entity):
                     "setup": setup.setup if setup is not None else "",
                     "config": browser_drivers.read_config(spec.name),
                 })
-            return extension, last_use, drivers
+            kinds = browser_drivers.list_kinds({driver["name"]: driver["state"] for driver in drivers}, scan)
+            return extension, last_use, drivers, [kind.model_dump(mode="json") for kind in kinds]
 
-        extension, last_use, drivers = await asyncio.to_thread(_probe)
+        extension, last_use, drivers, kinds = await asyncio.to_thread(_probe)
         return ApiSuccessResponse(
             data={
                 "setting": setting,
@@ -880,6 +882,8 @@ class Project(SetupSkippable, Entity):
                 "requested": launch.requested,
                 "worker": worker,
                 "drivers": drivers,
+                # One per browser profile: what the menu lists and `flow browser list` prints.
+                "kinds": kinds,
                 "extension": extension,
                 "last_use": last_use,
             }

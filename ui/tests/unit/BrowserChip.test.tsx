@@ -23,6 +23,7 @@ const base: BrowserStatus = {
   requested: '',
   worker: 'claude',
   drivers: [driver('agent', 'ready'), driver('extension', 'not_installed', false)],
+  kinds: [],
   extension: { installed: false, device: '' },
   last_use: null,
 };
