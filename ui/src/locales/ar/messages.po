@@ -10590,6 +10590,10 @@ msgstr "تم الإنشاء"
 msgid "Created"
 msgstr "تاريخ الإنشاء"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "created {created}"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Created through"
 msgstr "أُنشئ عبر"
@@ -19561,12 +19565,12 @@ msgstr "أدوات MCP"
 
 #: src/components/conversation/task-it.tsx
 #: src/components/conversation/task-it.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "Me"
 msgstr "أنا"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-#: src/components/data-sources/DataSourceDialog.tsx
-#: src/components/data-sources/DataSourcePage.tsx
 msgid "Meaning"
 msgstr "المعنى"
 
@@ -23753,13 +23757,13 @@ msgstr "يمكن فتح مشروع لتحديد الأسرار التي تستط
 msgid "Open a project to run these changes."
 msgstr "يجب فتح مشروع لتنفيذ هذه التغييرات."
 
-#: src/pages/discover-page/discover-page.tsx
-msgid "Open a project to see its assets."
-msgstr "يمكن فتح مشروع لعرض موارده."
-
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Open a project to save it there"
 msgstr "افتح مشروعًا لحفظه فيه"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Open a project to see its assets."
+msgstr "يمكن فتح مشروع لعرض موارده."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Open a project to see its data model."
@@ -26146,12 +26150,12 @@ msgstr "مشروع"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/explorer-view/useExplorerModel.tsx
-#: src/components/data-sources/DataSourceDialog.tsx
-#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/home-tiles/HomeTiles.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
@@ -29560,10 +29564,6 @@ msgstr "يُحفظ بعد إنشاء نقطة النهاية. لن يُعرض م
 msgid "Saved Contexts"
 msgstr "السياقات المحفوظة"
 
-#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Saved to My project"
-msgstr "تم الحفظ في My project"
-
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Saved for"
@@ -29572,6 +29572,10 @@ msgstr "محفوظ لـ"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Saved in this project's folder: it goes into git and to everyone who sets the project up."
 msgstr "محفوظ في مجلد هذا المشروع: يدخل إلى git ويصل إلى كل من يُعدّ المشروع."
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Saved to My project"
+msgstr "تم الحفظ في My project"
 
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 msgid "Saved to project"
@@ -37090,6 +37094,10 @@ msgstr "استخدام بيئة عزل أضعف للأوامر المتداخل�
 msgid "used"
 msgstr "مستخدَم"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "used {used}"
+msgstr ""
+
 #: src/notifications/error-detail.ts
 msgid "Used / cap"
 msgstr "المستهلَك / الحد الأقصى"
@@ -39009,6 +39017,10 @@ msgstr "مساحة العمل الخاصة بكم جاهزة"
 msgid "Your WorldView"
 msgstr "عرضكم الشامل"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Yours alone: kept outside every project, never shared with one."
+msgstr "لك وحدك: يُحفظ خارج كل المشاريع ولا يُشارك مع أيٍّ منها."
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "zendesk, gmail"
 msgstr "zendesk، gmail"
@@ -39016,10 +39028,6 @@ msgstr "zendesk، gmail"
 #: src/components/drag-drop-overlay.tsx
 msgid "ZIP files will be added as codebase connections"
 msgstr "سيتم إضافة ملفات ZIP كاتصالات قاعدة الكود"
-
-#: src/components/data-sources/DataSourceDialog.tsx
-msgid "Yours alone: kept outside every project, never shared with one."
-msgstr "لك وحدك: يُحفظ خارج كل المشاريع ولا يُشارك مع أيٍّ منها."
 
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx

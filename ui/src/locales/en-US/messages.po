@@ -10590,6 +10590,10 @@ msgstr "created"
 msgid "Created"
 msgstr "Created"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "created {created}"
+msgstr "created {created}"
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Created through"
 msgstr "Created through"
@@ -19561,12 +19565,12 @@ msgstr "MCP tools"
 
 #: src/components/conversation/task-it.tsx
 #: src/components/conversation/task-it.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "Me"
 msgstr "Me"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
-#: src/components/data-sources/DataSourceDialog.tsx
-#: src/components/data-sources/DataSourcePage.tsx
 msgid "Meaning"
 msgstr "Meaning"
 
@@ -23753,13 +23757,13 @@ msgstr "Open a project to choose which of its secrets this machine can see."
 msgid "Open a project to run these changes."
 msgstr "Open a project to run these changes."
 
-#: src/pages/discover-page/discover-page.tsx
-msgid "Open a project to see its assets."
-msgstr "Open a project to see its assets."
-
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Open a project to save it there"
 msgstr "Open a project to save it there"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Open a project to see its assets."
+msgstr "Open a project to see its assets."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Open a project to see its data model."
@@ -26146,12 +26150,12 @@ msgstr "project"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/explorer-view/useExplorerModel.tsx
-#: src/components/data-sources/DataSourceDialog.tsx
-#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/home-tiles/HomeTiles.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
@@ -29560,10 +29564,6 @@ msgstr "Saved after the endpoint is created. Never shown again."
 msgid "Saved Contexts"
 msgstr "Saved Contexts"
 
-#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Saved to My project"
-msgstr "Saved to My project"
-
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Saved for"
@@ -29572,6 +29572,10 @@ msgstr "Saved for"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Saved in this project's folder: it goes into git and to everyone who sets the project up."
 msgstr "Saved in this project's folder: it goes into git and to everyone who sets the project up."
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Saved to My project"
+msgstr "Saved to My project"
 
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 msgid "Saved to project"
@@ -37090,6 +37094,10 @@ msgstr "Use weaker sandbox for nested commands"
 msgid "used"
 msgstr "used"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "used {used}"
+msgstr "used {used}"
+
 #: src/notifications/error-detail.ts
 msgid "Used / cap"
 msgstr "Used / cap"
@@ -39009,6 +39017,10 @@ msgstr "Your workspace is ready"
 msgid "Your WorldView"
 msgstr "Your WorldView"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Yours alone: kept outside every project, never shared with one."
+msgstr "Yours alone: kept outside every project, never shared with one."
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "zendesk, gmail"
 msgstr "zendesk, gmail"
@@ -39016,10 +39028,6 @@ msgstr "zendesk, gmail"
 #: src/components/drag-drop-overlay.tsx
 msgid "ZIP files will be added as codebase connections"
 msgstr "ZIP files will be added as codebase connections"
-
-#: src/components/data-sources/DataSourceDialog.tsx
-msgid "Yours alone: kept outside every project, never shared with one."
-msgstr "Yours alone: kept outside every project, never shared with one."
 
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
