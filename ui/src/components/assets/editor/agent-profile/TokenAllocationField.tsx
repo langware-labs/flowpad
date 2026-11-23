@@ -343,7 +343,6 @@ function ConfigureButton({
         tokenAllocation: value,
         deploymentId: deploymentId ?? undefined,
         mainAgentId,
-        ...(mainAgentId ? { identity: 'deployment' as const } : {}),
       });
       const allocation = planned.deployment?.llm_endpoint_typeid;
       if (allocation) openLlmEndpoint(navigation, allocation);

@@ -31556,8 +31556,8 @@ msgid "Sign in to view access."
 msgstr "سجّلوا الدخول لعرض الصلاحيات."
 
 #: src/components/conversation/ConversationRoute.tsx
-#~ msgid "Sign in to your Flowpad Cloud account to view and reply to this conversation."
-#~ msgstr "يرجى تسجيل الدخول إلى حساب Flowpad Cloud لعرض هذه المحادثة والرد عليها."
+msgid "Sign in to your Flowpad Cloud account to view and reply to this conversation."
+msgstr "يرجى تسجيل الدخول إلى حساب Flowpad Cloud لعرض هذه المحادثة والرد عليها."
 
 #: src/components/login-required-overlay.tsx
 msgid "Sign in to your Flowpad Cloud account to view and send conversations."

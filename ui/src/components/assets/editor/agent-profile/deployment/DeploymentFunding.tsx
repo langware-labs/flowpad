@@ -159,8 +159,6 @@ function ChangeAllocation({
         tokenAllocation: value,
         deploymentId: deployment.id,
         mainAgentId: deployment.main_agent_id,
-        // A plan re-casts the named row: without its own identity the hub would reset it to its default.
-        identity: deployment.identity,
       });
       notify.success({ title: value ? t`Allocation saved` : t`Back on the owner's default` });
       close();

@@ -60,7 +60,7 @@ def deploy(
     environment: Annotated[Optional[str], typer.Option("--environment", help="The placement's environment (default: production).")] = None,
     provider: Annotated[str, typer.Option("--provider", help="The compute provider to deploy on; `flow agent providers` lists them.")] = "e2b",
     blocking: Annotated[bool, typer.Option("--blocking/--no-blocking", help="Wait for the deploy to end, printing each step as it reports.")] = True,
-    identity: Annotated[str, typer.Option("--identity", help="Who the machine signs in as: deployment (default), agent, user or none.")] = "deployment",
+    identity: Annotated[Optional[str], typer.Option("--identity", help="Who the machine signs in as: agent (default), deployment, user or none.")] = None,
 ) -> None:
     """Deploy AGENT's project with AGENT as its main agent; refused (exit 1) until the placement has what it needs.
     Blocks until it ends unless --no-blocking."""

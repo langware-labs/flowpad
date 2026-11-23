@@ -102,7 +102,6 @@ function deployment(funding: DeploymentFunding) {
     environment: 'production',
     target: { provider: 'gcp_vm', scope: 'production' },
     main_agent_id: 'agent-33333333-3333-4333-8333-333333333333',
-    identity: 'deployment',
   } as never);
   d.funding = () => Promise.resolve(funding);
   return d;
@@ -172,7 +171,5 @@ describe('Change allocation', () => {
       cost_usd_per_day: 6,
       model: 'google/gemini-3.1-pro-preview',
     });
-    // The plan re-casts the named row: it keeps its own sign-in, never the hub's default.
-    expect(plan.mock.calls[0][0]?.identity).toBe('deployment');
   });
 });

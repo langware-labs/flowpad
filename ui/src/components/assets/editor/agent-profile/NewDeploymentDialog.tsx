@@ -213,12 +213,7 @@ export function NewDeploymentDialog({
         deploymentId: refused?.deployment.id,
         values: typedValues(needs, typed),
         ...(mainAgentId
-          ? {
-              identity: 'deployment' as const,
-              agentMode: agentMode.mode,
-              channels: agentMode.channels,
-              idlePauseSeconds: agentMode.idleSeconds,
-            }
+          ? { agentMode: agentMode.mode, channels: agentMode.channels, idlePauseSeconds: agentMode.idleSeconds }
           : {}),
       });
       // Taken on: the machine is placed in the background, after this answer.
