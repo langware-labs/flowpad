@@ -14,21 +14,32 @@ description: login_state is written from evidence of unequal strength, and both 
 > Ground truth. Proven by RCA on 2026-08-30 (undetermined probe → signed out) and
 > 2026-08-31 (presence-only probe → signed in). Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.harness_login_state.rules
 sites:
-  - rel_path: "tests/unit/test_capabilities/test_harness_login_state_mapping.py"
+  - rel_path: tests/unit/test_capabilities/test_harness_login_state_mapping.py
     line: 43
-    note: "FAILING? an undetermined auth probe is being recorded as signed out - read this tag's rules before touching _mirror_probe_to_login_state or the probe status mapping"
-  - rel_path: "tests/unit/test_capabilities/test_harness_login_state_mapping.py"
+    note: FAILING? an undetermined auth probe is being recorded as signed out - read this tag's rules before touching _mirror_probe_to_login_state or the probe status mapping
+  - rel_path: tests/unit/test_capabilities/test_harness_login_state_mapping.py
     line: 73
-    note: "FAILING? the harness's own 'Not logged in' refusal is no longer recorded - read this tag's rules before touching report_signed_out_action"
-  - rel_path: "tests/unit/test_capabilities/test_harness_login_state_mapping.py"
+    note: FAILING? the harness's own 'Not logged in' refusal is no longer recorded - read this tag's rules before touching report_signed_out_action
+  - rel_path: tests/unit/test_capabilities/test_harness_login_state_mapping.py
     line: 137
-    note: "FAILING? a presence-only auth probe is overturning a sign-out the harness itself reported - read this tag's rules before touching _mirror_probe_to_login_state or probe_claude_auth's verified flag"
-  - rel_path: "tests/unit/test_capabilities/test_harness_login_state_mapping.py"
+    note: FAILING? a presence-only auth probe is overturning a sign-out the harness itself reported - read this tag's rules before touching _mirror_probe_to_login_state or probe_claude_auth's verified flag
+  - rel_path: tests/unit/test_capabilities/test_harness_login_state_mapping.py
     line: 219
-    note: "FAILING? a user-invoked Test can no longer clear a recorded refusal - read this tag's rules before touching auth_status_action's force flag"
+    note: FAILING? a user-invoked Test can no longer clear a recorded refusal - read this tag's rules before touching auth_status_action's force flag
+proven: '2026-08-30'
+statements:
+  - text: Only a decided verdict writes `login_state`.
+  - text: An undetermined probe moves the field in neither direction.
+  - text: A login in flight is untouchable.
+  - text: One mapping, one place.
+  - text: '`login_state` is `DeviceLoginState`, not a string.'
+  - text: Broadcast only on change.
+  - text: A presence-only positive never overturns a witnessed refusal.
+  - text: Only stronger evidence clears `login_denied`.
+  - text: The silent re-probe and the Test button are not the same call.
 ```
 
 ## Expected behavior

@@ -1,5 +1,5 @@
 import { EntityCard } from '@src/components/entity-card/EntityCard';
-import { Check, ChevronDown, FolderSearch, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Check, ChevronDown, FolderSearch, ChevronRight, Loader2 } from 'lucide-react';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -104,10 +104,10 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     className = '',
     persistKey,
     defaultExpandedIds,
-    hoverExpandMs,
     hoverSeenMs,
-    levelFooter,
-    mirrored = false,
+    previewSide = 'end',
+    flat = false,
+    rootless = false,
   } = props;
 
   const tree = useBrowseableTree(roots, { persistKey, defaultExpandedIds });
@@ -190,6 +190,14 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     selectionRef.current?.clear();
   }, [rootIdsKey]);
 
+  // A rootless tree has no row to open its roots with, so they are open: a
+  // restored expansion set that lacks them would otherwise leave them unlisted
+  // for refreshes and range selection.
+  useEffect(() => {
+    if (rootless) for (const root of roots) if (!tree.isExpanded(root.id)) void tree.expand(root);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootless, rootIdsKey]);
+
   const handleNavigate = useCallback(
     (pointer: DockPointer) => {
       onNavigate?.(pointer);
@@ -255,9 +263,6 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   if (roots.length === 0) {
     return (
       <div className={`p-4 text-center ${className}`}>
-        {/* The root level can still take a first row — an empty tree is
-            exactly when its "add here" matters most. */}
-        {levelFooter?.('', mirrored)}
         {emptyState ?? (
           <p className="text-xs text-muted-foreground">
             <Trans>No items</Trans>
@@ -282,17 +287,16 @@ export function BrowseableTree(props: BrowseableTreeProps) {
       )}
       <div className="flex-1 space-y-0.5 overflow-auto p-1">
         <KeyRowContext.Provider value={keyRowRef}>
-        {levelFooter?.('', mirrored)}
         {roots.map((root) => (
           <BrowseableRow
             key={root.id}
             node={root}
             level={0}
             rootId={root.id}
-            hoverExpandMs={hoverExpandMs}
             hoverSeenMs={hoverSeenMs}
-            mirrored={mirrored}
-            levelFooter={levelFooter}
+            previewSide={previewSide}
+            flat={flat}
+            headless={rootless}
             tree={tree}
             selection={selection}
             activePointer={activePointer}
@@ -333,6 +337,8 @@ function useDwell(ms: number | undefined, run: () => void) {
 
 interface RowProps {
   node: Browseable;
+  /** The container this row is listed in — it owns the manual order of its children. */
+  parent?: Browseable;
   level: number;
   /** Id of the top-level root this row lives under — the multi-select scope. */
   rootId: string;
@@ -351,18 +357,19 @@ interface RowProps {
   dragData: BrowseableDragData | null;
   onDragStart: (data: BrowseableDragData) => void;
   onDragEnd: () => void;
-  /** Dwell (ms) before hover expands this row. Undefined ⇒ nothing is
-   *  scheduled ⇒ ordinary navigators never expand on hover. */
-  hoverExpandMs?: number;
   /** Dwell (ms) before hover fires this row's `onHoverSeen`. Undefined ⇒ never. */
   hoverSeenMs?: number;
-  levelFooter?: (parentId: string, mirrored: boolean) => React.ReactNode;
-  /** Flip the direction cues for a leftward-growing menu — see BrowseableTreeProps. */
-  mirrored?: boolean;
+  /** Which side row previews open on — see BrowseableTreeProps. */
+  previewSide?: 'start' | 'end';
+  /** No row expands, so no chevron column — see BrowseableTreeProps. */
+  flat?: boolean;
+  /** A root of a `rootless` tree: no row, always open, its children at its own level. */
+  headless?: boolean;
 }
 
 function BrowseableRow({
   node,
+  parent,
   level,
   rootId,
   tree,
@@ -377,16 +384,19 @@ function BrowseableRow({
   dragData,
   onDragStart,
   onDragEnd,
-  hoverExpandMs,
   hoverSeenMs,
-  levelFooter,
-  mirrored = false,
+  previewSide = 'end',
+  flat = false,
+  headless = false,
 }: RowProps) {
   const { t } = useLingui();
-  const expanded = tree.isExpanded(node.id);
+  const expanded = headless || tree.isExpanded(node.id);
+  const childLevel = headless ? level : level + 1;
   const loadState = tree.getLoadState(node.id);
   const children = tree.getChildren(node.id);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  /** The gap a reorder drop would land in — drawn as a line on that edge of the row. */
+  const [dropEdge, setDropEdge] = useState<'before' | 'after' | null>(null);
   const [isDropping, setIsDropping] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -536,43 +546,21 @@ function BrowseableRow({
     if (next && next !== node.label) await node.onRename?.(next);
   }, [draft, node]);
 
-  // The row's two hover dwells (menu mode). Hover-expand only ever EXPANDS —
-  // never toggles: the pointer rests on a row it just expanded, so a toggle
-  // would collapse it again and flicker. Collapse stays chevron / click /
-  // double-click. Hover-seen stamps "the user looked at this" without opening
-  // it; it re-fires on every qualifying dwell, so the stamp must be idempotent
-  // (Bookmark.markSeen is).
-  const expandDwell = useDwell(hoverExpandMs, () => void tree.expand(node));
+  // The row's hover dwell (menu mode): stamps "the user looked at this" without
+  // opening it. It re-fires on every qualifying dwell, so the stamp must be
+  // idempotent (Bookmark.markSeen is).
   const seenDwell = useDwell(hoverSeenMs, () => node.onHoverSeen?.());
-  // An explicit collapse latches hover off until the pointer leaves and comes
-  // back. Without it, collapsing via the chevron re-expands ~150ms later — the
-  // chevron lives inside the row, so collapsing it never ends the hover.
-  const suppressHoverExpand = useRef(false);
 
   const handleRowPointerEnter = useCallback(
     (e: React.PointerEvent) => {
-      if (e.pointerType !== 'mouse') return;
-      seenDwell.start();
-      if (hasChildrenHint && !expanded && !suppressHoverExpand.current) expandDwell.start();
+      if (e.pointerType === 'mouse') seenDwell.start();
     },
-    [expandDwell, seenDwell, hasChildrenHint, expanded],
+    [seenDwell],
   );
 
-  const handleRowPointerLeave = useCallback(() => {
-    expandDwell.cancel();
-    seenDwell.cancel();
-    suppressHoverExpand.current = false;
-  }, [expandDwell, seenDwell]);
+  const handleRowPointerLeave = seenDwell.cancel;
 
-  /** The one way to toggle from a deliberate user action. Latches hover-expand
-   *  off as it goes: the pointer is still on the row you just collapsed, so
-   *  without this the dwell would re-expand it ~150ms later. Any future
-   *  explicit-collapse path (a keyboard ArrowLeft, a context menu) must come
-   *  through here, or it silently reintroduces that. */
-  const explicitToggle = useCallback(() => {
-    suppressHoverExpand.current = true;
-    void tree.toggleExpand(node);
-  }, [node, tree]);
+  const explicitToggle = useCallback(() => void tree.toggleExpand(node), [node, tree]);
 
   const handleChevronClick = useCallback(
     (e: React.MouseEvent) => {
@@ -588,6 +576,20 @@ function BrowseableRow({
   // (HTML5 hides the body pre-drop) — accept optimistically on MIME presence
   // and run the full canDrop check at drop time via readBrowseableDrag.
   const canAcceptDrop = !!(dragData && node.onDrop && (!node.canDrop || node.canDrop(dragData)));
+  // A leaf in a container that orders its children takes a drop on its upper or
+  // lower half: the dragged row lands before or after it. Containers keep the
+  // whole row for "drop into".
+  const reorderChildren = !node.listChildren ? parent?.reorderChildren : undefined;
+  const canReorder = !!(
+    reorderChildren &&
+    dragData &&
+    dragData.id !== node.dragData?.id &&
+    (!parent?.canDrop || parent.canDrop(dragData))
+  );
+  const edgeAt = (e: React.DragEvent): 'before' | 'after' => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return e.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+  };
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
       if (!node.dragData) return;
@@ -606,11 +608,19 @@ function BrowseableRow({
 
   const handleDragEnd = useCallback(() => {
     setIsDropTarget(false);
+    setDropEdge(null);
     onDragEnd();
   }, [onDragEnd]);
 
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
+      if (canReorder) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        setDropEdge(edgeAt(e));
+        return;
+      }
       const foreign = !dragData && !!node.onDrop && hasBrowseableDrag(e);
       // OS files from outside the app (only the 'Files' type is visible
       // pre-drop) — a copy into the node, not a move within the tree.
@@ -621,16 +631,29 @@ function BrowseableRow({
       e.dataTransfer.dropEffect = (external && !canAcceptDrop && !foreign) || e.altKey ? 'copy' : 'move';
       setIsDropTarget(true);
     },
-    [canAcceptDrop, dragData, node.onDrop, node.onExternalFilesDrop],
+    [canAcceptDrop, canReorder, dragData, node.onDrop, node.onExternalFilesDrop],
   );
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
     setIsDropTarget(false);
+    setDropEdge(null);
   }, []);
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
+      if (canReorder && dragData) {
+        e.preventDefault();
+        e.stopPropagation();
+        setDropEdge(null);
+        const anchorId = node.dragData?.id ?? node.id;
+        try {
+          await reorderChildren!(dragData.id, edgeAt(e) === 'before' ? { beforeId: anchorId } : { afterId: anchorId });
+        } finally {
+          onDragEnd();
+        }
+        return;
+      }
       // Payload: lifted state for intra-tree drags, MIME body for foreign ones.
       const payload = dragData ?? readBrowseableDrag(e);
       if (!payload) {
@@ -669,32 +692,19 @@ function BrowseableRow({
         onDragEnd();
       }
     },
-    [dragData, node, onDragEnd],
+    [dragData, node, onDragEnd, canReorder, reorderChildren],
   );
 
-  /** Rows indent away from the side they start on, so the nesting reads as
-   *  nesting whichever way the menu grows. */
-  const indentSide = mirrored ? 'marginInlineEnd' : 'marginInlineStart';
-
-  /**
-   * Which way the "there is more this way" cues point — the collapsed chevron
-   * and the row preview.
-   *
-   * Two independent facts decide it, so it is an XOR: the ambient reading
-   * direction (Hebrew and Arabic ship in `src/locales`), and whether this tree
-   * reversed its axis. Hardcoding either one alone gets the other case
-   * backwards — which is what the LTR-only constants here did to every RTL
-   * locale, in all of this component's consumers, before `mirrored` existed.
-   */
-  const cuePointsLeft = (useLocaleInfo().dir === 'rtl') !== !!mirrored;
+  /** Row previews open toward `previewSide`, a LOGICAL side: resolved against
+   *  the locale's direction here, so a panel on the inline-end edge passes
+   *  'start' once and is right in Hebrew and Arabic too. */
+  const previewOpensLeft = (useLocaleInfo().dir === 'rtl') !== (previewSide === 'start');
 
   // Built once, wrapped conditionally below: the tooltip is the ONLY
   // difference between the two cases and the row is ~100 lines.
   const rowEl = (
     <div
       className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-[color,background-color,border-color,opacity] ${
-        mirrored ? 'flex-row-reverse' : ''
-      } ${
         isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
       } ${dimmed ? RAIL_DIM_WHEN_CLOSED : ''} ${
         // Multi-select ring — distinct from, and composable with, the active
@@ -703,7 +713,7 @@ function BrowseableRow({
       } ${node.pointer || canSelect ? 'cursor-pointer' : 'cursor-default'} ${node.dragData ? 'active:cursor-grabbing' : ''} ${
         isDropTarget ? 'bg-primary/10 ring-1 ring-primary/40' : ''
       } ${isDropping ? 'opacity-60' : ''} ${node.rowClassName ?? ''}`}
-      style={{ [indentSide]: `${level * 14}px` }}
+      style={{ marginInlineStart: `${level * 14}px` }}
       role="treeitem"
       aria-level={level + 1}
       aria-selected={isSelected}
@@ -728,11 +738,13 @@ function BrowseableRow({
         void handleDrop(e);
       }}
     >
-      <div
-        className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
-          mirrored ? 'flex-row-reverse text-end' : ''
-        }`}
-      >
+      {dropEdge && (
+        <div
+          data-testid={`browseable-drop-${dropEdge}`}
+          className={`pointer-events-none absolute inset-x-0 h-0.5 bg-primary ${dropEdge === 'before' ? 'top-0' : 'bottom-0'}`}
+        />
+      )}
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
         {hasChildrenHint ? (
           <button
             type="button"
@@ -746,14 +758,12 @@ function BrowseableRow({
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
             ) : expanded ? (
               <ChevronDown className="h-3 w-3 text-muted-foreground" />
-            ) : cuePointsLeft ? (
-              <ChevronLeft className="h-3 w-3 text-muted-foreground" />
             ) : (
               <ChevronRight className="h-3 w-3 text-muted-foreground rtl:-scale-x-100" />
             )}
           </button>
         ) : (
-          <div className="w-4 flex-shrink-0" />
+          !flat && <div className="w-4 flex-shrink-0" />
         )}
 
         <div
@@ -791,9 +801,8 @@ function BrowseableRow({
         </div>
       </div>
 
-      {/* The row's LAST flex child, so it sits on the edge OPPOSITE the chevron
-          in both orientations (a mirrored row reverses it along with
-          everything else). Its slot is always allocated and only its
+      {/* The row's LAST flex child, so it sits on the edge OPPOSITE the chevron.
+          Its slot is always allocated and only its
           visibility changes on hover: nothing slides into the spot the pointer
           was aiming at, and a content-sized menu doesn't resize under it. The
           slot is text-height (`h-4`) and the buttons overflow it, so reserving
@@ -875,8 +884,15 @@ function BrowseableRow({
       data-browseable-id={node.id}
       data-selection-key={node.selectionKey}
       data-resource-vfs={node.pointer?.resourceVfsPath?.uri}
+      // A headless root has no row, so the list itself takes its drops (the empty space under the rows).
+      {...(headless && {
+        className: `min-h-full pb-4 ${isDropTarget ? 'rounded-md bg-primary/10' : ''}`,
+        onDragOver: handleDragOver,
+        onDragLeave: handleDragLeave,
+        onDrop: (e: React.DragEvent) => void handleDrop(e),
+      })}
     >
-      {hasTip ? (
+      {headless ? null : hasTip ? (
         <Tooltip>
           {triggerEl}
           {/* Sideways, never below: rows stack vertically, so a bottom tooltip
@@ -888,11 +904,11 @@ function BrowseableRow({
               pointerleave and closes a menu the user never left. The preview is
               read-only, so there is nothing in it to click. */}
           {node.entity ? (
-            <TooltipContent side={cuePointsLeft ? 'left' : 'right'} className="pointer-events-none p-0">
+            <TooltipContent side={previewOpensLeft ? 'left' : 'right'} className="pointer-events-none p-0">
               <EntityCard type={node.entity.type} id={node.entity.id} fallbackName={node.label} />
             </TooltipContent>
           ) : (
-            <TooltipContent side={cuePointsLeft ? 'left' : 'right'} className="pointer-events-none max-w-xs">
+            <TooltipContent side={previewOpensLeft ? 'left' : 'right'} className="pointer-events-none max-w-xs">
               {node.tooltip}
             </TooltipContent>
           )}
@@ -903,31 +919,18 @@ function BrowseableRow({
 
       {expanded && (
         <div className="space-y-0.5">
-          {/* This level's footer — new items file into `node.id`. FIRST row of
-              the level, directly under the row that owns it, NOT last: a footer
-              placed after the children lands after the whole expanded subtree,
-              so N nested open levels stack N footers into one anonymous pile at
-              the bottom of the panel with nothing to say which level each one
-              belongs to (the bookmarks menu showed three). Leading the level
-              binds each footer to its own row by position. Aligned with the
-              children (same (level+1)*14 indent). */}
-          {loadState.status === 'ready' && levelFooter && (
-            <div style={{ [indentSide]: `${(level + 1) * 14}px` }}>{levelFooter(node.id, mirrored)}</div>
-          )}
           {loadState.status === 'loading' && children.length === 0 && (
-            <div className="p-1 text-xs text-muted-foreground" style={{ [indentSide]: `${(level + 1) * 14}px` }}>
+            <div className="p-1 text-xs text-muted-foreground" style={{ marginInlineStart: `${childLevel * 14}px` }}>
               <Trans>Loading…</Trans>
             </div>
           )}
           {loadState.status === 'error' && (
-            <div className="p-1 text-xs text-destructive" style={{ [indentSide]: `${(level + 1) * 14}px` }}>
+            <div className="p-1 text-xs text-destructive" style={{ marginInlineStart: `${childLevel * 14}px` }}>
               {loadState.message || t`Failed to load`}
             </div>
           )}
-          {/* A levelFooter makes an empty folder actionable ("add here"), so
-              the bare "Empty" label would just be noise beside it. */}
-          {loadState.status === 'ready' && children.length === 0 && !levelFooter && (
-            <div className="p-1 text-xs text-muted-foreground" style={{ [indentSide]: `${(level + 1) * 14}px` }}>
+          {loadState.status === 'ready' && children.length === 0 && !headless && (
+            <div className="p-1 text-xs text-muted-foreground" style={{ marginInlineStart: `${childLevel * 14}px` }}>
               <Trans>Empty</Trans>
             </div>
           )}
@@ -935,12 +938,11 @@ function BrowseableRow({
             <BrowseableRow
               key={child.id}
               node={child}
-              level={level + 1}
+              parent={node}
+              level={childLevel}
               rootId={rootId}
-              hoverExpandMs={hoverExpandMs}
               hoverSeenMs={hoverSeenMs}
-              mirrored={mirrored}
-              levelFooter={levelFooter}
+              previewSide={previewSide}
               tree={tree}
               selection={selection}
               activePointer={activePointer}

@@ -54,6 +54,7 @@ import {
   pillForFlowpad,
   pillForHarness,
   pillOf,
+  type FundingPill,
   type PillAction,
 } from './funding-pill';
 import { harnessVisual } from './harness-visual';
@@ -121,8 +122,9 @@ const ACTION_LABEL: Record<PillAction, MessageDescriptor | null> = {
   details: null,
 };
 
-const actionLabel = (action: PillAction): string | undefined => {
-  const label = ACTION_LABEL[action];
+const actionLabel = (pill: FundingPill): string | undefined => {
+  // An assistant that is not installed is installed first; its sign-in comes after.
+  const label = pill.kind === 'not_installed' ? msg`Install` : ACTION_LABEL[pill.action];
   return label ? i18n._(label) : undefined;
 };
 
@@ -203,7 +205,7 @@ function FlowpadRow({ record, funding, onConnected }: Omit<Facts, 'left'> & { on
       // Cancel, or "Open the page again" starting a newer attempt: choices, not failures to report.
       if (!isQuietLoginError(error)) {
         notify.error({
-          title: t`Could not sign in to FlowPad`,
+          title: t`Could not sign in to Flowpad`,
           message: errorMessage(error, t`The login did not complete.`),
         });
       }
@@ -240,7 +242,7 @@ function FlowpadRow({ record, funding, onConnected }: Omit<Facts, 'left'> & { on
       pill={pill}
       pillFragment="hub-endpoints"
       actionBusy={signingIn}
-      action={actionLabel(pill.action)}
+      action={actionLabel(pill)}
       onAction={() => (pill.action === 'details' ? exits.toSources('endpoints') : void connect())}
     />
   );
@@ -288,7 +290,7 @@ function HarnessRow({
       name={h?.label || worker}
       small={small}
       pill={pill}
-      action={actionLabel(pill.action)}
+      action={actionLabel(pill)}
       onAction={onAction}
       isDefault={isDefault}
       onMakeDefault={onMakeDefault}
@@ -298,7 +300,7 @@ function HarnessRow({
 
 const KEYS_SET = { Icon: KeyRound, short: msg`API key`, label: msg`API keys stored on this machine` };
 const KEYS_NONE = { ...KEYS_SET, short: msg`No key` };
-const ENDPOINTS_SOME = { Icon: Cloud, short: msg`LLM Endpoint`, label: msg`Hub endpoints your FlowPad account can spend` };
+const ENDPOINTS_SOME = { Icon: Cloud, short: msg`LLM Endpoint`, label: msg`Hub endpoints your Flowpad account can spend` };
 const ENDPOINTS_NONE = { ...ENDPOINTS_SOME, short: msg`No endpoint` };
 
 /** The LLM key store, as one row: how many provider slots have a key. */
@@ -389,7 +391,7 @@ function HarnessLoginModalBody({ fresh, dismiss }: { fresh: boolean; dismiss: ()
       setPicked(null);
     }
   }, []);
-  const onConnected = useCallback(() => setJustConnected(i18n._(msg`Signed in to FlowPad.`)), []);
+  const onConnected = useCallback(() => setJustConnected(i18n._(msg`Signed in to Flowpad.`)), []);
 
   return (
     <div className="flex flex-col">

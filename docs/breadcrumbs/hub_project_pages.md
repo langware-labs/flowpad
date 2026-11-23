@@ -12,12 +12,16 @@ description: On /dock/hub/project/<id>/project-setup and /project-deployments, H
 
 > Ground truth. Proven by the fix fff1872c8 (PR #814, 2026-11-10): the bound test failed without it and passes with it. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.hub_project_pages.rules
 sites:
-  - rel_path: "ui/tests/e2e/deployment-funding/deployment_funding.spec.ts"
+  - rel_path: ui/tests/e2e/deployment-funding/deployment_funding.spec.ts
     line: 116
-    note: "FAILING? read this tag's rules before touching HubProjectPage's sub-pointer routing or ProjectHome's page order"
+    note: FAILING? read this tag's rules before touching HubProjectPage's sub-pointer routing or ProjectHome's page order
+proven: '2026-11-10'
+statements:
+  - text: A project's own page modes are never handed to `AssetEditorRouter`.
+  - text: In `ProjectHome`, the project's own pages win over `cloudMode`.
 ```
 
 ## Expected behavior

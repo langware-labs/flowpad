@@ -124,6 +124,9 @@ export type ProcessRunsPointerOptions = ProcessRunScope & { run?: string | null 
 export const HIGHLIGHT_PARAM = 'highlight';
 /** An entry of an `fs/` folder to show selected. */
 export const FS_SELECT_PARAM = 'select';
+/** The home's selected icon (an agent's or app's typeid) and, inside it, the deployment opened from its list. */
+const HOME_TILE_PARAM = 'tile';
+const HOME_TILE_DEPLOYMENT_PARAM = 'tileDeployment';
 /** A transcript entry to scroll to and select. */
 export const TRANSCRIPT_ENTRY_PARAM = 'transcript_entry_id';
 /** A timestamp to seek a transcript to. */
@@ -310,11 +313,11 @@ export const WORKSPACE_PARAM = 'workspace';
 export const WORKSPACE_ENTRY_PARAM = 'workspaceEntry';
 
 /**
- * URL query-param key carrying the STATE KEY a page was opened with (`flow_sdk/server/page_state.py`):
- * minted by whoever opened the page on this machine (`flow show`, an agent, the user saying Allow), and
- * handed by the host to the page's frame. A dock without one asks the user before it runs a page.
- * It is this dock's own — NOT sticky: carrying one page's key onto another page would hand it reach it
- * never earned. Excluded from `tabHash` like every option.
+ * URL query-param key carrying the STATE KEY a page runs with (`flow_sdk/server/page_state.py`). Normally
+ * the app's own key, minted once at startup: every navigation made inside the app carries it
+ * (`NavigationActions.openDock`), so a dock WITHOUT a known key is one a link from outside named, and it
+ * asks the user before it runs a page. An agent that opens a page may give it a key of its own, to hand
+ * it a context; that key stays on its dock and is never carried on. Excluded from `tabHash` like every option.
  */
 export const STATE_KEY_PARAM = 'stateKey';
 
@@ -333,6 +336,46 @@ export const STATE_KEY_PARAM = 'stateKey';
  * { capabilityKind })`.
  */
 export const CAPABILITY_PARAM = 'capability';
+
+/**
+ * URL query-param key carrying a machine's request for a new access key onto the hub's Machines
+ * page (`/dock/hub/machines?access-key-request=<id>&node=<compute_node typeid>`). The machine
+ * mints the id (it lives 10 minutes) and opens that URL in the browser; a key added with it is
+ * accepted by that machine without asking. Travels with {@link NODE_PARAM}, the asking machine.
+ * Rides in `options` (reload-safe, so the page can still say "one more step" after the key is
+ * added) and is excluded from `tabHash`. Pairs with `DockPointer.accessKeyRequest`.
+ */
+export const ACCESS_KEY_REQUEST_PARAM = 'access-key-request';
+
+/**
+ * URL query-param key asking the app to open the Remote control panel — the one that drops from
+ * the top bar's menu (`TopBarMoreMenu`) — on arrival: `remote-control=open`, on any dock
+ * (`/dock/assets?remote-control=open` is what the hub's "Open Flowpad" hands over). The menu
+ * opens the panel once and clears the option, so a reload, Back or a restored tab does not
+ * open it again. Rides in `options` and is excluded from `tabHash`. Pairs with
+ * `DockPointer.remoteControlOpen`.
+ */
+export const REMOTE_CONTROL_PARAM = 'remote-control';
+
+/**
+ * URL query-param key handing the app the signed answer that turns remote control on:
+ * `remote-control-assertion=<base64url of the AuthenticationResponseJSON text>` (`encodeAssertion`),
+ * beside `remote-control=open` (`/dock/assets?remote-control=open&remote-control-assertion=…` is
+ * what the hub's "Turn on remote control" dialog hands over). The top bar's menu gives it to the
+ * machine once and takes both options off the address with one history REPLACE, so Back, a reload
+ * or a restored tab never submits it again. Pairs with `DockPointer.remoteControlAssertion`.
+ */
+export const REMOTE_CONTROL_ASSERTION_PARAM = 'remote-control-assertion';
+
+/**
+ * URL query-param keys carrying a machine's request to turn remote control on onto the hub's
+ * Machines page (`/dock/hub/machines?remote-control-confirm=<challenge>&node=<compute_node typeid>&hours=<h>`).
+ * The machine mints the challenge (base64url, single use, 5 minutes) and opens that URL in the
+ * browser; the page signs it with the person's passkey. Travels with {@link NODE_PARAM}. Rides in
+ * `options` and is excluded from `tabHash`. Pairs with `DockPointer.remoteControlConfirm`.
+ */
+export const REMOTE_CONTROL_CONFIRM_PARAM = 'remote-control-confirm';
+export const REMOTE_CONTROL_HOURS_PARAM = 'hours';
 
 /**
  * A command the shell dock hands its terminal to type AND submit on first attach.
@@ -725,6 +768,12 @@ export class DockPointer implements IDockPointer {
     return this.withPageBefore(null).withOption(STREAM_INBOX_CHANNEL_PARAM, value);
   }
 
+  /** Clone with these tags ticked (`?tags=a,b`: a conversation shows when it carries any of them); none
+   *  clears the filter. A new pick starts at now. */
+  withStreamInboxTags(names: readonly string[]): DockPointer {
+    return this.withPageBefore(null).withOption('tags', names.length ? names.join(',') : null);
+  }
+
   /** The stream inbox's search text, or '' for none. */
   get streamInboxSearch(): string {
     return this.options?.[STREAM_INBOX_SEARCH_PARAM] ?? '';
@@ -791,10 +840,56 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * The access-key request this dock carries — its id and the machine (a compute_node typeid)
+   * that asked — or null. Both or nothing: a request without its machine ties a key to no one.
+   * See {@link ACCESS_KEY_REQUEST_PARAM}.
+   */
+  get accessKeyRequest(): { id: string; node: string } | null {
+    const id = this.options?.[ACCESS_KEY_REQUEST_PARAM];
+    const node = this.options?.[NODE_PARAM];
+    return id && node ? { id, node } : null;
+  }
+
+  /** True when this dock asks for the Remote control panel to be opened. See {@link REMOTE_CONTROL_PARAM}. */
+  get remoteControlOpen(): boolean {
+    return this.options?.[REMOTE_CONTROL_PARAM] === 'open';
+  }
+
+  /** The signed answer this dock hands the app, still encoded, or null. See {@link REMOTE_CONTROL_ASSERTION_PARAM}. */
+  get remoteControlAssertion(): string | null {
+    return this.options?.[REMOTE_CONTROL_ASSERTION_PARAM] || null;
+  }
+
+  /**
+   * The turn-on request this dock carries — the challenge to sign, for how many hours, and the
+   * machine that asked (null when the address names none) — or null without a challenge and whole
+   * hours. See {@link REMOTE_CONTROL_CONFIRM_PARAM}.
+   */
+  get remoteControlConfirm(): { challenge: string; node: string | null; hours: number } | null {
+    const challenge = this.options?.[REMOTE_CONTROL_CONFIRM_PARAM];
+    const hours = Number(this.options?.[REMOTE_CONTROL_HOURS_PARAM]);
+    if (!challenge || !Number.isInteger(hours) || hours < 1) return null;
+    return { challenge, node: this.options?.[NODE_PARAM] || null, hours };
+  }
+
+  /**
    * Clone this dock with one URL option set (or cleared with null) — the
    * generic form behind `withLang`/`withJourney` and the sticky-param
    * carry-forward in `openDock`.
    */
+  /** The home's selected icon and the deployment opened inside it. */
+  get homeTile(): { key: string | null; deployment: string | null } {
+    return {
+      key: this.options?.[HOME_TILE_PARAM] ?? null,
+      deployment: this.options?.[HOME_TILE_DEPLOYMENT_PARAM] ?? null,
+    };
+  }
+
+  /** Select an icon on the home (and a deployment inside it); null clears both. */
+  withHomeTile(key: string | null, deployment: string | null = null): DockPointer {
+    return this.withOption(HOME_TILE_PARAM, key).withOption(HOME_TILE_DEPLOYMENT_PARAM, key ? deployment : null);
+  }
+
   withOption(key: string, value: string | null): DockPointer {
     const nextOptions = { ...(this.options ?? {}) };
     if (value) nextOptions[key] = value;

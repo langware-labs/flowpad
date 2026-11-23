@@ -45,7 +45,7 @@ export function AppLifecyclePanel({ lifecycle }: { lifecycle: AppLifecycle }) {
           className="truncate border-b border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs"
           title={record.detail}
         >
-          <Trans>Up, with problems: {record.failure?.text || record.detail}</Trans>
+          <Trans>Running, with problems: {record.detail || record.failure?.text}</Trans>
         </div>
       );
     case 'installing':
@@ -55,7 +55,7 @@ export function AppLifecyclePanel({ lifecycle }: { lifecycle: AppLifecycle }) {
         <Screen state={record.state}>
           <h2 className="flex items-center gap-2 text-lg font-semibold">
             <Loader2 className="size-4 animate-spin text-muted-foreground" />
-            <Trans>Setting up — {record.detail || record.state}</Trans>
+            {record.detail ? <Trans>Setting up — {record.detail}</Trans> : <Trans>Setting up…</Trans>}
           </h2>
           <SetupTree record={record} />
         </Screen>
@@ -65,16 +65,15 @@ export function AppLifecyclePanel({ lifecycle }: { lifecycle: AppLifecycle }) {
         <Screen state={record.state}>
           <h2 className="flex items-center gap-2 text-lg font-semibold">
             <Loader2 className="size-4 animate-spin text-muted-foreground" />
-            <Trans>Recovering: {record.recovery || record.detail}</Trans>
+            <Trans>Fixing the app…</Trans>
           </h2>
           <ul className="flex flex-col divide-y rounded-md border">
             {record.failure && (
-              <Step mark="failed" title={record.failure.text || record.failure.code} detail={record.failure.phase} />
+              <Step mark="failed" title={record.failure.text || record.failure.code} />
             )}
             <Step
               mark="running"
-              title={record.agent_call ? <Trans>An agent is repairing the app</Trans> : <Trans>Applying a known fix</Trans>}
-              detail={record.recovery}
+              title={record.agent_call ? <Trans>Flowpad's assistant is fixing the app</Trans> : <Trans>Applying a known fix</Trans>}
             />
             <Step mark="next" title={<Trans>Next: check again</Trans>} />
           </ul>
@@ -87,18 +86,15 @@ export function AppLifecyclePanel({ lifecycle }: { lifecycle: AppLifecycle }) {
       return (
         <Screen state={record.state}>
           <h2 className="text-lg font-semibold">
-            <Trans>Needs you: {record.failure?.text || record.detail}</Trans>
+            <Trans>Needs you: {record.detail || record.failure?.text}</Trans>
           </h2>
-          {record.detail && record.failure?.text && record.detail !== record.failure.text ? (
-            <p className="text-sm text-muted-foreground">{record.detail}</p>
-          ) : null}
           <Question lifecycle={lifecycle} />
           <div className="flex gap-2">
             <Button data-testid="app-lifecycle-fix" onClick={() => void lifecycle.fixIt()}>
               <Trans>Fix it</Trans>
             </Button>
             <Button variant="outline" data-testid="app-lifecycle-cancel" onClick={() => void lifecycle.stop()}>
-              <Trans>Cancel</Trans>
+              <Trans>Stop the app</Trans>
             </Button>
           </div>
         </Screen>

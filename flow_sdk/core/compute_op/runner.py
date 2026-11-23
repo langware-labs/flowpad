@@ -74,6 +74,7 @@ from flow_sdk.core.compute.process_step import NO_USABLE_LLM_SOURCE, launch_step
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
 from flow_sdk.core.compute.shared_shell import shell_for
 from flow_sdk.core.compute_op.decision import decide_op
+from flow_sdk.core.compute_op.endpoint import endpoint_op
 from flow_sdk.core.compute_op.python import run_python
 from flow_sdk.schema.data_spec.compute_op_spec import (
     CHECK_TIMEOUT,
@@ -82,6 +83,7 @@ from flow_sdk.schema.data_spec.compute_op_spec import (
     CliOp,
     ComputeOpSpec,
     DecisionOp,
+    EndpointOp,
     LaunchContext,
     NavigateOp,
     PromptOp,
@@ -775,7 +777,7 @@ async def _call_and_check(
     elif reason:
         detail = f"{spec.display_label}: {reason}"
     elif after.detail and _check_in_process(spec):
-        # A check answered in this backend says WHY in its own words ("WAHA refused the API key"); a
+        # A check answered in this backend says WHY in its own words ("Bridge refused the API key"); a
         # process's exit code cannot, which is all the sentence below has to go on.
         detail = f"{spec.display_label}: {after.detail}"
     else:
@@ -1461,6 +1463,24 @@ async def _decision(
     return await decide_op(exe, state)
 
 
+async def _endpoint(
+    spec: ComputeOpSpec,
+    *,
+    workdir: Optional[Path] = None,
+    values: Optional[dict] = None,
+    input: Any = MISSING,
+    say: Callable[[str], None],
+    **_: Any,
+) -> ReturnedValue:
+    """One capability of a hub API endpoint, run on the request in scope. The result IS the answer."""
+    exe = spec.exe_data
+    request = input if input is not MISSING else (values or {}).get(exe.input)
+    if request is None:
+        return ReturnedValue.not_applicable(f"{spec.display_label}: nothing named {exe.input!r} is in scope to send")
+    say(f"{spec.display_label}: {exe.kind}")
+    return await endpoint_op(exe, request, out_dir=workdir)
+
+
 def _prompt_for(spec: ComputeOpSpec, *, platform: str, workdir: Path) -> str:
     """The goal, how a person does it by hand, what is asked, and the bar.
 
@@ -1498,6 +1518,7 @@ _CALLS: "dict[type, Callable[..., Awaitable[ReturnedValue]]]" = {
     PythonOp: run_python,
     CliOp: _cli,
     DecisionOp: _decision,
+    EndpointOp: _endpoint,
     AskOp: _ask,
     PromptOp: _prompt,
     AgentOp: _agent,

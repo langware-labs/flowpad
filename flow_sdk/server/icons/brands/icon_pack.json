@@ -92,6 +92,15 @@
       ]
     },
     {
+      "kind": "linkedin",
+      "asset": "linkedin.svg",
+      "color": "#0A66C2",
+      "aliases": [
+        "Linkedin",
+        "LinkedIn"
+      ]
+    },
+    {
       "kind": "googledrive",
       "asset": "googledrive.svg",
       "tintable": false,

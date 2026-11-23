@@ -199,6 +199,11 @@ class NestedProjectError(ValueError):
     """A project was about to be created inside another project's folder, or around one."""
 
 
+class UnloadableProjectPathError(ValueError):
+    """A project was about to live where Flowpad never loads a project from (``~/.flow`` and other internal state):
+    it would save, and its kinds would work until the next restart, which skips it (``ensure_project_namespace``)."""
+
+
 class DuplicateProjectNameError(ValueError):
     """A project was about to take a name another visible project already has.
     ``existing`` is that other project."""
@@ -774,47 +779,54 @@ class Project(SetupSkippable, Entity):
 
     @action.post(action_name="set-browser")
     async def set_browser_action(self, browser: str = "agent") -> "ApiResponse":
-        """`POST /project/<id>/set-browser {browser}` — the browser this project's sessions use
-        (``agent`` | ``extension``). Written into ``project_manifest.json``; a session reads it
-        at its next launch."""
-        from flow_sdk.assets.project_manifest import ManifestError, set_browser  # noqa: PLC0415
+        """`POST /project/<id>/set-browser {browser}` — the person's own browser for this project
+        on THIS computer (a browser driver's name; "" goes back to what the project recommends).
+        Saved on this instance, never in ``project_manifest.json``; a session reads it at its
+        next launch."""
+        from flow_sdk.builtin.agentic_process import browser_choice  # noqa: PLC0415
 
-        if not self.fs_storage_mount_path:
-            return ApiFailResponse(message="Project has no local working directory")
         try:
-            spec = set_browser(Path(self.fs_storage_mount_path), browser)
-        except ManifestError as exc:
+            browser_choice.set_browser_pick(self.id, browser)
+        except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-        await self._reindex_manifest()
-        return ApiSuccessResponse(data={"browser": spec.browser})
+        return ApiSuccessResponse(data={"browser": browser_choice.browser_pick(self.id)})
 
     @action.get(action_name="browser-status")
     async def browser_status_action(self, process_id: str = "") -> "ApiResponse":
-        """`GET /project/<id>/browser-status?process_id=` — the project's browser, what is
-        available (agent window up, extension hint), and — for a session — what it resolves to
-        and its last browser call. Polled by the footer chip, so the file and CDP reads run
+        """`GET /project/<id>/browser-status?process_id=` — the browser drivers, the one in use
+        (for a session: what it resolves to; else what a new session here would get) and which
+        rung decided it (``source``), what is available (agent window up, extension hint), and a
+        session's last browser call. Polled by the footer chip, so the file and CDP reads run
         off the event loop."""
         import asyncio  # noqa: PLC0415
 
         from flow_sdk.assets.project_manifest import read_browser  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process import browser_choice  # noqa: PLC0415
-        from flow_sdk.core.agent_browser import status as agent_status  # noqa: PLC0415
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
 
-        setting = read_browser(Path(self.fs_storage_mount_path)) if self.fs_storage_mount_path else "agent"
+        setting = read_browser(Path(self.fs_storage_mount_path)) if self.fs_storage_mount_path else browser_drivers.DEFAULT
         process = None
         if process_id:
             from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
 
             process = await AgenticProcess.get_by_id(process_id)
 
-        if process is not None:
-            options = browser_choice.worker_options(process.worker_type)
-        else:
-            from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
+        from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
 
-            options = browser_choice.worker_options(await resolve_default_worker_type())
+        worker_type = process.worker_type if process is not None else await resolve_default_worker_type()
+        options = browser_choice.worker_options(worker_type)
 
-        def _probe() -> tuple[dict, dict, dict | None]:
+        worker = browser_choice.worker_key(worker_type)
+        has_switch = browser_choice.has_switch(worker_type)
+        pick = browser_choice.browser_pick(self.id)
+        launch = (
+            await browser_choice.resolve_for(process, setting)
+            if process is not None
+            else browser_choice.decide(pick=pick, override=None, legacy_chrome=False,
+                                       project_browser=setting, worker=worker, has_switch=has_switch)
+        )
+
+        def _probe() -> tuple[dict, dict | None, list[dict]]:
             last_use = None
             if process is not None:
                 from flow_sdk.builtin.agentic_process.transcript_cache import transcript_path  # noqa: PLC0415
@@ -822,7 +834,7 @@ class Project(SetupSkippable, Entity):
                 # The harness transcript, then any the process tees into its own record folder
                 # (the headless stream) — the newest call wins.
                 paths = [transcript_path(process), *process._record_dir().glob("*transcript*.jsonl")]
-                uses = [u for u in map(browser_choice.last_browser_use, paths) if u]
+                uses = [u for u in (browser_choice.last_browser_use(p, unnamed=launch.kind) for p in paths) if u]
                 last_use = max(uses, key=lambda u: u["at"] or "") if uses else None
             # Extension facts only for a worker that has one.
             extension: dict = {"installed": False, "device": ""}
@@ -835,15 +847,31 @@ class Project(SetupSkippable, Entity):
                     "profiles": [{**p.profile.model_dump(), "browser": p.browser, "installed": p.installed} for p in scan.profiles],
                     "profiles_denied": scan.denied,
                 }
-            return agent_status().model_dump(), extension, last_use
+            drivers = []
+            for spec in browser_drivers.list_drivers():
+                setup = browser_drivers.worker_setup(spec.name, worker)
+                drivers.append({
+                    **spec.model_dump(mode="json"),
+                    # One word a menu shows, read here so no client re-derives it.
+                    "state": browser_drivers.state_of(
+                        spec.name, worker, has_switch=has_switch, extension_installed=bool(extension.get("installed")),
+                        in_use=spec.name == launch.kind, last_use=last_use),
+                    "setup": setup.setup if setup is not None else "",
+                    "config": browser_drivers.read_config(spec.name),
+                })
+            return extension, last_use, drivers
 
-        agent, extension, last_use = await asyncio.to_thread(_probe)
+        extension, last_use, drivers = await asyncio.to_thread(_probe)
         return ApiSuccessResponse(
             data={
                 "setting": setting,
-                "effective": (await browser_choice.resolve_for(process, setting)).kind if process else setting,
-                "supports_extension": options.EXTENSION_FLAG is not None,
-                "agent": agent,
+                "pick": pick,
+                "effective": launch.kind,
+                "source": launch.source,
+                # What was asked for but this worker cannot use; "" when the choice stood.
+                "requested": launch.requested,
+                "worker": worker,
+                "drivers": drivers,
                 "extension": extension,
                 "last_use": last_use,
             }
@@ -2636,6 +2664,7 @@ class Project(SetupSkippable, Entity):
         was_create = not self.exist_in_db
         await self._refuse_duplicate_name()
         if was_create:
+            self._refuse_unloadable_mount()
             await self._refuse_nested_mount()
             await self._warn_if_mount_owned_elsewhere()
             self._ensure_mount_dir()
@@ -2891,6 +2920,22 @@ class Project(SetupSkippable, Entity):
             if link is not None:
                 links.append(link)
         return links
+
+    def _refuse_unloadable_mount(self) -> None:
+        """Refuse a folder the startup sweep never loads (``is_valid_project_cwd``, the same test
+        ``ensure_project_namespace`` applies), instead of a project that silently loses its kinds on restart."""
+        mount = self.fs_storage_mount_path
+        if self.remote or self.system or self.hidden or not mount:
+            return
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        flow_home = get_instance_settings().flow_home
+        under_state = flow_home and Path(canonical_posix_path(mount)).is_relative_to(canonical_posix_path(flow_home))
+        if under_state and not is_valid_project_cwd(mount, include_temp=True):
+            raise UnloadableProjectPathError(
+                f"{mount} is inside Flowpad's own state, which is never loaded as a project; "
+                "put the project in the workspace or another folder of yours"
+            )
 
     async def _refuse_nested_mount(self) -> None:
         """Projects do not nest: a new one may not sit inside a project's folder, nor

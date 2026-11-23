@@ -27,6 +27,7 @@ from starlette.types import Receive, Scope, Send
 from starlette.websockets import WebSocket
 
 from flow_sdk.server.listener import Listener, serve_on_socket
+from flow_sdk.core.webapp import presence
 from flow_sdk.server.service_proxy import _HOP
 from flow_sdk.server.service_serving import http_client, relay_websocket
 
@@ -100,7 +101,7 @@ def inject(html: bytes, load_id: str = "") -> bytes:
     document ``load_id``."""
     match = _HEAD.search(html)
     at = match.end() if match else 0
-    return html[:at] + _script_tag(load_id) + html[at:]
+    return html[:at] + _script_tag(load_id) + presence.script_tag(relay=True).encode() + html[at:]
 
 
 def _not_answering(request: Request, upstream_port: int = 0) -> Response:
@@ -127,6 +128,9 @@ class _Relay:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "websocket":
             websocket = WebSocket(scope, receive, send)
+            if scope["path"] == presence.RELAY_PATH:
+                await presence.hold_for_port(websocket, self.port)
+                return
             path = scope.get("raw_path", b"").decode() or scope["path"]
             query = scope.get("query_string", b"").decode()
             url = f"ws://{LOOPBACK}:{self.port}{path}{'?' + query if query else ''}"

@@ -20,7 +20,8 @@ let pagedFrom: string | null = null;
 
 const OVERLAY =
   'absolute z-10 bg-background/60 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100';
-const STEP_BUTTON = `${OVERLAY} top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border text-foreground hover:bg-muted`;
+const STEP_BUTTON =
+  'absolute z-10 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-foreground text-background shadow-lg ring-2 ring-background/80 hover:scale-105 hover:bg-foreground/90';
 
 interface MediaPagerProps {
   /** The shown file's address, as the viewer received it. */
@@ -102,12 +103,12 @@ export function MediaPager({ path, typeId, filePath }: MediaPagerProps) {
     <>
       {prev && (
         <button type="button" className={`${STEP_BUTTON} left-3`} title={t`Previous`} onClick={() => open(prev.name)}>
-          <ChevronLeft className="h-5 w-5" />
+          <ChevronLeft className="h-6 w-6" strokeWidth={2.75} />
         </button>
       )}
       {next && (
         <button type="button" className={`${STEP_BUTTON} right-3`} title={t`Next`} onClick={() => open(next.name)}>
-          <ChevronRight className="h-5 w-5" />
+          <ChevronRight className="h-6 w-6" strokeWidth={2.75} />
         </button>
       )}
       <div

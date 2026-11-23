@@ -81,10 +81,16 @@ def _save() -> None:
 
 
 def mint(state: PageState) -> str:
-    """A fresh key for *state*."""
-    key = secrets.token_urlsafe(24)
+    """The key for *state*: the one already held for an equal page state, else a fresh one. Showing the
+    same page about the same thing again therefore hands it the same key — and the same frame."""
     with _lock:
         _load()
+        key = next((k for k, v in _states.items() if v == state and v.grant == "page"), None)
+        if key is not None:
+            _states[key] = _states.pop(key)  # as recent as its last use, so eviction takes older keys first
+            _save()
+            return key
+        key = secrets.token_urlsafe(24)
         _states[key] = state
         while len(_states) > _MAX_STATES:
             del _states[next(k for k, v in _states.items() if v.grant != "app")]  # the oldest page key

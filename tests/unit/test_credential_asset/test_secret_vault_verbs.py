@@ -11,6 +11,7 @@ import pytest
 from pydantic import SecretStr
 
 from flow_sdk.builtin import credential_service as svc
+from flow_sdk.schema.data_spec.secret_vault_spec import SecretVaultSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.secrets import StoreAccessDenied
 from flow_sdk.secrets.store import SecretStore, plain_values, register_store
@@ -96,8 +97,11 @@ async def _cred(pid: str, values: dict[str, str]):
 async def test_vaults_add_list_remove(home, project, pid):
     await _vault(pid, "team")
     listed = await svc.list_vaults(pid)
-    assert listed == {"vaults": {"team": {"manager": "memvault", "config": {"vault": "v-team"}}}}
-    assert (await svc.set_vault(pid, "team", None)) == {"vaults": {}}
+    assert listed["vaults"] == {"team": {"manager": "memvault", "config": {"vault": "v-team"}}}
+    row = listed["rows"][0]
+    assert (row["name"], row["manager_title"], row["usable"], row["is_default"]) == ("team", "Mem vault", True, True)
+    assert listed["active"]["name"] == "team" and listed["global"] is None
+    assert (await svc.set_vault(pid, "team", None))["vaults"] == {}
 
 
 async def test_an_unknown_manager_is_refused(home, project, pid):
@@ -176,3 +180,94 @@ async def test_check_and_grant(home, project, pid):
     assert await svc.vault_check(pid, "team") == {"vault": "team", "ready": True, "reason": ""}
     assert await svc.grant(pid, "team", "bob@x.test") == {"vault": "team", "email": "bob@x.test"}
     assert GRANTS == [("v-team", "bob@x.test")]
+
+
+async def test_active_vault_most_specific_scope_wins(home, project, pid, monkeypatch):
+    """entity > project default > first by name > this instance's vault (flow_sdk/secrets/active.py)."""
+    from flow_sdk.secrets import active
+
+    shared = active.describe(active.SecretScope.GLOBAL, "global", SecretVaultSpec(manager="memvault", config={"vault": "v-mine"}))
+    monkeypatch.setattr(active, "global_vault", lambda: shared)
+    assert (await active.active_vault_of(project)).scope == active.SecretScope.GLOBAL
+    await _vault(pid, "team")
+    await _vault(pid, "infra")
+    assert (await active.active_vault_of(project)).name == "infra", "no default named: the first by name"
+    assert (await svc.set_default_vault(pid, "team"))["rows"][0]["name"] == "team"
+    found = await active.active_vault_of(project)
+    assert (found.scope, found.name, found.usable) == (active.SecretScope.PROJECT, "team", True)
+    await _cred(pid, {"ACME_KEY": "k"})
+    await svc.publish("acme", pid, "infra")
+    own = await active.active_vault_of(await svc.credential_named("acme", project))
+    assert (own.scope, own.name) == (active.SecretScope.ENTITY, "infra"), "the credential's own vault beats the default"
+    with pytest.raises(svc.CredentialError):
+        await svc.set_default_vault(pid, "nope")
+    with pytest.raises(svc.CredentialError):
+        svc.set_global_vault({"manager": "no-such-manager"})
+
+
+async def test_the_persons_pick_wins_and_never_touches_the_project(home, project, pid, monkeypatch):
+    """A pick is this computer's: it beats the project default and an entity's own vault, and the manifest keeps its default."""
+    from flow_sdk.assets.project_manifest import read_secret_vault_setup
+    from flow_sdk.secrets import active
+
+    shared = active.describe(active.SecretScope.GLOBAL, "global", SecretVaultSpec(manager="memvault", config={"vault": "v-mine"}))
+    monkeypatch.setattr(active, "global_vault", lambda: shared)
+    await _vault(pid, "team")
+    await _vault(pid, "infra")
+    await svc.set_default_vault(pid, "team")
+    listed = await svc.set_vault_pick(pid, "infra")
+    assert (listed["active"]["name"], listed["active"]["picked"]) == ("infra", True)
+    await _cred(pid, {"ACME_KEY": "k"})
+    await svc.publish("acme", pid, "team")
+    assert (await active.active_vault_of(await svc.credential_named("acme", project))).name == "infra"
+    assert read_secret_vault_setup(Path(project.fs_storage_mount_path))[1] == "team"
+    assert (await svc.set_vault_pick(pid, "global"))["active"]["scope"] == "global"
+    cleared = (await svc.set_vault_pick(pid, ""))["active"]
+    assert (cleared["name"], cleared["picked"]) == ("team", False)
+    with pytest.raises(svc.CredentialError):
+        await svc.set_vault_pick(pid, "nope")
+
+
+async def test_a_vault_read_answers_values_refuses_a_sealed_vault_and_saves_nothing(home, project, pid, monkeypatch):
+    from flow_sdk.secrets import active, managers
+    from flow_sdk.secrets.errors import MissingSecrets
+
+    with pytest.raises(active.NoActiveVault):
+        await active.read_from_vault(["STRIPE_API_KEY"], project)
+    await _vault(pid, "team")
+    VAULTS["v-team"] = {"STRIPE_API_KEY": "from-vault"}
+    assert (await svc.vault_read(pid, ["STRIPE_API_KEY"]))["values"] == {"STRIPE_API_KEY": "from-vault"}
+    with pytest.raises(MissingSecrets):
+        await active.read_from_vault(["NOPE"], project)
+    sealed = managers.SecretManagerSpec.model_validate({"name": "memvault", "check": "true", "status": "false"})
+    monkeypatch.setattr(managers, "get_manager", lambda n: sealed)
+    with pytest.raises(svc.CredentialError) as refused:
+        await svc.vault_read(pid, ["STRIPE_API_KEY"])
+    assert refused.value.code == "sealed", "refused before the manager is asked: asked while sealed, it prompts"
+    assert not (Path(project.fs_storage_mount_path) / ".env.local").exists()
+
+
+async def test_vault_access_status_open_close(home, project, pid, monkeypatch, tmp_path):
+    """A manager's ``status`` / ``login`` / ``close`` are its access API: sealed → open → sealed, by its own commands."""
+    from flow_sdk.secrets import managers
+
+    flag = tmp_path / "open"
+    sh = lambda body: f"sh -c '{body}'"  # noqa: E731
+    fake = managers.SecretManagerSpec.model_validate({
+        "name": "memvault", "check": "true", "status": sh(f"test -f {flag}"), "close": sh(f"rm -f {flag}"),
+        "login": {os_name: sh(f"touch {flag}") for os_name in managers.OSES},
+    })
+    monkeypatch.setattr(managers, "get_manager", lambda n: fake)
+    await _vault(pid, "team")
+    sealed = await svc.vault_access(pid, "team")
+    assert (sealed["state"], sealed["can_open"], sealed["can_close"]) == ("sealed", True, False)
+    opened = await svc.vault_access(pid, "team", change="open")
+    assert (opened["state"], opened["can_open"], opened["can_close"]) == ("open", False, True)
+    assert (await svc.vault_access(pid)) == {**opened, "vault": "team"}, "no name: the vault in use"
+    assert (await svc.vault_access(pid, "team", change="close"))["state"] == "sealed"
+    monkeypatch.setattr(managers, "get_manager", lambda n: fake.model_copy(update={"status": "", "close": ""}))
+    unknown = await svc.vault_access(pid, "team", change="close")
+    assert (unknown["state"], unknown["can_close"]) == ("unknown", False) and "no close" in unknown["detail"]
+    for bad in ({"scope": "global"}, {"scope": "nope"}, {"change": "nope"}):
+        with pytest.raises(svc.CredentialError):
+            await svc.vault_access(pid, "team", **bad)

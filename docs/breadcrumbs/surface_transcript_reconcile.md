@@ -18,12 +18,20 @@ description: A surface change owes BOTH obligations in both directions — the t
 > substitute for the missing `open` guard (FLOWPAD-2117).
 > Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.surface_transcript_reconcile.rules
 sites:
-  - rel_path: "ui/tests/react/process-surface-startup-reconcile.test.tsx"
+  - rel_path: ui/tests/react/process-surface-startup-reconcile.test.tsx
     line: 61
-    note: "EDITING use-process-surface? read this tag's rules first - the surface owns the transport in BOTH directions, and the gate mirrors the SERVER PER ROUTE (switch-mode 409s while busy; open has no guard, so neither does the client). This file stubs loadHistory and does NOT cover the transcript half"
+    note: EDITING use-process-surface? read this tag's rules first - the surface owns the transport in BOTH directions, and the gate mirrors the SERVER PER ROUTE (switch-mode 409s while busy; open has no guard, so neither does the client). This file stubs loadHistory and does NOT cover the transcript half
+proven: 2026-08-20 · FLOWPAD-2105
+statements:
+  - text: A surface change reconciles content in BOTH directions.
+  - text: Force-reload only at idle.
+  - text: Leave the mode unrecorded when you decline mid-turn.
+  - text: Never treat a mount-time `loadHistory()` as a repair.
+  - text: Never kill a worker to enter chat or vibe WITHOUT the busy guard.
+  - text: Both directions of the round trip must stay reachable.
 ```
 
 ## Expected behavior

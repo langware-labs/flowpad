@@ -1,0 +1,20 @@
+{
+  "type": "agent",
+  "id": "f283762e-461f-4686-a78a-312eba2921ab",
+  "name": "linkedin-reader",
+  "description": "Reads the LinkedIn messages in your signed-in browser and records them. Extraction only — it never replies, never clicks anything but conversations.",
+  "avatar": "💼",
+  "worker_type": "claude",
+  "model": "sonnet",
+  "permission_mode": "bypassPermissions",
+  "disallowed_tools": [
+    "WebFetch",
+    "WebSearch",
+    "Agent",
+    "Task"
+  ],
+  "subagents": [
+    "linkedin_analyzer"
+  ],
+  "enabled": true
+}

@@ -80,7 +80,7 @@ describe('VibeWorkerSelect', () => {
  * to Capabilities instead of switching the chat onto a harness that isn't there.
  */
 describe('VibeWorkerSelect — unavailable harness', () => {
-  const UNAVAILABLE = 'Copilot is not installed on this machine.';
+  const UNAVAILABLE = 'Copilot is not installed on this computer.';
 
   beforeEach(() => {
     // The record as the backend serves it after the boot sweep: Copilot's CLI is absent.

@@ -223,3 +223,46 @@ async def test_readiness_lists_what_is_set_up_and_each_step_names_its_node(proje
     # The footer's poll asks for neither.
     plain = await project_setup.readiness_of(project)
     assert asked == {"include_ready": False} and plain.set_up == [] and not any(r.node for r in plain.to_do)
+
+
+@pytest.mark.parametrize("refusal", ["verdict", "raised"])
+async def test_a_credential_the_setup_check_refused_is_asked_again(project, catalogue, monkeypatch, refusal):
+    """The source's own check turned its token down: "Set up again" must ask for the token — it is present, so
+    its presence check would otherwise skip the question and retry the same refused value. A check that fails
+    for another reason (an invite owed) leaves the token alone, and so does one that passes."""
+    from flow_sdk.builtin.credential_service import set_credential_by_name
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.ingest.health import ACCESS_DENIED, classify
+    from flow_sdk.sources.errors import AccessDenied
+    from flow_sdk.sources.protocols import Verdict
+
+    catalogue("slack_channel")
+    source = DataSource(name="Slack", provider="slack", project_id=str(project.id), config={})
+    await source.save()
+
+    async def of_project(_project):
+        return [await DataSource.get_by_id(str(source.id))]
+
+    monkeypatch.setattr(project_setup, "project_sources", of_project)
+
+    async def after(answer):
+        async def verify(self, _source):
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        monkeypatch.setattr(DataDriver, "verify", verify)
+        await (await DataSource.get_by_id(str(source.id))).verify()
+        (slack,) = [r for r in await project_setup.collect_requirements(project) if r.name == "slack_channel"]
+        return slack.satisfied, slack.rejected
+
+    await set_credential_by_name("slack_channel", {"SLACK_USER_TOKEN": "xoxp-narrow"}, project_id=str(project.id))
+    why = "Your Slack app is missing permissions."
+    refused = Verdict(ready=False, detail=why, refused=True) if refusal == "verdict" else AccessDenied(why)
+    assert classify(AccessDenied(why))[1] == ACCESS_DENIED  # a refused sync and a refused check stamp one code
+
+    assert await after(refused) == (False, why)
+    assert await after(Verdict(ready=False, detail="Invite the bot.")) == (True, "")
+    assert await after(refused) == (False, why)
+    assert await after(Verdict(ready=True)) == (True, "")

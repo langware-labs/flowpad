@@ -442,6 +442,12 @@ async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Option
             "duration_ms": execution.duration_ms, "wizard": execution.wizard,
             **_cause_keys(event), **(gate.row() if gate else {}),
         })
+        if not is_test and not error:
+            from flow_sdk.app.automation_message import report_run
+            try:
+                await report_run(trigger, execution)
+            except Exception:  # a message never undoes the run's own answer
+                logger.exception("could not post what %s answered", trigger.id)
     return {"event_id": execution.event_id, "agentic_process_id": execution.process_id,
             "error": error, "duration_ms": execution.duration_ms,
             "accepted": execution.accepted, "reason_code": reason_code}

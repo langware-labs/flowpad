@@ -12,7 +12,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const BASELINE = 95;
+const BASELINE = 94;
 const SRC = resolve(__dirname, '../../src');
 
 function* sources(dir: string): Generator<string> {

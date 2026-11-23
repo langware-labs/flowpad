@@ -555,11 +555,11 @@ describe('ConnectionsManager — credential rows', () => {
     expect(screen.getByTestId('connection-scope-user-twilio').textContent).toMatch(/all projects/i);
   });
 
-  it('chips each credential MUST or OPTIONAL — the manifest\'s own word', () => {
+  it('chips each credential Required or Optional, in plain words', () => {
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
     const chip = screen.getByTestId('connection-required-user-twilio');
-    expect(chip.textContent).toBe('MUST');
+    expect(chip.textContent).toBe('Required');
     expect(chip.dataset.required).toBe('MUST');
   });
 

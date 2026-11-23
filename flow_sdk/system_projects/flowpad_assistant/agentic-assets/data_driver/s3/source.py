@@ -220,7 +220,7 @@ class S3Source(ObjectSource):
         except SourceError as exc:
             if is_transient(exc):
                 raise
-            return Verdict(ready=False, detail=f"S3 refused these keys for s3://{self.bucket} ({exc}). Check the keys, the region and the bucket name.")
+            return Verdict(ready=False, detail=f"S3 refused these keys for s3://{self.bucket} ({exc}). Check the keys, the region and the bucket name.", refused=isinstance(exc, AccessDenied))
         return Verdict(ready=True)
 
     # ── transport ───────────────────────────────────────────────────────────

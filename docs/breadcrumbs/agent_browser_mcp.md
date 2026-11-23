@@ -12,25 +12,30 @@ version: 2
 
 > Ground truth. Proven by RCA on 2026-11-16 (FLOWPAD-2376). Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.agent_browser_mcp.rules
 sites:
-  - rel_path: "tests/long_tests/test_agent_browser_mcp.py"
+  - rel_path: tests/long_tests/test_agent_browser_mcp.py
     line: 51
-    note: "FAILING? read this tag's rules before editing"
+    note: FAILING? read this tag's rules before editing
+proven: 2026-11-16 · FLOWPAD-2376
+statements:
+  - text: The launched PID is the server.
+  - text: One launch path on every OS.
+  - text: argv is a list.
 ```
 
 ## Expected behavior
 
 A session whose browser is `agent` gets one stdio MCP server, `agent_browser`. Its command is
-`mcp_spec()` in `flow_sdk/core/agent_browser.py`: `python -m flow_sdk.core.agent_browser mcp`.
+`mcp_spec()` in `flow_sdk/core/agent_browser.py`: `python -m flow_sdk.core.agent_browser mcp --driver agent` (the `mcp` of the `agent` browser driver's manifest).
 The worker CLI (Claude Code, Codex, Copilot) starts that command, writes `initialize` to its stdin, and
 treats the process exiting as the connection closing. The process it started must stay alive for the
 whole session and answer on its own stdin/stdout.
 
 ## Internals
 
-- `process_assets.py` (`resolve_for` → `browser == "agent"`) appends `mcp_spec()` to the session's
+- `process_assets.py` (`resolve_for` → the launch is not the harness extension) appends `mcp_spec()` to the session's
   MCP servers at every launch.
 - `_serve_mcp()` in `flow_sdk/core/agent_browser.py`:
   1. `ensure_running()` starts or reuses the agent's Chrome/Edge window. Its state lives in

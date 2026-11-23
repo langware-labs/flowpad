@@ -70,7 +70,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``
     import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
     import flow_sdk.schema.data_spec.compute_call_spec  # noqa: F401  — registers ``compute.call_record``
-    import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.cli`` / ``compute_op.decision`` / ``compute_op.prompt`` / ``compute_op.agent`` / ``compute_op.ask`` / ``compute_op.ask.item``
+    import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.cli`` / ``compute_op.decision`` / ``compute_op.endpoint`` / ``compute_op.prompt`` / ``compute_op.agent`` / ``compute_op.ask`` / ``compute_op.ask.item``
     import flow_sdk.schema.data_spec.confirm_spec  # noqa: F401  — registers ``confirm``
     import flow_sdk.schema.data_spec.connection_spec  # noqa: F401  — registers ``connection``
     import flow_sdk.schema.data_spec.context_relation_spec  # noqa: F401  — registers ``context.relation``
@@ -94,24 +94,25 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
     import flow_sdk.schema.data_spec.launch_failure_spec  # noqa: F401  — registers ``agent.launch_failure``
     import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``
+    import flow_sdk.schema.data_spec.lw_spec  # noqa: F401  — registers ``lw.statements`` / ``lw.requirements`` / ``lw.statement`` / ``lw.requirement`` / ``lw.file``
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
+    import flow_sdk.schema.data_spec.media_spec  # noqa: F401  — registers ``image.request`` / ``image.result`` / ``video.request`` / ``video.result``
     import flow_sdk.schema.data_spec.message_form_spec  # noqa: F401  — registers ``message.form`` / ``message.form_answers``
     import flow_sdk.schema.data_spec.message_invite_spec  # noqa: F401  — registers ``message.invite``
     import flow_sdk.schema.data_spec.message_processing_spec  # noqa: F401  — registers ``stream_inbox.message.processing``
     import flow_sdk.schema.data_spec.message_reaction_spec  # noqa: F401  — registers ``message.reaction``
     import flow_sdk.schema.data_spec.message_sender_spec  # noqa: F401  — registers ``message.sender``
     import flow_sdk.schema.data_spec.message_state_spec  # noqa: F401  — registers ``stream_inbox.message.state``
-    import flow_sdk.schema.data_spec.tag_classification_spec  # noqa: F401  — registers ``tags.classification`` / ``stream_inbox.message.context``
     import flow_sdk.schema.data_spec.navigator_spec  # noqa: F401  — registers ``navigator.route`` / ``navigator.target``
     import flow_sdk.schema.data_spec.page_state_spec  # noqa: F401  — registers ``page.state``
     import flow_sdk.schema.data_spec.permission_spec  # noqa: F401  — registers ``permission.mapping`` / ``permission.need`` / ``permission.authorization``
     import flow_sdk.schema.data_spec.phone_spec  # noqa: F401  — registers ``phone_number``
     import flow_sdk.schema.data_spec.process_call_spec  # noqa: F401  — registers ``process.call``
-    import flow_sdk.schema.data_spec.prompt_run_summary_spec  # noqa: F401  — registers ``prompt.run_summary``
     import flow_sdk.schema.data_spec.project_cleanup_spec  # noqa: F401  — registers ``project.cleanup`` and friends
     import flow_sdk.schema.data_spec.project_manifest_spec  # noqa: F401  — registers ``project.manifest`` / ``project.manifest.entry``
     import flow_sdk.schema.data_spec.project_setup_spec  # noqa: F401  — registers ``project.setup.requirement`` / ``project.setup.var``
     import flow_sdk.schema.data_spec.project_status_spec  # noqa: F401  — registers ``project.status`` / ``project.status.part``
+    import flow_sdk.schema.data_spec.prompt_run_summary_spec  # noqa: F401  — registers ``prompt.run_summary``
     import flow_sdk.schema.data_spec.rag_spec  # noqa: F401  — registers ``rag.chunk`` / ``rag.hit``
     import flow_sdk.schema.data_spec.requirement_spec  # noqa: F401  — registers ``agent.requirement`` / ``agent.readiness`` / ``agent.readiness.item``
     import flow_sdk.schema.data_spec.returned_value_spec  # noqa: F401  — registers ``compute.returned`` and its ``.cli`` / ``.prompt`` / ``.ask`` / ``.wizard`` / ``.decision`` answers
@@ -125,9 +126,12 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.setup_stage_spec  # noqa: F401  — registers ``setup.stage`` / ``setup.stage_state``
     import flow_sdk.schema.data_spec.source_item_spec  # noqa: F401  — registers ``ingest.source_item``
     import flow_sdk.schema.data_spec.status_spec  # noqa: F401  — registers ``status`` / ``status.harness`` / ``status.key`` / ``status.hub`` / ``status.account``
+    import flow_sdk.schema.data_spec.stream_inbox_classification_spec  # noqa: F401  — registers ``stream_inbox.classification`` (+ ``.conversation`` / ``.tree_change``)
+    import flow_sdk.schema.data_spec.tag_classification_spec  # noqa: F401  — registers ``tags.classification`` / ``stream_inbox.message.context``
     import flow_sdk.schema.data_spec.token_allocation_spec  # noqa: F401
     import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action`` / ``trigger.then``
     import flow_sdk.schema.data_spec.usage_report_spec  # noqa: F401  — registers ``usage.summary`` / ``usage.summary.session``
+    import flow_sdk.schema.data_spec.webapp_hosted_spec  # noqa: F401  — registers ``webapp.hosted`` / ``webapp.page_presence``
     import flow_sdk.schema.data_spec.webapp_lifecycle_spec  # noqa: F401  — registers ``webapp.lifecycle`` / ``webapp.failure`` / ``webapp.handling``
     import flow_sdk.schema.data_spec.webapp_spec  # noqa: F401  — registers ``webapp.mount`` / ``webapp.service``
     import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401

@@ -42,7 +42,7 @@ function bucket(projectId: string, name: string, folderNameMismatch: string | nu
 
 describe('project row folder-mismatch chip', () => {
   it('names the folder on a renamed project, and stays off a matching one', () => {
-    buckets = [bucket('p1', 'sales-desk', 'sales'), bucket('p2', 'waha', null)];
+    buckets = [bucket('p1', 'sales-desk', 'sales'), bucket('p2', 'bridge', null)];
     const { result } = renderHook(() => useProjectListMenu({ currentProjectId: 'p1' }));
     render(<ProjectListPopoverContent menu={result.current} />);
 

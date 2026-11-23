@@ -14,7 +14,7 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.conversation_channel import AUTOMATIONS
 from flow_sdk.builtin.flow_message import AttachmentType, FlowMessageKind
 from flow_sdk.builtin.trigger import Trigger
-from flow_sdk.schema.data_spec.automation_spec import AutomationRef
+from flow_sdk.schema.data_spec.automation_spec import AutomationRef, AutomationResult
 from flow_sdk.schema.data_spec.usage_report_spec import UsageSummarySpec
 from flow_sdk.storage import get_entity_embedded_storage
 
@@ -38,17 +38,19 @@ async def test_each_run_is_a_message_in_the_automations_one_conversation():
     arrived = AsyncMock()
     with patch("flow_sdk.notifications.notify_message_arrival", arrived):
         automation = AutomationRef(trigger_id=str(rule.id), name=rule.name)
-        await post_automation_result(automation, "Sun Nov 8: $12.50 across 3 sessions.", summary)
-        await post_automation_result(automation, "Mon Nov 9: no agent sessions.", summary)
+        await post_automation_result(automation, AutomationResult.of("done", "Sun Nov 8: $12.50 across 3 sessions."), summary)
+        await post_automation_result(automation, AutomationResult.of("done", "Mon Nov 9: no agent sessions."), summary)
 
     # This rule's one conversation (another test in the run may own its own Automations conversation).
     [conv] = await Conversation.get_all({"channel": AUTOMATIONS.name, "channel_source_id": str(rule.typeid)})
     assert conv.title == "Daily usage summary"
     messages = await conv.messages()
     assert [m.kind for m in messages] == [FlowMessageKind.AUTOMATION_RESULT] * 2
+    assert [m.card()["status"] for m in messages] == ["done", "done"]
+    assert messages[0].text == messages[0].card()["summary"] == "Sun Nov 8: $12.50 across 3 sessions."
     assert arrived.await_count == 2, "its arrival is the one notification"
-    [file] = [a for a in messages[0].attachment or [] if a.attachment_type == AttachmentType.FILE]
-    assert file.data.endswith("usage.summary.value.json")
+    card, file = [a for a in messages[0].attachment or [] if a.attachment_type == AttachmentType.FILE]
+    assert card.data.endswith("card.value.json") and file.data.endswith("usage.summary.value.json")
     body = json.loads(open(get_entity_embedded_storage(messages[0].typeid).get_storage_path(file.data)).read())
     assert (body["spec_kind"], body["total_cost_usd"]) == ("usage.summary", 12.5)
 

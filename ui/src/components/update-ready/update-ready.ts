@@ -5,8 +5,8 @@ import type { MessageDescriptor } from '@lingui/core';
 /**
  * The ONE ready update set the desktop reports (electron/main.js updateReadyState): downloaded, prepared and
  * checked — the desktop (restarts FlowPad; the engine riding it follows the new desktop) or the engine alone
- * (swapped without restarting the desktop). The "Update Ready" toast, the top bar's indicator and the version
- * popover all show this one state.
+ * (swapped without restarting the desktop). The top bar's indicator, the version chip's dot and the
+ * version popover all show this one state.
  */
 export interface UpdateReadyState {
   ready: boolean;
@@ -27,12 +27,9 @@ export interface UpdateReadyApi {
   getUpdateReadyInfo?: () => Promise<UpdateReadyState>;
   /** "Restart": applies the ready set through the desktop's existing update paths. */
   activateUpdate?: () => Promise<ActivationResult>;
-  /** The toast the desktop asked for and the UI has not shown yet — taken once (null when none). */
-  takeUpdateReadyToast?: () => Promise<UpdateReadyState | null>;
   /** PyPI has a newer release than the engine update waiting: the desktop looks now and quietly replaces it. */
   refreshWaitingEngine?: () => Promise<{ started: boolean }>;
   onUpdateReadyState?: (callback: (state: UpdateReadyState) => void) => () => void;
-  onUpdateReadyToast?: (callback: (state: UpdateReadyState) => void) => () => void;
 }
 
 export function getUpdateReadyApi(): UpdateReadyApi | undefined {
@@ -42,26 +39,13 @@ export function getUpdateReadyApi(): UpdateReadyApi | undefined {
 /** Asks the version popover (in the footer) to open — the top bar's indicator has no popover of its own. */
 export const OPEN_VERSION_POPOVER_EVENT = 'flowpad:open-version-popover';
 
-/** With `activation`: a "Restart" from the toast that did not apply — the popover says why. */
-export interface OpenVersionPopoverDetail {
-  activation?: ActivationResult;
+export function openVersionPopover(): void {
+  window.dispatchEvent(new Event(OPEN_VERSION_POPOVER_EVENT));
 }
 
-export function openVersionPopover(detail: OpenVersionPopoverDetail = {}): void {
-  window.dispatchEvent(new CustomEvent<OpenVersionPopoverDetail>(OPEN_VERSION_POPOVER_EVENT, { detail }));
-}
-
-/** True when "Restart" did not apply the update (the toast is already closed: the popover has to say so). */
-export function activationFailed(r: ActivationResult): boolean {
-  return !r.started || r.success === false;
-}
-
-/**
- * Why "Restart" did not apply the update, or null when it did — one wording for the popover's buttons and for a
- * "Restart" from the toast (already closed, so the popover opens to say it).
- */
+/** Why "Restart" did not apply the update, or null when it did — the wording for the popover's buttons. */
 export function activationProblem(r: ActivationResult): MessageDescriptor | null {
-  if (!activationFailed(r)) return null;
+  if (r.started && r.success !== false) return null;
   const error = r.error;
   if (r.reason === 'busy') return msg`Another update is in progress. Try again when it is done.`;
   if (r.reason === 'not-ready' || r.reason === 'not-downloaded')

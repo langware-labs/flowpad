@@ -18,7 +18,7 @@
 import { FileCode } from 'lucide-react';
 
 import { registerFenceRenderer, type FenceRenderContext, type FenceRenderer } from '../registry';
-import { el, iconMarkup } from './dom';
+import { editable, el, iconMarkup } from './dom';
 import { applyInterfaceEdit, type InterfaceEdit } from './interface-edit';
 import {
   parseInterfaceBlock,
@@ -30,76 +30,6 @@ import {
 import { formatSourceLabel, resolveSourceLocation } from './source-location';
 
 const SOURCE_ICON = iconMarkup(FileCode);
-
-/**
- * A click-to-edit value.
- *
- * `contenteditable` on a descendant of the (non-editable) preview pane creates
- * an editable island the host editor ignores — the NodeView's `stopEvent` and
- * `ignoreMutation` keep ProseMirror out of this subtree entirely, so typing
- * here never reaches the outer document.
- *
- * Enter commits, Escape reverts, blur commits. An edit that doesn't change
- * anything commits nothing.
- */
-function editable(
-  className: string,
-  value: string,
-  testId: string,
-  canEdit: boolean,
-  onCommit: (next: string) => void,
-): HTMLElement {
-  // Read-only host (the vibe display, any `view` mode asset): draw the value as
-  // plain text. The controls sit in a `contenteditable="false"` pane, outside
-  // ProseMirror's own editable check, so nothing else would stop a user from
-  // editing a document they are only meant to be reading.
-  if (!canEdit) {
-    const readonly = el('span', className, value);
-    readonly.setAttribute('data-testid', testId);
-    return readonly;
-  }
-
-  const node = el('span', `${className} interface-card-editable`, value);
-  // setAttribute, not the `contentEditable` IDL property: the property does not
-  // reflect to the attribute in jsdom, so component tests could not observe it.
-  node.setAttribute('contenteditable', 'true');
-  node.spellcheck = false;
-  node.setAttribute('role', 'textbox');
-  node.setAttribute('data-testid', testId);
-
-  const revert = () => {
-    node.textContent = value;
-  };
-
-  const commit = () => {
-    const next = (node.textContent ?? '').trim();
-    if (!next) {
-      // An emptied field would delete the key from the YAML; treat it as a
-      // mistake and restore rather than silently dropping the author's data.
-      revert();
-      return;
-    }
-    if (next === value) {
-      node.textContent = value; // normalize away stray whitespace
-      return;
-    }
-    onCommit(next);
-  };
-
-  node.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      node.blur();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      revert();
-      node.blur();
-    }
-  });
-  node.addEventListener('blur', commit);
-
-  return node;
-}
 
 function paramRow(param: InterfaceParam, canEdit: boolean, edit: (change: InterfaceEdit) => void): HTMLElement {
   const row = el('div', 'interface-card-param');

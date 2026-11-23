@@ -50,9 +50,9 @@ describe('review opens the staged copy by path in its own viewer, read-only', ()
 
   it('a .md opens in the markdown viewer in View mode, read-only', async () => {
     const write = vi.spyOn(FSRef.prototype, 'write');
-    renderReview(staged('notes.md'));
+    const { container } = renderReview(staged('notes.md'));
     expect((await screen.findByTestId('editor-mode-chip-view')).getAttribute('data-mode-active')).toBe('true');
-    expect(document.querySelector('[contenteditable="true"]')).toBeNull();
+    expect(container.querySelector('[contenteditable="true"]')).toBeNull();
     expect(write).not.toHaveBeenCalled();
   });
 });

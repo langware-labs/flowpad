@@ -10,12 +10,18 @@ description: ExitPlanMode carries only the plan prose; planFilePath lives on the
 
 > Ground truth. Proven on 2026-08-12 (FLOWPAD-1972). Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.live_plan_detection.rules
 sites:
-  - rel_path: "tests/unit/test_agentic_process/test_live_plan_detection.py"
+  - rel_path: tests/unit/test_agentic_process/test_live_plan_detection.py
     line: 179
-    note: "FAILING? the path is on the plan_mode ATTACHMENT, not on ExitPlanMode - read this tag before touching the guard"
+    note: FAILING? the path is on the plan_mode ATTACHMENT, not on ExitPlanMode - read this tag before touching the guard
+proven: 2026-08-12 · FLOWPAD-1972
+statements:
+  - text: Never guard on `entry.plan_file_path` alone.
+  - text: 'Precedence is fixed: tool_use path → (pull path only: cached `self.plan_path`) → newest `plan_mode` attachment.'
+  - text: One resolver, no fourth scan.
+  - text: Empty string means "not available", never "error".
 ```
 
 ## Expected behavior

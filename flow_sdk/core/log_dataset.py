@@ -32,6 +32,19 @@ def temp_datasets() -> Path:
     return instance_temp_dir("agentic-assets", "dataset")
 
 
+def kept_datasets() -> Path:
+    """This instance's own KEPT datasets: what Flowpad learns on this machine and must not lose with
+    temp (the Stream Inbox tags' ground truth). Private to the instance, never inside a project."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().instance_dir / "agentic-assets" / "dataset"
+
+
+def instance_dataset_roots() -> tuple[Path, ...]:
+    """The folders whose datasets are Flowpad's own on this instance: system scope, rows beside the manifest."""
+    return temp_datasets(), kept_datasets()
+
+
 def _lock(name: str) -> asyncio.Lock:
     per_loop = _locks.setdefault(asyncio.get_running_loop(), {})
     return per_loop.setdefault(name, asyncio.Lock())
@@ -59,15 +72,17 @@ def rows(folder: Path) -> list[Path]:
     return sorted(_row_dirs(folder), key=lambda p: (0, int(p.name), "") if p.name.isdigit() else (1, 0, p.name))
 
 
-class TempLog:
-    """One log dataset in temp."""
+class _InstanceDataset:
+    """A dataset Flowpad itself owns on this instance: created and indexed on its first row, one writer."""
+
+    root = staticmethod(temp_datasets)
 
     def __init__(self, name: str, title: str, spec: Any, description: str) -> None:
         self.name, self.title, self.spec, self.description = name, title, spec, description
-        self._row: Any = None  # the indexed row, once found: one DB lookup per log, not per append
+        self._row: Any = None  # the indexed row, once found: one DB lookup per dataset, not per write
 
     def folder(self) -> Path:
-        return temp_datasets() / self.name
+        return self.root() / self.name
 
     def _create(self) -> None:
         manifest = self.folder() / "dataset.json"
@@ -81,7 +96,7 @@ class TempLog:
         manifest.write_text(json.dumps({"metadata": metadata, "data": {}}, indent=2) + "\n")
 
     async def indexed(self) -> Any:
-        """The log as the index holds it (no rows read) -- None before its first row."""
+        """The dataset as the index holds it (no rows read) -- None before its first row."""
         from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
 
         here = self.folder().resolve()  # the index stores the resolved path (/private/var/... on macOS)
@@ -92,7 +107,7 @@ class TempLog:
         return self._row
 
     async def dataset(self) -> Any:
-        """The log, created on first use: the indexed row when there is one, else the folder (no DB)."""
+        """Created on first use: the indexed row when there is one, else the folder (no DB)."""
         from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
 
         indexed = await self.indexed()
@@ -101,26 +116,49 @@ class TempLog:
         self._create()
         return Dataset.at(self.folder())
 
-    async def append(self, row: dict, *, max_rows: Optional[int] = None) -> Optional[str]:
-        """Append one row; the new row id, else None. Never raises."""
+    async def _writable(self) -> tuple[Any, Any]:
+        """``(dataset to write through, its indexed row or None)`` -- created and indexed on first use."""
         from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
         from flow_sdk.fs_store.resolve import index_one, resolve_asset  # noqa: PLC0415
 
+        indexed = await self.indexed()
+        if indexed is None or getattr(indexed, "scope", None) != "system":
+            # The first row (or a row indexed as the user's before temp was system): index it once,
+            # so the UI lists the log. The temp folder classifies as system, so it is listed under
+            # the system project and not in every user project.
+            self._create()
+            try:
+                await index_one(await resolve_asset(self.folder(), write=True), notify=True)
+            except Exception as exc:  # noqa: BLE001 -- no index (no DB): the folder alone takes the row
+                logger.debug("%s: not indexed: %s", self.title, exc)
+            self._row = None
+            indexed = await self.indexed()
+        return indexed or Dataset.at(self.folder()), indexed
+
+
+class KeptDataset(_InstanceDataset):
+    """One dataset kept on this instance. Unlike a log, a row that cannot be written is an error."""
+
+    root = staticmethod(kept_datasets)
+
+    async def put_many(self, rows: list[dict]) -> list[str]:
+        """Create or replace ``rows`` (each with its ``key``) as one step, and count once."""
+        async with _lock(self.name):
+            ds, indexed = await self._writable()
+            ids = await ds.put_many(rows)
+            if indexed is not None:
+                await indexed.refresh_counts()
+        return ids
+
+
+class TempLog(_InstanceDataset):
+    """One log dataset in temp."""
+
+    async def append(self, row: dict, *, max_rows: Optional[int] = None) -> Optional[str]:
+        """Append one row; the new row id, else None. Never raises."""
         try:
             async with _lock(self.name):
-                indexed = await self.indexed()
-                if indexed is None or getattr(indexed, "scope", None) != "system":
-                    # The first row (or a row indexed as the user's before temp was system): index it once,
-                    # so the UI lists the log. The temp folder classifies as system, so it is listed under
-                    # the system project and not in every user project.
-                    self._create()
-                    try:
-                        await index_one(await resolve_asset(self.folder(), write=True), notify=True)
-                    except Exception as exc:  # noqa: BLE001 -- no index (no DB): the folder alone takes the row
-                        logger.debug("%s: not indexed: %s", self.title, exc)
-                    self._row = None
-                    indexed = await self.indexed()
-                ds = indexed or Dataset.at(self.folder())
+                ds, indexed = await self._writable()
                 [row_id] = await ds.append([row])
                 if max_rows is not None:
                     held = rows(self.folder())
@@ -140,4 +178,4 @@ class TempLog:
         spawn(self.append(row, max_rows=max_rows))
 
 
-__all__ = ["TempLog", "drain", "rows", "spawn", "temp_datasets"]
+__all__ = ["KeptDataset", "TempLog", "drain", "instance_dataset_roots", "kept_datasets", "rows", "spawn", "temp_datasets"]

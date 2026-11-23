@@ -10,7 +10,7 @@
  * `RestartButton` (the terminal does), which then carries the glow.
  */
 
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, copyToClipboard } from '@sdk';
 import { BrowserProfileMenu } from '@src/components/links/BrowserProfileMenu';
 import { useBrowserProfiles } from '@src/lib/browser-profiles';
 import { isProcessRunning } from '@sdk/process/agentic-types.js';
@@ -31,6 +31,7 @@ import { PopoverAnchor } from '@src/components/ui/popover';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import {
   Boxes,
+  Copy,
   Download,
   FolderGit2,
   GitMerge,
@@ -52,7 +53,7 @@ import { useIsAdvanced } from '@src/components/view-mode';
 import { sideTabsAt } from './side-windows';
 import { CommandStatusViewer } from './command-status-viewer';
 import { EntityShareDialog } from './EntityShareDialog';
-import { SessionInfoPopover } from './SessionInfoPopover';
+import { SessionInfoPopover, sessionDetailsText } from './SessionInfoPopover';
 import { useChainSession } from './useChainSession';
 import { useCommitMerge, useOpenInWorktree } from './use-worktree-actions';
 import { useRestartRequiredHint } from './useRestartRequiredHint';
@@ -159,8 +160,20 @@ export function SessionActionsMenu({
               setInfoOpen(true);
             }}
           >
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
+            <DropdownMenuLabel className="flex items-center justify-between text-xs text-muted-foreground">
               <Trans>Session</Trans>
+              {hasSession && (
+                <button
+                  type="button"
+                  data-testid="session-action-copy-details"
+                  className="rounded p-0.5 hover:bg-accent hover:text-foreground"
+                  title={t`Copy session details`}
+                  aria-label={t`Copy session details`}
+                  onClick={() => void copyToClipboard(sessionDetailsText(process))}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              )}
             </DropdownMenuLabel>
             {hasSession && (
               <>

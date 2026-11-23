@@ -196,6 +196,9 @@ class Verdict(DataSpec):
     ready: bool
     detail: str = ""
     pending: tuple[str, ...] = ()
+    #: Not ready because the provider turned the credential itself down (a dead token, a missing scope):
+    #: its values are asked again, where any other reason leaves them alone.
+    refused: bool = False
 
 
 #: The contract capabilities, by the name a boundary reports them under.

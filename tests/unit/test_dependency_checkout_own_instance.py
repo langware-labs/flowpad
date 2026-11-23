@@ -1,8 +1,8 @@
 """A dependency resolves to THIS instance's checkout, never another instance's clone of the same URL.
 
 ``~/.claude/projects`` is machine-wide, so on stg-1 the URL lookup listed prod's
-``~/Flowpad workspace/waha-service``; the dependency adopted it, and registering it as a
-project collided with stg-1's own ``waha-service`` ("a project named ... already exists").
+``~/Flowpad workspace/bridge-service``; the dependency adopted it, and registering it as a
+project collided with stg-1's own ``bridge-service`` ("a project named ... already exists").
 """
 
 import dataclasses
@@ -18,7 +18,7 @@ from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.instance_settings import get_instance_settings
 from tests.unit.conftest import git_cmd
 
-URL = "https://github.com/acme/waha-service.git"
+URL = "https://github.com/acme/bridge-service.git"
 
 
 def _clone(path):
@@ -30,8 +30,8 @@ def _clone(path):
 
 @pytest.fixture
 def two_instances(tmp_path, monkeypatch):
-    mine = _clone(tmp_path / "instances" / "stg" / "workspace" / "waha-service")
-    prod = _clone(tmp_path / "Flowpad workspace" / "waha-service")
+    mine = _clone(tmp_path / "instances" / "stg" / "workspace" / "bridge-service")
+    prod = _clone(tmp_path / "Flowpad workspace" / "bridge-service")
     settings = dataclasses.replace(get_instance_settings(), user_home=tmp_path)  # prod's root: <home>/Flowpad workspace
     monkeypatch.setattr("flow_sdk.instance_settings.get_instance_settings", lambda: settings)
     monkeypatch.setattr(config, "agent_workspace_root", lambda: mine.parent)

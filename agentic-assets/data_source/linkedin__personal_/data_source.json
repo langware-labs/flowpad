@@ -1,0 +1,18 @@
+{
+  "type": "data_source",
+  "id": "bd77942b-bf38-451e-9318-a6a2ceb86f35",
+  "name": "LinkedIn (personal)",
+  "data_driver_name": "agent",
+  "data_driver_config": {
+    "connector": "linkedin",
+    "browser": "extension",
+    "max_items": 8
+  },
+  "reflect": "record",
+  "reflect_into": "",
+  "poll_interval_seconds": 10800,
+  "window_days": 7,
+  "rate_limit_retries": 0,
+  "required_capabilities": [],
+  "connection": ""
+}

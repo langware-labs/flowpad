@@ -1,0 +1,12 @@
+{
+  "name": "extension",
+  "title": "Chrome extension",
+  "icon": "chrome",
+  "description": "The user's own Chrome, through the Claude in Chrome extension.",
+  "workers": {
+    "claude": {"attach": "harness_extension", "setup": "Install the Claude in Chrome extension in the Chrome profile you want Claude to use, and keep that Chrome open."}
+  },
+  "probe": "extension",
+  "tool_prefixes": ["mcp__claude-in-chrome__"],
+  "install_url": "https://chromewebstore.google.com/detail/claude/fcoeoabgfenejglbffodgkkbkcdhcgfn"
+}

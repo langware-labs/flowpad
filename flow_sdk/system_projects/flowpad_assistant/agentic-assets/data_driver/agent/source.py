@@ -48,6 +48,8 @@ class ConnectorProfile:
     subagent: str
     send_agent: str
     send_subagent: str
+    #: Read through a browser rather than a connector: the source's config names the browser driver.
+    browser: bool = False
 
 
 CONNECTOR_PROFILES: dict[str, ConnectorProfile] = {
@@ -59,6 +61,19 @@ CONNECTOR_PROFILES: dict[str, ConnectorProfile] = {
         kind="content.message.chat", mailbox_noun="channel", default_mailbox="",
         agent="slack-summarizer", subagent="slack_analyzer", send_agent="slack-poster", send_subagent="slack_sender",
     ),
+    "linkedin": ConnectorProfile(
+        kind="content.message.chat", mailbox_noun="inbox", default_mailbox="inbox",
+        agent="linkedin-reader", subagent="linkedin_analyzer", send_agent="linkedin-poster", send_subagent="linkedin_sender",
+        browser=True,
+    ),
+}
+
+#: What a worker's receipt reports when a person must act — the one table a fetch (parks the source)
+#: and a send (not authenticated) both read.
+PERSON_FIXES = {
+    "no_connector": "the harness has no connector for this channel in this session",
+    "no_browser": "the worker's browser is not connected",
+    "signed_out": "the browser is not signed in to this channel",
 }
 
 
@@ -67,22 +82,38 @@ def profile_of(config: Mapping[str, Any]) -> ConnectorProfile:
     every thread in a source permanently, so refusing parks the source with the fix in the message."""
     connector = str((config or {}).get("connector") or "").strip().lower()
     if not connector:
-        raise Rejected("config.connector is required (gmail | slack)")
+        raise Rejected(f"config.connector is required ({' | '.join(sorted(CONNECTOR_PROFILES))})")
     profile = CONNECTOR_PROFILES.get(connector)
     if profile is None:
         raise Rejected(f"connector {connector!r} has no profile; supported: {' | '.join(sorted(CONNECTOR_PROFILES))}")
     return profile
 
 
+def browser_of(config: Mapping[str, Any]) -> str:
+    """The browser driver a browser-read connector runs on; "" for a connector that needs none. A
+    browser connector with none named is refused: a worker on whatever browser the session happens to
+    get would read another account's inbox."""
+    if not profile_of(config).browser:
+        return ""
+    from flow_sdk.core import browser_drivers  # noqa: PLC0415
+
+    name = str((config or {}).get("browser") or "").strip()
+    if browser_drivers.get(name) is None:
+        raise Rejected(f"config.browser is required: one of {' | '.join(browser_drivers.names())}")
+    return name
+
+
 class WorkerTransport(Protocol):
     """A harness worker, as the application launches one."""
 
-    async def fetch(self, *, source_id: str, name: str, config: Mapping[str, Any], mailbox: str, since: str) -> dict:
-        """Run one fetch; the worker's receipt (``count``, ``high_water``, ``error``)."""
+    async def fetch(self, *, source_id: str, name: str, config: Mapping[str, Any], mailbox: str, since: str, account: str = "") -> dict:
+        """Run one fetch; the worker's receipt (``count``, ``high_water``, ``error``). ``account``: what
+        the source knows its own account by, for a worker that must mark our own messages."""
         ...
 
     async def send(
-        self, *, source_id: str, config: Mapping[str, Any], channel: str, thread_key: str, to: str, text: str, subject: str, conversation_id: str
+        self, *, source_id: str, config: Mapping[str, Any], channel: str, thread_key: str, to: str, text: str, subject: str, conversation_id: str,
+        account: str = "",
     ) -> dict:
         """Run one send; the confirmed outcome (``external_id``, ``drafted``, ``recorded``, ``artifact_id``)."""
         ...
@@ -120,6 +151,8 @@ class AgentConfig(SourceConfig):
     #: The ONE mailbox (gmail label) or channel id (slack) this source walks. Empty = the
     #: connector's default; a connector without one requires it.
     mailbox: str = ""
+    #: The browser driver a browser-read connector (linkedin) runs on; unused by the others.
+    browser: str = ""
     agent: str = ""
     subagent: str = ""
     max_items: Optional[int] = None
@@ -195,15 +228,17 @@ class AgentSource(MessageSource):
             positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         if cursor is not None and (not isinstance(cursor, str) or not cursor.startswith(_RESUME) or len(cursor) == len(_RESUME)):
             raise InvalidCursor("not an agent-transport cursor")
+        browser_of(self.config)  # refused before a worker is spent
         query = self.effective_query(narrow)
         since = cursor[len(_RESUME):] if cursor else (query.since.isoformat() if query.since else "")
         receipt = await self.worker.fetch(
-            source_id=self.binding.source_id, name=self.binding.name, config=self.config, mailbox=query.conversation.key, since=since
+            source_id=self.binding.source_id, name=self.binding.name, config=self.config, mailbox=query.conversation.key, since=since,
+            account=self.binding.account_key,
         )
         reported = receipt.get("error")
         if reported:
-            if str(reported) == "no_connector":
-                raise AccessDenied("the harness has no connector for this channel in this session")
+            if fix := PERSON_FIXES.get(str(reported)):
+                raise AccessDenied(fix)
             raise SourceUnavailable(f"the ingest agent reported: {reported}")
         high_water = str(receipt.get("high_water") or "")
         # No items: the worker recorded them through the ingest route; returning them would ingest twice.
@@ -220,6 +255,7 @@ class AgentSource(MessageSource):
         """One harness send. A refused or unconfirmed send is the APPLICATION's launch error and
         propagates as such: one failed reply must never become source health."""
         self._require_open()
+        browser_of(self.config)  # refused before a worker is spent
         if not isinstance(data, MessageData):
             raise TypeError(f"expected MessageData, got {type(data).__name__}")
         if not (data.text or "").strip():
@@ -229,7 +265,7 @@ class AgentSource(MessageSource):
         outcome = await self.worker.send(
             source_id=self.binding.source_id, config=self.config, channel=self.origin_kind_for(self.config),
             thread_key=thread_key, to=to, text=data.text or "", subject=getattr(data, "subject", None) or "",
-            conversation_id=getattr(data, "conversation_id", ""),
+            conversation_id=getattr(data, "conversation_id", ""), account=self.binding.account_key,
         )
         drafted = bool(outcome.get("drafted"))
         external_id = str(outcome.get("external_id") or "")
@@ -244,4 +280,4 @@ class AgentSource(MessageSource):
         raise Unsupported("the agent transport replies into a thread; send to the conversation instead")
 
 
-__all__ = ["CONNECTOR_PROFILES", "AgentSendData", "AgentSentData", "AgentSource", "ConnectorProfile", "WorkerTransport", "profile_of"]
+__all__ = ["CONNECTOR_PROFILES", "PERSON_FIXES", "browser_of", "AgentSendData", "AgentSentData", "AgentSource", "ConnectorProfile", "WorkerTransport", "profile_of"]

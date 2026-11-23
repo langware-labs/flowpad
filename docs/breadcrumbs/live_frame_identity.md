@@ -13,12 +13,20 @@ description: process_entry rides the history JSON but NOT the live wire — to_x
 
 > Ground truth. Proven by RCA on 2026-08-26. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.live_frame_identity.rules
 sites:
-  - rel_path: "tests/unit/test_agentic_process/test_observe_turn_after_entry_id.py"
+  - rel_path: tests/unit/test_agentic_process/test_observe_turn_after_entry_id.py
     line: 276
-    note: "FAILING? the wire lost transcript-entry-id - read this tag's rules before touching entry_to_flowdata or to_xml"
+    note: FAILING? the wire lost transcript-entry-id - read this tag's rules before touching entry_to_flowdata or to_xml
+proven: '2026-08-26'
+statements:
+  - text: Anything a client must read off a LIVE frame belongs in `attributes`.
+  - text: '`entry_to_flowdata` serves every vendor on the observe-turn path.'
+  - text: Resolve a transcript id two-tier, always — `processEntry.transcript_entry.id` *then* `attributes['transcript-entry-id']`.
+  - text: Never gate the whole stream on liveness once the client has stated a position.
+  - text: A backlog-only stream must close itself.
+  - text: A position that cannot advance is worse than no position.
 ```
 
 ## Expected behavior

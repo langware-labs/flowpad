@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, waitFor, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { DataSource } from '@sdk';
 import { BrowseableRoot } from '@src/components/browseable-tree/types';
@@ -32,7 +32,8 @@ function Sidebar() {
 const source = (id: string, displayName: string) => ({ id, displayName, provider: '', channel: '' }) as DataSource;
 
 it('adds and removes the source category and refreshes already expanded children', async () => {
-  const { rerender } = render(<Sidebar />);
+  const { container, rerender } = render(<Sidebar />);
+  const screen = within(container);
   expect(screen.queryByRole('button')).toBeNull();
   sources = [source('10000000-0000-4000-8000-000000000001', 'Support mail')];
   rerender(<Sidebar />);

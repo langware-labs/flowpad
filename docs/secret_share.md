@@ -191,6 +191,52 @@ any process reads: a process still reads its deployment's binding (above).
   through the same ask-for-help path, and the owner grants it in the store itself (GCP IAM
   `roles/secretmanager.secretAccessor`; a 1Password vault share). Flowpad grants nothing itself yet.
 
+### The active vault — the one an agent reads from
+
+`flow_sdk/secrets/active.py` answers "which vault applies here?" for any target. The person's own
+**pick** for the project on this computer comes first (`set_vault_pick`: a project vault's name or
+`global`, kept in `preferences.secrets.vault_pick` and never in the project; the footer's key menu
+sets it with "Use here", and the answer says `picked`). With no pick, the most specific
+scope wins (`SecretScope`): the **entity**'s own (`secret_vault()` on the entity — a credential names
+the vault its variables point into), else its **project**'s default (`default_secret_vault` in
+`project_manifest.json`, else the first of `secret_vaults` by name), else this instance's **global**
+vault (`preferences.secrets.vault` in `preferences.json`, written by `set_global_vault`, which refuses an
+unknown manager). `active_vault_of(target)` returns it as an `ActiveVaultSpec` (title, `usable` here,
+`is_default`); it runs no manager, so reading it never raises an unlock prompt. `read_from_vault(names,
+target)` is the read: from that vault, never a write, refused as `sealed` before the manager is asked.
+
+An agent that lacks a secret in its environment reads it from there (the rule is in
+`instructions/common.md`): `flow secrets run NAME[,NAME] -- <command>` hands the values to that one
+command and saves nothing; `flow secrets active` says which vault is in use and prints its manager's
+own instructions (`agentic-assets/secret_manager/<name>/instructions.md`) — the same text a session
+gets in its system prompt at launch (the `SECRET_MANAGER` layer, `docs/agent/system-prompt-layers.md`). `flow secrets vault default
+<name>` names the project's default. `GET …/credentials/active?project_id=&target=<typeid>` is the same
+answer over HTTP. `GET …/credentials/vaults` lists a project's vaults described (`rows`), the `global` one
+and the `active` one in one answer; the footer's key chip (`useSecretManager`) renders it.
+
+### Open or sealed — a manager's access
+
+A manager's access on a machine is **open** or **sealed** (`VaultAccess`, `flow_sdk/secrets/managers.py`):
+1Password seals itself a few minutes after the last approval, Google Cloud is open while its sign-in holds.
+It is part of every manager's own API, declared in its `secret_manager.json`: `status` (exits 0 while open,
+never prompts), `login` (opens it) and `close` (seals it; empty when the manager cannot). `access_of`,
+`open_access` and `close_access` run them and answer a `VaultAccessSpec` (`state`, `can_open`, `can_close`,
+`detail`). `flow secrets status|open|close [vault]` and `POST …/credentials/vault-access {vault, scope,
+change}` are the same three; with no vault they act on the active one, and `scope: global` names this
+instance's. The footer chip shows the state per vault with Open / Close. A read from a sealed vault is
+refused (`flow secrets run` exits `sealed`, naming `flow secrets open`).
+
+**One holder per instance.** A manager's sign-in can belong to the process session that asked for it
+(1Password's CLI does this), so every call to a manager is made by the instance's backend: status, open,
+close, and the read behind `flow secrets run` (`POST …/credentials/vault-read {names}` — the ONE route that
+answers values; everything else answers names). A wizard's commands stay in the session that runs the
+wizard (`flow_sdk/core/compute/exec.py`), so its steps share one sign-in. Still its own session:
+`flow secrets setup` typed in a terminal, which runs its wizard in that terminal.
+
+The `gcp` manager reads this machine's Google **application default** credentials (`gcloud auth
+application-default login`), not the person's own `gcloud` login, so closing it
+(`application-default revoke`) leaves every other terminal signed in.
+
 The `onepassword` secret manager (`agentic-assets/secret_manager/onepassword/store.py`) runs the `op` CLI as whoever is signed in
 on the machine; a value never rides its command line (writes go as a JSON template on stdin).
 

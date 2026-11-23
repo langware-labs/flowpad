@@ -11,12 +11,17 @@ description: A failed hub-first delete answers HubError.http_status (403/401 kep
 
 > Ground truth. Proven by RCA on 2026-11-03 (FLOWPAD-2328). Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.hub_delete_status.rules
 sites:
-  - rel_path: "tests/unit/test_deployment_delete_action_hub_failures.py"
+  - rel_path: tests/unit/test_deployment_delete_action_hub_failures.py
     line: 121
-    note: "FAILING? read this tag's rules before editing — the status comes from HubError.http_status, never a hard-coded one"
+    note: FAILING? read this tag's rules before editing — the status comes from HubError.http_status, never a hard-coded one
+proven: 2026-11-03 · FLOWPAD-2328
+statements:
+  - text: The status comes from `HubError.http_status`.
+  - text: '`detail` is `HubError.user_message()`.'
+  - text: A failed hub delete never removes the local row.
 ```
 
 ## Expected behavior
@@ -53,7 +58,6 @@ delete can be retried.
   a hub failure (502) from a local crash (500).
 - `detail` is `HubError.user_message()`. It's never built by hand from `e.reason`, status numbers or hub codes
   (`target_not_found`).
-- A failed hub delete never removes the local row.
 
 ## Failure modes
 

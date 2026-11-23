@@ -13,15 +13,23 @@ version: 5
 > and by RCA on 2026-09-02 (the contract has two triggers, not one).
 > Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.terminal_bidi.rules
 sites:
-  - rel_path: "ui/tests/browser_render/xterm-rtl.spec.ts"
+  - rel_path: ui/tests/browser_render/xterm-rtl.spec.ts
     line: 168
-    note: "FAILING? read this tag's rules before editing \u2014 do NOT relax the assertion or the CSS; a row must stay one bidi paragraph"
-  - rel_path: "ui/tests/unit/terminal-headless-roundtrip.test.tsx"
+    note: FAILING? read this tag's rules before editing — do NOT relax the assertion or the CSS; a row must stay one bidi paragraph
+  - rel_path: ui/tests/unit/terminal-headless-roundtrip.test.tsx
     line: 407
-    note: "FAILING? read this tag's rules before editing \u2014 the contract has TWO triggers (container mount AND vendor resolution); do not delete either stamp"
+    note: FAILING? read this tag's rules before editing — the contract has TWO triggers (container mount AND vendor resolution); do not delete either stamp
+proven: '2026-08-03'
+statements:
+  - text: A row is one bidi paragraph.
+  - text: Exactly one contract applies at a time.
+  - text: The contract belongs to the APP, not just the host.
+  - text: The grid is not negotiable.
+  - text: Never assume a platform or an app — measure.
+  - text: The contract has TWO independent triggers, and both must stamp.
 ```
 
 ## Expected behavior

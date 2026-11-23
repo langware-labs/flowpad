@@ -97,7 +97,7 @@ describe('FavoritesAddRow — build into the level it sits under', () => {
     h.activeEntityTypeId = { type: 'markdown', id: ACTIVE };
     render(<FavoritesAddRow parentId="" />);
 
-    fireEvent.click(screen.getByLabelText(/what's open/i));
+    fireEvent.click(screen.getByRole('button', { name: /bookmark this page/i }));
 
     expect(h.addFavorite).toHaveBeenCalledWith({ entityType: 'markdown', entityId: ACTIVE, title: 'Welcome' }, '');
   });
@@ -115,7 +115,7 @@ describe('FavoritesAddRow — build into the level it sits under', () => {
     tabManager.adoptGlobal(h.allTabs as never);
     render(<FavoritesAddRow parentId="folder-9" />);
 
-    fireEvent.click(screen.getByLabelText(/what's open/i));
+    fireEvent.click(screen.getByRole('button', { name: /bookmark this page/i }));
 
     expect(h.addFavorite).toHaveBeenCalledWith(
       {
@@ -134,7 +134,7 @@ describe('FavoritesAddRow — build into the level it sits under', () => {
     h.currentDock = null; // full-bleed Home, no tab
     render(<FavoritesAddRow parentId="" />);
 
-    const current = screen.getByLabelText(/nothing open to bookmark/i);
+    const current = screen.getByRole('button', { name: /bookmark this page/i });
     expect(current).toBeDisabled();
     fireEvent.click(current);
     expect(h.addFavorite).not.toHaveBeenCalled();

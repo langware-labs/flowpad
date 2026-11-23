@@ -17,7 +17,10 @@ def _serve(folder):
 
 def test_inject_puts_script_first_in_head():
     out = inject(b"<html><head><title>x</title></head></html>")
-    assert out.startswith(b'<html><head><script src="/__flowpad/reporter.js?load="></script><title>')
+    assert out.startswith(b'<html><head><script src="/__flowpad/reporter.js?load="></script><script>')
+    assert b"__flowpadPresence" in out and out.endswith(b"</script><title>x</title></head></html>"), (
+        "the reporter first, then the script that lists the page as a live connection, then the page's own head"
+    )
 
 
 def test_inject_without_head_goes_on_top():

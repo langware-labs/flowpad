@@ -19,15 +19,15 @@ import type { MessageDescriptor } from '@lingui/core';
  * the fetch cannot live in a renderer closure, and why it must never throw.
  */
 
-import { FileCode, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 import { registerFenceRenderer, type FenceRenderContext, type FenceRenderer } from '../registry';
 import { ensureBreadcrumbContext, invalidateBreadcrumbContext, peekBreadcrumbContext } from './breadcrumb-context';
 import { formatSiteLabel, parseBreadcrumbBlock, type BreadcrumbSite, type BreadcrumbSpec } from './breadcrumb-schema';
 import { el, iconMarkup } from './dom';
-import { resolveRelPath, type SourceLocation } from './source-location';
+import { chipRow } from './site-chip';
+import { resolveRelPath } from './source-location';
 
-const SITE_ICON = iconMarkup(FileCode);
 const REFRESH_ICON = iconMarkup(RefreshCw);
 
 /**
@@ -66,48 +66,6 @@ function cardState(spec: BreadcrumbSpec, root: string | null): CardState {
   if (entry.sites) return { rows: entry.sites, provenance: entry.error ? 'stale' : 'live', status: null };
   if (entry.inFlight) return { rows: spec.sites, provenance: 'pending', status: null };
   return { rows: spec.sites, provenance: 'authored', status: entry.error };
-}
-
-/**
- * One row: a chip that peeks at a file, and whatever note goes with it.
- *
- * Deliberately NOT gated on `ctx.editable`. Nothing on this card mutates the
- * document, and a read-only surface — the vibe display, a `view`-mode asset —
- * is exactly where following a breadcrumb to its test matters most.
- */
-function chipRow(
-  testId: string,
-  label: string,
-  location: SourceLocation,
-  note: string | undefined,
-  ctx: FenceRenderContext,
-): HTMLElement {
-  const row = el('div', 'breadcrumb-card-site');
-
-  const chip = el('button', 'breadcrumb-card-site-chip');
-  chip.type = 'button';
-  chip.setAttribute('data-testid', testId);
-  chip.innerHTML = SITE_ICON;
-  chip.appendChild(el('span', 'breadcrumb-card-site-label', label));
-
-  if (location.ok) {
-    chip.title = t`Preview ${location.path}`;
-    chip.addEventListener('click', () => {
-      ctx.host.previewFile(location.path, { line: location.line });
-    });
-  } else {
-    // A dead chip that says nothing is worse than none — carry the resolver's
-    // own reason, the way the interface source chip does.
-    chip.disabled = true;
-    chip.title = location.reason;
-    chip.setAttribute('data-reason', location.reason);
-  }
-  row.appendChild(chip);
-
-  // The note is the whole payload `flow tag get` shows for a code site, so it
-  // is shown in full rather than behind the chip's tooltip.
-  if (note) row.appendChild(el('span', 'breadcrumb-card-site-note', note));
-  return row;
 }
 
 function buildCard(

@@ -12,15 +12,19 @@ description: The getting-started journey's first step highlights the ProjectPage
 
 > Ground truth. Proven by the fix 0757b58e3 (PR #814, 2026-11-10): both bound tests failed without it and pass with it. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.project_page_tag.rules
 sites:
-  - rel_path: "ui/tests/manual_regression/tags/tag-vocabulary.spec.ts"
+  - rel_path: ui/tests/manual_regression/tags/tag-vocabulary.spec.ts
     line: 103
-    note: "FAILING? read this tag's rules before moving or renaming the ProjectPage tag"
-  - rel_path: "ui/tests/manual_regression/tags/tag-vocabulary.spec.ts"
+    note: FAILING? read this tag's rules before moving or renaming the ProjectPage tag
+  - rel_path: ui/tests/manual_regression/tags/tag-vocabulary.spec.ts
     line: 240
-    note: "FAILING? read this tag's rules before moving or renaming the ProjectPage tag"
+    note: FAILING? read this tag's rules before moving or renaming the ProjectPage tag
+proven: '2026-11-10'
+statements:
+  - text: Exactly the project-page opener carries `ProjectPage`.
+  - text: The pill renders only when `project` is set, so the tests pin a project into the URL (`dismissSetup` returns `scope-mode=project&scope-activeProjectId=…`).
 ```
 
 ## Expected behavior
@@ -48,8 +52,6 @@ getting-started journey's step 0 advances.
 
 * Exactly the project-page opener carries `ProjectPage`. Moving that control means moving
   the tag with it, and the journey's `status_line` must say where it is.
-* The pill renders only when `project` is set, so the tests pin a project into the URL
-  (`dismissSetup` returns `scope-mode=project&scope-activeProjectId=…`).
 
 ## Failure modes
 

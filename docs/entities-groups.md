@@ -134,14 +134,27 @@ No optimistic local state: mutations round-trip, state reflects back via
   groupRoot({
     namespace,                 // which tree
     leafTypes,                 // entity types shown as leaves
-    leafToBrowseable(entity),  // label/icon/pointer for a leaf
+    leafMatch?,                // which entities of those types are leaves (one subkind, one owner)
+    order?: { sort, reorder }, // members keep a manual order instead of name order
+    leafToBrowseable(entity),  // label/icon/pointer — or a full-row `content` / trailing `badge`
     onSelectLeaf?,             // picker mode: overrides navigation for leaves
     capabilities: { createFolder, rename, delete, move },
   })
   ```
 
   - `listChildren` → `group.listChildren` / `Group.listRoot` (folders first,
-    name-asc).
+    name-asc). `leafMatch` is ANDed into the member query of both.
+  - **Manual order** (`order`): the tree draws a drop line on the upper or
+    lower half of a member row and calls the container's `reorderChildren`.
+    The adapter moves the entity into that container first when it came from
+    another one, then hands the container's members to `order.reorder`. WHERE
+    the order is stored is the consumer's: the layer has no order field.
+    Folders stay name-sorted. The one consumer is the terminal's Quick prompts
+    (`QuickPromptsMenu`, namespace `quick-prompts`, order in the annotation's
+    `data.order`).
+  - **`rootless`** (a `BrowseableTree` prop): the root draws no row and its
+    children are the first level; a drop on the list's empty space is a drop
+    on the root (move out of a folder). Quick prompts uses it.
   - Folder toolbar (per `capabilities`): New folder, Rename, Delete — each a
     one-line delegate to the SDK, then `refreshNode(parentId)`.
   - Drag-move via the existing `dragData`/`canDrop`/`onDrop` contract →
@@ -175,5 +188,5 @@ injection point); real navigation stays available as a leaf toolbar action.
 
 ## Deferred (explicitly out of v1)
 
-Manual ordering (name-sort only), cascade delete, multi-parent membership,
+Manual ordering of folders (name-sort only), cascade delete, multi-parent membership,
 hub/cloud sync of groups, per-group ACLs.

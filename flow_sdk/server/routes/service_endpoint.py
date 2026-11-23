@@ -41,6 +41,7 @@ from flow_sdk.server.service_serving import (
     relay_websocket,
     serve_http,
     serve_socket,
+    served,
     verified_user,
 )
 
@@ -113,6 +114,23 @@ async def service_socket(websocket: WebSocket, endpoint_id: str, sub_path: str =
     headers = outbound_headers(websocket.headers.items(), user=None, websocket=True) + auth
     offered = websocket.scope.get("subprotocols") or None
     await relay_websocket(websocket, base + path, headers, subprotocols=offered, ssl=ssl_context)
+
+
+@router.websocket("/service_endpoint/{endpoint_id}/presence")
+async def page_presence(websocket: WebSocket, endpoint_id: str, path: str = "") -> None:
+    """A served page's own socket, held while the page is open (``core/webapp/presence``): the app's live
+    connections. ``path`` is the page's path under ``…/service``, which names the route it was served by."""
+    from flow_sdk.core.webapp import presence  # noqa: PLC0415
+    endpoint = await _endpoint(endpoint_id)
+    found = None if endpoint is None or endpoint.remote else served(endpoint, path.lstrip("/"))
+    mount = found[1] if found is not None else None
+    route = endpoint.route(mount) if endpoint is not None and mount else None
+    webapp_id = (route.webapp_id if route is not None else None) or (endpoint.webapp_id if endpoint is not None else None)
+    if not webapp_id:
+        await close(websocket, WS_POLICY, "no web app is served at this path")
+        return
+    await presence.hold(websocket, webapp_id=webapp_id, endpoint_id=endpoint.id,
+                        served_at=presence.served_at(endpoint.id, mount))
 
 
 def _hub_socket_target(endpoint: ServiceEndpoint) -> Optional[tuple[str, list, Any]]:

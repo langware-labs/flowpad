@@ -29,7 +29,7 @@ describe('WarningsPopover — a warning with a button', () => {
       id: 'setup-incomplete',
       icon: 'AlertTriangle',
       color: 'yellow',
-      message: 'Setup did not finish successfully',
+      message: "Setup didn't finish successfully.",
       description: 'An install failed or was cancelled.',
       targetView: ViewType.HOME,
       onClick: rowClick,
@@ -48,7 +48,7 @@ describe('WarningsPopover — a warning with a button', () => {
     render(<WarningsPopover />);
 
     await user.click(await screen.findByTestId('warnings-popover-trigger'));
-    expect(screen.getByText('Setup did not finish successfully')).toBeTruthy();
+    expect(screen.getByText("Setup didn't finish successfully.")).toBeTruthy();
     await user.click(await screen.findByTestId('warnings-popover-warning-action'));
 
     expect(rerun).toHaveBeenCalledTimes(1);
@@ -79,7 +79,7 @@ describe('WarningsPopover — a warning with a button', () => {
 
     await user.click(await screen.findByTestId('warnings-popover-trigger'));
 
-    expect(screen.getByText('Setup did not finish successfully')).toBeTruthy();
+    expect(screen.getByText("Setup didn't finish successfully.")).toBeTruthy();
     expect(screen.queryByTestId('warnings-popover-warning-action')).toBeNull();
   });
 });

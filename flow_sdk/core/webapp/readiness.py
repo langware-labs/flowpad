@@ -38,10 +38,16 @@ def _page_open(rec: WebappLifecycleSpec) -> bool:
 
 async def quick(app: Any, rec: WebappLifecycleSpec) -> bool:
     """The record says up, and that still holds — cheaply (see module doc)."""
-    from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
-
     if rec.state is not LifecycleState.UP or _page_open(rec):
         return False
+    return await serving(app, rec)
+
+
+async def serving(app: Any, rec: WebappLifecycleSpec) -> bool:
+    """The processes the record names still serve the app: every pid alive, every port answering its health path.
+    The part of ``quick`` that does not read the state, for a list of what runs now (a degraded app still runs)."""
+    from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+
     processes = webapp_setup._processes(app)
     if not processes:
         return True  # files Flowpad serves itself: up while placed (``ready`` checks the placement)
@@ -74,4 +80,4 @@ async def ready(app: Any, *, display: str = "") -> Verdict:
     return Verdict(True, answer.detail)
 
 
-__all__ = ["Verdict", "quick", "ready"]
+__all__ = ["Verdict", "quick", "ready", "serving"]

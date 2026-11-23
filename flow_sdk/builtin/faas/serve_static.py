@@ -69,6 +69,13 @@ def inject_api_origin(html: str) -> str:
     return _inject_after_head(html, API_ORIGIN_SNIPPET)
 
 
+def inject_presence(html: str) -> str:
+    """The script that keeps the page listed as a live connection of its app (``core/webapp/presence``)."""
+    from flow_sdk.core.webapp.presence import script_tag  # noqa: PLC0415
+
+    return _inject_after_head(html, script_tag())
+
+
 def inject_process_id(html: str, process_id: str | None) -> str:
     """Tell a page which agentic process it is shown beside (``__FLOWPAD_PROCESS_ID__``).
 
@@ -268,7 +275,7 @@ async def serve_app_bytes(
         # The key this page was opened with — the one the state-key gate accepted (its own URL, or the Referer of
         # the page beside it, so a relative link keeps it) — is handed to its SDK.
         state_key = page_state.key_of(request) or request.query_params.get("state")
-        html = inject_state_key(inject_process_id(inject_api_origin(html), process_id), state_key)
+        html = inject_state_key(inject_process_id(inject_api_origin(inject_presence(html)), process_id), state_key)
         version = await anyio.to_thread.run_sync(content_version, root_path)
         html += f"\n<!-- flowpad-content-version: {version} -->\n"
         return HTMLResponse(content=html, headers={"Cache-Control": cache_control})

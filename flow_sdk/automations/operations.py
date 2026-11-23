@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from flow_sdk.automations.execution import AutomationMode
@@ -12,6 +13,8 @@ from flow_sdk.schema.data_spec.automation_execution_spec import (
 )
 from flow_sdk.schema.data_spec.returned_value_spec import DecisionVerdict, ExitCode, ReturnedValue
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
+
+logger = logging.getLogger(__name__)
 
 
 async def confirm(input: PreparedAutomation, *, context) -> ReturnedValue:
@@ -232,6 +235,7 @@ async def then(input: PreparedAutomation, *, context) -> ReturnedValue:
 
     error = _failure_of(answer)
     _emit_action_failure(trigger, error, "then")
+    await _say_failure(trigger, error, context)
     # This compatibility operation runs the nested sequence; its step evidence stays intact.
     # It promises no typed application value of its own.
     return answer.model_copy(update={"value": None, "value_present": False})
@@ -260,6 +264,7 @@ async def action(input: int, *, context) -> ReturnedValue:
         answer = ReturnedValue.not_yet(str(exc))
         error = str(exc)
     _emit_action_failure(trigger, error, str(selected.action_type))
+    await _say_failure(trigger, error, context)
     if answer.executor:
         context.attach_executor(answer.executor)
     from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
@@ -270,6 +275,19 @@ async def action(input: int, *, context) -> ReturnedValue:
     if answer.busy or answer.exit_code is ExitCode.REFUSED:
         fields.update(exit_code=ExitCode.OK, ran=False, busy=False)
     return AutomationActionResult(**fields, answer=answer, action_type=str(selected.action_type))
+
+
+async def _say_failure(trigger, error: str, context) -> None:
+    """A real run that failed says so in the automation's own conversation (once per streak)."""
+    if not error or context.mode is not AutomationMode.REAL or context.hook or not trigger.id:
+        return
+    from flow_sdk.app.automation_message import post_failure
+    from flow_sdk.schema.data_spec.automation_spec import AutomationRef
+
+    try:
+        await post_failure(AutomationRef(trigger_id=str(trigger.id), name=trigger.name or ""), error)
+    except Exception:  # a message never undoes the run's own answer
+        logger.exception("could not post the failure of %s", trigger.id)
 
 
 def _emit_action_failure(trigger, error: str, action_type: str) -> None:

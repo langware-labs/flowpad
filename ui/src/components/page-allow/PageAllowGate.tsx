@@ -2,38 +2,33 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { PrefKey } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { usePreference } from '@src/hooks/use-preference';
-import { errorMessage } from '@src/lib/error-message';
-import { mintPageKey, probePageKey } from './probe-page-key';
+import { stateKey } from '@sdk/page-state';
+import { probePageKey, vouchedContext } from './probe-page-key';
 import { STATE_KEY_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 
 /** What a page was opened about, as its state key says (`flow_sdk/schema/data_spec/page_state_spec.py`). */
 export type PageContext = Record<string, string>;
 
-type Access = { status: 'checking' } | { status: 'ok'; context: PageContext } | { status: 'ask' };
+type Access = { status: 'checking' } | { status: 'ok'; context: PageContext } | { status: 'ask' } | { status: 'offline' };
 
 /**
  * Whether the page this dock names may run: the local server asks for a key (`enforced`) and the dock
- * carries one it minted (`probed`). A server that asks for none lets everything run; a key the server
- * does not know — expired, or from another computer — asks again like no key at all.
+ * carries one it minted. A server that asks for none lets everything run; a key the server does not know
+ * — expired, or from another computer — asks like no key at all. A key already vouched for answers at once.
  */
-/** Keys the server already vouched for: a warm return to their page renders at once and asks the backend nothing. */
-const vouched = new Map<string, Access>();
-
-function usePageAccess(
-  dockKey: string | undefined,
-  reaskToken: number,
-  installed: boolean,
-  enabled: boolean,
-): Access {
-  const [access, setAccess] = useState<Access>(() => (dockKey && vouched.get(dockKey)) || { status: 'checking' });
+function usePageAccess(dockKey: string | undefined, enabled: boolean): Access {
+  const [access, setAccess] = useState<Access>(() => {
+    const context = vouchedContext(dockKey);
+    return context ? { status: 'ok', context } : { status: 'checking' };
+  });
   useEffect(() => {
     // No dock: the gate runs its page as is, so there is nothing to ask the server.
     if (!enabled) return;
-    const known = dockKey ? vouched.get(dockKey) : undefined;
-    if (known) {
-      setAccess(known);
+    const context = vouchedContext(dockKey);
+    if (context) {
+      setAccess({ status: 'ok', context });
       return;
     }
     let live = true;
@@ -41,81 +36,63 @@ function usePageAccess(
     void probePageKey(dockKey)
       .then(({ enforced, probed }) => {
         if (!live) return;
-        if (probed) {
-          const ok: Access = { status: 'ok', context: probed.context ?? {} };
-          if (dockKey) vouched.set(dockKey, ok);
-          setAccess(ok);
-        } else setAccess(enforced ? { status: 'ask' } : { status: 'ok', context: {} });
+        if (probed) setAccess({ status: 'ok', context: probed.context ?? {} });
+        else setAccess(enforced ? { status: 'ask' } : { status: 'ok', context: {} });
       })
-      // A server that cannot be asked fails closed for a file, and open for an installed app (which then says why itself).
-      .catch(() => live && setAccess(installed ? { status: 'ok', context: {} } : { status: 'ask' }));
+      // A server that is not running answers nothing: the page loads without a context (the SDK's client shows
+      // its small closeable offline tag). A server that answers wrongly fails closed.
+      .catch((error: { isServiceUnavailable?: boolean }) => {
+        if (live) setAccess({ status: error?.isServiceUnavailable ? 'offline' : 'ask' });
+      });
     return () => {
       live = false;
     };
-  }, [dockKey, reaskToken, installed, enabled]);
+  }, [dockKey, enabled]);
   return access;
 }
 
 /**
- * Runs a page only with a state key. A page its opener minted a key for (`flow show`, an agent) opens
- * straight away; a link from outside carries none, so THIS asks the user first — in the page's own place,
- * before anything of it mounts, and never as a toast. Allow mints a key and writes it into the address
- * (so a reload keeps it); "Always allow this page" remembers the page.
- *
- * `installed`: the address names an installed app (an entity, not an arbitrary file), so there is nothing to ask
- * — the key is minted silently and written into the address the same way. One rule for which docks ask, one
- * place that mints; a server that cannot be asked leaves the app to say why itself.
+ * Runs a page only on a dock that carries a key the local server knows. Every navigation made inside the
+ * app carries the app's own key (`NavigationActions.openDock`) and a page an agent opened carries the one
+ * it minted, so both open straight away. A link from outside carries none, so THIS asks the user first —
+ * in the page's own place, before anything of it mounts, and never as a toast. Allow writes the app's key
+ * into the address (so a reload keeps it); "Always allow this page" remembers the page. Nothing is minted
+ * here: only an agent that opens a page with a context of its own mints.
  */
 export function PageAllowGate({
   title,
-  installed = false,
   children,
 }: {
   title: string;
-  installed?: boolean;
   children: (page: { stateKey: string | undefined; context: PageContext }) => ReactNode;
 }) {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
   const dockKey = currentDock?.options?.[STATE_KEY_PARAM];
-  // The session whose display this page is shown in, when the address names one; a key's own context covers the rest.
-  const flowId = currentDock?.hostProcessId;
   const pageId = `${currentDock?.viewType}|${currentDock?.pointer}`;
   const [trusted, setTrusted] = usePreference<string[] | null>(PrefKey.PAGE_TRUST);
-  const [reask, setReask] = useState(0);
-  const [failure, setFailure] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
-  const access = usePageAccess(dockKey, reask, installed, !!currentDock);
+  const access = usePageAccess(dockKey, !!currentDock);
 
   const allow = useCallback(
-    async (always: boolean) => {
-      if (!currentDock) return;
-      try {
-        const key = await mintPageKey(title, flowId);
-        if (always) setTrusted([...(trusted ?? []), pageId]);
-        navigation.replaceDock(currentDock.withOption(STATE_KEY_PARAM, key));
-        setReask((n) => n + 1);
-      } catch (error) {
-        setFailure(errorMessage(error, t`Could not allow this page.`));
-      }
+    (always: boolean) => {
+      const key = stateKey();
+      if (!currentDock || !key) return;
+      if (always) setTrusted([...(trusted ?? []), pageId]);
+      navigation.replaceDock(currentDock.withOption(STATE_KEY_PARAM, key));
     },
-    [currentDock, flowId, navigation, pageId, setTrusted, t, title, trusted],
+    [currentDock, navigation, pageId, setTrusted, trusted],
   );
 
-  // An installed app, or a page the user chose to always allow, runs without asking.
-  const autoAllowed = useRef(false);
-  const silent = installed || !!trusted?.includes(pageId);
+  // A page the user chose to always allow runs without asking.
+  const silent = !!trusted?.includes(pageId);
   useEffect(() => {
-    if (access.status === 'ask' && silent && !denied && !autoAllowed.current) {
-      autoAllowed.current = true;
-      void allow(false);
-    }
-    if (access.status === 'ok') autoAllowed.current = false;
+    if (access.status === 'ask' && silent && !denied) allow(false);
   }, [access.status, silent, denied, allow]);
 
-  if (!currentDock || (installed && failure)) return <>{children({ stateKey: dockKey, context: {} })}</>;
-  if (access.status === 'ok') return <>{children({ stateKey: dockKey, context: access.context })}</>;
-  if (access.status === 'checking' || (silent && !denied && !failure)) {
+  if (!currentDock) return <>{children({ stateKey: dockKey, context: {} })}</>;
+  if (access.status === 'ok' || access.status === 'offline') return <>{children({ stateKey: dockKey, context: access.status === 'ok' ? access.context : {} })}</>;
+  if (access.status === 'checking' || (silent && !denied)) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t`Loading preview…`}</div>
     );
@@ -136,16 +113,11 @@ export function PageAllowGate({
             </Trans>
           )}
         </p>
-        {failure && (
-          <p className="text-sm text-destructive" data-testid="page-allow-error">
-            {failure}
-          </p>
-        )}
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => void allow(false)} data-testid="page-allow-accept">
+          <Button onClick={() => allow(false)} data-testid="page-allow-accept">
             <Trans>Allow</Trans>
           </Button>
-          <Button variant="outline" onClick={() => void allow(true)} data-testid="page-allow-always">
+          <Button variant="outline" onClick={() => allow(true)} data-testid="page-allow-always">
             <Trans>Always allow this page</Trans>
           </Button>
           {!denied && (

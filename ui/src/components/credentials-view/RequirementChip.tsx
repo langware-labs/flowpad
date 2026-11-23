@@ -42,7 +42,7 @@ export function RequirementChip({
         className,
       )}
     >
-      {required}
+      {must ? t`Required` : oneOf ? t`One of these` : t`Optional`}
     </Badge>
   );
 }

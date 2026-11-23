@@ -12,12 +12,16 @@ description: loadAndActivate takes a ticket per call, and only the latest may i1
 
 > Ground truth. Proven by the fix 537fc68e6 (PR #814, 2026-11-10) after QA saw the bound test fail on "and back into Hebrew …" (p05). Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.locale_activation_order.rules
 sites:
-  - rel_path: "ui/tests/react/vibe-switch-project-locale.test.ts"
+  - rel_path: ui/tests/react/vibe-switch-project-locale.test.ts
     line: 51
-    note: "FAILING? read this tag's rules before touching loadAndActivate's activation ticket"
+    note: FAILING? read this tag's rules before touching loadAndActivate's activation ticket
+proven: '2026-11-10'
+statements:
+  - text: The last activation requested is the one that ends up active, whatever order the imports finish in.
+  - text: '`i18n.activate` and `applyLocaleAttributes` move together: a superseded call does neither.'
 ```
 
 ## Expected behavior
@@ -40,11 +44,6 @@ All of this is in `ui/src/contexts/locale-context.tsx`:
   when it returns `true`.
 
 ## Invariants
-
-* The last activation requested is the one that ends up active, whatever order the
-  imports finish in.
-* `i18n.activate` and `applyLocaleAttributes` move together: a superseded call does
-  neither.
 
 ## Failure modes
 

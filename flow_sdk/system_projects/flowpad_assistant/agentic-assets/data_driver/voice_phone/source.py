@@ -94,7 +94,7 @@ class VoicePhoneSource(VoiceChannel):
                     params={"PhoneNumber": self.account}, auth=auth, hint="Twilio refused the lookup",
                 )
         except AccessDenied:
-            return Verdict(ready=False, detail="Twilio refused TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN.")
+            return Verdict(ready=False, detail="Twilio refused TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN.", refused=True)
         except SourceError as exc:
             if is_transient(exc):
                 raise  # the provider did not answer: that says nothing about the setup

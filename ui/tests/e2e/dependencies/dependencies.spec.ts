@@ -162,7 +162,8 @@ test("a dependency's agent runs in the host project, with its own folder mounted
   await page.goto('/dock/home');
   const tile = page.locator(`[data-testid="project-agent-tile"][data-agent-name="${agentName}"]`);
   await expect(tile).toBeVisible();
-  await tile.click();
+  // A click only selects the icon; a double click opens it.
+  await tile.dblclick();
 
   // The agent's session — at its Vibe host address when it opens in Vibe (`/dock/vibe/`).
   await expect(page).toHaveURL(/\/dock\/(shell|vibe)\/agentic_process-([0-9a-f-]+)/);

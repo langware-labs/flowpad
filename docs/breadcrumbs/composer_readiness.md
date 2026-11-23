@@ -13,12 +13,19 @@ description: The PTY composer-ready gate scanned only the last 64 KB of output, 
 
 > Ground truth. Proven by RCA on 2026-08-31. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.composer_readiness.rules
 sites:
-  - rel_path: "tests/long_tests/test_pty_composer_gate_scan_window.py"
+  - rel_path: tests/long_tests/test_pty_composer_gate_scan_window.py
     line: 64
-    note: "FAILING? the composer-ready gate went blind because the vendor's marker fell outside the scanned slice - read this tag's rules before touching pump_composer_ready or _COMPOSER_SCAN_WINDOW"
+    note: FAILING? the composer-ready gate went blind because the vendor's marker fell outside the scanned slice - read this tag's rules before touching pump_composer_ready or _COMPOSER_SCAN_WINDOW
+proven: '2026-08-31'
+statements:
+  - text: The snapshot is scanned WHOLE.
+  - text: '`_COMPOSER_SCAN_WINDOW` bounds only the **incremental** buffer, where it has to hold nothing more than a marker split across consecutive paints.'
+  - text: Generation scoping — not bytes — is the safety property.
+  - text: Readiness is **never inherited across a respawn**.
+  - text: The gate must never gain a timeout.
 ```
 
 ## Expected behavior
@@ -74,8 +81,6 @@ the composer is unavailable.
 
 1. **The snapshot is scanned WHOLE.** Its bound is the generation, never a byte
    count. Re-introducing `initial[-_COMPOSER_SCAN_WINDOW:]` re-introduces this bug.
-2. `_COMPOSER_SCAN_WINDOW` bounds only the **incremental** buffer, where it has
-   to hold nothing more than a marker split across consecutive paints.
 3. Generation scoping — not bytes — is the safety property.
    `test_generation_scoped_history_ignores_old_composer_marker`
    (`tests/unit/test_codex_pty_composer_gate.py`) is its guard.

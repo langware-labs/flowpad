@@ -265,6 +265,10 @@ deliberately, so the poller reaches `sync_source` and the card can show
 runs two layers in order — the channel's OAuth probe (the same one the
 Connections "Test" button uses), then the source's own `Verdict` — and
 moves the source to `ACTIVE` (due on the next tick) only when both pass.
+A `Verdict` that is not ready because the provider turned the credential itself
+down says so (`refused=True`, or the driver raises `AccessDenied`): the source is
+stamped `access_denied`, and its setup asks for that credential again instead of
+retrying the stored value. Any other reason leaves the credential alone.
 `save` also stamps `channel` (from the source type, on an empty field only),
 coerces `config` by the spec's field types, and re-derives `origin` via the
 type's `origin_for`.

@@ -339,11 +339,12 @@ def read_browser(root: Path) -> str:
 
 
 def set_browser(root: Path, browser: str) -> ProjectManifestSpec:
-    """Set the project's browser; ``agent`` (the default) clears the declaration."""
-    from flow_sdk.schema.data_spec.project_manifest_spec import BROWSERS  # noqa: PLC0415
+    """Set the browser the project recommends; ``agent`` (the default) clears the declaration."""
+    from flow_sdk.schema.data_spec.project_manifest_spec import browser_names  # noqa: PLC0415
 
-    if browser not in BROWSERS:
-        raise ManifestError(f"browser {browser!r} must be one of {', '.join(BROWSERS)}")
+    known = browser_names()
+    if browser not in known:
+        raise ManifestError(f"browser {browser!r} must be one of {', '.join(known)}")
     return _set_field(root, "browser", browser, clears=browser == "agent")
 
 
@@ -371,6 +372,20 @@ def read_secret_vaults(root: Path) -> dict[str, SecretVaultSpec]:
     receive of a credential."""
     spec = _read_lenient(root)
     return dict(spec.secret_vaults) if spec is not None else {}
+
+
+def read_secret_vault_setup(root: Path) -> tuple[dict[str, SecretVaultSpec], str]:
+    """The project's vaults and the one its manifest names as default ("" when none), in one read. Never raises."""
+    spec = _read_lenient(root)
+    return (dict(spec.secret_vaults), spec.default_secret_vault) if spec is not None else ({}, "")
+
+
+def set_default_secret_vault(root: Path, name: str) -> ProjectManifestSpec:
+    """Name the project's default vault ("" clears it); it must be one the project declares."""
+    name = (name or "").strip()
+    if name and name not in read_secret_vaults(root):
+        raise ManifestError(f"secret vault {name!r}: the project declares no vault by that name")
+    return _set_field(root, "default_secret_vault", name, clears=not name)
 
 
 def set_secret_vault(root: Path, name: str, spec: Optional[Mapping[str, Any]]) -> ProjectManifestSpec:

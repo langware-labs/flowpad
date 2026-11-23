@@ -262,7 +262,7 @@ export function HarnessSignInDialog({
         ) : state === LoginState.SigningIn && (capability?.login_url || capability?.login_code) ? (
           <div className="flex flex-col gap-4">
             <DialogDescription className="text-center text-sm text-muted-foreground">
-              <Trans>Two quick steps in your browser:</Trans>
+              <Trans>A few quick steps in your browser:</Trans>
             </DialogDescription>
 
             {capability?.login_code && (
@@ -360,7 +360,7 @@ export function HarnessSignInDialog({
                 {state === LoginState.Error ? (
                   <Trans>We couldn't confirm this sign-in: {statusReason}</Trans>
                 ) : (
-                  <Trans>{name} isn't signed in on this machine.</Trans>
+                  <Trans>{name} isn't signed in on this computer.</Trans>
                 )}
               </div>
             )}

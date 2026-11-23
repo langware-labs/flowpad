@@ -32,6 +32,9 @@ export default mergeConfig(
       testTimeout: adjusted(15000),
       environment: 'jsdom',
       setupFiles: ['./tests/_lingui-mock.ts', './tests/_restore-globals.ts', './tests/unit/testSetup.ts'],
+      // One thread runs every file, and what a file's modules retain is never freed: the heap climbs
+      // file by file (3.5 GB by the end, ERR_WORKER_OUT_OF_MEMORY on CI). `test:vitest:unit` runs the
+      // tier as two --shard halves, each in a fresh process — same tests, half the peak.
       pool: 'threads',
       poolOptions: {
         threads: {

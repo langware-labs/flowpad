@@ -209,6 +209,8 @@ export interface IComputeNode extends Omit<IEntity, 'status'> {
   name: string;
   runtime: RuntimeEnvironment;
   node_provider_type?: ComputeProviderType;
+  /** The provider as the HUB names the field; the desktop's own rows carry `node_provider_type`. */
+  node_provider?: ComputeProviderType;
   node_provider_id?: string;
   node_config?: Record<string, unknown>;
   /** The box's size. Set at create; the hub's default applies when absent. */

@@ -22,7 +22,7 @@ flow show file <path.mcp.html>
 ```
 
 A page that must keep the agent aware of live state (not just submit once) can
-use the Flowpad SDK from inside the sandbox — the host provides the globals:
+use the Flowpad SDK from inside the sandbox — the host provides the globals (all other SDK rules: the **flow-js** skill):
 
 ```js
 const sdk = await import(globalThis.__FLOWPAD_API_URL__ + '/sdk/flowpad-sdk.js');

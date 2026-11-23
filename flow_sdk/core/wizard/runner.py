@@ -167,7 +167,7 @@ class _Run:
     #: whole thing ends" even though this step's own answer has been sitting
     #: there the whole time.
     on_step: Optional[Callable[["WizardResult"], Awaitable[None]]] = None
-    #: Told each op's live one-liner ("Start WAHA service: pulling image…"), nested wizards
+    #: Told each op's live one-liner ("Start bridge service: pulling image…"), nested wizards
     #: included, so a watcher can say what is happening while a long step runs.
     on_status: Optional[Callable[[str], None]] = None
 

@@ -54,7 +54,7 @@ export function SourceStatusLine({
   const view = verifying
     ? { text: 'text-sky-600 dark:text-sky-400', dot: 'bg-sky-500 animate-pulse', label: t`Verifying…`, title: undefined }
     : source.isParked
-      ? { text: 'text-foreground', dot: PARKED_DOT, label: t`Parked`, title: i18n._(ATTENTION.parked.next) }
+      ? { text: 'text-foreground', dot: PARKED_DOT, label: t`Stopped — needs a fix`, title: i18n._(ATTENTION.parked.next) }
       : source.isHeld
         ? { text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500', label: t`Running · needs you`, title: source.error_detail || undefined }
         : { text: look.text, dot: look.dot, label: i18n._(look.label), title: undefined };

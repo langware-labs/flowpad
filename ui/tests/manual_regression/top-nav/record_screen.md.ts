@@ -39,25 +39,32 @@ test('record, share, save to project', async ({ page }) => {
   const before = new Set(fs.existsSync(folder.abs_path) ? fs.readdirSync(folder.abs_path) : []);
 
   await page.goto('/dock/home');
-  const record = page.getByTestId('top-nav-record-screen');
-  await expect(record).toBeVisible();
+  const more = page.getByTestId('top-nav-more');
+  const stop = page.getByTestId('top-nav-recording-stop');
+  await expect(more).toBeVisible();
 
-  // 1. Left of Share, in document order.
-  const share = page.getByTestId('entity-actions-share').first();
-  if (await share.count()) {
-    const order = await record.evaluate((a, b) => a.compareDocumentPosition(b as Element), await share.elementHandle());
-    expect(order & Node.DOCUMENT_POSITION_FOLLOWING, 'Record sits before Share').toBeTruthy();
-  }
+  // 1. The menu is the last control on the bar; nothing says "recording" while idle.
+  await expect(stop).toHaveCount(0);
+  const isLast = await more.evaluate((el) => {
+    const bar = el.closest('[data-testid=top-nav-bar]') ?? el.parentElement!.parentElement!;
+    const buttons = [...bar.querySelectorAll('button')];
+    return buttons[buttons.length - 1] === el;
+  });
+  expect(isLast, 'the menu is the last button on the bar').toBe(true);
 
-  // 2. Recording state.
-  await record.click();
-  await expect(record).toHaveAttribute('data-recording', 'true');
-  await expect(record).toHaveAttribute('aria-label', 'Stop recording');
+  // 2. Record screen in the menu → the stop button on the bar, before the menu.
+  await more.click();
+  await page.getByTestId('top-nav-more-record').click();
+  await expect(stop).toBeVisible();
+  await expect(stop).toHaveAttribute('data-recording', 'true');
+  await expect(stop).toHaveAttribute('aria-label', 'Stop recording');
+  const order = await stop.evaluate((a, b) => a.compareDocumentPosition(b as Element), await more.elementHandle());
+  expect(order & Node.DOCUMENT_POSITION_FOLLOWING, 'the stop button sits before the menu').toBeTruthy();
   await page.waitForTimeout(2000);
-  await expect(record).toContainText(/00:0[1-9]/);
+  await expect(stop).toContainText(/00:0[1-9]/);
 
   // 3. Stop → the dialog, and the file on disk in the folder the backend named.
-  await record.click();
+  await stop.click();
   const dialog = page.getByTestId('recording-ready-dialog');
   await expect(dialog).toBeVisible();
   const fileName = (await page.getByTestId('recording-file-name').textContent())?.trim() ?? '';
@@ -88,5 +95,7 @@ test('record, share, save to project', async ({ page }) => {
   await shareDialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(shareDialog).toHaveCount(0);
   await expect(dialog).toHaveCount(0);
-  await expect(record.getAttribute('aria-label')).resolves.toBe('Record screen');
+  await expect(stop).toHaveCount(0);
+  await more.click();
+  await expect(page.getByTestId('top-nav-more-record')).toBeEnabled();
 });

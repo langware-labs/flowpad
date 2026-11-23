@@ -59,7 +59,9 @@ MARKERS: dict[L, str] = {
     L.AGENTS: "<<agents-block>>",  # resolved per row: persona header or catalogue header
     L.AUTO_OPEN: "# Opened for you at session start",
     L.LANGUAGE: "# Language\nAlways respond in Hebrew.",
+    L.BROWSER: "# Your browser",
     L.CREDENTIALS: "Credentials:\n",
+    L.SECRET_MANAGER: "1Password — vault `team`",
     L.SUBJECT: "The user opened this chat from the file `/w/docs/report/index.html`.",
 }
 PERSONA_HEADER = "# You are the '{name}' agent"
@@ -145,6 +147,10 @@ class Row:
     #: The flow_sdk files whose process-creation sites this row stands for.
     sites: tuple[str, ...] = ()
 
+    def __post_init__(self):
+        # Every session has a browser, so every row carries its block — at its place in the order.
+        object.__setattr__(self, "layers", tuple(sorted({*self.layers, L.BROWSER}, key=list(L).index)))
+
 
 async def _sdk_process(e: Env) -> AgenticProcess:
     return await AgenticProcess(worker_type=e.worker_type, workdir=e.workdir(), pty_mode=False,
@@ -217,6 +223,15 @@ async def _project_credentials(e: Env) -> AgenticProcess:
     project = await e.project()
     await declare_credential({"name": "xhostd", "setup": "manual", "vars": {"XHOSTD_TOKEN": {}}},
                              project_id=str(project.id), require_setup=False)
+    return await AgenticProcess(worker_type=e.worker_type, workdir=project.fs_storage_mount_path,
+                                project_id=project.id, pty_mode=False).save()
+
+
+async def _project_secret_vault(e: Env) -> AgenticProcess:
+    from flow_sdk.assets.project_manifest import set_secret_vault  # noqa: PLC0415
+
+    project = await e.project()
+    set_secret_vault(Path(project.fs_storage_mount_path), "team", {"manager": "onepassword", "config": {"vault": "Team"}})
     return await AgenticProcess(worker_type=e.worker_type, workdir=project.fs_storage_mount_path,
                                 project_id=project.id, pty_mode=False).save()
 
@@ -320,6 +335,7 @@ ROWS: tuple[Row, ...] = (
     Row("trigger", _trigger, (L.COMMON,), sites=("flow_sdk/automations/compat.py",)),
     Row("project_language", _project_language, (L.COMMON, L.LANGUAGE)),
     Row("project_credentials", _project_credentials, (L.COMMON, L.CREDENTIALS)),
+    Row("project_secret_vault", _project_secret_vault, (L.COMMON, L.SECRET_MANAGER)),
     Row("project_always_use_skills", _project_always_use_skills, (L.COMMON, L.ALWAYS_USE_SKILLS)),
     Row("ts_sdk_script", _ts_sdk_script, (L.COMMON,), sites=("flow_sdk/builtin/faas/scan_actions.py",)),
     Row("app_vibe", _app_vibe, (L.COMMON, L.COMMON_UI, L.AGENTS), persona="vibe"),
@@ -513,7 +529,7 @@ async def test_session_adopted_from_the_app_is_an_app_launch(tmp_path, monkeypat
     assert resp.status == "SUCCESS", getattr(resp, "message", resp)
     process = await AgenticProcess.get_by_id(resp.data["id"])
     assert (process.context_data or {}).get("launch_surface") == "app"
-    assert (await process.prepare_system_instruction_assets()).layers == ["common", "common_ui"]
+    assert (await process.prepare_system_instruction_assets()).layers == ["common", "common_ui", "browser"]
 
 
 def test_a_request_cannot_invent_a_surface():

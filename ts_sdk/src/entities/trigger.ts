@@ -95,10 +95,16 @@ export interface MessageRule {
   prompt?: string;
   /** The Then as a sequence. When given it replaces `agent` + `prompt`. */
   steps?: RuleStep[];
+  /** Where a run's answer is posted (`ReportTo`). Unset: the message's conversation. */
+  report_to?: ReportTo | null;
   name?: string | null;
   enabled?: boolean;
   project_id?: string | null;
 }
+
+/** Where a real run's answer is posted: the conversation of the message that fired the rule, as a private
+ *  message, or the rule's own conversation on the Automations channel. */
+export type ReportTo = 'conversation' | 'automations';
 
 /** What one step of a message rule does. `prompt` is `run_agent` on the shipped prompt worker. */
 export type RuleStepKind = 'mark_read' | 'run_script' | 'run_agent' | 'prompt';
@@ -169,6 +175,7 @@ export function messageRuleFields(rule: MessageRule, agentName = ''): Partial<IT
     gate: sentence ? { sentence } : null,
     ...(rule.message_tags !== undefined ? { message_tags: rule.message_tags } : {}),
     then: thenOfSteps(rule.steps ?? [{ kind: 'run_agent', agent: rule.agent, prompt: rule.prompt }]),
+    ...(rule.report_to !== undefined ? { report_to: rule.report_to } : {}),
     enabled: rule.enabled ?? true,
     ...(rule.project_id !== undefined ? { project_id: rule.project_id } : {}),
   };
@@ -201,6 +208,7 @@ export interface ITrigger extends IEntity {
   /** The `if`: a `compute_op.decision` op's exe_data (questions, require, input, sentence), asked
    *  before a fire counts. `sentence` is the line a person typed. */
   gate?: TriggerGate | null;
+  report_to?: ReportTo | null;
   /** What runs on a fire, as a wizard: `{ref}` | `{steps, ops}` | `{run_agent}` | `{run_script}`. */
   then?: TriggerThen | null;
   // Hook trigger fields
@@ -289,6 +297,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
   max_fires_per_minute?: number;
   confirm?: { type?: string; filter?: Record<string, unknown> } | null;
   gate?: TriggerGate | null;
+  report_to?: ReportTo | null;
   then?: TriggerThen | null;
   // Hook trigger fields
   mask: Record<string, any> = {};
@@ -346,6 +355,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     this.confirm = entity.confirm;
     this.gate = entity.gate ?? null;
     this.then = entity.then ?? null;
+    this.report_to = entity.report_to ?? null;
     this.expr = entity.expr;
     this.sched_trigger_type = entity.sched_trigger_type;
     this.timezone = entity.timezone ?? null;

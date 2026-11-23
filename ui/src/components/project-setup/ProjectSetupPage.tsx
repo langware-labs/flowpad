@@ -16,8 +16,8 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { detailOf, iconOf, namesItself, pointerForRequirement } from './ProjectSetupDialog';
-import { rowId, rowKey, stepKind } from './setup-labels';
+import { detailOf, iconOf, nameOf, pointerForRequirement } from './ProjectSetupDialog';
+import { rowId, rowKey, stepKind, usedByOf } from './setup-labels';
 import { countDrawn, stateGlyph } from './SetupTreeView';
 import { useSetupReadiness, withNotify } from './use-setup-readiness';
 import { useSetupRun } from './use-setup-run';
@@ -51,7 +51,7 @@ const STATUS_CHIP: Record<Status, ChipSpec> = {
   todo: { variant: 'warning', label: msg`Needs setup` },
   optional: { variant: 'muted', label: msg`Optional · not set up` },
   ready: { variant: 'success', label: msg`Ready` },
-  skipped: { variant: 'muted', label: msg`Skipped on this machine` },
+  skipped: { variant: 'muted', label: msg`Skipped on this computer` },
 };
 
 /** What a run says of a step, for the states worth saying while it goes. */
@@ -395,7 +395,7 @@ function StepRow({
   const { t, i18n } = useLingui();
   const Icon = iconOf(req);
   const id = rowId(req);
-  const usedBy = req.used_by.join(', ');
+  const usedBy = usedByOf(req);
   // While a run goes, the step says what the run says of it; otherwise how it stands here.
   const liveChip = node && LIVE_CHIP[node.state];
   const glyph = node ? stateGlyph(node.state) : null;
@@ -409,7 +409,7 @@ function StepRow({
     >
       <div className="flex items-center gap-2">
         <Icon className="size-4 shrink-0 text-muted-foreground" />
-        <span className="font-medium">{namesItself(req) ? req.name : req.title || req.name}</span>
+        <span className="font-medium">{nameOf(req)}</span>
         <Chip variant="muted">{i18n._(stepKind(req))}</Chip>
         <span data-testid={`project-setup-step-state-${id}`}>
           {liveChip && glyph ? (
@@ -456,10 +456,10 @@ function StepRow({
             {onDecide && (
               <>
                 <StepAction icon={Play} testId={`project-setup-step-enable-${id}`} disabled={busy} onClick={() => onDecide(true)}>
-                  <Trans>Enable</Trans>
+                  <Trans>Turn on</Trans>
                 </StepAction>
                 <StepAction icon={XCircle} testId={`project-setup-step-disable-${id}`} disabled={busy} onClick={() => onDecide(false)}>
-                  <Trans>Disable</Trans>
+                  <Trans>Keep off</Trans>
                 </StepAction>
               </>
             )}

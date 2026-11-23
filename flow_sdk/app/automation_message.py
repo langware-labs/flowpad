@@ -2,8 +2,10 @@
 
 One way for both: the message is written locally (``handle_add_message``), its details ride as a
 ``<kind>.value.json`` file a viewer opens by kind, and its arrival is the one notification
-(CLAUDE.md "Notifications = message arrival only"). An automation answers in ITS conversation on
-the Automations channel -- one per automation, found again by the trigger it belongs to.
+(CLAUDE.md "Notifications = message arrival only"). An automation's own messages go to ITS conversation
+on the Automations channel -- one per automation, found again by the trigger it belongs to -- each drawn
+by its ``card.value.json``. What a real run answered goes where its rule reports (``report_run``): the
+conversation of the message that fired it, as a private message, or that same Automations conversation.
 """
 
 from __future__ import annotations
@@ -14,9 +16,9 @@ from typing import Any, Optional
 
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.conversation_channel import AUTOMATIONS
-from flow_sdk.builtin.flow_message import FlowMessageKind
+from flow_sdk.builtin.flow_message import CARD_FILE, FlowMessageKind
 from flow_sdk.responses.response import ApiSuccessResponse
-from flow_sdk.schema.data_spec.automation_spec import AutomationRef
+from flow_sdk.schema.data_spec.automation_spec import AutomationRef, AutomationResult
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +34,16 @@ class Upload:
         return self._content
 
 
-def value_json(value: Any) -> bytes:
-    """A value as the ``.value.json`` a viewer opens by its kind."""
+def as_card(value: Any) -> dict:
+    """A value as a value file holds it: its fields, tagged with its kind."""
     from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
 
-    return json.dumps({"spec_kind": spec_tag(value), **value.model_dump(mode="json")}, indent=2).encode("utf-8")
+    return {"spec_kind": spec_tag(value), **value.model_dump(mode="json")}
+
+
+def value_json(value: Any) -> bytes:
+    """A value as the ``.value.json`` a viewer opens by its kind."""
+    return json.dumps(as_card(value), indent=2).encode("utf-8")
 
 
 async def post_message(
@@ -48,8 +55,10 @@ async def post_message(
     someone: str,
     files: Optional[dict[str, bytes]] = None,
     asset_references: Optional[list[str]] = None,
+    private: bool = False,
 ) -> Optional[str]:
-    """Write Flowpad's message into the conversation and raise its arrival; the new message's id."""
+    """Write Flowpad's message into the conversation and raise its arrival; the new message's id.
+    ``private``: a private message -- this machine's user reads it there and shares or dismisses it."""
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
     from flow_sdk.notifications import notify_message_arrival  # noqa: PLC0415
 
@@ -59,6 +68,8 @@ async def post_message(
         "kind": kind.value,
         "files": [Upload(n, c) for n, c in (files or {}).items()],
     }
+    if private:  # shown under the automation's name until it is shared, when it becomes the person's own
+        body.update(private=True, sender_name=sender_name)
     if asset_references:
         body["asset_references"] = list(asset_references)
     added = await handle_add_message(body, someone)
@@ -80,19 +91,73 @@ async def automation_conversation(automation: AutomationRef, someone: str) -> Co
     return await conv.save(someone)
 
 
-async def post_automation_result(automation: AutomationRef, text: str, value: Any, *,
-                                 asset_references: Optional[list[str]] = None) -> Optional[str]:
-    """Post what an automation found into its conversation: ``text`` the headline, ``value`` the details
-    (``<kind>.value.json``). Answers the message id."""
+async def post_automation_result(automation: AutomationRef, result: AutomationResult, value: Any = None, *,
+                                 asset_references: Optional[list[str]] = None,
+                                 conversation: Optional[Conversation] = None) -> Optional[str]:
+    """Post what an automation did into its conversation, as a card: ``result`` its Status, Summary and
+    Details (``card.value.json``, drawn in place by the ``automation.result`` viewer; the message's text is the
+    summary), ``value`` what it found (``<kind>.value.json``), when it found something. Answers the message id."""
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
     someone = (await get_or_create_local_user()).typeid
-    conv = await automation_conversation(automation, someone)
+    conv = conversation or await automation_conversation(automation, someone)
     return await post_message(
-        conv.id, text,
+        conv.id, result.summary,
         kind=FlowMessageKind.AUTOMATION_RESULT,
         sender_name=automation.name or "Automation",
         someone=someone,
-        files={f"{value.spec_kind}.value.json": value_json(value)},
+        # The card first: it is what the message is drawn by; what was found rides beside it.
+        files={CARD_FILE: value_json(result),
+               **({f"{value.spec_kind}.value.json": value_json(value)} if value is not None else {})},
         asset_references=asset_references,
+    )
+
+
+async def post_failure(automation: AutomationRef, error: str) -> Optional[str]:
+    """A real run failed: say so in the automation's conversation -- once per streak. A rule that keeps
+    failing the same way has already said it, so its newest message is left to stand."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+    conv = await automation_conversation(automation, (await get_or_create_local_user()).typeid)
+    newest = conv.latest_message_ref()  # one row read, however long the conversation is
+    last = await FlowMessage.get_by_id(newest.id) if newest else None
+    result = AutomationResult.of("failed", f"{automation.name or 'The automation'} could not run.", {"Error": error})
+    if last is not None and last.card() == as_card(result):
+        return None
+    return await post_automation_result(automation, result, conversation=conv)
+
+
+async def report_run(trigger: Any, execution: Any) -> Optional[str]:
+    """Post what a real run answered where its rule reports (``Trigger.report_to``): into the conversation of
+    the message that fired it, as a private message, or into the rule's Automations conversation. The answer
+    is the last step's: what it said (an agent's reply, a script's output), and its value as
+    ``card.value.json`` when it returned one. Nothing is posted for a run that said nothing, or a rule that
+    reports nowhere."""
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.spec import DataSpec  # noqa: PLC0415
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+    answer = execution.answer
+    if answer is None or answer.exit_code is not ExitCode.OK:
+        return None
+    value = answer.value if isinstance(answer.value, DataSpec) else None
+    text = (getattr(answer, "text", "") or getattr(answer, "stdout", "") or "").strip()
+    if not text and value is None:
+        return None
+    conversation_id = str(getattr(execution.state, "conversation_id", "") or "")
+    private = bool(conversation_id) and trigger.report_to in (None, "", "conversation")
+    if not private and trigger.report_to != "automations":
+        return None
+    someone = (await get_or_create_local_user()).typeid
+    if not private:
+        ref = AutomationRef(trigger_id=str(trigger.id), name=trigger.name or "")
+        conversation_id = (await automation_conversation(ref, someone)).id
+    return await post_message(
+        conversation_id, text,
+        kind=FlowMessageKind.USER if private else FlowMessageKind.AUTOMATION_RESULT,
+        sender_name=trigger.name or "Automation",
+        someone=someone,
+        files={CARD_FILE: value_json(value)} if value is not None else None,
+        private=private,
     )

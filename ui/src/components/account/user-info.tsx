@@ -235,7 +235,12 @@ export function UserInfo({ user }: UserInfoProps) {
           <label className="text-sm font-semibold text-muted-foreground">
             <Trans>Profile Picture:</Trans>
           </label>
-          <img src={user.picture} alt={t`Profile`} className="h-16 w-16 rounded-full border-2 object-cover" />
+          <img
+            src={user.picture}
+            alt={t`Profile`}
+            referrerPolicy="no-referrer"
+            className="h-16 w-16 rounded-full border-2 object-cover"
+          />
         </div>
       )}
 

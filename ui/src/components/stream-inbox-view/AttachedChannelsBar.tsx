@@ -79,6 +79,7 @@ import {
   ownerOf,
 } from './channel-owner';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
+import { MARK, MARK_BADGE, MARK_SELECTED } from './marks';
 
 const EMPTY: DataSource[] = [];
 const NO_OFFERS: ChannelOffer[] = [];
@@ -401,14 +402,7 @@ export function AttachedChannelsBar({
 }
 
 const CONTROL = 'size-7 shrink-0 rounded-full text-muted-foreground';
-// The round mark a channel is drawn as, attached or still to connect. The glyph is its
-// first child — an svg, or the <img>/<span> a brand mark renders as.
-const MARK =
-  'relative grid size-8 shrink-0 place-items-center rounded-full border-[1.5px] transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring';
-// The channel a filter picked: a 2px primary ring with a soft halo, so it reads at a glance.
-const MARK_SELECTED = 'border-2 border-primary ring-[3px] ring-primary/25';
 const MARK_GREYED = '[&>:first-child]:opacity-45 [&>:first-child]:grayscale';
-const MARK_BADGE = 'absolute -bottom-0.5 -end-0.5 rounded-full border-2 border-background';
 const MARK_HOVER = { openDelay: 150, closeDelay: 120 };
 
 /** Every source a person must act on, as ONE chip with their count; opening it lists them with the

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AgenticProcess, Annotation, TypeId } from '@sdk';
 import {
   newNote,
@@ -6,6 +6,8 @@ import {
   notesOf,
   noteTitle,
   quickPromptsFor,
+  reorderQuickPrompt,
+  sortQuickPrompts,
 } from '@src/hooks/use-entity-notes';
 import { DEFAULT_NOTE_COLOR, NOTE_COLOR_TOKENS, NOTE_PALETTE, noteColor } from '@src/components/notes/note-palette';
 import { buildNotePrompt, noteWorkerContext } from '@src/components/notes/useNoteWorker';
@@ -108,5 +110,19 @@ describe('quickPromptsFor', () => {
     const plainNote = note('just a note', '2026-11-06T00:00:00.000Z');
     const got = quickPromptsFor([mine, otherProject, plainNote, proj], { userId: USER, projectId: PROJECT });
     expect(got.map((n) => n.content)).toEqual(['project', 'mine']);
+  });
+
+  it('a dragged prompt keeps its place above the never-ordered ones, and a reorder saves only what moved', async () => {
+    const mk = (content: string, order?: number) => {
+      const n = qp(content, 'user', USER, '2026-11-02T00:00:00.000Z');
+      Object.assign(n, { id: content, save: vi.fn(async () => n) });
+      if (order !== undefined) n.data = { ...n.data, order };
+      return n;
+    };
+    const [a, b, c] = [mk('a', 1), mk('b', 2), mk('c')];
+    expect(sortQuickPrompts([c, b, a]).map((n) => n.content)).toEqual(['a', 'b', 'c']);
+    await reorderQuickPrompt([a, b, c], 'c', { beforeId: 'b' });
+    expect([a, b, c].map((n) => n.data?.order)).toEqual([1, 3, 2]);
+    expect(a.save).not.toHaveBeenCalled();
   });
 });

@@ -231,6 +231,11 @@ class Credential(SetupSkippable, Entity):
         """The vaults this credential's variables point into (``secret_ref.vault``), in manifest order, once each."""
         return list(dict.fromkeys(v.secret_ref.vault for v in (self.vars or {}).values() if v.secret_ref is not None))
 
+    def secret_vault(self) -> Optional[str]:
+        """The project vault this credential's values live in — its own choice over the project's default
+        (``flow_sdk/secrets/active.py``). None: its variables point into none."""
+        return next(iter(self.vault_names()), None)
+
     async def secret_vault_state(self, project: Optional["Project"] = None) -> dict[str, Any]:
         """What sharing this credential's values needs: ``{holds_values, project_id, vaults, unpublished}`` —
         ``vaults`` the project's declared vault names, ``unpublished`` the stored variables with no ref into one."""

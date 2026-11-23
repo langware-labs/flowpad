@@ -3,11 +3,11 @@ import { FavoritesTreeMenu } from '@src/components/favorites/FavoritesTreeMenu';
 import { BookmarksNotesSection } from '@src/components/notes/BookmarksNotesSection';
 import { AnchoredMenu } from '@src/components/ui/anchored-menu';
 import { useCloseOnNavigate } from '@src/hooks/use-close-on-navigate';
-import { useEffect, type PointerEventHandler } from 'react';
+import { useEffect, useState, type PointerEventHandler } from 'react';
 
 /**
- * BookmarksSlider — a fast, hover-driven bookmarks MENU. AnchoredMenu provides the
- * anchored chrome, FavoritesTreeMenu the rows. Its host decides which edge it
+ * BookmarksSlider — a fast, hover-opened bookmarks MENU. AnchoredMenu provides the
+ * anchored chrome, FavoritesTreeMenu the breadcrumb and the rows. Its host decides which edge it
  * grows from (`side`); today that is the navigation bar's star, expanding from
  * the top inline-end corner toward inline-start — so top-right-growing-leftward
  * under LTR, and top-left-growing-rightward under HE/AR.
@@ -44,6 +44,8 @@ export function BookmarksSlider({
   hoverProps: { onPointerEnter: PointerEventHandler; onPointerLeave: PointerEventHandler };
 }) {
   const { t } = useLingui();
+  // The header slot the menu draws its breadcrumb into — see FavoritesTreeMenu.
+  const [breadcrumbSlot, setBreadcrumbSlot] = useState<HTMLElement | null>(null);
   useCloseOnNavigate(open, () => onOpenChange(false));
   useEffect(() => {
     if (!open) return;
@@ -63,18 +65,15 @@ export function BookmarksSlider({
     <AnchoredMenu
       open={open}
       onOpenChange={onOpenChange}
-      title={t`Bookmarks`}
+      title={<div ref={setBreadcrumbSlot} />}
+      label={t`Bookmarks`}
       anchorTop={anchorTop}
       anchorEnd={anchorEnd}
       idleMs={null}
       onPointerEnter={hoverProps.onPointerEnter}
       onPointerLeave={hoverProps.onPointerLeave}
     >
-      {/* The panel grows toward inline-start, so the tree does too: glyphs on the
-          trailing side, previews opening into the screen rather than off it.
-          `mirrored` is LOGICAL — BrowseableTree XORs it with the locale's dir —
-          so this stays correct in both directions and must NOT be flipped here. */}
-      <FavoritesTreeMenu mirrored />
+      <FavoritesTreeMenu breadcrumbSlot={breadcrumbSlot} />
       <BookmarksNotesSection />
     </AnchoredMenu>
   );

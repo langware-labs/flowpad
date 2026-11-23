@@ -370,15 +370,19 @@ msgstr "{0, plural, one {{occurrences}× across # session} other {{occurrences}�
 msgid "{0, plural, one {# allocation} other {# allocations}}"
 msgstr "{0, plural, one {# allocation} other {# allocations}}"
 
+#. placeholder {0}: installable.length
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "{0, plural, one {# attachment} other {# attachments}}"
+msgstr "{0, plural, one {# attachment} other {# attachments}}"
+
 #. placeholder {0}: links.length
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "{0, plural, one {# backlink} other {# backlinks}}"
 msgstr "{0, plural, one {# backlink} other {# backlinks}}"
 
-#. placeholder {0}: rows.length
 #: src/components/project-setup/DependencyUpdatesStrip.tsx
-msgid "{0, plural, one {# dependency is behind} other {# dependencies are behind}}"
-msgstr "{0, plural, one {# dependency is behind} other {# dependencies are behind}}"
+#~ msgid "{0, plural, one {# dependency is behind} other {# dependencies are behind}}"
+#~ msgstr "{0, plural, one {# dependency is behind} other {# dependencies are behind}}"
 
 #. placeholder {0}: rows.length
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -441,6 +445,11 @@ msgstr "{0, plural, one {# member} other {# members}}"
 #: src/components/conversation/SessionCard.tsx
 msgid "{0, plural, one {# message} other {# messages}}"
 msgstr "{0, plural, one {# message} other {# messages}}"
+
+#. placeholder {0}: rows.length
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "{0, plural, one {# package is behind} other {# packages are behind}}"
+msgstr "{0, plural, one {# package is behind} other {# packages are behind}}"
 
 #. placeholder {0}: people.length
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -567,10 +576,9 @@ msgstr "{0} already has access."
 msgid "{0} annotations on this row"
 msgstr "{0} annotations on this row"
 
-#. placeholder {0}: installable.length
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
-msgid "{0} attachments"
-msgstr "{0} attachments"
+#~ msgid "{0} attachments"
+#~ msgstr "{0} attachments"
 
 #. placeholder {0}: warning.winner
 #: src/agents/agent-auto-launch-warning.ts
@@ -603,6 +611,11 @@ msgstr "{0} changed"
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "{0} chats — their transcripts stay on disk."
 msgstr "{0} chats — their transcripts stay on disk."
+
+#. placeholder {0}: rows.length
+#: src/components/tags/ClassifyTable.tsx
+msgid "{0} classified · {changing} would change · {done} applied"
+msgstr "{0} classified · {changing} would change · {done} applied"
 
 #. placeholder {0}: whens.length
 #: src/components/automations/PackageRow.tsx
@@ -725,6 +738,11 @@ msgstr "{0} garbage · {1} unsure · {2} keep · {3} roots scanned"
 msgid "{0} has been added successfully."
 msgstr "{0} has been added successfully."
 
+#. placeholder {0}: row.manager_title
+#: src/components/footer/SecretManagerChip.tsx
+msgid "{0} has no link to a vault — open it in the app."
+msgstr "{0} has no link to a vault — open it in the app."
+
 #. placeholder {0}: w.file.glob
 #: src/components/automations/automation-words.ts
 msgid "{0} in {folder}"
@@ -750,10 +768,21 @@ msgstr "{0} is issuing your LLM calls. Close this window (⌘W) — you're done 
 msgid "{0} is linked. Your agent goes live as soon as its machine is ready."
 msgstr "{0} is linked. Your agent goes live as soon as its machine is ready."
 
+#. placeholder {0}: asked.title
+#: src/components/footer/BrowserChip.tsx
+msgid "{0} is not for this worker"
+msgstr "{0} is not for this worker"
+
 #. placeholder {0}: harness.label
+#. placeholder {0}: row.missing_tool || row.manager_title
+#: src/components/footer/SecretManagerChip.tsx
 #: src/components/workers/harness-availability.ts
-msgid "{0} is not installed on this machine."
-msgstr "{0} is not installed on this machine."
+msgid "{0} is not installed on this computer."
+msgstr "{0} is not installed on this computer."
+
+#: src/components/workers/harness-availability.ts
+#~ msgid "{0} is not installed on this machine."
+#~ msgstr "{0} is not installed on this machine."
 
 #. placeholder {0}: source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -951,6 +980,11 @@ msgstr "{0} of {1} would be caught. Change the sentence and try again. Hover a c
 #: src/components/automations/AutomationRow.tsx
 msgid "{0} of the last {1} runs failed"
 msgstr "{0} of the last {1} runs failed"
+
+#. placeholder {0}: tile.issueCount
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "{0} open issues"
+msgstr "{0} open issues"
 
 #. placeholder {0}: live.length
 #: src/components/footer/LiveSessionsChip.tsx
@@ -1220,8 +1254,8 @@ msgid "{answererName}'s answers — updated"
 msgstr "{answererName}'s answers — updated"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "{applied} applied · no automation started"
-msgstr "{applied} applied · no automation started"
+#~ msgid "{applied} applied · no automation started"
+#~ msgstr "{applied} applied · no automation started"
 
 #: src/components/conversation/conversation-category.ts
 msgid "{base} help desk"
@@ -1260,6 +1294,10 @@ msgstr "{completedCount}/{totalCount} completed"
 msgid "{count, plural, one {# commit behind} other {# commits behind}}"
 msgstr "{count, plural, one {# commit behind} other {# commits behind}}"
 
+#: src/components/footer/HostedAppRow.tsx
+msgid "{count, plural, one {# connection} other {# connections}}"
+msgstr "{count, plural, one {# connection} other {# connections}}"
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "{count, plural, one {# issue} other {# issues}}"
 msgstr "{count, plural, one {# issue} other {# issues}}"
@@ -1277,6 +1315,14 @@ msgstr "{count} {0} attached"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "{count} channels need attention"
 msgstr "{count} channels need attention"
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "{count} deployments"
+msgstr "{count} deployments"
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "{count} issues"
+msgstr "{count} issues"
 
 #: src/components/assets/ContextFolderGitBadge.tsx
 msgid "{count} pending change(s) — click to view diff"
@@ -1329,13 +1375,12 @@ msgid "{documentCount} docs · {chunkCount} chunks"
 msgstr "{documentCount} docs · {chunkCount} chunks"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "{done} classified · {wouldChange} would change · {failed} failed"
-msgstr "{done} classified · {wouldChange} would change · {failed} failed"
+#~ msgid "{done} classified · {wouldChange} would change · {failed} failed"
+#~ msgstr "{done} classified · {wouldChange} would change · {failed} failed"
 
-#. placeholder {0}: ids.length
 #: src/components/tags/ClassifyTable.tsx
-msgid "{done} of {0} classified"
-msgstr "{done} of {0} classified"
+#~ msgid "{done} of {0} classified"
+#~ msgstr "{done} of {0} classified"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "{done} of {total} set up"
@@ -1381,6 +1426,14 @@ msgstr "{files} files need merging — let the assistant merge them"
 #: src/components/git/RepoPicker.tsx
 msgid "{filteredCount} of {totalCount} repos"
 msgstr "{filteredCount} of {totalCount} repos"
+
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+#~ msgid "{first}–{0} of {1}"
+#~ msgstr "{first}–{0} of {1}"
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "{first}–{last} of {total}"
+msgstr "{first}–{last} of {total}"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "{firstName} is still uploading the bundle. Try again in a moment."
@@ -1437,6 +1490,10 @@ msgstr "{hostName} reviews"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName}'s Claude Code"
 msgstr "{hostName}'s Claude Code"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "{hours} h {rest} min left"
+msgstr "{hours} h {rest} min left"
 
 #: src/components/search-index/IndexerStatusPill.tsx
 msgid "{idle} — open Records Scanner"
@@ -1553,9 +1610,21 @@ msgstr "{m}m {rest}s"
 msgid "{m}m ago"
 msgstr "{m}m ago"
 
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "{machine} · for {hours} hours · confirm with your passkey"
+msgstr "{machine} · for {hours} hours · confirm with your passkey"
+
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "{machine} · for 1 hour · confirm with your passkey"
+msgstr "{machine} · for 1 hour · confirm with your passkey"
+
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "{machines} machines have the old value. Paused ones get it when they next start."
 msgstr "{machines} machines have the old value. Paused ones get it when they next start."
+
+#: src/components/stream-inbox-view/TagFilterButton.tsx
+msgid "{matches} conversations"
+msgstr "{matches} conversations"
 
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "{memberCount, plural, one {# member} other {# members}}"
@@ -1576,6 +1645,11 @@ msgstr "{messageCount, plural, one {# msg} other {# msgs}}"
 #: src/components/record-search-bar/SearchResultCard.tsx
 msgid "{messageCount} msgs"
 msgstr "{messageCount} msgs"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "{minutes} min left"
+msgstr "{minutes} min left"
 
 #: src/components/automations/automation-words.ts
 msgid "{ms} ms"
@@ -1638,8 +1712,12 @@ msgid "{name} isn't published yet. Ask its owner to publish it, then open this l
 msgstr "{name} isn't published yet. Ask its owner to publish it, then open this link again."
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
-msgid "{name} isn't signed in on this machine."
-msgstr "{name} isn't signed in on this machine."
+msgid "{name} isn't signed in on this computer."
+msgstr "{name} isn't signed in on this computer."
+
+#: src/components/harness-login/HarnessSignInDialog.tsx
+#~ msgid "{name} isn't signed in on this machine."
+#~ msgstr "{name} isn't signed in on this machine."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
@@ -1675,8 +1753,12 @@ msgid "{nodeCount} nodes · {edgeCount} edges"
 msgstr "{nodeCount} nodes · {edgeCount} edges"
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "{notInstalled, plural, one {# optional dependency not installed} other {# optional dependencies not installed}}"
-msgstr "{notInstalled, plural, one {# optional dependency not installed} other {# optional dependencies not installed}}"
+#~ msgid "{notInstalled, plural, one {# optional dependency not installed} other {# optional dependencies not installed}}"
+#~ msgstr "{notInstalled, plural, one {# optional dependency not installed} other {# optional dependencies not installed}}"
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "{notInstalled, plural, one {# optional package not installed} other {# optional packages not installed}}"
+msgstr "{notInstalled, plural, one {# optional package not installed} other {# optional packages not installed}}"
 
 #: src/components/assets/editor/deck/DeckViewer.tsx
 msgid "{numSlides} slides"
@@ -1698,6 +1780,10 @@ msgstr "{openDisplayCount, plural, one {grouped open error in the last 24 hours}
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "{openDisplayCount, plural, one {open error in the last 24 hours} other {open errors in the last 24 hours}}"
 msgstr "{openDisplayCount, plural, one {open error in the last 24 hours} other {open errors in the last 24 hours}}"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "{option} h"
+msgstr "{option} h"
 
 #. placeholder {0}: value.links.length
 #. placeholder {1}: value.steps.length
@@ -1897,8 +1983,12 @@ msgid "{title}: shared through vault {vault}"
 msgstr "{title}: shared through vault {vault}"
 
 #: src/components/credentials/CredentialTestButton.tsx
-msgid "{title}: the provider took the key"
-msgstr "{title}: the provider took the key"
+msgid "{title}: the provider accepted it"
+msgstr "{title}: the provider accepted it"
+
+#: src/components/credentials/CredentialTestButton.tsx
+#~ msgid "{title}: the provider took the key"
+#~ msgstr "{title}: the provider took the key"
 
 #: src/components/credentials/CredentialTestButton.tsx
 msgid "{title}: the test could not run"
@@ -1974,8 +2064,12 @@ msgid "{until} (closed)"
 msgstr "{until} (closed)"
 
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
-msgid "{updates, plural, one {# dependency has updates} other {# dependencies have updates}}"
-msgstr "{updates, plural, one {# dependency has updates} other {# dependencies have updates}}"
+#~ msgid "{updates, plural, one {# dependency has updates} other {# dependencies have updates}}"
+#~ msgstr "{updates, plural, one {# dependency has updates} other {# dependencies have updates}}"
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "{updates, plural, one {# package has updates} other {# packages have updates}}"
+msgstr "{updates, plural, one {# package has updates} other {# packages have updates}}"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{used} of {limit} {windowText}"
@@ -2082,6 +2176,10 @@ msgstr "+ Add rule"
 #: src/components/agents/AllowedSendersEditor.tsx
 msgid "+ Add sender"
 msgstr "+ Add sender"
+
+#: src/components/footer/SecretManagerChip.tsx
+msgid "+ Add vault"
+msgstr "+ Add vault"
 
 #: src/components/token-plan/TokenSourcesTree.tsx
 msgid "+ Allocate"
@@ -2191,6 +2289,10 @@ msgstr "<0>Ignore</0> — remove the DB row, keep the shadow record dir at <1>~/
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "<0>New / Stale / Mis-Sc</0> sum to <1>Pending</1>: a Fast index drives them all to 0. <2>Orphan</2> rows persist until you Scan Orphans → sweep."
 msgstr "<0>New / Stale / Mis-Sc</0> sum to <1>Pending</1>: a Fast index drives them all to 0. <2>Orphan</2> rows persist until you Scan Orphans → sweep."
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "<0>One more step</0> · Turn on remote control on {machineName}."
+msgstr "<0>One more step</0> · Turn on remote control on {machineName}."
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "<name>"
@@ -2323,6 +2425,10 @@ msgstr "1 hour"
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 msgid "1 is IT Disabled"
 msgstr "1 is IT Disabled"
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "1 issue"
+msgstr "1 issue"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "1 Machine"
@@ -2502,8 +2608,8 @@ msgid "A deployment"
 msgstr "A deployment"
 
 #: src/components/items/home-tabs.tsx
-msgid "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
-msgstr "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
+#~ msgid "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
+#~ msgstr "A deployment puts one of your agents on a channel — Slack, WhatsApp or Telegram — so people can talk to it without opening Flowpad."
 
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A desktop instance or a machine, and a channel id on it"
@@ -2514,8 +2620,12 @@ msgid "A document is saved, a folder gets a new file."
 msgstr "A document is saved, a folder gets a new file."
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "A dry run: nothing is tagged until you apply, and no automation starts."
-msgstr "A dry run: nothing is tagged until you apply, and no automation starts."
+#~ msgid "A dry run: nothing is tagged until you apply, and no automation starts."
+#~ msgstr "A dry run: nothing is tagged until you apply, and no automation starts."
+
+#: src/components/harness-login/HarnessSignInDialog.tsx
+msgid "A few quick steps in your browser:"
+msgstr "A few quick steps in your browser:"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "A few words about what went wrong help us look in the right place."
@@ -2530,8 +2640,12 @@ msgid "A file changed: {path}"
 msgstr "A file changed: {path}"
 
 #: src/components/harness-login/funding-pill.ts
-msgid "A FlowPad login is stored but the hub has not confirmed it"
-msgstr "A FlowPad login is stored but the hub has not confirmed it"
+msgid "A Flowpad login is stored but the hub has not confirmed it"
+msgstr "A Flowpad login is stored but the hub has not confirmed it"
+
+#: src/components/harness-login/funding-pill.ts
+#~ msgid "A FlowPad login is stored but the hub has not confirmed it"
+#~ msgstr "A FlowPad login is stored but the hub has not confirmed it"
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "A folder of related projects. New projects and clones are created inside it."
@@ -2601,8 +2715,8 @@ msgid "a name in scope, or a literal"
 msgstr "a name in scope, or a literal"
 
 #: src/components/update-ready/UpdateReadyBridge.tsx
-msgid "A new FlowPad update has been downloaded and is ready to install."
-msgstr "A new FlowPad update has been downloaded and is ready to install."
+#~ msgid "A new FlowPad update has been downloaded and is ready to install."
+#~ msgstr "A new FlowPad update has been downloaded and is ready to install."
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 msgid "A new operation. Everything you send under this name, and every machine's answer, lands in one conversation."
@@ -2611,6 +2725,14 @@ msgstr "A new operation. Everything you send under this name, and every machine'
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
 msgstr "A new project folder — everything you create is scoped to it"
+
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "A passkey cannot be created on this page. Open the Flowpad hub in your browser."
+msgstr "A passkey cannot be created on this page. Open the Flowpad hub in your browser."
+
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "A passkey cannot be used on this page. Open the Flowpad hub in your browser."
+msgstr "A passkey cannot be used on this page. Open the Flowpad hub in your browser."
 
 #: src/components/inbound/DestinationPicker.tsx
 msgid "A place and channel by hand…"
@@ -2636,6 +2758,10 @@ msgstr "A project was shared with you"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
 msgstr "A project with that name exists"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth."
+msgstr "A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "A real email address the hub creates for one of your agents. Nothing to set up."
@@ -2780,6 +2906,10 @@ msgstr "Accept failed"
 msgid "Accepted"
 msgstr "Accepted"
 
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "accepted · code {code}"
+msgstr "accepted · code {code}"
+
 #: src/components/git/InvitationsStrip.tsx
 msgid "Accepted {fullName}"
 msgstr "Accepted {fullName}"
@@ -2807,13 +2937,30 @@ msgid "Accepts runs until"
 msgstr "Accepts runs until"
 
 #: src/components/graph-view/ui/NodePanel.tsx
-#: src/components/items/ItemsSection.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 msgid "Access"
 msgstr "Access"
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Access is managed on the hub."
 msgstr "Access is managed on the hub."
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Access key name"
+msgstr "Access key name"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Access key set · remote control off"
+msgstr "Access key set · remote control off"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Access key set · remote control on"
+msgstr "Access key set · remote control on"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Access keys"
+msgstr "Access keys"
 
 #: src/components/connections-manager.tsx
 msgid "Access requested"
@@ -3047,6 +3194,16 @@ msgstr "Add a step."
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Add a tag under {nodeName}"
 msgstr "Add a tag under {nodeName}"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+#: src/pages/hub-home/AccessKeysSection.tsx
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Add access key"
+msgstr "Add access key"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Add an access key to turn this on."
+msgstr "Add an access key to turn this on."
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Add an agent…"
@@ -3313,6 +3470,10 @@ msgstr "Add someone with an email address to share this project with."
 msgid "Add source"
 msgstr "Add source"
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Add statement"
+msgstr "Add statement"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #: src/components/automations/ThenStepsEditor.tsx
 msgid "Add step"
@@ -3354,7 +3515,6 @@ msgid "Add to project"
 msgstr "Add to project"
 
 #: src/components/conversation/MessageActionsMenu.tsx
-#: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Add to queue"
 msgstr "Add to queue"
 
@@ -3388,8 +3548,8 @@ msgid "Add…"
 msgstr "Add…"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Added"
-msgstr "Added"
+#~ msgid "Added"
+#~ msgstr "Added"
 
 #. placeholder {0}: entries[0].relPath
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
@@ -3545,11 +3705,20 @@ msgstr "agent"
 #: src/components/contact-picker/ContactPicker.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/quick-create/registry.ts
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
 msgid "Agent"
 msgstr "Agent"
+
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Agent · shared with you"
+msgstr "Agent · shared with you"
+
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Agent · yours"
+msgstr "Agent · yours"
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "agent (definition)"
@@ -3560,9 +3729,7 @@ msgstr "agent (definition)"
 msgid "Agent {0}"
 msgstr "Agent {0}"
 
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/HostedAppRow.tsx
 msgid "Agent browser"
 msgstr "Agent browser"
 
@@ -3646,12 +3813,15 @@ msgstr "agents"
 #: src/components/asset-counters/hub-counters.tsx
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/contact-picker/ContactsDialog.tsx
-#: src/components/items/ItemsSection.tsx
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr "Agents"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Agents are reading — closing keeps it running"
+msgstr "Agents are reading — closing keeps it running"
 
 #: src/i18n/pref-labels.ts
 msgid "AI & chat"
@@ -3711,7 +3881,6 @@ msgstr "all"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
-#: src/components/items/ItemsSection.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -3751,6 +3920,11 @@ msgstr "All assistants"
 #: src/components/automations/RunsView.tsx
 msgid "All automations"
 msgstr "All automations"
+
+#: src/components/favorites/FavoritesBreadcrumb.tsx
+#: src/components/favorites/FavoritesBreadcrumb.tsx
+msgid "All bookmarks"
+msgstr "All bookmarks"
 
 #: src/components/lens-viewer/TriggerLogViewer.tsx
 msgid "All calls"
@@ -3907,6 +4081,7 @@ msgstr "Allocation saved"
 
 #: src/components/page-allow/LinkAllowDialog.tsx
 #: src/components/page-allow/PageAllowGate.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "Allow"
@@ -4095,8 +4270,8 @@ msgid "Always on · billed once a month."
 msgstr "Always on · billed once a month."
 
 #: src/components/footer/BrowserChip.tsx
-msgid "always ready"
-msgstr "always ready"
+#~ msgid "always ready"
+#~ msgstr "always ready"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Always Thinking Enabled"
@@ -4115,8 +4290,8 @@ msgid "An address, a name, or @domain"
 msgstr "An address, a name, or @domain"
 
 #: src/components/webapp-display/AppLifecyclePanel.tsx
-msgid "An agent is repairing the app"
-msgstr "An agent is repairing the app"
+#~ msgid "An agent is repairing the app"
+#~ msgstr "An agent is repairing the app"
 
 #: src/components/automations/KindGallery.tsx
 msgid "An agent reads the task and tells you if it needs you."
@@ -4533,6 +4708,10 @@ msgstr "API URL"
 msgid "App"
 msgstr "App"
 
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "App · yours"
+msgstr "App · yours"
+
 #: src/components/webapp-display/AppInfoPopover.tsx
 msgid "App id"
 msgstr "App id"
@@ -4583,6 +4762,7 @@ msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "Appended to the current worker's prompt queue, tagged with this message."
 
 #: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "applied"
 msgstr "applied"
 
@@ -4602,6 +4782,18 @@ msgstr "Applies to"
 #: src/components/tags/ClassifyTable.tsx
 msgid "Apply"
 msgstr "Apply"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Apply all"
+msgstr "Apply all"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Apply every row you did not reject, with the tag changes they need"
+msgstr "Apply every row you did not reject, with the tag changes they need"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Apply tag changes"
+msgstr "Apply tag changes"
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Apply to message"
@@ -4642,6 +4834,10 @@ msgstr "Approve now"
 msgid "Approve this live session only"
 msgstr "Approve this live session only"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Approved as a new tag."
+msgstr "Approved as a new tag."
+
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
 msgstr "Approved by {hostName}"
@@ -4655,6 +4851,7 @@ msgid "Approving lets this machine act as you on FlowPad. Only approve a code yo
 msgstr "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 
 #: src/components/asset-counters/app-counters.tsx
+#: src/components/home-tiles/HomeTiles.tsx
 #: src/components/project-home/ProjectApps.tsx
 #: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
@@ -4879,6 +5076,10 @@ msgstr "Asked before? Your open requests are in the help desk."
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Asked by"
 msgstr "Asked by"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Asked for"
+msgstr "Asked for"
 
 #: src/components/help/AskForHelpButton.tsx
 msgid "Asked of you"
@@ -5265,6 +5466,7 @@ msgid "automatic"
 msgstr "automatic"
 
 #: src/components/automations/RunsView.tsx
+#: src/components/conversation/AutomationMessageActions.tsx
 #: src/components/conversation/ConversationAutomationChip.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/project-setup/setup-labels.ts
@@ -5366,7 +5568,6 @@ msgstr "AWS region for Bedrock"
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/collaboration/LiveSessionView.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
@@ -5589,13 +5790,17 @@ msgstr "Bookmark"
 msgid "Bookmark an asset"
 msgstr "Bookmark an asset"
 
+#: src/components/favorites/FavoritesAddRow.tsx
+msgid "Bookmark this page"
+msgstr "Bookmark this page"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Bookmark this plan"
 msgstr "Bookmark this plan"
 
 #: src/components/favorites/FavoritesAddRow.tsx
-msgid "Bookmark what's open"
-msgstr "Bookmark what's open"
+#~ msgid "Bookmark what's open"
+#~ msgstr "Bookmark what's open"
 
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/top-nav-bar/TopBarActions.tsx
@@ -5603,8 +5808,13 @@ msgid "Bookmarked view"
 msgstr "Bookmarked view"
 
 #: src/components/bookmarks-slider/BookmarksSlider.tsx
+#: src/components/favorites/FavoritesBreadcrumb.tsx
 msgid "Bookmarks"
 msgstr "Bookmarks"
+
+#: src/components/favorites/FavoritesBreadcrumb.tsx
+msgid "Bookmarks path"
+msgstr "Bookmarks path"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Bot id"
@@ -5646,7 +5856,7 @@ msgstr "Brand this project's home ({HOME_CUSTOMIZATION_DIR}). Applies on every h
 msgid "breadcrumb"
 msgstr "breadcrumb"
 
-#: src/components/items/ItemsSection.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 msgid "Breadcrumb"
 msgstr "Breadcrumb"
 
@@ -5702,6 +5912,7 @@ msgid "Browse…"
 msgstr "Browse…"
 
 #: src/components/footer/BrowserChip.tsx
+#: src/components/footer/HostedAppRow.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Browser"
@@ -6122,18 +6333,19 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/token-plan/AllocateDialog.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/version-popover.tsx
-#: src/components/webapp-display/AppLifecyclePanel.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/components/workspace/workspace-switcher.tsx
 #: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/LoginAccessDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -6767,6 +6979,10 @@ msgstr "Choose file"
 msgid "Choose folder…"
 msgstr "Choose folder…"
 
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "Choose how Flowpad's AI is paid for"
+msgstr "Choose how Flowpad's AI is paid for"
+
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Choose the endpoint this one draws from."
 msgstr "Choose the endpoint this one draws from."
@@ -6817,8 +7033,8 @@ msgid "Chrome browser"
 msgstr "Chrome browser"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Chrome profiles on this computer"
-msgstr "Chrome profiles on this computer"
+#~ msgid "Chrome profiles on this computer"
+#~ msgstr "Chrome profiles on this computer"
 
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "Chunk <0>{chunkSeq}</0> — {chunkSize}"
@@ -6847,10 +7063,14 @@ msgstr "classification.json"
 msgid "Classify"
 msgstr "Classify"
 
-#. placeholder {0}: ids.length
+#. placeholder {0}: value ? rows.length : asked.length
 #: src/components/tags/ClassifyTable.tsx
-msgid "Classify {0} messages"
-msgstr "Classify {0} messages"
+msgid "Classify {0} conversations"
+msgstr "Classify {0} conversations"
+
+#: src/components/tags/ClassifyTable.tsx
+#~ msgid "Classify {0} messages"
+#~ msgstr "Classify {0} messages"
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Classify arriving messages"
@@ -6990,6 +7210,7 @@ msgstr "clear"
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
+#: src/components/stream-inbox-view/TagFilterButton.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Clear"
@@ -7178,6 +7399,10 @@ msgstr "Click to rename room"
 msgid "Click to run · double-click to open the wizard"
 msgstr "Click to run · double-click to open the wizard"
 
+#: src/components/notes/QuickPromptsMenu.tsx
+msgid "Click to run · drag to order"
+msgstr "Click to run · drag to order"
+
 #: src/components/credentials/SignInCommand.tsx
 msgid "Click to run · right-click for more"
 msgstr "Click to run · right-click for more"
@@ -7261,8 +7486,10 @@ msgstr "Cloning…"
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/footer/SecretManagerChip.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/inbound/RouteCheck.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -7392,6 +7619,10 @@ msgstr "Close tab"
 msgid "Close terminal"
 msgstr "Close terminal"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Close the tag tree"
+msgstr "Close the tag tree"
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Close ticket"
 msgstr "Close ticket"
@@ -7419,6 +7650,7 @@ msgid "Closed after {took}"
 msgstr "Closed after {took}"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Cloud"
 msgstr "Cloud"
@@ -7538,6 +7770,10 @@ msgstr "Code expired. Close and click Connect again to get a fresh code."
 msgid "Code expires"
 msgstr "Code expires"
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Code from the email"
+msgstr "Code from the email"
+
 #: src/components/assets/editor/agent-profile/InviteCodesDialog.tsx
 msgid "codes"
 msgstr "codes"
@@ -7600,6 +7836,8 @@ msgstr "Collect every smart-navigation decision (what you typed, where, what ope
 msgid "Collecting…"
 msgstr "Collecting…"
 
+#: src/components/notes/QuickPromptsMenu.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/tags/StreamInboxTags.tsx
 #: src/components/ui/agent-avatar-picker.tsx
@@ -7902,10 +8140,18 @@ msgstr "Confirm deletion"
 msgid "confirm which charge is in question, explain the refund path, and draft the reply. Don’t send it."
 msgstr "confirm which charge is in question, explain the refund path, and draft the reply. Don’t send it."
 
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Confirm with passkey"
+msgstr "Confirm with passkey"
+
 #. placeholder {0}: action.label
 #: src/components/browseable-tree/BrowseableTree.tsx
 msgid "Confirm: {0}"
 msgstr "Confirm: {0}"
+
+#: src/components/notes/QuickPromptsMenu.tsx
+msgid "Confirm: Delete"
+msgstr "Confirm: Delete"
 
 #: src/components/assets/NewAssetMenu.tsx
 #: src/components/connections-manager.tsx
@@ -7951,6 +8197,10 @@ msgstr "Connect a channel people can reach this agent on"
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "Connect a data source for me and help me define what I want out of each item."
 msgstr "Connect a data source for me and help me define what I want out of each item."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Connect a shell"
+msgstr "Connect a shell"
 
 #: src/components/account/settings-section.tsx
 msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
@@ -8008,7 +8258,6 @@ msgstr "connected"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connected"
 msgstr "Connected"
@@ -8039,10 +8288,9 @@ msgstr "Connected to {hostName}'s machine — the last prompt failed."
 msgid "Connected to {hostName}'s machine."
 msgstr "Connected to {hostName}'s machine."
 
-#. placeholder {0}: credential.missingScopes.join(', ')
 #: src/components/connections-manager.tsx
-msgid "Connected without {0}: reconnect to grant them"
-msgstr "Connected without {0}: reconnect to grant them"
+#~ msgid "Connected without {0}: reconnect to grant them"
+#~ msgstr "Connected without {0}: reconnect to grant them"
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager.tsx
@@ -8082,6 +8330,7 @@ msgstr "Connection verified"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/connections-manager.tsx
+#: src/components/footer/HostedAppRow.tsx
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "Connections"
 msgstr "Connections"
@@ -8133,6 +8382,7 @@ msgstr "Content"
 #: src/components/entity-actions/ContextMenuButton.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
 #: src/types/ViewType.ts
 msgid "Context"
 msgstr "Context"
@@ -8182,6 +8432,7 @@ msgstr "context tokens"
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/survey/SurveyView.tsx
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
 msgid "Continue"
 msgstr "Continue"
 
@@ -8533,8 +8784,8 @@ msgstr "Copy relative path"
 msgid "Copy remote URL"
 msgstr "Copy remote URL"
 
-#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
-#: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Copy session details"
 msgstr "Copy session details"
 
@@ -8624,6 +8875,10 @@ msgstr "Could not add codes"
 msgid "Could not add tag"
 msgstr "Could not add tag"
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Could not add the access key. Try again."
+msgstr "Could not add the access key. Try again."
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Could not add the help desk."
 msgstr "Could not add the help desk."
@@ -8631,10 +8886,6 @@ msgstr "Could not add the help desk."
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "Could not allocate"
 msgstr "Could not allocate"
-
-#: src/components/page-allow/PageAllowGate.tsx
-msgid "Could not allow this page."
-msgstr "Could not allow this page."
 
 #: src/pages/flow-page/display-chrome.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
@@ -8701,6 +8952,7 @@ msgstr "Could not change IT Enabled"
 msgid "Could not change privacy mode"
 msgstr "Could not change privacy mode"
 
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
@@ -8728,7 +8980,6 @@ msgstr "Could not change where the project runs"
 msgid "Could not check sign-in"
 msgstr "Could not check sign-in"
 
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Could not classify"
 msgstr "Could not classify"
@@ -8884,6 +9135,10 @@ msgstr "Could not discard"
 #: src/components/connections-manager.tsx
 msgid "Could not disconnect from {0}."
 msgstr "Could not disconnect from {0}."
+
+#: src/components/conversation/PrivateMessageFrame.tsx
+msgid "Could not dismiss the message"
+msgstr "Could not dismiss the message"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -9128,6 +9383,10 @@ msgstr "Could not open the data schema"
 msgid "Could not open the folder"
 msgstr "Could not open the folder"
 
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Could not open the hub page"
+msgstr "Could not open the hub page"
+
 #: src/components/assets/editor/chart/useOpenChart.ts
 msgid "Could not open the link"
 msgstr "Could not open the link"
@@ -9191,6 +9450,10 @@ msgstr "Could not publish to vault {vault}."
 msgid "Could not reach the backend. Try again in a moment."
 msgstr "Could not reach the backend. Try again in a moment."
 
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Could not reach the vault."
+msgstr "Could not reach the vault."
+
 #: src/components/assets/editor/agent-profile/AgentPlaceActivity.tsx
 msgid "Could not reach this cloud machine. It may be paused."
 msgstr "Could not reach this cloud machine. It may be paused."
@@ -9202,6 +9465,10 @@ msgstr "Could not read {what}: {message}"
 #: src/components/tags/StreamInboxTags.tsx
 #~ msgid "Could not read classification settings"
 #~ msgstr "Could not read classification settings"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Could not read remote control on this machine."
+msgstr "Could not read remote control on this machine."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Could not read the diagnosis"
@@ -9253,6 +9520,7 @@ msgstr "Could not recover this session's project."
 msgid "Could not recover this session’s project."
 msgstr "Could not recover this session’s project."
 
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "Could not remove"
@@ -9276,6 +9544,10 @@ msgstr "Could not remove member"
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Could not remove public access"
 msgstr "Could not remove public access"
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Could not remove the access key"
+msgstr "Could not remove the access key"
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Could not remove the help desk files"
@@ -9314,6 +9586,10 @@ msgstr "Could not rename context"
 #: src/components/project-home/ProjectNameTitle.tsx
 msgid "Could not rename project"
 msgstr "Could not rename project"
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Could not rename the access key"
+msgstr "Could not rename the access key"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "Could not rename the invite"
@@ -9521,6 +9797,10 @@ msgstr "Could not send"
 msgid "Could not send it"
 msgstr "Could not send it"
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Could not send the code. Try again."
+msgstr "Could not send the code. Try again."
+
 #: src/components/install/InstallButton.tsx
 msgid "Could not send the install"
 msgstr "Could not send the install"
@@ -9560,18 +9840,31 @@ msgstr "Could not share"
 msgid "Could not share {projectName}"
 msgstr "Could not share {projectName}"
 
+#: src/components/conversation/PrivateMessageFrame.tsx
+msgid "Could not share the message"
+msgstr "Could not share the message"
+
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Could not sign in to FlowPad"
-msgstr "Could not sign in to FlowPad"
+msgid "Could not sign in to Flowpad"
+msgstr "Could not sign in to Flowpad"
+
+#: src/components/connections-manager/flowpad-connection-row.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Could not sign in to FlowPad"
+#~ msgstr "Could not sign in to FlowPad"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Could not sign in to the cloud"
 msgstr "Could not sign in to the cloud"
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
-msgid "Could not sign out of FlowPad"
-msgstr "Could not sign out of FlowPad"
+msgid "Could not sign out of Flowpad"
+msgstr "Could not sign out of Flowpad"
+
+#: src/components/connections-manager/flowpad-connection-row.tsx
+#~ msgid "Could not sign out of FlowPad"
+#~ msgstr "Could not sign out of FlowPad"
 
 #: src/hooks/use-sandboxes.ts
 msgid "Could not sign the sandbox out"
@@ -9624,6 +9917,10 @@ msgstr "Could not start sign-in"
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Could not start the {0} sign-in."
 msgstr "Could not start the {0} sign-in."
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Could not start the classification"
+msgstr "Could not start the classification"
 
 #: src/notifications/diagnose/diagnose-and-fix.ts
 msgid "Could not start the diagnosis"
@@ -10202,6 +10499,10 @@ msgstr "Credential"
 msgid "Credential environment this deployment reads"
 msgstr "Credential environment this deployment reads"
 
+#: src/components/credentials/CredentialDialog.tsx
+msgid "Credential name"
+msgstr "Credential name"
+
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 #: src/components/credentials-view/CredentialsView.tsx
@@ -10217,8 +10518,8 @@ msgid "Credentials and model settings are stored on this machine. Spending limit
 msgstr "Credentials and model settings are stored on this machine. Spending limits and filters are not enforced locally."
 
 #: src/components/credentials/CredentialDialog.tsx
-msgid "Credentials name"
-msgstr "Credentials name"
+#~ msgid "Credentials name"
+#~ msgstr "Credentials name"
 
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "Credentials this agent uses."
@@ -10245,6 +10546,7 @@ msgstr "Cross-links"
 msgid "current"
 msgstr "current"
 
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/StreamInboxTags.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/journey/JourneyViewer.tsx
@@ -10289,8 +10591,8 @@ msgid "Current resolved buffer row (may differ from stored line if terminal scro
 msgstr "Current resolved buffer row (may differ from stored line if terminal scrolled)"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Current tags"
-msgstr "Current tags"
+#~ msgid "Current tags"
+#~ msgstr "Current tags"
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Current Time"
@@ -10325,8 +10627,12 @@ msgid "Custom colour"
 msgstr "Custom colour"
 
 #: src/components/connections-manager/add-connection-dialog.tsx
-msgid "Custom credentials"
-msgstr "Custom credentials"
+msgid "Custom credential"
+msgstr "Custom credential"
+
+#: src/components/connections-manager/add-connection-dialog.tsx
+#~ msgid "Custom credentials"
+#~ msgstr "Custom credentials"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Custom models"
@@ -10614,6 +10920,7 @@ msgstr "default"
 
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/credentials/VariableDetails.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
@@ -10707,6 +11014,10 @@ msgstr "Defined in"
 msgid "Definition"
 msgstr "Definition"
 
+#: src/components/footer/HostedAppRow.tsx
+msgid "Degraded"
+msgstr "Degraded"
+
 #: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "degree"
@@ -10753,7 +11064,6 @@ msgstr "delete"
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
-#: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
@@ -11013,6 +11323,11 @@ msgstr "Delete selected"
 msgid "Delete selected ({selectedCount})"
 msgstr "Delete selected ({selectedCount})"
 
+#. placeholder {0}: index + 1
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Delete statement {0}"
+msgstr "Delete statement {0}"
+
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Delete tag"
 msgstr "Delete tag"
@@ -11080,6 +11395,10 @@ msgstr "Delete this new file — it isn't saved in git yet"
 #: src/components/automations/MessageRulePage.tsx
 msgid "Delete this rule?"
 msgstr "Delete this rule?"
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Delete this statement"
+msgstr "Delete this statement"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Delete this step"
@@ -11158,25 +11477,31 @@ msgid "Dependencies"
 msgstr "Dependencies"
 
 #: src/components/project-setup/setup-labels.ts
-msgid "dependency"
-msgstr "dependency"
+#~ msgid "dependency"
+#~ msgstr "dependency"
 
 #: src/components/project-setup/setup-labels.ts
 #: src/components/project-setup/setup-labels.ts
-msgid "Dependency"
-msgstr "Dependency"
+#~ msgid "Dependency"
+#~ msgstr "Dependency"
 
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
-msgid "Dependency updates available"
-msgstr "Dependency updates available"
+#~ msgid "Dependency updates available"
+#~ msgstr "Dependency updates available"
+
+#: src/components/milkdown-editor/plugins/doc-tags.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Depends on"
+msgstr "Depends on"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Deploy"
 msgstr "Deploy"
 
 #: src/components/items/home-tabs.tsx
-msgid "Deploy an agent"
-msgstr "Deploy an agent"
+#~ msgid "Deploy an agent"
+#~ msgstr "Deploy an agent"
 
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "Deploy failed."
@@ -11195,6 +11520,7 @@ msgid "Deployed agent"
 msgstr "Deployed agent"
 
 #: src/components/asset-counters/hub-counters.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 msgid "Deployment"
 msgstr "Deployment"
 
@@ -11229,6 +11555,11 @@ msgstr "Deployment WorldView"
 #: src/navigation/asset-doc-types.ts
 msgid "Deployments"
 msgstr "Deployments"
+
+#. placeholder {0}: deployments.length
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Deployments · {0}"
+msgstr "Deployments · {0}"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 msgid "deployments at once"
@@ -11325,7 +11656,7 @@ msgstr "Detail"
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager/harness-connection-rows.tsx
 #: src/components/conversation/ContactDialog.tsx
-#: src/components/conversation/DiagnosisCard.tsx
+#: src/components/conversation/StatusCard.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
@@ -11522,8 +11853,8 @@ msgstr "Dirs"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
-msgid "Disable"
-msgstr "Disable"
+#~ msgid "Disable"
+#~ msgstr "Disable"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Disable all"
@@ -11653,6 +11984,7 @@ msgstr "Discovering {typeLabel}…"
 msgid "Disk I/O backend"
 msgstr "Disk I/O backend"
 
+#: src/components/conversation/PrivateMessageFrame.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/footer/ActivityStatusPill.tsx
@@ -11829,12 +12161,12 @@ msgstr "done"
 #: src/components/conversation/DiagnosisCard.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
+#: src/components/stream-inbox-view/TagFilterButton.tsx
 #: src/components/tags/MessageTags.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -12203,8 +12535,8 @@ msgid "Earlier message"
 msgstr "Earlier message"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Edge / Brave / Arc"
-msgstr "Edge / Brave / Arc"
+#~ msgid "Edge / Brave / Arc"
+#~ msgstr "Edge / Brave / Arc"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "edges"
@@ -12227,6 +12559,8 @@ msgstr "Edges by kind"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Edit"
 msgstr "Edit"
@@ -12311,7 +12645,6 @@ msgid "Edit package {0}"
 msgstr "Edit package {0}"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
-#: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Edit prompt"
 msgstr "Edit prompt"
 
@@ -12339,6 +12672,7 @@ msgstr "Edit SubAgent Hook"
 msgid "Edit tags"
 msgstr "Edit tags"
 
+#: src/components/stream-inbox-view/TagFilterButton.tsx
 #: src/components/tags/MessageTags.tsx
 msgid "Edit tags…"
 msgstr "Edit tags…"
@@ -12477,8 +12811,8 @@ msgstr "Empty: derived from its package manager"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
-msgid "Enable"
-msgstr "Enable"
+#~ msgid "Enable"
+#~ msgstr "Enable"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Enable all"
@@ -13299,16 +13633,16 @@ msgid "Exported"
 msgstr "Exported"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "extension"
-msgstr "extension"
+#~ msgid "extension"
+#~ msgstr "extension"
 
 #: src/components/footer/BrowserChip.tsx
 msgid "extension ✓"
 msgstr "extension ✓"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Extension installed"
-msgstr "Extension installed"
+#~ msgid "Extension installed"
+#~ msgstr "Extension installed"
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "External link"
@@ -14008,6 +14342,10 @@ msgstr "Filter by status"
 msgid "Filter by subject"
 msgstr "Filter by subject"
 
+#: src/components/stream-inbox-view/TagFilterButton.tsx
+msgid "Filter by tag"
+msgstr "Filter by tag"
+
 #: src/components/llm-endpoints/endpoint-catalog.ts
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 msgid "Filter ceilings must be non-negative numbers."
@@ -14108,12 +14446,20 @@ msgstr "Find machine"
 msgid "Find or type an organization…"
 msgstr "Find or type an organization…"
 
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Fingerprint confirmed. Go back to Flowpad to finish."
+msgstr "Fingerprint confirmed. Go back to Flowpad to finish."
+
 #. placeholder {0}: error.fingerprint
 #. placeholder {0}: parentError.fingerprint
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "fingerprint: {0}"
 msgstr "fingerprint: {0}"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Finish adding the key in your browser, then come back here."
+msgstr "Finish adding the key in your browser, then come back here."
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Finish installing the FlowPad GitHub App on {repo}, then"
@@ -14246,8 +14592,8 @@ msgid "Fix the configuration — credentials or settings — then press Verify t
 msgstr "Fix the configuration — credentials or settings — then press Verify to resume polling."
 
 #: src/components/project-home/MissingDependenciesDialog.tsx
-msgid "Fix…"
-msgstr "Fix…"
+#~ msgid "Fix…"
+#~ msgstr "Fix…"
 
 #: src/components/conversation/DiagnosisCard.tsx
 msgid "Fixed"
@@ -14265,6 +14611,10 @@ msgstr "Fixed: {0}"
 #: src/components/conversation/DiagnosisCard.tsx
 msgid "Fixing"
 msgstr "Fixing"
+
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Fixing the app…"
+msgstr "Fixing the app…"
 
 #: src/components/project-setup/SetupFailureActions.tsx
 msgid "Fixing the setup…"
@@ -14388,6 +14738,14 @@ msgstr "Flowpad Diagnosis"
 msgid "Flowpad diagnostics"
 msgstr "Flowpad diagnostics"
 
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Flowpad did not open. On {machineName}, open Flowpad, then the menu at the top right → Remote control."
+msgstr "Flowpad did not open. On {machineName}, open Flowpad, then the menu at the top right → Remote control."
+
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Flowpad did not open. Open Flowpad on {machine}, then press Open Flowpad here again."
+msgstr "Flowpad did not open. Open Flowpad on {machine}, then press Open Flowpad here again."
+
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "FlowPad didn't open? Install it, then come back to this page."
 msgstr "FlowPad didn't open? Install it, then come back to this page."
@@ -14466,6 +14824,7 @@ msgstr "FlowPad stops, upgrades and starts again on each. Anyone working in them
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 
+#: src/components/footer/HostedAppRow.tsx
 #: src/components/webapp-display/AppOpenInToggle.tsx
 msgid "Flowpad tab"
 msgstr "Flowpad tab"
@@ -14478,6 +14837,10 @@ msgstr "Flowpad version"
 msgid "Flowpad was updated"
 msgstr "Flowpad was updated"
 
+#: src/components/top-nav-bar/StalePageIndicator.tsx
+msgid "Flowpad was updated. Reload this page to use the new version."
+msgstr "Flowpad was updated. Reload this page to use the new version."
+
 #: src/pages/entry/InstallLanding.tsx
 msgid "Flowpad will propose the install on <0>{INSTALL_REVIEW_BRANCH}</0>. Your default branch is not changed and no pull request is opened automatically."
 msgstr "Flowpad will propose the install on <0>{INSTALL_REVIEW_BRANCH}</0>. Your default branch is not changed and no pull request is opened automatically."
@@ -14489,6 +14852,10 @@ msgstr "Flowpad works best with a few tools on your machine: Claude Code, Python
 #: src/components/powered-by.tsx
 msgid "Flowpad.ai Logo"
 msgstr "Flowpad.ai Logo"
+
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Flowpad's assistant is fixing the app"
+msgstr "Flowpad's assistant is fixing the app"
 
 #: src/components/inbound/InboundView.tsx
 msgid "Flowpad's number · linked sender"
@@ -14866,6 +15233,10 @@ msgstr "Generate FlowPad API Key"
 msgid "Generated"
 msgstr "Generated"
 
+#: src/components/conversation/AutomationMessageActions.tsx
+msgid "Generated by:"
+msgstr "Generated by:"
+
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "generated:"
 msgstr "generated:"
@@ -15050,8 +15421,12 @@ msgid "GitHub unavailable"
 msgstr "GitHub unavailable"
 
 #: src/components/credentials/CredentialDialog.tsx
-msgid "Give the pack a name"
-msgstr "Give the pack a name"
+msgid "Give the credential a name"
+msgstr "Give the credential a name"
+
+#: src/components/credentials/CredentialDialog.tsx
+#~ msgid "Give the pack a name"
+#~ msgstr "Give the pack a name"
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Give this deployment its own model budget, drawn from an LLM endpoint you administer: a daily cap and the one model it runs. Unchecked, the agent spends your capped default. Deleted with the deployment."
@@ -15065,6 +15440,12 @@ msgstr "Give this project access"
 msgid "Given to teams"
 msgstr "Given to teams"
 
+#: src/components/footer/SecretManagerChip.tsx
+msgid "global"
+msgstr "global"
+
+#: src/components/footer/SecretManagerChip.tsx
+#: src/components/footer/SecretManagerChip.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Global"
@@ -15086,6 +15467,10 @@ msgstr "Go back"
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Go back to stream inbox"
 msgstr "Go back to stream inbox"
+
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Go back to the project's default"
+msgstr "Go back to the project's default"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Go to Console"
@@ -15220,8 +15605,8 @@ msgid "Graph Workflows"
 msgstr "Graph Workflows"
 
 #: src/components/items/ItemsSection.tsx
-msgid "Grid view"
-msgstr "Grid view"
+#~ msgid "Grid view"
+#~ msgstr "Grid view"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "group"
@@ -15237,6 +15622,10 @@ msgstr "Group"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"
 msgstr "Group Events"
+
+#: src/components/credentials/CredentialDialog.tsx
+msgid "Group keys into a credential"
+msgstr "Group keys into a credential"
 
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "Group name"
@@ -15728,6 +16117,10 @@ msgstr "Hooks:"
 msgid "Host"
 msgstr "Host"
 
+#: src/components/footer/PendingActionsChip.tsx
+msgid "Hosted apps"
+msgstr "Hosted apps"
+
 #: src/components/git/GitRepoPicker.tsx
 msgid "Hosted by Flowpad — use it when you have no GitHub"
 msgstr "Hosted by Flowpad — use it when you have no GitHub"
@@ -15865,8 +16258,12 @@ msgid "Hub endpoints"
 msgstr "Hub endpoints"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Hub endpoints your FlowPad account can spend"
-msgstr "Hub endpoints your FlowPad account can spend"
+msgid "Hub endpoints your Flowpad account can spend"
+msgstr "Hub endpoints your Flowpad account can spend"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Hub endpoints your FlowPad account can spend"
+#~ msgstr "Hub endpoints your FlowPad account can spend"
 
 #: src/notifications/ingest.ts
 msgid "Hub errors suppressed"
@@ -16403,6 +16800,8 @@ msgstr "inside"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/footer/BrowserChip.tsx
+#: src/components/footer/BrowserChip.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/install/AddAssetDialog.tsx
 #: src/components/install/InstallButton.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
@@ -16536,6 +16935,10 @@ msgstr "Instance id"
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "instead?"
 msgstr "instead?"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "instead."
+msgstr "instead."
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Instruction"
@@ -16696,6 +17099,8 @@ msgstr "Invitations — dismiss"
 #: src/components/account/organization-panel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/helpdesk/HelpDeskPage.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 msgid "Invite"
 msgstr "Invite"
 
@@ -16774,6 +17179,10 @@ msgstr "Invites · {activeCodes} codes · {0} machines"
 msgid "Is it usable?"
 msgstr "Is it usable?"
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "issue"
+msgstr "issue"
+
 #: src/components/asset-counters/issue-counters.tsx
 #: src/components/conversation/DiagnosisCard.tsx
 #: src/components/items/IssueView.tsx
@@ -16787,6 +17196,8 @@ msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/asset-counters/issue-counters.tsx
 #: src/components/asset-counters/issue-counters.tsx
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
 msgid "Issues"
 msgstr "Issues"
 
@@ -16833,6 +17244,7 @@ msgstr "It cannot be removed from the project"
 #: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "It did not work"
 msgstr "It did not work"
 
@@ -16984,9 +17396,18 @@ msgstr "Its budget is not shared with you."
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 
+#. placeholder {0}: change.merged_into.split('.').at(-1)
+#: src/components/tags/ClassifyTable.tsx
+msgid "its conversations go to {0}"
+msgstr "its conversations go to {0}"
+
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
-msgid "Its files are not on this machine yet"
-msgstr "Its files are not on this machine yet"
+msgid "Its files are not on this computer yet"
+msgstr "Its files are not on this computer yet"
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+#~ msgid "Its files are not on this machine yet"
+#~ msgstr "Its files are not on this machine yet"
 
 #: src/components/assets/editor/GitConnectionRequiredCard.tsx
 msgid "Its files live in git, and it is not linked to a repository yet. Publish it from the FlowPad desktop app to view and edit it here."
@@ -17092,6 +17513,11 @@ msgstr "Keep in project"
 #: src/components/conversation/SealedTypedCard.tsx
 msgid "Keep mine"
 msgstr "Keep mine"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
+msgid "Keep off"
+msgstr "Keep off"
 
 #: src/components/assets/editor/revisions/MarkdownReviewDiff.tsx
 msgid "Keep text"
@@ -17444,16 +17870,16 @@ msgid "Last updated {ago} — results may be outdated."
 msgstr "Last updated {ago} — results may be outdated."
 
 #: src/components/notes/QuickPromptsMenu.tsx
-msgid "Last used first · click to run"
-msgstr "Last used first · click to run"
+#~ msgid "Last used first · click to run"
+#~ msgstr "Last used first · click to run"
 
 #: src/components/hooks-manager/index.tsx
 msgid "Last:"
 msgstr "Last:"
 
 #: src/components/update-ready/UpdateReadyBridge.tsx
-msgid "Later"
-msgstr "Later"
+#~ msgid "Later"
+#~ msgstr "Later"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Latest on GitHub"
@@ -17575,6 +18001,10 @@ msgstr "Leave it running. This card turns Running by itself once the machine con
 #: src/components/conversation/asset-review/ContentReviewDialog.tsx
 msgid "Leave out"
 msgstr "Leave out"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Leave this conversation as it is"
+msgstr "Leave this conversation as it is"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
@@ -17856,7 +18286,6 @@ msgstr "List of models available for selection"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
-#: src/components/items/ItemsSection.tsx
 msgid "List view"
 msgstr "List view"
 
@@ -18010,7 +18439,6 @@ msgstr "load error"
 msgid "Load Flowpad assistant"
 msgstr "Load Flowpad assistant"
 
-#: src/components/items/ItemsSection.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
@@ -18363,6 +18791,7 @@ msgstr "Loading..."
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/tabs/shared.tsx
 #: src/components/project-selector/ProjectSelector.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
 #: src/components/search-index/EntitySearchModal.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/tasks-viewer/TasksRedirect.tsx
@@ -18430,6 +18859,10 @@ msgstr "Locally"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Location"
 msgstr "Location"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Lock now"
+msgstr "Lock now"
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 msgid "locked after first message"
@@ -18605,6 +19038,11 @@ msgstr "Machine: {0}"
 msgid "Machines"
 msgstr "Machines"
 
+#. placeholder {0}: accessKey.label
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Machines that accepted “{0}” stop accepting it. A machine left with no key turns remote control off."
+msgstr "Machines that accepted “{0}” stop accepting it. A machine left with no key turns remote control off."
+
 #: src/pages/entry/DesktopDownload.tsx
 msgid "macOS (.dmg) — Intel and Apple Silicon"
 msgstr "macOS (.dmg) — Intel and Apple Silicon"
@@ -18638,6 +19076,7 @@ msgid "Mailbox settings saved"
 msgstr "Mailbox settings saved"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "Main agent"
 msgstr "Main agent"
 
@@ -18645,7 +19084,7 @@ msgstr "Main agent"
 msgid "Make a todo app"
 msgstr "Make a todo app"
 
-#: src/components/items/home-tabs.tsx
+#: src/components/quick-create/MakeAgentDialog.tsx
 msgid "Make an agent"
 msgstr "Make an agent"
 
@@ -18653,29 +19092,41 @@ msgstr "Make an agent"
 msgid "Make an agent in 60 seconds — where will you talk to it?"
 msgstr "Make an agent in 60 seconds — where will you talk to it?"
 
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Make default"
+msgstr "Make default"
+
 #: src/pages/flow-page/vibe-new-chat.tsx
-msgid "Make me an agent"
-msgstr "Make me an agent"
+#~ msgid "Make me an agent"
+#~ msgstr "Make me an agent"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Make the new tags the messages' tags. No automation runs."
-msgstr "Make the new tags the messages' tags. No automation runs."
+#~ msgid "Make the new tags the messages' tags. No automation runs."
+#~ msgstr "Make the new tags the messages' tags. No automation runs."
 
 #: src/components/data-sources/source-attention.ts
 msgid "Make the two the same — edit either one — then Pull, or wait for the next sync."
 msgstr "Make the two the same — edit either one — then Pull, or wait for the next sync."
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Make this the conversation's tag. No automation runs."
+msgstr "Make this the conversation's tag. No automation runs."
 
 #: src/components/harness-login/StatusRow.tsx
 msgid "Make this the default assistant"
 msgstr "Make this the default assistant"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Make this the message's tag. No automation runs."
-msgstr "Make this the message's tag. No automation runs."
+#~ msgid "Make this the message's tag. No automation runs."
+#~ msgstr "Make this the message's tag. No automation runs."
 
 #: src/components/search-index/index-copy.ts
 msgid "Make your records searchable"
 msgstr "Make your records searchable"
+
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Manage"
+msgstr "Manage"
 
 #: src/components/ai-config-view/ai-config-view.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
@@ -18989,6 +19440,7 @@ msgid "Members"
 msgstr "Members"
 
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/organization/org-node-management.tsx
 msgid "Members are unavailable in Local mode."
 msgstr "Members are unavailable in Local mode."
@@ -19188,7 +19640,6 @@ msgid "min: {minLabel}"
 msgstr "min: {minLabel}"
 
 #: src/components/asset-counters/axes.tsx
-#: src/components/items/ItemsSection.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
 msgid "Mine"
 msgstr "Mine"
@@ -19245,7 +19696,6 @@ msgstr "Misroutes ×{0}: the place answered 404 — that channel is not there an
 
 #: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
-#: src/components/footer/BrowserChip.tsx
 msgid "missing"
 msgstr "missing"
 
@@ -19277,6 +19727,11 @@ msgstr "Missing folder"
 #: src/components/project-home/MissingDependenciesDialog.tsx
 msgid "Missing packages"
 msgstr "Missing packages"
+
+#. placeholder {0}: credential.missingScopes.join(', ')
+#: src/components/connections-manager.tsx
+msgid "Missing permissions ({0}) — connect again"
+msgstr "Missing permissions ({0}) — connect again"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Missing: {missing}"
@@ -19439,6 +19894,7 @@ msgstr "more"
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
 #: src/components/ui/breadcrumb.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "More"
@@ -19725,6 +20181,10 @@ msgstr "Needs attention · {count}"
 msgid "Needs git"
 msgstr "Needs git"
 
+#: src/components/conversation/AutomationResultCard.tsx
+#~ msgid "Needs review"
+#~ msgstr "Needs review"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "needs setup"
 msgstr "needs setup"
@@ -19754,7 +20214,7 @@ msgstr "Needs values"
 msgid "Needs you — above"
 msgstr "Needs you — above"
 
-#. placeholder {0}: record.failure?.text || record.detail
+#. placeholder {0}: record.detail || record.failure?.text
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Needs you: {0}"
 msgstr "Needs you: {0}"
@@ -19836,6 +20296,10 @@ msgstr "new"
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
 msgstr "New"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "new · code {code}"
+msgstr "new · code {code}"
 
 #. placeholder {0}: t(descriptor.label)
 #. placeholder {0}: type ?? ''
@@ -19919,8 +20383,12 @@ msgid "New conversation"
 msgstr "New conversation"
 
 #: src/components/credentials/CredentialDialog.tsx
-msgid "New credentials"
-msgstr "New credentials"
+msgid "New credential"
+msgstr "New credential"
+
+#: src/components/credentials/CredentialDialog.tsx
+#~ msgid "New credentials"
+#~ msgstr "New credentials"
 
 #: src/components/quick-create/DatasetCreateDialog.tsx
 msgid "New dataset"
@@ -19965,6 +20433,8 @@ msgstr "New File"
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
+#: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/quick-create/DesktopSurface.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
@@ -20025,7 +20495,6 @@ msgid "New project"
 msgstr "New project"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
-#: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "New prompt"
 msgstr "New prompt"
 
@@ -20058,6 +20527,10 @@ msgstr "New skill"
 msgid "New source"
 msgstr "New source"
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "New statement"
+msgstr "New statement"
+
 #: src/components/organization/org-detail-panel.tsx
 #: src/components/organization/org-node-management.tsx
 msgid "New sub-team"
@@ -20067,6 +20540,10 @@ msgstr "New sub-team"
 msgid "New tab"
 msgstr "New tab"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "new tag"
+msgstr "new tag"
+
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
@@ -20074,8 +20551,8 @@ msgstr "New tab"
 #~ msgstr "New tag"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "New tags"
-msgstr "New tags"
+#~ msgid "New tags"
+#~ msgstr "New tags"
 
 #: src/components/organization/org-detail-panel.tsx
 msgid "New team"
@@ -20111,6 +20588,10 @@ msgstr "New variable name {0}"
 #: src/components/credentials/DetectedKeys.tsx
 msgid "New variable value {0}"
 msgstr "New variable value {0}"
+
+#: src/components/top-nav-bar/StalePageIndicator.tsx
+msgid "New version — reload"
+msgstr "New version — reload"
 
 #: src/tabs/useTerminalStripController.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -20151,6 +20632,10 @@ msgstr "next {0}"
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "Next match (Enter)"
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "Next page"
+msgstr "Next page"
 
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
@@ -20201,6 +20686,18 @@ msgstr "No {label} with this id was found"
 msgid "No {tabLabel} projects."
 msgstr "No {tabLabel} projects."
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "No access key · remote control off"
+msgstr "No access key · remote control off"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "No access keys"
+msgstr "No access keys"
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "No access keys. A passkey lets you open remote control of your machines."
+msgstr "No access keys. A passkey lets you open remote control of your machines."
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "No access to this repository. Connect GitHub if it's private, or check the URL."
 msgstr "No access to this repository. Connect GitHub if it's private, or check the URL."
@@ -20233,8 +20730,8 @@ msgid "No agent without a mailbox"
 msgstr "No agent without a mailbox"
 
 #: src/components/items/home-tabs.tsx
-msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
-msgstr "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
+#~ msgid "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
+#~ msgstr "No agents yet. Make one in 60 seconds and talk to it on Slack, WhatsApp or Telegram."
 
 #: src/components/contact-picker/ContactsDialog.tsx
 msgid "No agents you can add to a conversation yet."
@@ -20290,8 +20787,12 @@ msgid "No assistance requests yet"
 msgstr "No assistance requests yet"
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
-msgid "No assistant is installed on this machine."
-msgstr "No assistant is installed on this machine."
+msgid "No assistant is installed on this computer."
+msgstr "No assistant is installed on this computer."
+
+#: src/components/llm-endpoints/FundingProvenance.tsx
+#~ msgid "No assistant is installed on this machine."
+#~ msgstr "No assistant is installed on this machine."
 
 #: src/components/stream-inbox-view/ConversationAttachmentsButton.tsx
 msgid "No attachments"
@@ -20394,8 +20895,8 @@ msgid "No channel reaches this agent yet. Give it its built-in email to start."
 msgstr "No channel reaches this agent yet. Give it its built-in email to start."
 
 #: src/components/items/home-tabs.tsx
-msgid "No channels yet. Add a number, bot or app that sends you messages."
-msgstr "No channels yet. Add a number, bot or app that sends you messages."
+#~ msgid "No channels yet. Add a number, bot or app that sends you messages."
+#~ msgstr "No channels yet. Add a number, bot or app that sends you messages."
 
 #: src/components/inbound/InboundView.tsx
 msgid "No channels yet. Add one: messages arrive at the hub and go where its rules say — anything else is ignored."
@@ -20457,6 +20958,10 @@ msgstr "No computer to open a terminal on"
 #: src/components/connections-manager.tsx
 msgid "No connection test is defined for this provider."
 msgstr "No connection test is defined for this provider."
+
+#: src/components/footer/HostedAppRow.tsx
+msgid "no connections"
+msgstr "no connections"
 
 #: src/components/connections-manager.tsx
 msgid "No connections yet"
@@ -20761,6 +21266,10 @@ msgstr "No hooks configured"
 msgid "No hooks match your filters"
 msgstr "No hooks match your filters"
 
+#: src/components/footer/PendingActionsChip.tsx
+msgid "No hosted apps"
+msgstr "No hosted apps"
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "No index.md to view"
 msgstr "No index.md to view"
@@ -20898,8 +21407,8 @@ msgid "No machine yet"
 msgstr "No machine yet"
 
 #: src/components/items/home-tabs.tsx
-msgid "No machines yet. A machine runs your agents and workspaces in the cloud."
-msgstr "No machines yet. A machine runs your agents and workspaces in the cloud."
+#~ msgid "No machines yet. A machine runs your agents and workspaces in the cloud."
+#~ msgstr "No machines yet. A machine runs your agents and workspaces in the cloud."
 
 #: src/components/markdown-viewer.tsx
 msgid "No markdown file selected"
@@ -20928,7 +21437,6 @@ msgid "No matches"
 msgstr "No matches"
 
 #: src/components/asset-counters/AssetItems.tsx
-#: src/components/items/ItemsSection.tsx
 msgid "No matches for “{query}”."
 msgstr "No matches for “{query}”."
 
@@ -20943,6 +21451,10 @@ msgstr "No matches found in the Flowpad known-issues database."
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "No matches."
 msgstr "No matches."
+
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "No matching access key on this account."
+msgstr "No matching access key on this account."
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No matching conversations"
@@ -21191,8 +21703,8 @@ msgid "No prompts yet — {guestName}'s prompts will run here, in your Claude Co
 msgstr "No prompts yet — {guestName}'s prompts will run here, in your Claude Code."
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
-msgid "No prompts yet — create one below."
-msgstr "No prompts yet — create one below."
+#~ msgid "No prompts yet — create one below."
+#~ msgstr "No prompts yet — create one below."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "No prompts yet — type one below; it runs in Claude Code on {hostName}'s machine."
@@ -21357,6 +21869,10 @@ msgstr "No saved plans"
 msgid "No schedules yet."
 msgstr "No schedules yet."
 
+#: src/components/footer/SecretManagerChip.tsx
+msgid "No secret manager"
+msgstr "No secret manager"
+
 #: src/components/account/secrets-section.tsx
 msgid "No secrets yet. Click \"Add secret\" to create one."
 msgstr "No secrets yet. Click \"Add secret\" to create one."
@@ -21432,8 +21948,8 @@ msgid "No skills or sub-agents used yet"
 msgstr "No skills or sub-agents used yet"
 
 #: src/components/items/home-tabs.tsx
-msgid "No skills yet. A skill teaches your agents one job."
-msgstr "No skills yet. A skill teaches your agents one job."
+#~ msgid "No skills yet. A skill teaches your agents one job."
+#~ msgstr "No skills yet. A skill teaches your agents one job."
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
@@ -21683,6 +22199,10 @@ msgstr "Nobody can log in to this sandbox, including its owner."
 msgid "Nobody has a budget in this team yet."
 msgstr "Nobody has a budget in this team yet."
 
+#: src/components/footer/HostedAppRow.tsx
+msgid "Nobody has it open"
+msgstr "Nobody has it open"
+
 #: src/components/assets/editor/agent-profile/AgentPeopleList.tsx
 msgid "Nobody has talked to it yet — each person gets their own machine on their first message."
 msgstr "Nobody has talked to it yet — each person gets their own machine on their first message."
@@ -21722,6 +22242,7 @@ msgstr "Non-empty"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
 #: src/components/data-sources/DataDriversView.tsx
+#: src/components/footer/SecretManagerChip.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 msgid "none"
@@ -21879,6 +22400,10 @@ msgstr "Not fetched yet"
 msgid "not fired yet"
 msgstr "not fired yet"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "not for this worker"
+msgstr "not for this worker"
+
 #: src/components/assets/DependencyChips.tsx
 msgid "not found"
 msgstr "not found"
@@ -21907,6 +22432,11 @@ msgstr "not installed"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Not installed"
 msgstr "Not installed"
+
+#. placeholder {0}: row.manager_title
+#: src/components/footer/SecretManagerChip.tsx
+msgid "not installed here · {0}"
+msgstr "not installed here · {0}"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
@@ -22001,8 +22531,12 @@ msgid "Not run — someone is signed in on this machine"
 msgstr "Not run — someone is signed in on this machine"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Not run on this machine yet"
-msgstr "Not run on this machine yet"
+msgid "Not run on this computer yet"
+msgstr "Not run on this computer yet"
+
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+#~ msgid "Not run on this machine yet"
+#~ msgstr "Not run on this machine yet"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/conversation/SessionCard.tsx
@@ -22083,8 +22617,12 @@ msgid "Not signed in — please re-authenticate"
 msgstr "Not signed in — please re-authenticate"
 
 #: src/components/harness-login/funding-pill.ts
-msgid "Not signed in to FlowPad"
-msgstr "Not signed in to FlowPad"
+msgid "Not signed in to Flowpad"
+msgstr "Not signed in to Flowpad"
+
+#: src/components/harness-login/funding-pill.ts
+#~ msgid "Not signed in to FlowPad"
+#~ msgstr "Not signed in to FlowPad"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Not signed in to this assistant"
@@ -22240,7 +22778,6 @@ msgid "Nothing here yet — use the + below to add one."
 msgstr "Nothing here yet — use the + below to add one."
 
 #: src/components/asset-counters/AssetItems.tsx
-#: src/components/items/ItemsSection.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Nothing here yet."
 msgstr "Nothing here yet."
@@ -22403,6 +22940,10 @@ msgstr "Nothing was installed. You can close this tab."
 msgid "Nothing was launched. You can close this tab."
 msgstr "Nothing was launched. You can close this tab."
 
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Nothing was turned on."
+msgstr "Nothing was turned on."
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Nothing would arrive for this, so it was not sent:"
 msgstr "Nothing would arrive for this, so it was not sent:"
@@ -22499,7 +23040,9 @@ msgid "of {0}"
 msgstr "of {0}"
 
 #: src/components/automations/BusView.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
 msgid "off"
 msgstr "off"
 
@@ -22521,6 +23064,18 @@ msgstr "Off · turn on to run it here, free, while this computer is awake"
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "Off: when {0} is taken, a free port is picked."
 msgstr "Off: when {0} is taken, a free port is picked."
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Off. It turned itself off after {lastHours} hours. Turning it on needs your fingerprint again."
+msgstr "Off. It turned itself off after {lastHours} hours. Turning it on needs your fingerprint again."
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Off. It turned itself off after 1 hour. Turning it on needs your fingerprint again."
+msgstr "Off. It turned itself off after 1 hour. Turning it on needs your fingerprint again."
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Off. Turning it on needs your fingerprint again."
+msgstr "Off. Turning it on needs your fingerprint again."
 
 #: src/components/inbound/RouteCheck.tsx
 msgid "offline"
@@ -22556,7 +23111,9 @@ msgid "oldest in Git history"
 msgstr "oldest in Git history"
 
 #: src/components/automations/MessageRulePage.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
 msgid "on"
 msgstr "on"
 
@@ -22601,8 +23158,8 @@ msgid "On Disk"
 msgstr "On Disk"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "on first browser step"
-msgstr "on first browser step"
+#~ msgid "on first browser step"
+#~ msgstr "on first browser step"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "On load — each time it is shown"
@@ -22624,13 +23181,17 @@ msgstr "On the machine run <0>flow connect</0>. If it is not signed in it shows 
 msgid "On the schedule {expr}"
 msgstr "On the schedule {expr}"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "On this computer only — undo any time"
+msgstr "On this computer only — undo any time"
+
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "On this machine"
 msgstr "On this machine"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "On this machine only — undo any time"
-msgstr "On this machine only — undo any time"
+#~ msgid "On this machine only — undo any time"
+#~ msgstr "On this machine only — undo any time"
 
 #: src/pages/entry/DesktopDownload.tsx
 msgid "On Windows on ARM, FlowPad runs through Windows' built-in x64 emulation."
@@ -22672,6 +23233,10 @@ msgstr "Once per project, the first time it is opened. Enabling this turns off a
 #: src/components/automations/automation-words.ts
 msgid "Once, on {date} at {time}"
 msgstr "Once, on {date} at {time}"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval."
+msgstr "One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval."
 
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "One click — a new code for one user."
@@ -22726,6 +23291,10 @@ msgid "One of a group"
 msgstr "One of a group"
 
 #: src/components/credentials-view/RequirementChip.tsx
+msgid "One of these"
+msgstr "One of these"
+
+#: src/components/credentials-view/RequirementChip.tsx
 msgid "One of these is enough"
 msgstr "One of these is enough"
 
@@ -22765,6 +23334,10 @@ msgstr "Only about"
 #: src/components/automations/BusView.tsx
 msgid "Only about (optional)"
 msgstr "Only about (optional)"
+
+#: src/components/stream-inbox-view/TagFilterButton.tsx
+msgid "Only conversations with a ticked tag show"
+msgstr "Only conversations with a ticked tag show"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Only files like"
@@ -22815,6 +23388,10 @@ msgstr "Only this device"
 msgid "Only this port"
 msgstr "Only this port"
 
+#: src/components/conversation/PrivateMessageFrame.tsx
+msgid "Only you can see this"
+msgstr "Only you can see this"
+
 #: src/pages/NotFound.tsx
 msgid "Oops! Page not found"
 msgstr "Oops! Page not found"
@@ -22843,8 +23420,10 @@ msgstr "Oops! Page not found"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/footer/ActivityDetailsModal.tsx
+#: src/components/footer/SecretManagerChip.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/items/item-state.ts
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -22866,6 +23445,11 @@ msgstr "Oops! Page not found"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Open"
 msgstr "Open"
+
+#. placeholder {0}: row.manager_title
+#: src/components/footer/SecretManagerChip.tsx
+msgid "open · {0}"
+msgstr "open · {0}"
 
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
@@ -23042,7 +23626,6 @@ msgstr "Open assistant project"
 msgid "Open authorization page"
 msgstr "Open authorization page"
 
-#: src/components/conversation/AutomationMessageActions.tsx
 #: src/components/footer/ActivityDetailsModal.tsx
 msgid "Open automation"
 msgstr "Open automation"
@@ -23052,8 +23635,8 @@ msgid "Open Backup Folder"
 msgstr "Open Backup Folder"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Open Chrome Web Store"
-msgstr "Open Chrome Web Store"
+#~ msgid "Open Chrome Web Store"
+#~ msgstr "Open Chrome Web Store"
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 msgid "Open command in external terminal"
@@ -23127,6 +23710,11 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
 msgstr "Open externally: {childPath}"
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Open Flowpad"
+msgstr "Open Flowpad"
 
 #: src/pages/entry/OpenInFlowpadActions.tsx
 #: src/pages/entry/OpenInFlowpadActions.tsx
@@ -23446,6 +24034,10 @@ msgstr "Open Session"
 msgid "Open settings of {name}"
 msgstr "Open settings of {name}"
 
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "Open setup"
+msgstr "Open setup"
+
 #: src/components/tags/MessageTags.tsx
 msgid "Open source automation for {name}"
 msgstr "Open source automation for {name}"
@@ -23524,6 +24116,11 @@ msgstr "Open the agent"
 #: src/components/automations/RunDetail.tsx
 msgid "Open the agent run"
 msgstr "Open the agent run"
+
+#: src/components/footer/HostedAppRow.tsx
+#: src/components/footer/HostedAppRow.tsx
+msgid "Open the app"
+msgstr "Open the app"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Open the assistant in its own window, beside Flowpad"
@@ -23877,6 +24474,7 @@ msgstr "optional"
 #: src/components/assets/dependency-sources.tsx
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/conversation/MessageFormCard.tsx
+#: src/components/credentials-view/RequirementChip.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
@@ -23888,8 +24486,12 @@ msgid "Optional — leave blank for home"
 msgstr "Optional — leave blank for home"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Optional — skipped on this machine"
-msgstr "Optional — skipped on this machine"
+msgid "Optional — skipped on this computer"
+msgstr "Optional — skipped on this computer"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+#~ msgid "Optional — skipped on this machine"
+#~ msgstr "Optional — skipped on this machine"
 
 #: src/components/credentials-view/CredentialView.tsx
 msgid "optional · not set"
@@ -24179,10 +24781,16 @@ msgid "Owner: {assigned}"
 msgstr "Owner: {assigned}"
 
 #: src/components/credentials/CredentialDialog.tsx
-msgid "Pack keys into credentials"
-msgstr "Pack keys into credentials"
+#~ msgid "Pack keys into credentials"
+#~ msgstr "Pack keys into credentials"
+
+#: src/components/project-setup/setup-labels.ts
+msgid "package"
+msgstr "package"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/project-setup/setup-labels.ts
+#: src/components/project-setup/setup-labels.ts
 #: src/components/top-nav-bar/AppButton.tsx
 msgid "Package"
 msgstr "Package"
@@ -24194,6 +24802,10 @@ msgstr "Package format"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Package removed"
 msgstr "Package removed"
+
+#: src/components/top-nav-bar/ProjectSetupButton.tsx
+msgid "Package updates available"
+msgstr "Package updates available"
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
@@ -24259,8 +24871,8 @@ msgid "Parent task"
 msgstr "Parent task"
 
 #: src/components/data-sources/source-parts.tsx
-msgid "Parked"
-msgstr "Parked"
+#~ msgid "Parked"
+#~ msgstr "Parked"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 msgid "Part"
@@ -24286,6 +24898,10 @@ msgstr "Participants"
 msgid "Participants ({participantCount})"
 msgstr "Participants ({participantCount})"
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "pass"
+msgstr "pass"
+
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "passed"
 msgstr "passed"
@@ -24293,6 +24909,14 @@ msgstr "passed"
 #: src/components/project-setup/ProjectSetupPage.tsx
 msgid "Passed"
 msgstr "Passed"
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Passkey · synced · code {code}"
+msgstr "Passkey · synced · code {code}"
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Passkey · this device · code {code}"
+msgstr "Passkey · this device · code {code}"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Past analyses"
@@ -24606,6 +25230,10 @@ msgstr "Pick a contact to see your conversations with them."
 msgid "Pick a contacts group or people"
 msgstr "Pick a contacts group or people"
 
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Pick a deployment"
+msgstr "Pick a deployment"
+
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "Pick a flow from the left menu, or create one with “+ New flow”."
 msgstr "Pick a flow from the left menu, or create one with “+ New flow”."
@@ -24668,8 +25296,12 @@ msgid "Pick branch"
 msgstr "Pick branch"
 
 #: src/components/llm-setup/LlmSetupView.tsx
-msgid "Pick FlowPad, an assistant you already pay for, or paste an API key."
-msgstr "Pick FlowPad, an assistant you already pay for, or paste an API key."
+msgid "Pick Flowpad, an assistant you already pay for, or paste an API key."
+msgstr "Pick Flowpad, an assistant you already pay for, or paste an API key."
+
+#: src/components/llm-setup/LlmSetupView.tsx
+#~ msgid "Pick FlowPad, an assistant you already pay for, or paste an API key."
+#~ msgstr "Pick FlowPad, an assistant you already pay for, or paste an API key."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "pick one"
@@ -24727,6 +25359,10 @@ msgstr "Pick up to reply to {asker}"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Pick what to do with this invitation."
 msgstr "Pick what to do with this invitation."
+
+#: src/components/quick-create/MakeAgentDialog.tsx
+msgid "Pick where you will talk to it, describe it, and launch it."
+msgstr "Pick where you will talk to it, describe it, and launch it."
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "Pick who handles it."
@@ -24990,6 +25626,10 @@ msgstr "Port for SOCKS proxy in sandbox"
 msgid "Ports"
 msgstr "Ports"
 
+#: src/components/automations/MessageRulePage.tsx
+msgid "Post the answer in the conversation, for you only"
+msgstr "Post the answer in the conversation, for you only"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -25091,7 +25731,7 @@ msgid "Preview — double-click to keep open"
 msgstr "Preview — double-click to keep open"
 
 #. placeholder {0}: location.path
-#: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/site-chip.ts
 msgid "Preview {0}"
 msgstr "Preview {0}"
 
@@ -25128,6 +25768,10 @@ msgstr "Previous 7 days"
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "Previous match (Shift+Enter)"
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "Previous page"
+msgstr "Previous page"
 
 #: src/journey/JourneyViewer.tsx
 msgid "Previous runs"
@@ -25225,7 +25869,6 @@ msgid "Profile"
 msgstr "Profile"
 
 #: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
 msgid "Profile not found"
 msgstr "Profile not found"
 
@@ -25233,13 +25876,22 @@ msgstr "Profile not found"
 msgid "Profile Picture:"
 msgstr "Profile Picture:"
 
+#. placeholder {0}: d.config.profile || 'default'
 #: src/components/footer/BrowserChip.tsx
-msgid "Profile: {profileName}"
-msgstr "Profile: {profileName}"
+msgid "Profile: {0}"
+msgstr "Profile: {0}"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Profile: not available"
-msgstr "Profile: not available"
+msgid "Profile: {found}"
+msgstr "Profile: {found}"
+
+#: src/components/footer/BrowserChip.tsx
+#~ msgid "Profile: {profileName}"
+#~ msgstr "Profile: {profileName}"
+
+#: src/components/footer/BrowserChip.tsx
+#~ msgid "Profile: not available"
+#~ msgstr "Profile: not available"
 
 #: src/components/graph-workflows/panels/NodeInspector.tsx
 msgid "program kind"
@@ -25335,6 +25987,11 @@ msgstr "Project data store"
 #: src/components/assets/AssetsPage.tsx
 msgid "Project deleted"
 msgstr "Project deleted"
+
+#. placeholder {0}: deployments.length
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Project deployments · {0}"
+msgstr "Project deployments · {0}"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Project details"
@@ -25542,8 +26199,8 @@ msgid "Prompt from {otherName}"
 msgstr "Prompt from {otherName}"
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
-msgid "Prompt Library"
-msgstr "Prompt Library"
+#~ msgid "Prompt Library"
+#~ msgstr "Prompt Library"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -25614,6 +26271,10 @@ msgstr "Prompts queued for this agent; the backend injects each when the worker 
 msgid "Properties"
 msgstr "Properties"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Proposed"
+msgstr "Proposed"
+
 #: src/components/git/BranchPicker.tsx
 msgid "protected"
 msgstr "protected"
@@ -25625,6 +26286,15 @@ msgstr "Protocol"
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Prove and connect"
 msgstr "Prove and connect"
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "proven"
+msgstr "proven"
+
+#. placeholder {0}: block.proven
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "proven {0}"
+msgstr "proven {0}"
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "Proves the bot (getMe). Stored write-only."
@@ -25835,8 +26505,8 @@ msgid "Pull changes now from {0}"
 msgstr "Pull changes now from {0}"
 
 #: src/components/project-setup/DependencyUpdatesStrip.tsx
-msgid "Pull dependencies to latest"
-msgstr "Pull dependencies to latest"
+#~ msgid "Pull dependencies to latest"
+#~ msgstr "Pull dependencies to latest"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull failed."
@@ -25951,6 +26621,7 @@ msgstr "Queued messages"
 msgid "Quick create"
 msgstr "Quick create"
 
+#: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/notes/QuickPromptsMenu.tsx
 #: src/components/notes/QuickPromptsMenu.tsx
@@ -26318,6 +26989,10 @@ msgstr "Recommended"
 msgid "Recommended automations"
 msgstr "Recommended automations"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Recommended by this project"
+msgstr "Recommended by this project"
+
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
@@ -26401,10 +27076,9 @@ msgstr "Recover it from the workdir, or pick a new project via the project chip.
 msgid "Recover project"
 msgstr "Recover project"
 
-#. placeholder {0}: record.recovery || record.detail
 #: src/components/webapp-display/AppLifecyclePanel.tsx
-msgid "Recovering: {0}"
-msgstr "Recovering: {0}"
+#~ msgid "Recovering: {0}"
+#~ msgstr "Recovering: {0}"
 
 #: src/components/terminal/project-list-menu.tsx
 msgid "Recovery failed"
@@ -26421,6 +27095,11 @@ msgstr "Reduce animations and motion effects"
 #: src/components/graph-view/ui/NodePanel.tsx
 msgid "referenced but not in entities table"
 msgstr "referenced but not in entities table"
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "References"
+msgstr "References"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
@@ -26567,9 +27246,14 @@ msgstr "Registered on the hub, but its document hasn't been uploaded to the proj
 msgid "registered watchers: <0>{registeredCount}</0>"
 msgstr "registered watchers: <0>{registeredCount}</0>"
 
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Reject"
 msgstr "Reject"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "rejected"
+msgstr "rejected"
 
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/harness-login/funding-pill.ts
@@ -26625,6 +27309,29 @@ msgstr "Reload"
 msgid "Reload the MarkdownIndex list."
 msgstr "Reload the MarkdownIndex list."
 
+#: src/components/remote-control/RemoteControlPanel.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
+msgid "Remote control"
+msgstr "Remote control"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Remote control is not available in private mode."
+msgstr "Remote control is not available in private mode."
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Remote control is not available on a machine signed in as an agent."
+msgstr "Remote control is not available on a machine signed in as an agent."
+
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
+msgid "Remote control is on"
+msgstr "Remote control is on"
+
+#: src/components/top-nav-bar/TopBarMoreMenu.tsx
+msgid "Remote control is on · <0/>"
+msgstr "Remote control is on · <0/>"
+
 #: src/components/git/GitSetupWizard.tsx
 msgid "Remote repository"
 msgstr "Remote repository"
@@ -26640,6 +27347,7 @@ msgstr "remote: {remote}"
 #: src/components/assets/editor/task/TaskAttachments.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageFormCard.tsx
+#: src/components/footer/SecretManagerChip.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
@@ -26647,7 +27355,10 @@ msgstr "remote: {remote}"
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/project-list-menu.tsx
 #: src/pages/discover-page/discover-page.tsx
+#: src/pages/hub-home/AccessKeysSection.tsx
+#: src/pages/hub-home/AccessKeysSection.tsx
 msgid "Remove"
 msgstr "Remove"
 
@@ -26778,6 +27489,10 @@ msgstr "Remove from queue"
 msgid "Remove from team"
 msgstr "Remove from team"
 
+#: src/components/terminal/project-list-menu.tsx
+msgid "Remove from this computer"
+msgstr "Remove from this computer"
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Remove from vibe agents"
 msgstr "Remove from vibe agents"
@@ -26854,6 +27569,10 @@ msgstr "Remove tag {name}"
 #: src/components/tags/TagInput.tsx
 msgid "Remove tag {tag}"
 msgstr "Remove tag {tag}"
+
+#: src/pages/hub-home/AccessKeysSection.tsx
+msgid "Remove this access key?"
+msgstr "Remove this access key?"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"
@@ -26972,6 +27691,7 @@ msgstr "Removes: {removes}"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/tabs/TabStrip.tsx
 #: src/components/token-plan/RenameButton.tsx
+#: src/pages/hub-home/AccessKeysSection.tsx
 msgid "Rename"
 msgstr "Rename"
 
@@ -27258,6 +27978,7 @@ msgstr "required"
 
 #: src/components/ask/AskItems.tsx
 #: src/components/assets/dependency-sources.tsx
+#: src/components/credentials-view/RequirementChip.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/credentials/VariableDetails.tsx
@@ -27267,12 +27988,21 @@ msgid "Required"
 msgstr "Required"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Required — skipped on this machine"
-msgstr "Required — skipped on this machine"
+msgid "Required — skipped on this computer"
+msgstr "Required — skipped on this computer"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+#~ msgid "Required — skipped on this machine"
+#~ msgstr "Required — skipped on this machine"
 
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 msgid "Required by this agent · project Credential"
 msgstr "Required by this agent · project Credential"
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Requirements"
+msgstr "Requirements"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Requires a git repository with at least one commit"
@@ -27308,6 +28038,7 @@ msgstr "reset"
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/footer/SecretManagerChip.tsx
 msgid "Reset"
 msgstr "Reset"
 
@@ -27447,7 +28178,6 @@ msgstr "REST API"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#: src/components/update-ready/UpdateReadyBridge.tsx
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Restart"
@@ -28177,9 +28907,11 @@ msgstr "running"
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
 #: src/components/data-sources/health-style.ts
+#: src/components/footer/HostedAppRow.tsx
 #: src/components/items/item-state.ts
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
@@ -28250,6 +28982,13 @@ msgstr "Running the setup. Steps that pass stay green; you are asked only for wh
 msgid "running, with problems"
 msgstr "running, with problems"
 
+#. placeholder {0}: record.detail
+#. placeholder {0}: record.detail || record.failure?.text
+#: src/components/assets/editor/app-profile/AppSetupTab.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Running, with problems: {0}"
+msgstr "Running, with problems: {0}"
+
 #: src/components/account/settings-section.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Running…"
@@ -28291,6 +29030,10 @@ msgstr "Runs agent"
 msgid "Runs as an AgenticProcess — see per-row status + transcript."
 msgstr "Runs as an AgenticProcess — see per-row status + transcript."
 
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "Runs in the cloud"
+msgstr "Runs in the cloud"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Runs itself when"
 msgstr "Runs itself when"
@@ -28300,6 +29043,7 @@ msgid "Runs of this flow"
 msgstr "Runs of this flow"
 
 #: src/components/assets/editor/agent-profile/RunsOnPicker.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Runs on"
 msgstr "Runs on"
@@ -28315,6 +29059,10 @@ msgstr "Runs on this computer as its project's main agent"
 #: src/components/assets/editor/markdown/PlainMarkdownAssetEditor.tsx
 msgid "Runs on this file"
 msgstr "Runs on this file"
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "Runs on this machine"
+msgstr "Runs on this machine"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Runs on your machine, in your Claude Code · Enter to send"
@@ -28803,6 +29551,11 @@ msgstr "Scroll to zoom · drag to pan · click a number for the steps"
 msgid "Scroll to zoom · drag to pan{0}"
 msgstr "Scroll to zoom · drag to pan{0}"
 
+#. placeholder {0}: row.manager_title
+#: src/components/footer/SecretManagerChip.tsx
+msgid "sealed · {0}"
+msgstr "sealed · {0}"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Sealed on this computer for each recipient's Flowpad — only they can open them."
 msgstr "Sealed on this computer for each recipient's Flowpad — only they can open them."
@@ -29065,9 +29818,23 @@ msgstr "secret manager"
 
 #: src/components/conversation/CredentialValueLock.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
+#: src/components/footer/SecretManagerChip.tsx
+#: src/components/footer/SecretManagerChip.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Secret manager"
 msgstr "Secret manager"
+
+#. placeholder {0}: active.manager_title
+#. placeholder {1}: active.name
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Secret manager: {0} · {1} ({scopeWord})"
+msgstr "Secret manager: {0} · {1} ({scopeWord})"
+
+#. placeholder {0}: active.manager_title
+#. placeholder {1}: active.name
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Secret manager: {0} · {1} ({scopeWord}) · sealed"
+msgstr "Secret manager: {0} · {1} ({scopeWord}) · sealed"
 
 #: src/components/account/secrets-section.tsx
 msgid "Secret saved"
@@ -29362,6 +30129,10 @@ msgstr "Send a message first — no transcript yet"
 msgid "Send a message to this deployed agent."
 msgstr "Send a message to this deployed agent."
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Send a new code"
+msgstr "Send a new code"
+
 #: src/components/automations/automation-words.ts
 msgid "send a notification"
 msgstr "send a notification"
@@ -29476,6 +30247,10 @@ msgstr "Sending"
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "Sending in {0}: “{sendingText}”"
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Sending the code…"
+msgstr "Sending the code…"
+
 #: src/components/conversation/SessionCard.tsx
 msgid "sending…"
 msgstr "sending…"
@@ -29579,6 +30354,10 @@ msgstr "Served"
 msgid "Served by"
 msgstr "Served by"
 
+#: src/components/footer/HostedAppRow.tsx
+msgid "Served by Flowpad"
+msgstr "Served by Flowpad"
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Server did not come back. Restart Flowpad manually."
 msgstr "Server did not come back. Restart Flowpad manually."
@@ -29639,6 +30418,11 @@ msgstr "Session"
 #: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Session — {0}"
 msgstr "Session — {0}"
+
+#. placeholder {0}: agenticProcessName(processId) ?? processId.slice(0, 8)
+#: src/components/footer/HostedAppRow.tsx
+msgid "session {0}"
+msgstr "session {0}"
 
 #. placeholder {0}: entry.worker_id
 #: src/tabs/useTerminalStripController.tsx
@@ -29793,6 +30577,7 @@ msgstr "set"
 #: src/components/assets/editor/agent-profile/AgentEnvTab.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
+#: src/components/footer/SecretManagerChip.tsx
 msgid "Set"
 msgstr "Set"
 
@@ -29814,6 +30599,10 @@ msgstr "Set budget · {scopeName}"
 msgid "Set conversation project"
 msgstr "Set conversation project"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Set for this session"
+msgstr "Set for this session"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Set it"
 msgstr "Set it"
@@ -29833,6 +30622,8 @@ msgstr "Set the value on the agent's Env tab."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/credentials-view/SecretVaultPanel.tsx
+#: src/components/data-sources/SourceSetupButton.tsx
+#: src/components/footer/SecretManagerChip.tsx
 #: src/components/git/GitSetupWizard.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
@@ -29846,6 +30637,10 @@ msgstr "Set up"
 msgid "Set up (runs an agentic process)"
 msgstr "Set up (runs an agentic process)"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Set up {onlyName}"
+msgstr "Set up {onlyName}"
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
 msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
@@ -29853,6 +30648,10 @@ msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Set up again"
 msgstr "Set up again"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Set up all"
+msgstr "Set up all"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -29904,7 +30703,7 @@ msgstr "Set values"
 msgid "Setting things up"
 msgstr "Setting things up"
 
-#. placeholder {0}: record.detail || record.state
+#. placeholder {0}: record.detail
 #: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Setting up — {0}"
 msgstr "Setting up — {0}"
@@ -29933,6 +30732,7 @@ msgstr "Setting up your project…"
 #: src/components/assets/editor/revisions/RevisionsPanel.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/webapp-display/AppLifecyclePanel.tsx
 msgid "Setting up…"
 msgstr "Setting up…"
 
@@ -29963,7 +30763,6 @@ msgstr "Settings changed since this session started."
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
-#: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
@@ -29984,10 +30783,11 @@ msgid "Setup could not start."
 msgstr "Setup could not start."
 
 #: src/components/setup-incomplete/use-setup-incomplete-warning.ts
-msgid "Setup did not finish successfully"
-msgstr "Setup did not finish successfully"
+#~ msgid "Setup did not finish successfully"
+#~ msgstr "Setup did not finish successfully"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "Setup didn't finish successfully."
 msgstr "Setup didn't finish successfully."
 
@@ -30152,6 +30952,10 @@ msgstr "Share to conversation"
 msgid "Share values"
 msgstr "Share values"
 
+#: src/components/conversation/PrivateMessageFrame.tsx
+msgid "Share with everyone"
+msgstr "Share with everyone"
+
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Share with team"
 msgstr "Share with team"
@@ -30176,8 +30980,12 @@ msgid "Shared by Git — click to open the version that was shared"
 msgstr "Shared by Git — click to open the version that was shared"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
-msgid "Shared by Git — Download opens exactly the version that was shared, without touching your own checkout."
-msgstr "Shared by Git — Download opens exactly the version that was shared, without touching your own checkout."
+#~ msgid "Shared by Git — Download opens exactly the version that was shared, without touching your own checkout."
+#~ msgstr "Shared by Git — Download opens exactly the version that was shared, without touching your own checkout."
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Shared by Git — Open brings in exactly the version that was shared, without touching your own checkout."
+msgstr "Shared by Git — Open brings in exactly the version that was shared, without touching your own checkout."
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -30226,8 +31034,8 @@ msgid "Shared with {0}"
 msgstr "Shared with {0}"
 
 #: src/components/items/ItemsSection.tsx
-msgid "Shared with me"
-msgstr "Shared with me"
+#~ msgid "Shared with me"
+#~ msgstr "Shared with me"
 
 #: src/components/machine-overview/shared-machine.tsx
 msgid "Shared with you"
@@ -30566,11 +31374,9 @@ msgstr "Show unpushed commits"
 msgid "Show value"
 msgstr "Show value"
 
-#. placeholder {0}: page.length
-#. placeholder {1}: rows.length
 #: src/components/items/ItemsSection.tsx
-msgid "Showing {0} of {1}"
-msgstr "Showing {0} of {1}"
+#~ msgid "Showing {0} of {1}"
+#~ msgstr "Showing {0} of {1}"
 
 #: src/components/assets/AssetDataTable.tsx
 msgid "Showing {rangeStart}–{rangeEnd} of {total}"
@@ -30713,6 +31519,10 @@ msgstr "Sign in to Flowpad Cloud to open it"
 msgid "Sign in to FlowPad Hub first — approving a machine binds it to your account."
 msgstr "Sign in to FlowPad Hub first — approving a machine binds it to your account."
 
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Sign in to Flowpad to use remote control."
+msgstr "Sign in to Flowpad to use remote control."
+
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Sign in to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "Sign in to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
@@ -30728,6 +31538,10 @@ msgstr "Sign in to manage people"
 #: src/components/organization/organization-page.tsx
 msgid "Sign in to see the people and teams you share work with."
 msgstr "Sign in to see the people and teams you share work with."
+
+#: src/components/home-tiles/HomePropertiesPanel.tsx
+msgid "Sign in to see who has access."
+msgstr "Sign in to see who has access."
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
@@ -30845,16 +31659,24 @@ msgid "Signed in through your browser"
 msgstr "Signed in through your browser"
 
 #: src/components/harness-login/funding-pill.ts
-msgid "Signed in to FlowPad"
-msgstr "Signed in to FlowPad"
+msgid "Signed in to Flowpad"
+msgstr "Signed in to Flowpad"
+
+#: src/components/harness-login/funding-pill.ts
+#~ msgid "Signed in to FlowPad"
+#~ msgstr "Signed in to FlowPad"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Signed in to Flowpad cloud"
 msgstr "Signed in to Flowpad cloud"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Signed in to FlowPad."
-msgstr "Signed in to FlowPad."
+msgid "Signed in to Flowpad."
+msgstr "Signed in to Flowpad."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Signed in to FlowPad."
+#~ msgstr "Signed in to FlowPad."
 
 #: src/components/project-home/ProjectGitChip.tsx
 msgid "Signed in to the remote"
@@ -31092,13 +31914,21 @@ msgid "Skipped — setup goes on without it."
 msgstr "Skipped — setup goes on without it."
 
 #: src/components/project-setup/ProjectSetupPage.tsx
-msgid "Skipped on this machine"
-msgstr "Skipped on this machine"
+msgid "Skipped on this computer"
+msgstr "Skipped on this computer"
 
 #. placeholder {0}: readiness.skipped.length
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Skipped on this machine ({0})"
-msgstr "Skipped on this machine ({0})"
+msgid "Skipped on this computer ({0})"
+msgstr "Skipped on this computer ({0})"
+
+#: src/components/project-setup/ProjectSetupPage.tsx
+#~ msgid "Skipped on this machine"
+#~ msgstr "Skipped on this machine"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+#~ msgid "Skipped on this machine ({0})"
+#~ msgstr "Skipped on this machine ({0})"
 
 #: src/components/automations/automation-words.ts
 msgid "Skipped: it fired too often in one minute"
@@ -31255,8 +32085,8 @@ msgid "Somewhere else"
 msgstr "Somewhere else"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "soon"
-msgstr "soon"
+#~ msgid "soon"
+#~ msgstr "soon"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Sort by added lines"
@@ -31474,7 +32304,6 @@ msgstr "Starred"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-card/entity-card-rows.ts
-#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
@@ -31486,6 +32315,10 @@ msgstr "Start"
 #: src/components/workers/ContextWorkerToolbar.tsx
 msgid "Start {0}"
 msgstr "Start {0}"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Start {onlyName}"
+msgstr "Start {onlyName}"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Start a cloud sandbox, or connect a computer you own."
@@ -31708,6 +32541,15 @@ msgstr "Starts when any of these happens"
 msgid "State"
 msgstr "State"
 
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "stated"
+msgstr "stated"
+
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+#: src/components/milkdown-editor/plugins/fence-render/renderers/lw.ts
+msgid "Statements"
+msgstr "Statements"
+
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Static"
 msgstr "Static"
@@ -31733,6 +32575,7 @@ msgstr "status"
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -31774,6 +32617,10 @@ msgstr "Status:"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "status: {0}"
 msgstr "status: {0}"
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Stay on for"
+msgstr "Stay on for"
 
 #: src/components/assets/editor/chart/ArchitectureChartView.tsx
 #: src/components/assets/editor/chart/FlowchartChartView.tsx
@@ -31871,6 +32718,10 @@ msgstr "Stop reading {0}"
 msgid "Stop recording"
 msgstr "Stop recording"
 
+#: src/components/webapp-display/AppLifecyclePanel.tsx
+msgid "Stop the app"
+msgstr "Stop the app"
+
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "stopped"
@@ -31882,6 +32733,10 @@ msgstr "stopped"
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Stopped"
 msgstr "Stopped"
+
+#: src/components/data-sources/source-parts.tsx
+msgid "Stopped — needs a fix"
+msgstr "Stopped — needs a fix"
 
 #. placeholder {0}: formatElapsed(shellRun.lastExit.durationS * 1000)
 #: src/components/code-editor/SnippetView.tsx
@@ -32298,8 +33153,13 @@ msgid "tag"
 msgstr "tag"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
+#: src/components/milkdown-editor/plugins/doc-tags.ts
 msgid "Tag"
 msgstr "Tag"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Tag changes"
+msgstr "Tag changes"
 
 #: src/components/tags/StreamInboxTags.tsx
 #~ msgid "Tag created"
@@ -32323,6 +33183,10 @@ msgstr "Tag Graph"
 msgid "Tag shape"
 msgstr "Tag shape"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Tag tree"
+msgstr "Tag tree"
+
 #: src/components/graph-view/TagGraphView.tsx
 msgid "Tag Tree"
 msgstr "Tag Tree"
@@ -32339,6 +33203,14 @@ msgstr "Tags"
 #: src/components/automations/MessageRulePage.tsx
 msgid "Tags on this message"
 msgstr "Tags on this message"
+
+#: src/components/stream-inbox-view/TagFilterButton.tsx
+msgid "Tags: {short}"
+msgstr "Tags: {short}"
+
+#: src/components/tags/ClassifyTable.tsx
+msgid "Take the proposal back into Apply all"
+msgstr "Take the proposal back into Apply all"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Takes ~4 seconds"
@@ -32409,6 +33281,7 @@ msgstr "Tasked: {0}"
 
 #: src/components/conversation/ConversationPanel.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
+#: src/components/stream-inbox-view/OpenTasksButton.tsx
 #: src/types/ViewType.ts
 msgid "Tasks"
 msgstr "Tasks"
@@ -32631,6 +33504,14 @@ msgstr "Thank you — sent."
 msgid "That agent is no longer in your workspace."
 msgstr "That agent is no longer in your workspace."
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "That code is wrong or has expired. Check the email and try again."
+msgstr "That code is wrong or has expired. Check the email and try again."
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "That did not work. Try again."
+msgstr "That did not work. Try again."
+
 #: src/components/assets/ProjectDependencyDialog.tsx
 msgid "That doesn't name a hub project — paste its id or a link to it."
 msgstr "That doesn't name a hub project — paste its id or a link to it."
@@ -32663,6 +33544,10 @@ msgstr "That launch link is incomplete."
 msgid "That looks like an {0} key. This endpoint calls {1}, whose keys start with {2}."
 msgstr "That looks like an {0} key. This endpoint calls {1}, whose keys start with {2}."
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "That machine belongs to another account. Sign in as its owner and try again."
+msgstr "That machine belongs to another account. Sign in as its owner and try again."
+
 #: src/components/task-receive/IncomingDeepLink.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -32680,6 +33565,10 @@ msgstr "That run is no longer in the history."
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "That schedule can't be read"
 msgstr "That schedule can't be read"
+
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "That took too long. Press Continue to try again."
+msgstr "That took too long. Press Continue to try again."
 
 #: src/components/assets/editor/skill/skill-eval-analysis.ts
 msgid "The \"{attachSkillName}\" skill is not installed."
@@ -32785,8 +33674,12 @@ msgid "The asset was not added."
 msgstr "The asset was not added."
 
 #: src/components/harness-login/funding-pill.ts
-msgid "The assistant's CLI is not installed on this machine"
-msgstr "The assistant's CLI is not installed on this machine"
+msgid "The assistant's CLI is not installed on this computer"
+msgstr "The assistant's CLI is not installed on this computer"
+
+#: src/components/harness-login/funding-pill.ts
+#~ msgid "The assistant's CLI is not installed on this machine"
+#~ msgstr "The assistant's CLI is not installed on this machine"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "The attachments of this message could not be delivered."
@@ -32813,6 +33706,10 @@ msgstr "The changes did not finish"
 msgid "The check did not run."
 msgstr "The check did not run."
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "The classification did not finish."
+msgstr "The classification did not finish."
+
 #: src/components/tags/MessageTags.tsx
 msgid "The classifier was off when this arrived."
 msgstr "The classifier was off when this arrived."
@@ -32837,6 +33734,10 @@ msgstr "The codes stop working and their machines are deleted."
 msgid "The credential could not be removed."
 msgstr "The credential could not be removed."
 
+#: src/components/credentials/CredentialDialog.tsx
+msgid "The credential could not be saved."
+msgstr "The credential could not be saved."
+
 #: src/components/connections-manager.tsx
 msgid "The credential is removed from your account. No project is using it right now, and you'll have to sign in again to use {provider}."
 msgstr "The credential is removed from your account. No project is using it right now, and you'll have to sign in again to use {provider}."
@@ -32850,8 +33751,8 @@ msgid "The credential was shared, but its values could not be sent securely."
 msgstr "The credential was shared, but its values could not be sent securely."
 
 #: src/components/credentials/CredentialDialog.tsx
-msgid "The credentials could not be saved."
-msgstr "The credentials could not be saved."
+#~ msgid "The credentials could not be saved."
+#~ msgstr "The credentials could not be saved."
 
 #: src/components/conversation/TicketPage.tsx
 msgid "the customer"
@@ -33039,8 +33940,12 @@ msgid "The hub refused the change."
 msgstr "The hub refused the change."
 
 #: src/components/harness-login/funding-pill.ts
-msgid "The hub refused the stored FlowPad login"
-msgstr "The hub refused the stored FlowPad login"
+msgid "The hub refused the stored Flowpad login"
+msgstr "The hub refused the stored Flowpad login"
+
+#: src/components/harness-login/funding-pill.ts
+#~ msgid "The hub refused the stored FlowPad login"
+#~ msgstr "The hub refused the stored FlowPad login"
 
 #: src/components/account/user-info.tsx
 msgid "The hub refused this client."
@@ -33180,6 +34085,10 @@ msgstr "The page loads and reports its errors; each is matched against the handl
 msgid "The part before the @. Permanent once created."
 msgstr "The part before the @. Permanent once created."
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "The passkey was not created. Press Continue to try again."
+msgstr "The passkey was not created. Press Continue to try again."
+
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "The project could not be installed."
 msgstr "The project could not be installed."
@@ -33215,6 +34124,11 @@ msgstr "The project's own assets"
 msgid "The prompt text…"
 msgstr "The prompt text…"
 
+#. placeholder {0}: result?.at
+#: src/components/credentials/CredentialTestButton.tsx
+msgid "The provider accepted it ({0})"
+msgstr "The provider accepted it ({0})"
+
 #: src/components/connections-manager.tsx
 msgid "The provider accepted the token."
 msgstr "The provider accepted the token."
@@ -33235,10 +34149,9 @@ msgstr "The provider refused this key"
 msgid "The provider rejected the stored token."
 msgstr "The provider rejected the stored token."
 
-#. placeholder {0}: result?.at
 #: src/components/credentials/CredentialTestButton.tsx
-msgid "The provider took the key ({0})"
-msgstr "The provider took the key ({0})"
+#~ msgid "The provider took the key ({0})"
+#~ msgstr "The provider took the key ({0})"
 
 #: src/components/rag/RagView.tsx
 msgid "The query failed"
@@ -33921,6 +34834,10 @@ msgstr "This is a cloud resource — it will be destroyed in the cloud, not just
 msgid "This is its first start, so it takes a few minutes."
 msgstr "This is its first start, so it takes a few minutes."
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "This is the first key on your account. To check it is you, we emailed a 6-digit code to {email}."
+msgstr "This is the first key on your account. To check it is you, we emailed a 6-digit code to {email}."
+
 #. placeholder {0}: conversation?.title ?? ''
 #: src/components/conversation/AutomationMessageActions.tsx
 msgid "This is what my automation \"{0}\" reported ({target}, attached as context). Read it, then wait for my questions."
@@ -34015,6 +34932,7 @@ msgstr "This live-session URL is malformed or unavailable."
 msgid "this machine"
 msgstr "this machine"
 
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/i18n/pref-labels.ts
 msgid "This machine"
@@ -34107,6 +35025,10 @@ msgstr "This page is not attached to a session, so what you sent reached no one.
 msgid "This page was opened by a link, not by Flowpad. Once it runs it can read and change what Flowpad holds, so allow it only if you trust where it came from."
 msgstr "This page was opened by a link, not by Flowpad. Once it runs it can read and change what Flowpad holds, so allow it only if you trust where it came from."
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "This passkey is already one of your access keys."
+msgstr "This passkey is already one of your access keys."
+
 #: src/components/browseable-tree/adapters/fsFileOps.tsx
 msgid "This permanently deletes it from disk. This cannot be undone."
 msgstr "This permanently deletes it from disk. This cannot be undone."
@@ -34157,6 +35079,7 @@ msgstr "This process points to a deleted project."
 
 #: src/components/assets/confirm-project-delete.ts
 #: src/components/connections-manager.tsx
+#: src/components/footer/SecretManagerChip.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "this project"
 msgstr "this project"
@@ -34263,6 +35186,10 @@ msgstr "This question is no longer waiting."
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "This removes the downloaded help desk folder and its indexed entries from this machine. Nothing on the server changes, and everything is downloaded again the next time you open the help desk."
 msgstr "This removes the downloaded help desk folder and its indexed entries from this machine. Nothing on the server changes, and everything is downloaded again the next time you open the help desk."
+
+#: src/components/terminal/project-list-menu.tsx
+msgid "This removes the project from the list on this computer. It has no files here, and it stays available to everyone it is shared with."
+msgstr "This removes the project from the list on this computer. It has no files here, and it stays available to everyone it is shared with."
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "This removes the schedule from the agent. Past runs stay in the run history."
@@ -34481,6 +35408,10 @@ msgstr "This Wiki target has no readable content."
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 
+#: src/components/top-nav-bar/RecordScreenButton.tsx
+msgid "this window"
+msgstr "this window"
+
 #: src/components/assets/editor/wizard/WizardDebugger.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "This wizard declares no steps."
@@ -34651,6 +35582,10 @@ msgstr "to"
 msgid "To"
 msgstr "To"
 
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "To check it is you, we emailed a 6-digit code to {email}."
+msgstr "To check it is you, we emailed a 6-digit code to {email}."
+
 #: src/pages/entry/entry-shell.tsx
 msgid "To open the {label}:"
 msgstr "To open the {label}:"
@@ -34791,6 +35726,10 @@ msgstr "Too long"
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Too many attempts. Wait a few minutes and try again."
 msgstr "Too many attempts. Wait a few minutes and try again."
+
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "Too many attempts. Wait a few minutes, then ask for a new code."
+msgstr "Too many attempts. Wait a few minutes, then ask for a new code."
 
 #: src/pages/entry/OpenPcLanding.tsx
 msgid "Too many tries. Try again later."
@@ -35112,6 +36051,9 @@ msgstr "Turn off"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/ClassifierPage.tsx
 #: src/components/automations/MessageRulePage.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/remote-control/RemoteControlPanel.tsx
 msgid "Turn on"
 msgstr "Turn on"
 
@@ -35119,13 +36061,17 @@ msgstr "Turn on"
 msgid "Turn on a scope above to see its assets."
 msgstr "Turn on a scope above to see its assets."
 
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "Turn on remote control"
+msgstr "Turn on remote control"
+
 #: src/components/credentials-view/RequirementChip.tsx
 msgid "Turns a feature or an integration on"
 msgstr "Turns a feature or an integration on"
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
-msgid "Two quick steps in your browser:"
-msgstr "Two quick steps in your browser:"
+#~ msgid "Two quick steps in your browser:"
+#~ msgstr "Two quick steps in your browser:"
 
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "type"
@@ -35228,6 +36174,7 @@ msgstr "Under OAuth & Permissions add the bot scopes channels:history, groups:hi
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/notifications-view/NotificationsView.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "Undo"
 msgstr "Undo"
 
@@ -35302,6 +36249,7 @@ msgstr "Unknown error"
 #: src/components/account/organization-panel.tsx
 #: src/components/account/user-info.tsx
 #: src/components/conversation/InviteCard.tsx
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/invite-row.tsx
@@ -35435,8 +36383,8 @@ msgid "Unused"
 msgstr "Unused"
 
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
-msgid "Up"
-msgstr "Up"
+#~ msgid "Up"
+#~ msgstr "Up"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "up to date"
@@ -35447,12 +36395,10 @@ msgstr "up to date"
 msgid "Up to date"
 msgstr "Up to date"
 
-#. placeholder {0}: record.detail
-#. placeholder {0}: record.failure?.text || record.detail
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 #: src/components/webapp-display/AppLifecyclePanel.tsx
-msgid "Up, with problems: {0}"
-msgstr "Up, with problems: {0}"
+#~ msgid "Up, with problems: {0}"
+#~ msgstr "Up, with problems: {0}"
 
 #: src/components/assets/editor/agent-profile/AgentAutoLaunchTab.tsx
 #: src/components/credentials/CredentialEditDialog.tsx
@@ -35513,6 +36459,10 @@ msgstr "Update failed"
 msgid "Update from {host}"
 msgstr "Update from {host}"
 
+#: src/components/project-setup/DependencyUpdatesStrip.tsx
+msgid "Update packages"
+msgstr "Update packages"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Update Plan"
 msgstr "Update Plan"
@@ -35522,13 +36472,14 @@ msgid "Update plan based on <plan-note> sections"
 msgstr "Update plan based on <plan-note> sections"
 
 #: src/components/top-nav-bar/UpdateReadyIndicator.tsx
+#: src/components/version-popover/version-chip.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Update ready"
 msgstr "Update ready"
 
 #: src/components/update-ready/UpdateReadyBridge.tsx
-msgid "Update Ready"
-msgstr "Update Ready"
+#~ msgid "Update Ready"
+#~ msgstr "Update Ready"
 
 #: src/components/project-deployments/ProjectDeploymentCard.tsx
 msgid "Update to"
@@ -35540,6 +36491,7 @@ msgstr "Update values"
 
 #: src/components/asset-counters/channel-project-counters.tsx
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/home-tiles/HomePropertiesPanel.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 #: src/lib/publish-state.ts
 #: src/tabs/provider-meta.tsx
@@ -35711,6 +36663,7 @@ msgstr "Usage unavailable"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Use"
@@ -35719,6 +36672,11 @@ msgstr "Use"
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Use \"Send to Expert\" to create a task"
 msgstr "Use \"Send to Expert\" to create a task"
+
+#. placeholder {0}: fallback.title
+#: src/components/footer/BrowserChip.tsx
+msgid "Use {0}"
+msgstr "Use {0}"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Use a different provider"
@@ -35735,8 +36693,8 @@ msgid "Use agent"
 msgstr "Use agent"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Use Agent browser"
-msgstr "Use Agent browser"
+#~ msgid "Use Agent browser"
+#~ msgstr "Use Agent browser"
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Use an API key"
@@ -35762,6 +36720,10 @@ msgstr "Use defaults"
 msgid "Use Google Vertex AI as the backend"
 msgstr "Use Google Vertex AI as the backend"
 
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Use here"
+msgstr "Use here"
+
 #: src/components/footer/BrowserChip.tsx
 msgid "Use it"
 msgstr "Use it"
@@ -35784,10 +36746,18 @@ msgstr "Use suggestion"
 msgid "Use the default home"
 msgstr "Use the default home"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Use the project's choice"
+msgstr "Use the project's choice"
+
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "Use the refresh button in the toolbar to retry"
 msgstr "Use the refresh button in the toolbar to retry"
+
+#: src/components/footer/SecretManagerChip.tsx
+msgid "Use this vault on this computer"
+msgstr "Use this vault on this computer"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Vertex"
@@ -36414,6 +37384,11 @@ msgstr "Warning: {warning}"
 msgid "Warnings"
 msgstr "Warnings"
 
+#. placeholder {0}: change.was
+#: src/components/tags/ClassifyTable.tsx
+msgid "was {0}"
+msgstr "was {0}"
+
 #: src/components/tags/StreamInboxTags.tsx
 msgid "was {previous}"
 msgstr "was {previous}"
@@ -36616,8 +37591,8 @@ msgid "What should change here?"
 msgstr "What should change here?"
 
 #: src/components/llm-setup/LlmSetupView.tsx
-msgid "What should issue your LLM calls?"
-msgstr "What should issue your LLM calls?"
+#~ msgid "What should issue your LLM calls?"
+#~ msgstr "What should issue your LLM calls?"
 
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
@@ -37272,6 +38247,7 @@ msgstr "yesterday {hhmm}"
 
 #: src/components/conversation/MessageFormCard.tsx
 #: src/components/data-sources/DataSourcePage.tsx
+#: src/components/footer/HostedAppRow.tsx
 msgid "you"
 msgstr "you"
 
@@ -37298,6 +38274,10 @@ msgstr "You already asked {0}: \"{1}\"."
 #: src/components/conversation/SealedTypedCard.tsx
 msgid "You already have {name} here. Replace it with this one?"
 msgstr "You already have {name} here. Replace it with this one?"
+
+#: src/pages/hub-home/AddAccessKeyDialog.tsx
+msgid "You already have 10 access keys. Remove one first."
+msgstr "You already have 10 access keys. Remove one first."
 
 #. placeholder {0}: conflict.attempted_name
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
@@ -37372,6 +38352,10 @@ msgstr "You can ask"
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You can see {name}, but its project isn't shared with you, so it can't be launched."
 msgstr "You can see {name}, but its project isn't shared with you, so it can't be launched."
+
+#: src/components/automations/MessageRulePage.tsx
+msgid "You can share it with everyone from there. Off: it is posted in this automation's own conversation."
+msgstr "You can share it with everyone from there. Off: it is posted in this automation's own conversation."
 
 #: src/components/token-plan/FundingChain.tsx
 msgid "You can spend up to <0>{amount}</0> — the tightest limit on this path."
@@ -37543,9 +38527,7 @@ msgstr "your budget: {short}"
 msgid "Your business number in your own Meta app. Meta calls the hub's webhook URL."
 msgstr "Your business number in your own Meta app. Meta calls the hub's webhook URL."
 
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
-#: src/components/footer/BrowserChip.tsx
+#: src/components/footer/HostedAppRow.tsx
 msgid "Your Chrome"
 msgstr "Your Chrome"
 
@@ -37578,6 +38560,11 @@ msgstr "Your help requests"
 msgid "Your local value of {credential} is copied into the vault, and the credential records where it is."
 msgstr "Your local value of {credential} is copied into the vault, and the credential records where it is."
 
+#: src/pages/hub-home/AccessKeysSection.tsx
+#: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
+msgid "your machine"
+msgstr "your machine"
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup and caption on this image will be lost."
 msgstr "Your markup and caption on this image will be lost."
@@ -37585,6 +38572,10 @@ msgstr "Your markup and caption on this image will be lost."
 #: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."
 msgstr "Your new API key has been created. Please save it securely."
+
+#: src/components/remote-control/RemoteControlPanel.tsx
+msgid "Your new key was added from this machine, so it is accepted here."
+msgstr "Your new key was added from this machine, so it is accepted here."
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
@@ -37614,6 +38605,10 @@ msgstr "Your own provider key"
 #: src/components/organization/tabs/BillingTab.tsx
 msgid "Your own provider key. Usage is billed to your provider account."
 msgstr "Your own provider key. Usage is billed to your provider account."
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Your pick on this computer"
+msgstr "Your pick on this computer"
 
 #: src/components/conversation/asset-review/SharedOpenPanel.tsx
 msgid "Your project is behind on {branch}. Pull to bring the shared version in."

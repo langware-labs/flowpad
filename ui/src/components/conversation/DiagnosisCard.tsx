@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   type HelpContextItem,
   type HelpRequestDiagnosis,
@@ -18,6 +18,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { useDiagnosisLinks } from '@src/notifications/alerts-store';
 import { ContentReviewDialog } from './asset-review/ContentReviewDialog';
+import { CardLine, DetailsList, DetailsToggle } from './StatusCard';
 import { useHelpRequestDiagnosis } from './use-help-request-diagnosis';
 
 type State = HelpRequestDiagnosis['state'];
@@ -88,12 +89,6 @@ export function DiagnosisCard({ conversationId, isMine }: { conversationId: stri
     done: t`Done`,
   };
   const rootCause = d ? d.title || d.summary : running ? t`Looking into it…` : t`The diagnosis could not run.`;
-  const line = (name: string, value: React.ReactNode) => (
-    <div className="flex gap-3">
-      <span className="w-20 shrink-0 text-muted-foreground">{name}</span>
-      <span className="min-w-0 text-foreground">{value}</span>
-    </div>
-  );
   const bug = d?.bug ? [d.bug.package, d.bug.version].filter(Boolean).join(' ') + (d.bug.suspected ? `\n${d.bug.suspected}` : '') : '';
   const env = d?.environment;
   const rows: [string, React.ReactNode][] = [
@@ -160,27 +155,17 @@ export function DiagnosisCard({ conversationId, isMine }: { conversationId: stri
   return (
     <div className="flex flex-col gap-1 text-sm" data-testid="diagnosis-card" data-state={s}>
       <div className="space-y-1 break-words">
-        {line(
-          t`Status`,
+        <CardLine name={t`Status`}>
           <Badge variant={TONE[s]} className="gap-1" data-testid="diagnosis-status">
             {running && <Loader2 className="h-3 w-3 animate-spin" />}
             {label[s]}
-          </Badge>,
-        )}
-        {line(t`Issue`, state.issue || state.request.split('\n')[0])}
-        {line(t`Root cause`, rootCause)}
+          </Badge>
+        </CardLine>
+        <CardLine name={t`Issue`}>{state.issue || state.request.split('\n')[0]}</CardLine>
+        <CardLine name={t`Root cause`}>{rootCause}</CardLine>
       </div>
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          data-testid="diagnosis-details-toggle"
-        >
-          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          {t`Details`}
-        </button>
+        <DetailsToggle open={open} onToggle={() => setOpen((v) => !v)} testId="diagnosis-details-toggle" />
         {state.worker_process_id && (
           <OpenSessionButton
             onOpen={() => void navigation.openShellProcess(state.worker_process_id)}
@@ -190,18 +175,7 @@ export function DiagnosisCard({ conversationId, isMine }: { conversationId: stri
           />
         )}
       </div>
-      {open && (
-        <dl className="rounded-md border bg-muted/30 px-2.5 py-2 text-xs" data-testid="diagnosis-details">
-          {rows
-            .filter(([, v]) => v)
-            .map(([k, v]) => (
-              <div key={k} className="mb-1 last:mb-0">
-                <dt className="font-medium text-foreground">{k}</dt>
-                <dd className="whitespace-pre-wrap text-muted-foreground">{v}</dd>
-              </div>
-            ))}
-        </dl>
-      )}
+      {open && <DetailsList rows={rows} testId="diagnosis-details" />}
       {actions.length > 0 && (
         <div className="mt-1 flex items-center gap-1.5">
           {actions.map((a) => (

@@ -210,7 +210,7 @@ In the worker, the message is the input folder and the conversation is one comma
 
 ```bash
 flow conversation show <conversation-id>
-flow conversation reply <conversation-id> --draft "…"
+flow conversation send <conversation-id> "…" --private     # only the user sees it, until they share it
 ```
 
 The chip on the message and the stream inbox row find the session by two typed fields that already

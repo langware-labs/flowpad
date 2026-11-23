@@ -537,3 +537,8 @@ def wanted_tags(raw: str | None) -> list[str]:
 def apply_tag_filter(entities: list, tag_list: list[str]) -> list:
     """Keep entities carrying EVERY wanted tag — itself or a tag under it (``crm`` finds ``crm.lead``)."""
     return [e for e in entities if all(e.has_tag(want) for want in tag_list)] if tag_list else entities
+
+
+def apply_any_tag_filter(entities: list, tag_list: list[str]) -> list:
+    """Keep entities carrying ANY wanted tag — itself or a tag under it. A ticked-tags filter, not a search."""
+    return [e for e in entities if any(e.has_tag(want) for want in tag_list)] if tag_list else entities

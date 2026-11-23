@@ -11,12 +11,17 @@ description: A missing sort value buckets FIRST and is never compared against a 
 
 > Ground truth. Proven on 2026-08-04. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.null_sort_order.rules
 sites:
-  - rel_path: "tests/unit/test_get_children_ordering.py"
+  - rel_path: tests/unit/test_get_children_ordering.py
     line: 112
-    note: "FAILING? read this tag's rules \u2014 missing sorts FIRST; never coerce it to \"\""
+    note: FAILING? read this tag's rules — missing sorts FIRST; never coerce it to ""
+proven: '2026-08-04'
+statements:
+  - text: Missing sorts before present, ascending.
+  - text: No two values of different types are ever compared directly.
+  - text: 'One sorter: if you add a third ordering path, delegate to `_sort_key` rather than writing a fourth key.'
 ```
 
 ## Expected behavior
@@ -43,11 +48,6 @@ missing values where SQLite's `ORDER BY ... ASC` puts them: **first**.
 
 * Missing sorts **before** present, ascending. Changing this desynchronises the
   Python fallback from the SQL path for the same rows.
-
-* No two values of different types are ever compared directly.
-
-* One sorter. If you add a third ordering path, delegate to `_sort_key` rather
-  than writing a fourth key.
 
 ## Failure modes
 

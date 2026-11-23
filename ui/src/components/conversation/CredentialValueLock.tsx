@@ -248,8 +248,8 @@ function VaultBody({
   const { data: where } = useQuery({
     queryKey: ['secret-vault-label', projectId, vault],
     queryFn: async () => {
-      const [vaults, managers] = await Promise.all([
-        credentialsService.vaults(projectId),
+      const [{ vaults }, managers] = await Promise.all([
+        credentialsService.vaultList(projectId),
         credentialsService.listManagers(),
       ]);
       const spec = vaults[vault];

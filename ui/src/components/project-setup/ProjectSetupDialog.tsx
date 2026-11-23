@@ -36,7 +36,7 @@ import { AskForm } from '@src/components/ask/AskForm';
 import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
 import { DependencyUpdatesStrip } from './DependencyUpdatesStrip';
 import { useProjectSetupStore } from './project-setup-store';
-import { ROOT_KIND, rowId as rowIdOf, rowKey } from './setup-labels';
+import { ROOT_KIND, rowId as rowIdOf, rowKey, usedByOf } from './setup-labels';
 import { countDrawn, SetupTreeView } from './SetupTreeView';
 import { useSetupReadiness, withNotify } from './use-setup-readiness';
 import { useSetupRun } from './use-setup-run';
@@ -82,6 +82,9 @@ export function pointerForRequirement(req: ProjectSetupRequirement, projectId: s
 /** A dependency, source or web app goes by its own name (its title is where it comes from); a credential by its title. */
 export const namesItself = (req: ProjectSetupRequirement) =>
   req.kind === 'dependency' || req.kind === 'source' || req.kind === 'webapp' || req.kind === 'automation';
+
+/** The name a row goes by, on the row and on a button that acts on it. */
+export const nameOf = (req: ProjectSetupRequirement) => (namesItself(req) ? req.name : req.title || req.name);
 
 /**
  * What a row says beside its name: why it is not ready, else what the credential is needed for, else what is
@@ -363,7 +366,7 @@ export function ProjectSetupDialog({
         )}
 
         {!!readiness?.skipped?.length && (
-          <SkippedSection title={t`Skipped on this machine (${readiness.skipped.length})`}>
+          <SkippedSection title={t`Skipped on this computer (${readiness.skipped.length})`}>
             {readiness.skipped.map((req) => row(req, true))}
           </SkippedSection>
         )}
@@ -388,6 +391,7 @@ export function ProjectSetupDialog({
             tree={setup.tree}
             running={running}
             canStart={toRun.length > 0}
+            only={toRun.length === 1 ? toRun[0] : undefined}
             onStart={() => void start()}
             onStop={setup.stop && (() => void stop())}
           />
@@ -451,12 +455,15 @@ function SetupStatusLine({
   tree,
   running,
   canStart,
+  only,
   onStart,
   onStop,
 }: {
   tree: SetupTreeResult | null;
   running: boolean;
   canStart: boolean;
+  /** The one row there is to run, when there is one: the button names it. */
+  only?: ProjectSetupRequirement;
   onStart: () => void;
   onStop?: () => void;
 }) {
@@ -485,6 +492,9 @@ function SetupStatusLine({
   // How the last run ended decides both the words and the button.
   const failed = tree?.state === 'failed' || tree?.state === 'blocked';
   const unfinished = failed && tree?.root ? unfinishedUnder(tree.root) : 0;
+  const onlyName = only ? nameOf(only) : '';
+  // The button says what it does: one row is named, a web app is started rather than set up.
+  const startLabel = !only ? t`Set up all` : only.kind === 'webapp' ? t`Start ${onlyName}` : t`Set up ${onlyName}`;
   return (
     <div className="flex items-center gap-2 text-sm" data-testid="project-setup-status">
       {tree && (
@@ -493,7 +503,7 @@ function SetupStatusLine({
         </span>
       )}
       <Button data-testid="project-setup-start" onClick={onStart}>
-        {!tree ? t`Start` : failed ? t`Retry` : t`Continue`}
+        {tree ? (failed ? t`Retry` : t`Continue`) : startLabel}
       </Button>
     </div>
   );
@@ -593,7 +603,7 @@ function SkipChoice({
         className={size}
         data-testid={`project-setup-skip-local-${id}`}
         disabled={disabled}
-        title={t`On this machine only — undo any time`}
+        title={t`On this computer only — undo any time`}
         onClick={own(() => onSkip('local'))}
       >
         {bar ? <Trans>Skip locally</Trans> : <Trans>Locally</Trans>}
@@ -672,8 +682,8 @@ function RequirementRow({
 }) {
   const { t } = useLingui();
   const Icon = iconOf(req);
-  const name = namesItself(req) ? req.name : req.title || req.name;
-  const usedBy = req.used_by.join(', ');
+  const name = nameOf(req);
+  const usedBy = usedByOf(req);
   const rowId = rowIdOf(req);
   const keyOpen = (event: KeyboardEvent) => {
     if (event.key === 'Enter' && event.target === event.currentTarget) onOpen();
@@ -707,7 +717,7 @@ function RequirementRow({
         <span className="font-medium">{name}</span>
         {skipped ? (
           <span className="text-xs text-muted-foreground" data-testid={`project-setup-skipped-note-${rowId}`}>
-            {req.required ? t`Required — skipped on this machine` : t`Optional — skipped on this machine`}
+            {req.required ? t`Required — skipped on this computer` : t`Optional — skipped on this computer`}
           </span>
         ) : (
           <span
@@ -754,7 +764,7 @@ function RequirementRow({
               data-testid={`project-setup-enable-${rowId}`}
               onClick={own(() => onDecide(true))}
             >
-              <Trans>Enable</Trans>
+              <Trans>Turn on</Trans>
             </Button>
             <Button
               variant="ghost"
@@ -763,7 +773,7 @@ function RequirementRow({
               data-testid={`project-setup-disable-${rowId}`}
               onClick={own(() => onDecide(false))}
             >
-              <Trans>Disable</Trans>
+              <Trans>Keep off</Trans>
             </Button>
           </>
         )}
