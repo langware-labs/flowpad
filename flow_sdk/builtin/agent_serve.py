@@ -1055,6 +1055,8 @@ async def answer_one(
         session = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation))
     who = display_name_of(getattr(message, "author_display", "") or "", author)
     outbox = reply_outbox(source, turn_key(message))
+    # The person sees an agent has their message while it works on it (a channel without reactions: nothing).
+    await message.react_seen()
     # Told before the turn whether its text goes back by itself, so the agent knows when to reply explicitly.
     spoke = bool(getattr(driver_cls, "answers_once", False)) and await _answered_before(message, source, agent)
     outcome = await engine.run(
@@ -1091,6 +1093,8 @@ async def answer_one(
     # quote=None: the answer quotes the message only when the person wrote again meanwhile.
     await message.reply(await message.reply_spec(body=outcome.text or "", files=answer_files))
     console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
+    # The answer is out: the person sees their message was received (it replaces 👀 where one reaction is kept).
+    await message.react_received()
     return True
 
 

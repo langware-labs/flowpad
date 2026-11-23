@@ -125,6 +125,21 @@ class Delivered(Generic[T]):
         self._row.reactions = await unreact(self._row, emoji)
         return self.reactions
 
+    async def react_received(self) -> "str | None":
+        """Show the person their message was received and answered: its channel's ``received_reaction`` (👍
+        unless the driver names another). Answers the emoji put, or None when the channel has no reactions or
+        refused."""
+        from flow_sdk.stream_inbox.reactions import try_react_stage  # noqa: PLC0415
+
+        return await try_react_stage(self._row, "received_reaction")
+
+    async def react_seen(self) -> "str | None":
+        """Show the person an agent is working on their message: its channel's ``seen_reaction`` (👀 unless the
+        driver names another). Answers the emoji put, or None when the channel has no reactions or refused."""
+        from flow_sdk.stream_inbox.reactions import try_react_stage  # noqa: PLC0415
+
+        return await try_react_stage(self._row, "seen_reaction")
+
     async def reply_spec(self, *, body: str, files=(), quote: "bool | None" = None) -> "MessageSpec":
         """The reply to THIS item, in its own channel's shape — the rule and the
         reason are ``DataSource.reply_spec``'s. Async only because it reads the
