@@ -275,9 +275,15 @@ class CollectionResult(ReturnedValue):
     items: list[ItemAnswer] = []
 
     def trimmed(self, limit: int = OUTPUT_CAP) -> "Self":
-        return super().trimmed(limit).model_copy(update={
-            "items": [item.model_copy(update={"answer": item.answer.trimmed(limit)}) for item in self.items],
-        })
+        return (
+            super()
+            .trimmed(limit)
+            .model_copy(
+                update={
+                    "items": [item.model_copy(update={"answer": item.answer.trimmed(limit)}) for item in self.items],
+                }
+            )
+        )
 
 
 def last_line(text: str) -> str:
@@ -292,7 +298,7 @@ def failure_line(text: str) -> str:
     """The last thing a failed command said — where its error is. A leading ``error:`` is dropped:
     the reader already knows it failed."""
     line = last_line((text or "")[-4096:])
-    return line[len("error:"):].strip() if line.lower().startswith("error:") else line
+    return line[len("error:") :].strip() if line.lower().startswith("error:") else line
 
 
 class CliResult(ReturnedValue):
@@ -342,13 +348,22 @@ class CliResult(ReturnedValue):
             if returncode is None and not timed_out:
                 detail = "The command could not be started."
             elif timed_out:
-                detail = f"The command did not finish within {duration_s:.0f}s." if duration_s else "The command timed out."
+                detail = (
+                    f"The command did not finish within {duration_s:.0f}s." if duration_s else "The command timed out."
+                )
             elif not reached:
-                detail = capped(failure_line(stderr) or failure_line(stdout), 300) or f"The command exited {returncode}."
+                detail = (
+                    capped(failure_line(stderr) or failure_line(stdout), 300) or f"The command exited {returncode}."
+                )
         return cls(
             exit_code=ExitCode.OK if reached else ExitCode.NOT_YET,
-            command=command, returncode=returncode, stdout=stdout, stderr=stderr,
-            timed_out=timed_out, duration_s=duration_s, detail=detail,
+            command=command,
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+            timed_out=timed_out,
+            duration_s=duration_s,
+            detail=detail,
             ran=returncode is not None or timed_out,
             **fields,
         )
@@ -407,6 +422,21 @@ class NavigateResult(ReturnedValue):
     #: ``ok`` · ``not_running`` · ``hung`` · ``server_error`` · ``redirect_loop`` · ``not_http`` ·
     #: ``not_found`` · ``frame_blocked`` · ``no_browser``. ``None`` when nothing was checked.
     verdict: Optional[str] = None
+
+
+class EndpointAnswer(ReturnedValue):
+    """An endpoint block's answer: the capability's result as ``value``, or why there is none.
+
+    ``reason`` is the closed word a caller branches on (``flow_sdk.endpoint_call.errors``); the
+    sentence in ``detail`` is for a person and must never be parsed for it.
+    """
+
+    spec_kind: ClassVar[str] = "compute.returned.endpoint"
+
+    #: Empty when the value was produced.
+    reason: str = ""
+    #: The vendor job the call had started, when it got that far: what to look up, not start again.
+    job_id: str = ""
 
 
 class DecisionVerdict(ReturnedValue):
@@ -468,16 +498,24 @@ class WizardResult(ReturnedValue):
     def outline(self, detail_cap: int = 300) -> dict[str, Any]:
         """How the run went, small enough for a history row that is polled: the verdict and, per
         step, its exit code, a short detail and the session it started — never a step's output."""
+
         def short(text: Any) -> str:
             return str(text or "")[:detail_cap]
 
         steps: dict[str, dict[str, Any]] = {}
         for key, step in self.steps.items():
             executor = step.first_executor() if isinstance(step, WizardResult) else getattr(step, "executor", None)
-            steps[key] = {"exit_code": int(step.exit_code), "detail": short(step.detail),
-                          **({"executor": str(executor)} if executor else {})}
-        return {"exit_code": int(self.exit_code), "detail": short(self.detail),
-                **({"stopped_at": self.stopped_at} if self.stopped_at else {}), "steps": steps}
+            steps[key] = {
+                "exit_code": int(step.exit_code),
+                "detail": short(step.detail),
+                **({"executor": str(executor)} if executor else {}),
+            }
+        return {
+            "exit_code": int(self.exit_code),
+            "detail": short(self.detail),
+            **({"stopped_at": self.stopped_at} if self.stopped_at else {}),
+            "steps": steps,
+        }
 
 
 ReturnedValue.model_rebuild()

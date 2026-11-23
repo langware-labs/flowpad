@@ -79,7 +79,7 @@ type Glyph = Pick<FundingGlyph, 'Icon' | 'label' | 'short'>;
 
 const NOT_INSTALLED: Glyph = {
   Icon: Download,
-  label: msg`The assistant's CLI is not installed on this machine`,
+  label: msg`The assistant's CLI is not installed on this computer`,
   short: msg`Not installed`,
 };
 const NOT_CHECKED: Glyph = {
@@ -135,17 +135,17 @@ export function pillForHarness(
 
 /** The FlowPad account's pill per hub login: the kind (tone) and the two strings. */
 const HUB_PILL: Record<HubLogin, { kind: PillKind; label: MessageDescriptor; short: MessageDescriptor }> = {
-  [HubLogin.SignedIn]: { kind: 'plan', label: msg`Signed in to FlowPad`, short: msg`Signed in` },
+  [HubLogin.SignedIn]: { kind: 'plan', label: msg`Signed in to Flowpad`, short: msg`Signed in` },
   [HubLogin.SigningIn]: { kind: 'signing_in', label: SIGNING_IN.label, short: SIGNING_IN.short },
-  [HubLogin.SignedOut]: { kind: 'signed_out', label: msg`Not signed in to FlowPad`, short: msg`Signed out` },
+  [HubLogin.SignedOut]: { kind: 'signed_out', label: msg`Not signed in to Flowpad`, short: msg`Signed out` },
   [HubLogin.Offline]: {
     kind: 'not_checked',
-    label: msg`A FlowPad login is stored but the hub has not confirmed it`,
+    label: msg`A Flowpad login is stored but the hub has not confirmed it`,
     short: msg`Offline`,
   },
   [HubLogin.Rejected]: {
     kind: 'signed_out',
-    label: msg`The hub refused the stored FlowPad login`,
+    label: msg`The hub refused the stored Flowpad login`,
     short: msg`Rejected`,
   },
 };

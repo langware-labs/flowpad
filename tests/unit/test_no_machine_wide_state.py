@@ -30,7 +30,7 @@ ALLOWED: dict[str, str] = {
     # Lists every instance's server.json under <flow_home>/instances; writes nothing.
     "discovery/flowpad_discovery.py": "enumerates running instances",
     # One id for the machine, by definition shared across instances.
-    "cli/commands/connect_cmd.py": "machine enrollment id for `flow connect`",
+    "core/compute/hub_node.py": "machine enrollment id for `flow connect` (moved from cli/commands/connect_cmd.py)",
     # Read-only comparison against the real instances root, writes nothing.
     "instances/manager.py": "refuses an unscoped sweep under a redirected root",
     # Recognises scratch cwd prefixes in transcripts; writes nothing.

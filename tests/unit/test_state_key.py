@@ -124,6 +124,10 @@ def test_a_browsers_own_reads_pass_but_a_page_cannot_use_them_to_act():
 
     assert client.get("/api/v1/thing", headers=navigate).status_code == 200  # a page in a frame, a login redirect
     assert client.get("/api/v1/thing", headers=passive).status_code == 200  # an <img>, a classic <script>
+    module = {"sec-fetch-mode": "cors", "sec-fetch-dest": "script", "sec-fetch-site": "same-origin"}
+    assert client.get("/api/v1/thing", headers=module).status_code == 200  # an app's own `import './repo.js'`
+    assert client.get("/api/v1/thing", headers={**module, "sec-fetch-site": "cross-site"}).status_code == 403
+    assert client.post("/api/v1/thing", headers=module).status_code == 403
     assert client.post("/api/v1/thing", headers=navigate).status_code == 403  # a form a page submits
     assert client.get("/api/v1/thing", headers={"sec-fetch-mode": "cors"}).status_code == 403  # fetch / XHR
 
@@ -178,15 +182,24 @@ def test_keys_survive_a_restart():
     assert page_state.lookup("y" * 32) is None
 
 
-def test_only_the_app_or_a_machine_can_mint_and_a_minted_key_is_always_a_page_key():
+def test_only_a_machine_can_mint_and_a_minted_key_is_always_a_page_key():
     client = _client()
-    page, app = _key("page"), _key("app")
     body = {"context": {"process": "agentic_process-2"}, "grant": "app"}
 
-    assert client.post("/api/v1/page-state", json=body, headers={page_state.HEADER: page}).status_code == 403
-    minted = client.post("/api/v1/page-state", json=body, headers={page_state.HEADER: app}).json()["data"]["key"]
+    # The app's key now reaches every page the app shows, so it mints nothing either.
+    for held in (_key("page"), _key("app")):
+        assert client.post("/api/v1/page-state", json=body, headers={page_state.HEADER: held}).status_code == 403
+    minted = client.post("/api/v1/page-state", json=body, headers=MACHINE).json()["data"]["key"]
     assert page_state.lookup(minted).grant == "page"
-    assert client.post("/api/v1/page-state", json=body, headers=MACHINE).status_code == 200
+
+
+def test_the_same_page_state_is_handed_the_same_key():
+    shown = PageState(context={"process": "agentic_process-7"}, title="index.html")
+
+    first, again = page_state.mint(shown), page_state.mint(shown)
+    other = page_state.mint(PageState(context={"process": "agentic_process-8"}, title="index.html"))
+
+    assert first == again and other != first
 
 
 def test_a_page_reads_back_what_its_key_stands_for_and_the_app_can_ask_about_another():
@@ -202,21 +215,26 @@ def test_a_page_reads_back_what_its_key_stands_for_and_the_app_can_ask_about_ano
     assert unknown.status_code == 200 and unknown.json()["data"]["probed"] is None
 
 
-def test_the_app_key_goes_only_to_a_page_the_user_opened_themselves():
+def test_the_app_key_goes_to_the_app_opened_from_outside_but_never_to_a_page_of_its_own():
     client = _client()
+    load = {"sec-fetch-mode": "navigate", "sec-fetch-dest": "document"}
 
     opened = client.get("/", headers=DIRECT_OPEN)
-    fetched = client.get("/", headers={"sec-fetch-site": "same-origin", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document"})
+    linked = client.get("/", headers={**load, "sec-fetch-site": "cross-site"})  # a link in another app, an extension tab
+    own_open = client.get("/", headers={**load, "sec-fetch-site": "same-origin"})  # a page's window.open('/')
+    own_fetch = client.get("/", headers={"sec-fetch-site": "same-origin", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty"})
+    framed = client.get("/", headers={**load, "sec-fetch-site": "cross-site", "sec-fetch-dest": "iframe"})
 
     assert "__FLOWPAD_STATE_KEY__" in opened.text and opened.headers["cache-control"] == "no-store"
-    assert "__FLOWPAD_STATE_KEY__" not in fetched.text
+    assert "__FLOWPAD_STATE_KEY__" in linked.text
+    assert not any("__FLOWPAD_STATE_KEY__" in r.text for r in (own_open, own_fetch, framed))
 
 
 def test_the_app_has_one_key_that_page_churn_cannot_evict(monkeypatch):
     monkeypatch.setattr(page_state, "_MAX_STATES", 3)
     app = page_state.app_key()
 
-    pages = [_key() for _ in range(6)]
+    pages = [page_state.mint(PageState(context={"process": f"agentic_process-{n}"})) for n in range(6)]
 
     assert page_state.app_key() == app and page_state.lookup(app).grant == "app"
     assert page_state.lookup(pages[0]) is None and page_state.lookup(pages[-1]) is not None

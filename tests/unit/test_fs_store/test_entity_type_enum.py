@@ -213,6 +213,8 @@ EXPECTED = {
     # members, no existing value changed.
     "DATA_SOURCE": "data_source",
     "CREDENTIAL": "credential",
+    "SECRET_MANAGER": "secret_manager",
+    "BROWSER_DRIVER": "browser_driver",
     "DATA_DRIVER": "data_driver",
     "DATA_SCHEMA": "data_schema",
     "SOURCE_ITEM": "source_item",
@@ -225,6 +227,7 @@ EXPECTED = {
     "AGENT_MAILBOX": "agent_mailbox",
     "WEBHOOK": "webhook",
     "ISSUE": "issue",
+    "MONITOR": "monitor",
     "RCA": "rca",
     "QA_PHASE": "qa_phase",
     "QA_TEST_FILE": "qa_test_file",

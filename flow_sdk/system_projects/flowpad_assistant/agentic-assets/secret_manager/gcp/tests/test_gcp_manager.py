@@ -20,8 +20,9 @@ def test_commands_per_os():
     assert [f.name for f in get_manager("gcp").config_fields if f.required] == ["project"]
     assert cli_command("gcp", "install", "win32") == "winget install Google.CloudSDK"
     assert "google-cloud-sdk" in cli_command("gcp", "install", "darwin")
-    assert cli_command("gcp", "login", "darwin") == "gcloud auth login"
-    assert cli_command("gcp", "check", project="acme-prod") == "gcloud secrets list --project acme-prod --limit 1"
+    assert cli_command("gcp", "login", "darwin") == "gcloud auth application-default login"
+    assert cli_command("gcp", "check", project="acme-prod") == cli_command("gcp", "status") == "gcloud auth application-default print-access-token"
+    assert cli_command("gcp", "close") == "gcloud auth application-default revoke --quiet"
 
 
 @pytest.mark.asyncio

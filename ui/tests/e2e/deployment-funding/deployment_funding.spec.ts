@@ -1,8 +1,8 @@
 /**
  * Browser scenario — a standard user funds an agent's deployment from a SUB-endpoint of their own allowance,
  * running the `lg` size, entirely through the hub page:
- *   hub home → Deployments → the deployment's page → Funding → Change allocation (my allowance, lg) → Save,
- * then the list, the deployment page and the token plan all show who pays and which model `lg` is.
+ *   hub home → the agent's icon → its deployment → the deployment's page → Funding → Change allocation
+ *   (my allowance, lg) → Save, then the deployment page and the token plan show who pays and which model `lg` is.
  *
  * Seeded through the page's own session (the state a user arrives with): an org root whose sizes are
  * Gemini, an allowance carved from it, and an agent set to `lg` with a deployment planned on its owner's
@@ -121,25 +121,16 @@ test.afterAll(async ({ browser }) => {
 //       touching HubProjectPage's sub-pointer routing or ProjectHome's page order
 // flowpad:endcapsule tag
 test('a user moves a deployment onto an lg sub-budget of their own allowance, from the hub page', async ({ page }) => {
-  // Hub home → the agent's card → Deployments (Agents › agent › Deployments): the deployment and who pays for it.
+  // Hub home → the agent's icon: the side panel lists its deployment; picking it opens it as a sub view.
   await ready(page);
-  await page.getByTestId('hub-items-search').fill(`${STAMP} procurement`);
-  await page
-    .getByTestId('hub-items-card')
-    .filter({ hasText: `${STAMP} procurement` })
-    .getByTestId('agent-summary-deployments')
-    .click();
-  await expect(page.getByTestId('hub-items-breadcrumb')).toBeVisible();
-  // Seen on its card (the default view) and in the list view.
-  await expect(page.getByTestId(`funded-by-${ids.deployment}`)).toContainText('owner default');
-  await page.getByTestId('hub-items-view-list').click();
-  const row = page.getByTestId('hub-items-row').filter({ hasText: `${STAMP} procurement` });
-  await expect(row).toBeVisible();
-  await expect(row.getByTestId(`funded-by-${ids.deployment}`)).toContainText('owner default');
+  await page.locator(`[data-testid="project-agent-tile"][data-agent-name="${STAMP} procurement"]`).click();
+  const panel = page.getByTestId('home-properties');
+  await panel.locator(`[data-testid="home-deployment-row"][data-deployment-id="${ids.deployment}"]`).click();
+  await expect(panel).toHaveAttribute('data-target', `deployment-${ids.deployment}`);
   await page.screenshot({ path: 'test-results/funding-1-hub-deployments.png', fullPage: true });
 
   // Its page: the funding card, then Change allocation → my allowance, lg, $5/day → Save.
-  await row.click();
+  await panel.getByTestId('home-properties-open').click();
   await page.waitForURL(/\/project-deployments\?deployment=/);
   await page.waitForLoadState('networkidle');
   const card = page.getByTestId('deployment-funding');

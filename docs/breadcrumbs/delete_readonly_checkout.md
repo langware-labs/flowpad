@@ -14,12 +14,17 @@ version: 2
 
 > Ground truth. Proven by RCA on 2026-10-28. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.delete_readonly_checkout.rules
 sites:
-  - rel_path: "tests/unit/test_project_delete_readonly_git.py"
+  - rel_path: tests/unit/test_project_delete_readonly_git.py
     line: 28
-    note: "FAILING? Windows-only. Read this tag's rules before editing; do not swap _rmtree_safe back to shutil.rmtree, and do not expect it to fail on macOS."
+    note: FAILING? Windows-only. Read this tag's rules before editing; do not swap _rmtree_safe back to shutil.rmtree, and do not expect it to fail on macOS.
+proven: '2026-10-28'
+statements:
+  - text: A project delete that reports success must not leave the project's own checkout on disk.
+  - text: Any folder removal on the project-delete path goes through `_rmtree_safe`, never a bare `shutil.rmtree` — git checkouts always contain read-only files.
+  - text: The test is meaningful only on Windows.
 ```
 
 ## Expected behavior
@@ -54,8 +59,6 @@ The lever is the call that removes the folder: `shutil.rmtree` vs `_rmtree_safe`
 
 ## Invariants
 
-1. A project delete that reports success must not leave the project's own checkout on disk.
-2. Any folder removal on the project-delete path goes through `_rmtree_safe`, never a bare `shutil.rmtree` — git checkouts always contain read-only files.
 3. The test is meaningful **only on Windows**. It is in the Windows CI subset (`.github/workflows/test.yml`, the `backend-unit-windows` job) for that reason. Green on macOS proves nothing about this bug.
 
 ## Failure modes

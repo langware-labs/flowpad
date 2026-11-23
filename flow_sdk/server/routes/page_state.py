@@ -1,7 +1,8 @@
 """``/api/v1/page-state`` — mint a page's state key, and read back what the key you hold stands for.
 
-Minting is for the app shell (its ``app`` key) and for machine callers (``flow show``, agents through
-the CLI). A page's own key cannot mint, so a page cannot hand itself — or another page — more reach.
+Minting is for machine callers only (``flow show``, agents through the CLI): an agent that opens a page
+may give it a key of its own, to hand it a context. The app and every page it shows run with the app's
+key, which mints nothing — so a page cannot hand itself, or another page, more reach.
 """
 
 from __future__ import annotations
@@ -17,16 +18,13 @@ router = APIRouter()
 
 
 def _may_mint(request: Request) -> bool:
-    if not page_state.enforced() or cookie_gate.verify_machine(request):
-        return True
-    held = page_state.state_of(request)
-    return held is not None and held.grant == "app"
+    return not page_state.enforced() or cookie_gate.verify_machine(request)
 
 
 @router.post("/api/v1/page-state")
 async def mint_page_state(request: Request, body: PageState):
     if not _may_mint(request):
-        raise HTTPException(status_code=403, detail="Only the app itself may open a page.")
+        raise HTTPException(status_code=403, detail="Only Flowpad on this computer may open a page with a key of its own.")
     return ApiSuccessResponse(data={"key": page_state.mint(body.model_copy(update={"grant": "page"}))})
 
 

@@ -46,6 +46,20 @@ def _find_static_file(filename: str, *, prefer_public: bool = False) -> Path | N
     return None
 
 
+def _opens_the_app(request: Request) -> bool:
+    """A top-level document load of the app from outside it, on a loopback host (Sec-Fetch-* are the browser's own)."""
+    from flow_sdk.utils.networking import is_loopback  # noqa: PLC0415
+
+    headers = request.headers
+    return (
+        request.method in ("GET", "HEAD")
+        and headers.get("sec-fetch-site") in ("none", "cross-site", "same-site")
+        and headers.get("sec-fetch-mode") == "navigate"
+        and headers.get("sec-fetch-dest") == "document"
+        and is_loopback(request.url.hostname)
+    )
+
+
 def serve_index_html(html: str, request: Request | None = None) -> HTMLResponse:
     """Return ``index.html`` with the runtime API origin injected — the single
     entry point for both ``/`` and the SPA deep-link fallback.
@@ -69,12 +83,12 @@ def serve_index_html(html: str, request: Request | None = None) -> HTMLResponse:
     """
     from flow_sdk.builtin.faas.serve_static import inject_api_origin, inject_state_key  # noqa: PLC0415
     from flow_sdk.server import page_state  # noqa: PLC0415
-    from flow_sdk.server.middleware.local_cookiegate_middleware import _is_direct_open  # noqa: PLC0415
 
-    # The app's own key, handed over ONLY to a page the user opened themselves (typed, bookmarked, the
-    # OS launch, the reload button): `Sec-Fetch-Site: none`. A page's `fetch('/')` or `window.open('/')`
-    # is same-origin and gets none, so no page can take the app's reach.
-    if request is not None and page_state.enforced() and _is_direct_open(request.scope, request):
+    # The app's own key goes to the app's window opened from outside it: typed, bookmarked, the OS launch, the
+    # reload button (`Sec-Fetch-Site: none`) or a link in another app, page or tool (`cross-site`/`same-site`).
+    # What the link names still asks first (the Allow cards), and the opener cannot read the window it opened.
+    # A page's own `fetch('/')` or `window.open('/')` is same-origin, so no page can take the app's reach.
+    if request is not None and page_state.enforced() and _opens_the_app(request):
         return HTMLResponse(
             content=inject_state_key(inject_api_origin(html), page_state.app_key()), headers={"Cache-Control": "no-store"}
         )

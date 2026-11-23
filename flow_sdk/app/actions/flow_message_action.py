@@ -2362,7 +2362,7 @@ async def handle_stream_inbox_update(fm_id: str, patch: dict, someone_typeid: st
 
 @action.post(action_name="stream-inbox-search", types=None)
 async def stream_inbox_search() -> ApiResponse:
-    """Full-stream-inbox search → conversation ids; optional q and all-of tags.
+    """Full-stream-inbox search → conversation ids; optional q and any-of tags.
 
     Two lanes because bodies live in two places under the reference model:
     a channel message's text is on its SourceItem (the FlowMessage row is a
@@ -2377,7 +2377,7 @@ async def stream_inbox_search() -> ApiResponse:
         body = await request_info.get_post_data() or {}
         scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
         needle = str(body.get("q") or "").strip()
-        from flow_sdk.server.search_filters import apply_tag_filter, wanted_tags
+        from flow_sdk.server.search_filters import apply_any_tag_filter, wanted_tags
 
         selected_tags = wanted_tags(body.get("tags"))
         if not needle and not selected_tags:
@@ -2391,19 +2391,17 @@ async def stream_inbox_search() -> ApiResponse:
 
         # Narrow in the query before the shared hierarchy predicate. LIKE is
         # only a candidate filter (a legal underscore is a LIKE wildcard), so
-        # apply_tag_filter remains the exact canonical matcher.
-        tag_match = ExpressionNode(op=QueryOp.AND, operands=[
-            ExpressionNode(op=QueryOp.OR, operands=[
-                ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}"%']),
-                ExpressionNode(op=QueryOp.LIKE, operands=["tags", f'%"{tag}.%']),
-            ]) for tag in selected_tags
+        # apply_any_tag_filter remains the exact canonical matcher.
+        tag_match = ExpressionNode(op=QueryOp.OR, operands=[
+            ExpressionNode(op=QueryOp.LIKE, operands=["tags", pattern])
+            for tag in selected_tags for pattern in (f'%"{tag}"%', f'%"{tag}.%')
         ]) if selected_tags else None
 
         def filtered(match):
             return QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[match, tag_match]) if tag_match else match)
 
         if not needle:
-            messages = apply_tag_filter(await FlowMessage.get_all(QueryFilter(match=tag_match), hydrate=False), selected_tags)
+            messages = apply_any_tag_filter(await FlowMessage.get_all(QueryFilter(match=tag_match), hydrate=False), selected_tags)
             ids = {str(m.conversation_id) for m in messages if m.conversation_id}
             if scope is not None:
                 ids &= scope.conversation_ids
@@ -2428,7 +2426,7 @@ async def stream_inbox_search() -> ApiResponse:
             ),
         )
         native = [m for m in native if not m.is_draft]  # an unsent draft is not a message to find
-        conversation_ids: set[str] = {str(m.conversation_id) for m in apply_tag_filter(native, selected_tags) if m.conversation_id}
+        conversation_ids: set[str] = {str(m.conversation_id) for m in apply_any_tag_filter(native, selected_tags) if m.conversation_id}
         if items:
             refs = await FlowMessage.get_all(
                 filtered(
@@ -2439,7 +2437,7 @@ async def stream_inbox_search() -> ApiResponse:
                 ),
                 hydrate=False,
             )
-            conversation_ids |= {str(m.conversation_id) for m in apply_tag_filter(refs, selected_tags) if m.conversation_id}
+            conversation_ids |= {str(m.conversation_id) for m in apply_any_tag_filter(refs, selected_tags) if m.conversation_id}
         if scope is not None:
             conversation_ids &= scope.conversation_ids
         return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})
@@ -5006,6 +5004,103 @@ async def message_apply_classification(self: FlowMessage) -> ApiResponse:
     except ValueError as exc:
         return ApiFailResponse(message=str(exc), status_code=400)
     return ApiSuccessResponse(data=_tag_state(message))
+
+
+@action.all(action_name="classify-conversations", types=["flow_message"], methods=["get", "post"])
+async def classify_conversations() -> ApiResponse:
+    """POST ``{conversations: [id]}`` starts the shipped ``stream-inbox-classifier`` block on them -- a durable
+    call that outlives the request -- and answers its record. GET ``?call_id=`` reads that record again; its
+    ``result.value`` is the proposed ``stream_inbox.classification`` once the call completed. Nothing is tagged."""
+    from flow_sdk.builtin.compute_op import ComputeOp
+
+    info = get_current_request_info()
+    if info is None:
+        return ApiFailResponse(message="No request context available", status_code=400)
+    block = await ComputeOp.by_name("stream-inbox-classifier")
+    if block is None:
+        return ApiFailResponse(message="The conversation classifier is not installed on this instance.", status_code=503)
+    if info.request.method.upper() == "GET":
+        record = await block.get_call(str(info.request.query_params.get("call_id") or ""))
+        if record is None:
+            return ApiFailResponse(message="No such classification run", status_code=404)
+        data = record.model_dump(mode="json")
+        handed = (data.get("result") or {}).get("value")
+        if isinstance(handed, dict) and handed.get("ref"):   # the run returns a reference; the table reads the value
+            from flow_sdk.stream_inbox.classification import submitted
+
+            try:
+                data["result"]["value"] = submitted(handed["ref"]).model_dump(mode="json")
+            except (LookupError, ValueError) as exc:
+                data["result"] = {**data["result"], "exit_code": 1, "detail": f"The run's proposal is gone: {exc}", "value": None}
+        return ApiSuccessResponse(data=data)
+    body = await info.get_post_data()
+    picked = body.get("conversations") if isinstance(body, dict) else None
+    if not (isinstance(picked, list) and picked and all(isinstance(i, str) and i for i in picked)):
+        return ApiFailResponse(message="Expected the conversations to classify", status_code=400)
+    # Its own folder on this instance: a run leaves its receipts where it works, never in the server's folder.
+    from flow_sdk.instance_settings import get_instance_settings
+
+    workdir = get_instance_settings().instance_dir / "classification-runs"
+    workdir.mkdir(parents=True, exist_ok=True)
+    record = await block.start(input={"conversations": list(dict.fromkeys(picked))}, approved=True, workdir=workdir)
+    return ApiSuccessResponse(data=record.model_dump(mode="json"))
+
+
+@action.post(action_name="stream-inbox-classification", types=["flow_message"])
+async def submit_stream_inbox_classification() -> ApiResponse:
+    """A classification run hands in its proposal: ``{value, dry?}`` -> ``{fits, errors, ref?}``. The value is
+    held to its schema and to the tag tree as it is now; one that fits is kept and posted as a message unless
+    ``dry`` (the run's own check). Nothing is tagged."""
+    from pydantic import ValidationError
+
+    from flow_sdk.schema.data_spec.stream_inbox_classification_spec import StreamInboxClassification
+    from flow_sdk.stream_inbox import classification
+
+    info = get_current_request_info()
+    body = await info.get_post_data() if info is not None else None
+    if not isinstance(body, dict) or not isinstance(body.get("value"), dict):
+        return ApiFailResponse(message="Expected the classification value", status_code=400)
+    try:
+        value = StreamInboxClassification.model_validate({k: v for k, v in body["value"].items() if k != "spec_kind"})
+    except ValidationError as exc:
+        return ApiSuccessResponse(data={"fits": False, "errors": [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()]})
+    errors = await classification.problems(value)
+    if errors or body.get("dry"):
+        return ApiSuccessResponse(data={"fits": not errors, "errors": errors})
+    return ApiSuccessResponse(data={"fits": True, "errors": [], "ref": await classification.submit(value)})
+
+
+@action.post(action_name="apply-stream-inbox-classification", types=["flow_message"])
+async def apply_stream_inbox_classification() -> ApiResponse:
+    """A person applies a proposed ``stream_inbox.classification``: ``conversations`` (ids; absent = every
+    row) and, unless ``tree`` is false, the tag tree changes. No automation starts; applied rows are kept
+    as ground truth."""
+    from pydantic import ValidationError
+
+    from flow_sdk.schema.data_spec.stream_inbox_classification_spec import StreamInboxClassification
+    from flow_sdk.stream_inbox import classification
+
+    info = get_current_request_info()
+    body = await info.get_post_data() if info is not None else None
+    if not isinstance(body, dict) or not isinstance(body.get("value"), dict):
+        return ApiFailResponse(message="Expected the classification value to apply", status_code=400)
+    picked = body.get("conversations")
+    if picked is not None and not (isinstance(picked, list) and all(isinstance(i, str) for i in picked)):
+        return ApiFailResponse(message="conversations is a list of conversation ids", status_code=400)
+    try:
+        value = StreamInboxClassification.model_validate({k: v for k, v in body["value"].items() if k != "spec_kind"})
+        return ApiSuccessResponse(data=await classification.apply(value, conversations=picked, tree=body.get("tree") is not False))
+    except (ValidationError, ValueError) as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+
+
+@action.get(action_name="classification-truth", types=["flow_message"])
+async def stream_inbox_classification_truth() -> ApiResponse:
+    """The ground truth so far: each labelled message's confirmed tag ('' = no tag), and the dataset that
+    holds them (None before the first applied row)."""
+    from flow_sdk.stream_inbox.classification import truth
+
+    return ApiSuccessResponse(data=await truth())
 
 
 @action.post(action_name="rerun-automation", types=["flow_message"])

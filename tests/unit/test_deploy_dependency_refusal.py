@@ -14,9 +14,9 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 
 REFUSAL = {
     "status": "FAIL",
-    "message": "Required project dependencies are not ready: waha",
+    "message": "Required project dependencies are not ready: bridge",
     "data": {"dependencies": [
-        {"name": "waha", "source": "git+https://github.com/langware-labs/waha-service.git", "required": True,
+        {"name": "bridge", "source": "git+https://github.com/langware-labs/bridge-service.git", "required": True,
          "state": "unreachable", "reason": "private repo",
          "fix": "connect GitHub, or install the Flowpad GitHub App on langware-labs"},
         {"name": "site", "source": "git+https://github.com/langware-labs/sapak.git", "required": True,
@@ -36,7 +36,7 @@ async def test_a_hub_refusal_keeps_its_data():
 
 async def test_dependency_blockers_name_each_required_unready_dependency_and_its_fix():
     assert dependency_blockers(REFUSAL["data"]) == [
-        "waha: private repo — connect GitHub, or install the Flowpad GitHub App on langware-labs"
+        "bridge: private repo — connect GitHub, or install the Flowpad GitHub App on langware-labs"
     ]
 
 

@@ -12,12 +12,17 @@ description: A project's home_page is a TypeId OR a ./path. Only Project.resolve
 
 > Ground truth. Proven by RCA on 2026-11-03. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.home_page_path.rules
 sites:
-  - rel_path: "ui/tests/react/home-customization-path-home-page.test.tsx"
+  - rel_path: ui/tests/react/home-customization-path-home-page.test.tsx
     line: 62
-    note: "FAILING? home_page may be a ./path - never pass it to new TypeId(); resolve it through Project.resolveHomePageTypeId. Read this tag's rules before touching useHomePageTypeId or resolve_home_page_typeid."
+    note: FAILING? home_page may be a ./path - never pass it to new TypeId(); resolve it through Project.resolveHomePageTypeId. Read this tag's rules before touching useHomePageTypeId or resolve_home_page_typeid.
+proven: '2026-11-03'
+statements:
+  - text: Never pass a raw `home_page` value to `new TypeId()`.
+  - text: The client never joins a `./path` onto a project root.
+  - text: Showing the home page never loads the project.
 ```
 
 ## Expected behavior
@@ -58,7 +63,6 @@ about the declaration may throw during render.
   resolve it.
 * The client never joins a `./path` onto a project root. The backend does, with the
   containment check.
-* Showing the home page never loads the project.
 
 ## Failure modes
 

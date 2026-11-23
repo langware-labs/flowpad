@@ -85,7 +85,7 @@ async def test_a_completion_is_the_agents_reply_on_the_channel(deployed, bootstr
     assert body["object"] == "chat.completion"
     assert body["choices"][0]["message"]["content"].startswith("Mock reply")
     assert resp.headers["X-Flowpad-Conversation"] == body["flowpad"]["conversation_id"]
-    assert worker.received_prompts == ["hello there"]
+    assert worker.received_messages == ["hello there"]
     rows = await SourceItem.get_all({"data_source_id": chat.backend.data_source_id})
     assert sorted(r.body.startswith("Mock reply") for r in rows) == [False, True], "the request and its reply, both on the channel"
 
@@ -98,7 +98,7 @@ async def test_a_conversation_continues_in_one_process(deployed, bootstrapped_cl
         _url(chat, "v1/chat/completions"), json=_ask("two", metadata={"conversation_id": conversation})
     )
     assert second.status_code == 200 and second.json()["flowpad"]["conversation_id"] == conversation
-    assert worker.received_prompts == ["one", "two"]
+    assert worker.received_messages == ["one", "two"]
     assert len(await AgenticProcess.local_rows({"match": {"deployment_id": deployment.id}})) == 1
 
 
@@ -277,7 +277,7 @@ async def test_ask_is_one_message_and_its_answer_continuing_one_conversation(dep
     )
     assert again.status_code == 200, again.text
     assert again.json()["data"]["conversation_id"] == data["conversation_id"]
-    assert worker.received_prompts == ["hello there", "and again"]
+    assert worker.received_messages == ["hello there", "and again"]
 
 
 async def test_asking_again_with_the_message_id_is_the_same_message_answered_once(deployed, bootstrapped_client, worker):
@@ -295,7 +295,7 @@ async def test_asking_again_with_the_message_id_is_the_same_message_answered_onc
 
     assert again.status_code == 200, again.text
     assert again.json()["data"]["answer"] == first.json()["data"]["answer"]
-    assert worker.received_prompts == ["only once"]
+    assert worker.received_messages == ["only once"]
     asked = [i for i in await SourceItem.get_all({"data_source_id": chat.backend.data_source_id}) if i.body == "only once"]
     assert len(asked) == 1
 
@@ -400,5 +400,5 @@ async def test_a_finished_chat_turn_leaves_its_run_stopped_not_running(deployed,
         _url(chat, "v1/chat/completions"), json=_ask("two", metadata={"conversation_id": conversation})
     )
     assert second.status_code == 200 and second.json()["choices"][0]["message"]["content"].startswith("Mock reply")
-    assert worker.received_prompts == ["one", "two"]
+    assert worker.received_messages == ["one", "two"]
     assert await settled() == ["stopped"], "one process, settled again after its second turn"

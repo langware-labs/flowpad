@@ -13,18 +13,24 @@ description: A vibe session answered as data-integrations, or as no one at all (
 
 > Ground truth. Proven by RCA on 2026-09-08. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.declared_persona.rules
 sites:
-  - rel_path: "tests/unit/test_system_instruction_assets.py"
+  - rel_path: tests/unit/test_system_instruction_assets.py
     line: 159
-    note: "FAILING? the persona is DECLARED via set_ap_persona, never inferred from how many agents are embedded - read this tag's rules before touching _render_agents_instruction_block or process_persona_path"
-  - rel_path: "tests/unit/test_system_instruction_assets.py"
+    note: FAILING? the persona is DECLARED via set_ap_persona, never inferred from how many agents are embedded - read this tag's rules before touching _render_agents_instruction_block or process_persona_path
+  - rel_path: tests/unit/test_system_instruction_assets.py
     line: 222
-    note: "FAILING? an UNDECLARED agent must never inherit the 'you are this agent' directive - a failed persona embed loses the identity, it does not hand it to whoever is there. Read this tag's rules."
-  - rel_path: "tests/unit/test_system_instruction_assets.py"
+    note: FAILING? an UNDECLARED agent must never inherit the 'you are this agent' directive - a failed persona embed loses the identity, it does not hand it to whoever is there. Read this tag's rules.
+  - rel_path: tests/unit/test_system_instruction_assets.py
     line: 263
-    note: "FAILING? a persona that is DECLARED but not embedded must lose the identity, not hand it to whoever is there - and it must SAY so. Read this tag's rules before touching _render_agents_instruction_block."
+    note: FAILING? a persona that is DECLARED but not embedded must lose the identity, not hand it to whoever is there - and it must SAY so. Read this tag's rules before touching _render_agents_instruction_block.
+proven: '2026-09-08'
+statements:
+  - text: 'Declared, never inferred: nothing may derive the persona from `len(agents_json)`, from dict/embed order, or from `.claude/agents/*.md` mtime.'
+  - text: A declared-but-absent persona loses the identity; it never hands it over.
+  - text: Exactly one agent may carry the directive, and only the declared one.
+  - text: Failures are audible.
 ```
 
 ## Expected behavior

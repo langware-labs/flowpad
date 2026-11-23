@@ -23,6 +23,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { isValidIdentifier } from '@sdk/models/TypeId';
+import { stateKey } from '@sdk/page-state';
 import {
   UNSTATED_VIEW_MODE,
   sessionOpenViewMode,
@@ -36,6 +37,7 @@ import {
   JOURNEY_PARAM,
   JOURNEY_STEP_PARAM,
   NODE_PARAM,
+  STATE_KEY_PARAM,
   WORKSPACE_PARAM,
   WORKSPACE_ENTRY_PARAM,
 } from './DockPointer';
@@ -100,6 +102,11 @@ export interface NavigationCommitOptions {
    * the Vibe workspace on screen as its child.
    */
   topLevel?: boolean;
+  /**
+   * The navigation was asked for by a link from OUTSIDE the app (a deep link): it does not get the app's
+   * page key, so a page it names still asks the user first.
+   */
+  fromOutside?: boolean;
   /** The `tab_switch` start line's `via=` when neither flag above names it. */
   via?: string;
 }
@@ -608,6 +615,10 @@ export class NavigationActions {
         dock = dock.withOption(key, live);
       }
     }
+
+    // The app's page key rides every navigation made inside the app (see `STATE_KEY_PARAM`).
+    const pageKey = opts?.fromOutside ? null : stateKey();
+    if (pageKey && !dock.options?.[STATE_KEY_PARAM]) dock = dock.withOption(STATE_KEY_PARAM, pageKey);
 
     // The workspace host is sticky the same way, but ONLY onto surfaces that may
     // live inside a workspace — the same predicate that decides whether a tab may

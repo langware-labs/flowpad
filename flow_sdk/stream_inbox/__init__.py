@@ -177,6 +177,7 @@ def project_unread(
     viewer_email: Optional[str],
     now: datetime,
     stream_inbox_owner=None,
+    private_unread: Optional[dict] = None,
 ) -> UnreadProjection:
     """The unread formula — pure, over entity rows (the fetch lives in ``_load_rows``).
 
@@ -184,6 +185,8 @@ def project_unread(
     ones (rows written before ``owner`` existed are the local user's); the flags are
     computed for every conversation regardless. ``None`` (an instance that has not
     bootstrapped its local user) counts the unowned rows only, never another owner's.
+    ``private_unread`` (``{conversation id: n}``) are the private messages not read yet: they are in
+    no conversation's pointers, so they are counted beside the rule.
     """
     # An invite to a conversation the viewer already joined was used, even if the hub never
     # flipped ``accepted`` — it carries no action, so it must not hold the row unread.
@@ -204,6 +207,7 @@ def project_unread(
     counts: dict = {}
     for conv in conversations:
         count = conversation_unread_count(conv, fm_by_id, pending_conv_ids=pending_ids, self_ids=self_ids)
+        count += (private_unread or {}).get(conv.id, 0)
         unread = count > 0
         flags[conv.id] = unread
         counts[conv.id] = count
@@ -314,6 +318,7 @@ async def _load_rows() -> tuple[list, dict]:
         viewer_email=email,
         now=datetime.now(timezone.utc),
         stream_inbox_owner=await default_owner(),
+        private_unread=await FlowMessage.private_unread(),
     )
 
 

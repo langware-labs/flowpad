@@ -69,6 +69,7 @@ vi.mock('@src/hooks/use-sandboxes', () => ({
   isLaunched: (node: { node_provider_id?: string }) => !!node.node_provider_id,
   // Every node here is a sandbox, never a machine connected with `flow connect`.
   isUserMachine: () => false,
+  splitOwnMachine: () => ({ localCard: null, hidden: null }),
   nextSandboxName: () => 'Sandbox 2',
 }));
 vi.mock('@src/pages/hub-home/NewSandboxDialog', () => ({ NewSandboxDialog: () => null }));

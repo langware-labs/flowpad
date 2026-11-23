@@ -11,12 +11,17 @@ description: A release bump consumes the open recipe slot; unless the release ad
 
 > Ground truth. Proven by RCA on 2026-09-09. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.migration_slot.rules
 sites:
-  - rel_path: "tests/unit/test_migration_recipes_ship_with_their_version.py"
+  - rel_path: tests/unit/test_migration_recipes_ship_with_their_version.py
     line: 138
-    note: "RED? The release consumed the open recipe slot. Advance it to the next unreleased version before touching this test."
+    note: RED? The release consumed the open recipe slot. Advance it to the next unreleased version before touching this test.
+proven: '2026-09-09'
+statements:
+  - text: At least one recipe directory names an unreleased version.
+  - text: No released version's recipe is both stranded and unnamed by a `STRANDED` tuple.
+  - text: 'An empty slot must not survive its own release: the bump deletes it if it is still empty and opens the next.'
 ```
 
 ## Expected behavior
@@ -41,8 +46,6 @@ any install.
 
 ## Invariants
 
-* At least one recipe directory names an unreleased version.
-* No released version's recipe is both stranded and unnamed by a `STRANDED` tuple.
 * An **empty** slot must not survive its own release: the bump deletes it if it is
   still empty and opens the next. If a migration was written there, it shipped —
   keep it and open the next slot alongside.

@@ -12,12 +12,17 @@ description: A driver's api_key permission that names one member of a ONE_OF cre
 
 > Ground truth. Proven by RCA on 2026-11-08 (FLOWPAD-2339, PR #786). Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.one_of_api_key.rules
 sites:
-  - rel_path: "tests/unit/test_credential_asset/test_cloud_deployment_secrets.py"
+  - rel_path: tests/unit/test_credential_asset/test_cloud_deployment_secrets.py
     line: 289
-    note: "FAILING? read this tag's rules before touching readiness() api-key branch or _needed_names"
+    note: FAILING? read this tag's rules before touching readiness() api-key branch or _needed_names
+proven: 2026-11-08 · FLOWPAD-2339
+statements:
+  - text: 'A permission whose `api_key` is a ONE_OF member is granted exactly when its credential would be: the active way''s values present, or a sign-in held on this computer (`declared`, "signed in on this computer").'
+  - text: The names a permission item asks for (and "use mine" copies) are the active way's values, never a sibling way the user did not choose.
+  - text: Credential requirements and api-key permissions over the same ONE_OF group must agree; they share `credential_item()` so they cannot drift.
 ```
 
 ## Expected behavior
@@ -50,14 +55,6 @@ deploy readiness check, and "use mine" copies the token the source actually runs
   just that variable, as before.
 
 ## Invariants
-
-* A permission whose `api_key` is a ONE_OF member is granted exactly when its credential
-  would be: the active way's values present, or a sign-in held on this computer
-  (`declared`, "signed in on this computer").
-* The names a permission item asks for (and "use mine" copies) are the active way's
-  values, never a sibling way the user did not choose.
-* Credential requirements and api-key permissions over the same ONE_OF group must agree;
-  they share `credential_item()` so they cannot drift.
 
 ## Failure modes
 

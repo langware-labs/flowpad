@@ -6,20 +6,21 @@ export interface PageKeyAnswer {
   probed: { context?: Record<string, string> } | null;
 }
 
-/** Mint a key for a page opened beside `processId` (or none). Only the app itself — and machine callers — may. */
-export async function mintPageKey(title: string, processId?: string | null): Promise<string> {
-  const answer = (await apiClient.post('/api/v1/page-state', {
-    title,
-    context: processId ? { process: `agentic_process-${processId}` } : {},
-  })) as { key: string };
-  return answer.key;
-}
-
 /**
  * Ask the local server about the key a dock or link carries. An unknown key answers `probed: null` (never a
  * 403, which would make the app's own window report a refusal it never suffered). Rejects when the server
  * cannot be asked — callers treat that as "not vouched for".
  */
 export async function probePageKey(key: string | null | undefined): Promise<PageKeyAnswer> {
-  return (await apiClient.get('/api/v1/page-state', { params: key ? { probe: key } : undefined })) as PageKeyAnswer;
+  const answer = (await apiClient.get('/api/v1/page-state', { params: key ? { probe: key } : undefined })) as PageKeyAnswer;
+  if (key && answer.probed) vouched.set(key, answer.probed.context ?? {});
+  return answer;
+}
+
+/** Keys the server already vouched for, with what each stands for: a warm return asks the backend nothing. */
+const vouched = new Map<string, Record<string, string>>();
+
+/** What a key the server already vouched for stands for, or undefined when it has not been asked about (or is unknown). */
+export function vouchedContext(key: string | null | undefined): Record<string, string> | undefined {
+  return key ? vouched.get(key) : undefined;
 }

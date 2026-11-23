@@ -48,7 +48,7 @@ export interface UseUserApiKeys {
 const FLOWPAD_KEY_NAME = 'FLOWPAD_API_KEY';
 
 /** `keyName`: the name the panel's key is generated under (default FLOWPAD_API_KEY) — a link can ask for another
- *  (`?name=WAHA_API_KEY`), so the key a service asked for is the one made and found. */
+ *  (`?name=BRIDGE_API_KEY`), so the key a service asked for is the one made and found. */
 export function useUserApiKeys(opts?: { onMutated?: () => void; keyName?: string }): UseUserApiKeys {
   const keyName = opts?.keyName || FLOWPAD_KEY_NAME;
   const { t } = useLingui();

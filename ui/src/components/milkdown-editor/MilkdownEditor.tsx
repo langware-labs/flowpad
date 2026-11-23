@@ -48,6 +48,7 @@ import './plugins/fence-render/fence-render.css';
 import { configureRefractor } from './plugins/prism-languages';
 import { fenceRenderPlugins, fenceHostServicesCtx, type FenceHostServices } from './plugins/fence-render';
 import { changeMarksKey, changeMarksPlugin, type ChangeMark } from './plugins/change-marks';
+import { docTagsKey, docTagsPlugin, type DocTags } from './plugins/doc-tags';
 import { commentSlot, commentWidgetsKey, commentWidgetsPlugin, type CommentAnchorMark } from './plugins/comment-widgets';
 // Concrete fence renderers self-register on import. Listed here, at the
 // composition point, rather than inside the plugin — the same direction
@@ -57,6 +58,7 @@ import './plugins/fence-render/renderers/mermaid';
 import { sourceBullet, tightLists } from './plugins/list-spread';
 import './plugins/fence-render/renderers/interface';
 import './plugins/fence-render/renderers/breadcrumb';
+import './plugins/fence-render/renderers/lw';
 import {
   bidiPlugins,
   setDirCommand, unsetDirCommand,
@@ -212,6 +214,8 @@ interface MilkdownEditorProps {
   changeMarks?: readonly ChangeMark[];
   /** The doc's comment threads, each drawn as a card after the passage it quotes. */
   commentLayer?: CommentLayer;
+  /** The file header's `tag` and `depends_on`, drawn as chips under the title. */
+  docTags?: DocTags;
   /**
    * Optional outer ref that mirrors the internal editor instance. Lets host
    * components (e.g. the wiki toolbar) issue ProseMirror transactions like
@@ -941,7 +945,7 @@ function ChangeBox({
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef, changeMarks, commentLayer }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
+function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef, changeMarks, commentLayer, docTags }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const { navigation, currentDock } = useDockNavigation();
 
@@ -1122,6 +1126,7 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
         .use(fenceRenderPlugins)
         // Queued "change this" requests: highlight + numbered pin, display only.
         .use(changeMarksPlugin)
+        .use(docTagsPlugin)
         // The doc's comment threads: highlight + a card slot after the block, display only.
         .use(commentWidgetsPlugin);
 
@@ -1157,6 +1162,22 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
       // view not mounted yet — the next render with the instance retries
     }
   }, [instanceLoading, getInstance, changeMarks]);
+
+  // The header's tag row, by value: a re-render with the same tags dispatches nothing.
+  const docTag = docTags?.tag;
+  const docDependsOn = (docTags?.dependsOn ?? []).join('\n');
+  useEffect(() => {
+    if (instanceLoading) return;
+    try {
+      getInstance().action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const tags: DocTags = { tag: docTag, dependsOn: docDependsOn ? docDependsOn.split('\n') : [] };
+        view.dispatch(view.state.tr.setMeta(docTagsKey, tags).setMeta('addToHistory', false));
+      });
+    } catch {
+      // view not mounted yet — the next render with the instance retries
+    }
+  }, [instanceLoading, getInstance, docTag, docDependsOn]);
 
   const commentMarks = commentLayer?.marks;
   useEffect(() => {
@@ -1297,7 +1318,7 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
   );
 }
 
-export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, onRequestChange, changeMarks, commentLayer, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'editor', plugins, onLinkClick, onRequestChange, changeMarks, commentLayer, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction, docTags }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
@@ -1573,7 +1594,7 @@ export function MilkdownEditor({ content, onChange, onUserEdit, editorMode = 'ed
           onMouseLeave={scheduleHide}
           onClickCapture={handleContainerClick}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} changeMarks={changeMarks} commentLayer={commentLayer} />
+          <MilkdownEditorInner content={content} onChange={onChange} onUserEdit={onUserEdit} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} changeMarks={changeMarks} commentLayer={commentLayer} docTags={docTags} />
         </div>
       </div>
       {!isReadOnly && toolbarPortalTarget

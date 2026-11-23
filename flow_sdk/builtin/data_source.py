@@ -37,7 +37,7 @@ from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.ingest.driver_runtime import SendOutcome
-from flow_sdk.ingest.health import SourceHealth
+from flow_sdk.ingest.health import ACCESS_DENIED, SourceHealth, stamp_error
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
@@ -1924,6 +1924,10 @@ class DataSource(SetupSkippable, Entity):
         project = await self.setup_project()
         if project is None:
             return ApiFailResponse(message=NO_SETUP_PROJECT, status_code=409)
+        # A credential the last check refused may have been fixed at the provider since (a reinstalled app
+        # keeps its token): check once more, so only one still refused is asked again.
+        if self.status == SourceStatus.SETUP.value and self.error_code == ACCESS_DENIED:
+            await self.verify()
         # The app's Connect button signs the person in; the run only checks a connection (``connect_here``).
         try:
             run = await start_setup(project, root=str(self.typeid), connect_here=False)
@@ -2698,6 +2702,11 @@ class DataSource(SetupSkippable, Entity):
             self.status = SourceStatus.SETUP.value
             self.setup_detail = verdict.detail
             self.setup_needs = [SetupNeedSpec(kind=NEED_SETUP, detail=verdict.detail)]
+            # Marked as a refused sync marks it, so setup asks for the credential again (``project_setup._refused``).
+            if verdict.refused:
+                stamp_error(self, ACCESS_DENIED, verdict.detail)
+            elif self.error_code == ACCESS_DENIED:
+                stamp_error(self, None, None)
         await self.save_runtime()
         return {
             "ready": verdict.ready,
@@ -2800,7 +2809,7 @@ class DataSource(SetupSkippable, Entity):
         when the failure is a known transient one (the provider did not answer): not knowing is not "not set up". An
         unrecognised exception stays a verdict — a driver's bug must not read as an outage."""
         from flow_sdk.ingest.health import SourceError as IngestError  # noqa: PLC0415
-        from flow_sdk.sources.errors import is_transient  # noqa: PLC0415
+        from flow_sdk.sources.errors import AccessDenied, is_transient  # noqa: PLC0415
         from flow_sdk.sources.protocols import Verdict  # noqa: PLC0415
 
         try:
@@ -2809,6 +2818,8 @@ class DataSource(SetupSkippable, Entity):
             logger.warning("verify failed for %s: %s", self.id, exc, exc_info=True)
             if is_transient(exc) or (isinstance(exc, IngestError) and exc.health == SourceHealth.TRANSIENT_ERROR):
                 return exc
+            if isinstance(exc, AccessDenied):
+                return Verdict(ready=False, detail=exc.message or str(exc), refused=True)
             return Verdict(ready=False, detail=f"could not verify: {exc}")
 
     async def teardown(self) -> str:

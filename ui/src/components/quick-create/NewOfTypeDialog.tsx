@@ -1,6 +1,7 @@
 import { useLingui } from '@lingui/react/macro';
 import { InputDialog } from '@src/components/ui/input-dialog';
-import { getDescriptor } from './registry';
+import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
+import { customDialogFor } from './registry';
 
 /**
  * The assets "+" for one type: the type's own create dialog when its descriptor brings one (a chart
@@ -20,7 +21,7 @@ export function NewOfTypeDialog({
   onConfirmName: (name: string) => void;
 }) {
   const { t } = useLingui();
-  const Dialog = type ? getDescriptor(type)?.Dialog : undefined;
+  const Dialog = customDialogFor(type, useCloudAuthed());
   if (Dialog) return <Dialog open={open} onOpenChange={onOpenChange} projectId={projectId} />;
   return (
     <InputDialog

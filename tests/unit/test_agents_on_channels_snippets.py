@@ -142,7 +142,7 @@ async def test_2_variant_a_the_app_answers_on_the_channel(whatsapp, monkeypatch,
         await _push(whatsapp, source, "is anyone there?")
         while not whatsapp.sent():
             await asyncio.sleep(0.05)
-        assert worker.received_prompts == ["is anyone there?"]
+        assert worker.received_messages == ["is anyone there?"]
         (reply,) = whatsapp.sent()
         assert reply["to"] == whatsapp.sender and reply["text"].startswith("Mock reply")
     finally:
@@ -179,7 +179,7 @@ async def test_3_variant_b_answers_on_the_channel(whatsapp, monkeypatch, tmp_pat
         await run_fence_until(fence_under(doc(DOC), "3."), _names(whatsapp), answered, filename=f"{DOC} §3")
     finally:
         writer.cancel()
-    assert worker.received_prompts == ["my order arrived cracked, what now?"]
+    assert worker.received_messages == ["my order arrived cracked, what now?"]
     (reply,) = whatsapp.sent()
     assert reply["to"] == whatsapp.sender and reply["text"].startswith("Mock reply")
 

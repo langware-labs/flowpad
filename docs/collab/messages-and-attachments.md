@@ -284,7 +284,7 @@ A draft is not in the conversation: no jsonl pointer, no child edge, not counted
 in `message_count` or unread, not in `Conversation.messages()`, the stream inbox
 search or the outbox (`owes_delivery`, `written_here`).
 
-Two kinds, one state:
+Three kinds, one state:
 
 - **The composer's draft** — what is being typed in a conversation. At most one
   per conversation and thread (`FlowMessage.find_composer_draft`); its
@@ -298,7 +298,15 @@ Two kinds, one state:
   policy (`remote_worker_session_id` set). It is drawn as its own editable
   bubble with Send / Discard.
 
-`POST flow_message/<id>/send-draft` sends either, through `handle_add_message`
+- **A private message** — a message this machine's user reads in the conversation and nobody else has
+  (`draft_options.private`; `add_message` with `private`, `flow conversation send … --private`, or an
+  automation's answer). It is drawn as a message inside `PrivateMessageFrame` — "Only you can see this",
+  Share with everyone, Dismiss — never as something being typed, and it is the one draft that counts as
+  unread (`FlowMessage.private_unread`, added beside the unread rule since a draft is in no pointer list).
+  Share is `send-draft`: the same row, appended last; in a channel conversation its text and files go out
+  through `send_external`.
+
+`POST flow_message/<id>/send-draft` sends any of them, through `handle_add_message`
 with the row handed in (`draft=`), so a draft's send runs every step a fresh send
 does. A send claims its row: a second Send of it, or an edit that would write it
 back as a draft, is refused.

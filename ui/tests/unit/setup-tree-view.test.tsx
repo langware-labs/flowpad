@@ -20,19 +20,19 @@ const node = (id: string, state: SetupNodeResult['state'], over: Partial<SetupNo
 
 const TREE: SetupTreeResult = {
   state: 'blocked',
-  detail: 'Shop: waiting on WAHA',
+  detail: 'Shop: waiting on the bridge',
   total: 4,
   done: 2,
   ran: true,
   root: node('project-p1', 'blocked', {
-    detail: 'waiting on WAHA',
+    detail: 'waiting on the bridge',
     children: [
-      node('credential:waha', 'done'),
+      node('credential:bridge', 'done'),
       node('data_source-w1', 'blocked', {
-        detail: 'waiting on WAHA container',
-        children: [node('asset_setup:waha-container', 'failed', { detail: 'Docker is not running' })],
+        detail: 'waiting on the bridge container',
+        children: [node('asset_setup:bridge-container', 'failed', { detail: 'Docker is not running' })],
       }),
-      node('credential:waha', 'done', { shared: true }),
+      node('credential:bridge', 'done', { shared: true }),
     ],
   }),
 };
@@ -44,19 +44,19 @@ describe('SetupTreeView', () => {
     // The three rows drawn: the hidden root is not one of them, and a shared row repeats one already counted.
     expect(screen.getByTestId('setup-tree-progress').textContent).toContain('1 of 3 set up');
     expect(screen.queryByTestId('setup-node-project-p1')).toBeNull();
-    const failed = screen.getByTestId('setup-node-asset_setup:waha-container');
+    const failed = screen.getByTestId('setup-node-asset_setup:bridge-container');
     expect(failed.getAttribute('data-state')).toBe('failed');
     expect(failed.textContent).toContain('Docker is not running');
     expect(failed.className).toContain('border-red-500');
-    expect(screen.getByTestId('setup-node-data_source-w1').textContent).toContain('waiting on WAHA container');
+    expect(screen.getByTestId('setup-node-data_source-w1').textContent).toContain('waiting on the bridge container');
     // A done node keeps quiet: its detail is not news.
-    expect(screen.getAllByTestId('setup-node-credential:waha')[0].getAttribute('data-state')).toBe('done');
+    expect(screen.getAllByTestId('setup-node-credential:bridge')[0].getAttribute('data-state')).toBe('done');
   });
 
   it('counts the rows it draws: an overview leaves out what sits under the first level', () => {
     render(<SetupTreeView tree={TREE} hideRoot overview />);
 
-    expect(screen.queryByTestId('setup-node-asset_setup:waha-container')).toBeNull();
+    expect(screen.queryByTestId('setup-node-asset_setup:bridge-container')).toBeNull();
     expect(screen.getByTestId('setup-tree-progress').textContent).toContain('1 of 2 set up');
   });
 

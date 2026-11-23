@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Network, type LucideIcon } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GraphContext, TypeId, dataContext, dataManager, type AnyEntity } from '@sdk';
 import type { ContextRelation, ContextVia } from '@sdk/types/context-relation';
-import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useIsDev } from '@src/components/view-mode';
@@ -29,17 +29,47 @@ const DIRECTION_ICON: Record<ContextRelation['direction'], LucideIcon> = {
  *
  * Read on open through the entity's `context-relations` action; a row only
  * navigates. Nothing here writes context.
+ *
+ * Two ways to use it. On its own it draws its button and owns its open state. Controlled
+ * (`open` + `onOpenChange`), it draws NO button: someone else opens it (the top bar's menu) and
+ * the list hangs off `anchorRef`.
  */
-export function ContextMenuButton(props: { typeId: TypeId; title?: string }) {
-  // Not on the hub (exception, 2026-11-13): whether the hub keeps context relationships is not yet settled.
-  return dataContext.caps.localFiles ? <ContextMenuPopover {...props} /> : null;
+export interface ContextMenuButtonProps {
+  typeId: TypeId;
+  title?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Controlled mode: the element the list is placed against. */
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
-function ContextMenuPopover({ typeId, title }: { typeId: TypeId; title?: string }) {
+/** Whether this runtime shows an entity's context at all. */
+export function contextMenuAvailable(): boolean {
+  return dataContext.caps.localFiles;
+}
+
+export function ContextMenuButton(props: ContextMenuButtonProps) {
+  // Not on the hub (exception, 2026-11-13): whether the hub keeps context relationships is not yet settled.
+  return contextMenuAvailable() ? <ContextMenuPopover {...props} /> : null;
+}
+
+function ContextMenuPopover({
+  typeId,
+  title,
+  open: controlledOpen,
+  onOpenChange: onControlledOpenChange,
+  anchorRef,
+}: ContextMenuButtonProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const isDev = useIsDev();
-  const [open, setOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlled ? controlledOpen : ownOpen;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setOwnOpen(next);
+    onControlledOpenChange?.(next);
+  };
   const [rows, setRows] = useState<ContextRelation[] | null>(null);
   const [failed, setFailed] = useState(false);
   // Which origins the list shows: a row stays while any way it is held is switched on.
@@ -54,20 +84,27 @@ function ContextMenuPopover({ typeId, title }: { typeId: TypeId; title?: string 
     });
   const ContextIcon = iconForType(GraphContext.type);
 
-  const onOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (!next) return;
+  // Read on every open, whoever opened it (the button here, or the controlling parent).
+  const target = typeId.toString();
+  useEffect(() => {
+    if (!open) return;
+    let stale = false;
     setRows(null);
     setFailed(false);
     dataManager
-      .getByTypeId<AnyEntity>(typeId)
+      .getByTypeId<AnyEntity>(new TypeId(target))
       .then((entity) => (entity ? entity.getContextRelations() : []))
-      .then(setRows)
+      .then((found) => {
+        if (!stale) setRows(found);
+      })
       .catch((err) => {
         console.error('[ContextMenuButton] context-relations failed', err);
-        setFailed(true);
+        if (!stale) setFailed(true);
       });
-  };
+    return () => {
+      stale = true;
+    };
+  }, [open, target]);
 
   const openRow = async (row: ContextRelation) => {
     setOpen(false);
@@ -107,18 +144,22 @@ function ContextMenuPopover({ typeId, title }: { typeId: TypeId; title?: string 
   };
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(compactEntityActionClassName, open && 'bg-accent text-accent-foreground')}
-          aria-label={t`Context`}
-          title={t`Context`}
-          data-testid="entity-actions-context"
-        >
-          <ContextIcon className="h-3.5 w-3.5" />
-        </button>
-      </PopoverTrigger>
+    <Popover open={open} onOpenChange={setOpen}>
+      {controlled ? (
+        anchorRef && <PopoverAnchor virtualRef={anchorRef as RefObject<HTMLElement>} />
+      ) : (
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className={cn(compactEntityActionClassName, open && 'bg-accent text-accent-foreground')}
+            aria-label={t`Context`}
+            title={t`Context`}
+            data-testid="entity-actions-context"
+          >
+            <ContextIcon className="h-3.5 w-3.5" />
+          </button>
+        </PopoverTrigger>
+      )}
       <PopoverContent align="end" className="w-[22rem] space-y-2 p-2 text-xs" data-testid="context-menu">
         <div className="flex items-center gap-1.5">
           <ContextIcon className="h-3 w-3 text-foreground" />

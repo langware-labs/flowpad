@@ -1,69 +1,58 @@
 import { BrowseableTree } from '@src/components/browseable-tree/BrowseableTree';
-import { useFavoritesProjectRoots } from '@src/components/browseable-tree/adapters/useFavoritesRoots';
 import { FavoritesAddRow } from '@src/components/favorites/FavoritesAddRow';
+import { FavoritesBreadcrumb } from '@src/components/favorites/FavoritesBreadcrumb';
+import { useFavoritesLevel } from '@src/components/favorites/use-favorites-level';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans } from '@lingui/react/macro';
+import { createPortal } from 'react-dom';
 
-/** Dwell on a folder row before it expands. Longer than the rail's open delay:
- *  running the pointer down the menu must not expand every folder it passes. */
-export const HOVER_EXPAND_MS = 150;
 /** Leaf preview delay. Note Radix's `skipDelayDuration` (300ms default) means
  *  this applies to the FIRST preview in a hover session — moving to a sibling
  *  row after that is instant, which is the feel a hover menu wants. */
 export const LEAF_TOOLTIP_MS = 250;
 
 /**
- * FavoritesTreeMenu — the favorites as a MENU: rows that expand on hover, for
- * fast bookmark navigation. The slider's body.
+ * FavoritesTreeMenu — the favorites as a MENU, one level at a time: the rows of
+ * the level its breadcrumb names. The bookmarks panel's body.
  *
- * The tree is GLOBAL and grouped by project (`useFavoritesProjectRoots`): the
- * current project's bucket is expanded on open, every other project holding
- * favorites sits beside it as a sibling row, and hovering one enters it exactly
- * like any other folder. That structure is why the menu carries no scope
- * filter any more — "which project" is a row you hover, not a mode you set.
- *
- * Hover drives the menu; it never navigates. Clicking a leaf is still the only
- * thing that opens, but resting on one marks it seen (`onHoverSeen` →
+ * It opens at the open project (`useFavoritesLevel`); a project or folder row
+ * is entered by click and the breadcrumb goes back up. Clicking a leaf is the
+ * only thing that navigates; resting on one marks it seen (`onHoverSeen` →
  * `markSeen`) — the dwell is what stops a sweep from clearing every badge.
+ *
+ * The breadcrumb is drawn into `breadcrumbSlot`, the host panel's header: the
+ * level lives HERE, in the part of the panel that unmounts when it closes, so
+ * every open starts at the open project again and a closed panel runs none of
+ * the favorites queries.
  */
-export function FavoritesTreeMenu({
-  mirrored,
-}: {
-  /** The host panel grows LEFTWARD — flip the tree's direction cues with it. */
-  mirrored?: boolean;
-}) {
+export function FavoritesTreeMenu({ breadcrumbSlot }: { breadcrumbSlot: HTMLElement | null }) {
   const { navigation, currentDock } = useDockNavigation();
-  const { roots, currentBucketId, addParentFor } = useFavoritesProjectRoots();
+  const { crumbs, rows, addParentId, goTo } = useFavoritesLevel();
 
   return (
     // Nested provider: the app-global one sets no delayDuration, so previews
     // would otherwise inherit Radix's 700ms default — far too slow for a menu
     // whose whole point is speed. Overrides here only.
     <TooltipProvider delayDuration={LEAF_TOOLTIP_MS}>
+      {breadcrumbSlot && createPortal(<FavoritesBreadcrumb crumbs={crumbs} goTo={goTo} />, breadcrumbSlot)}
+      {/* Build-as-you-browse: the level's own add row, where the level can take one. */}
+      {addParentId !== null && (
+        <div className="px-1 pt-1">
+          <FavoritesAddRow parentId={addParentId} />
+        </div>
+      )}
       <BrowseableTree
-        roots={roots}
+        roots={rows}
         activePointer={currentDock ?? null}
         onNavigate={(p) => navigation.openDock(p)}
-        hoverExpandMs={HOVER_EXPAND_MS}
         // Same dwell as the preview: seeing the tooltip IS having seen the row.
         hoverSeenMs={LEAF_TOOLTIP_MS}
-        mirrored={mirrored}
-        // Land in the project you're working in; the others are one hover away.
-        defaultExpandedIds={[currentBucketId]}
-        // Build-as-you-browse — but only where a level can actually receive a
-        // row. `addParentFor` owns that question (a project list and another
-        // project's desk have nowhere to put one); the tree hands the footer
-        // its own mirrored axis, so this doesn't have to remember to.
-        levelFooter={(levelId, treeMirrored) => {
-          const parentId = addParentFor(levelId);
-          return parentId === null ? null : <FavoritesAddRow parentId={parentId} mirrored={treeMirrored} />;
-        }}
-        // No persistKey on purpose: hover-expansion is exploratory and cheap to
-        // trigger, so persisting it would restore a fully-expanded tree on every
-        // open — exactly the state a hover menu exists to avoid. It would also
-        // outlive `defaultExpandedIds`, pinning the menu to whatever project was
-        // open the first time it was used.
+        // The panel hangs off the window's inline-end edge.
+        previewSide="start"
+        // One level, nothing expands: the rows start on the same edge as the
+        // add row and the Notes below.
+        flat
         emptyState={
           <p className="text-xs text-muted-foreground">
             <Trans>No bookmarks yet</Trans>

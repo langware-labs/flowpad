@@ -1,4 +1,4 @@
-import { t } from '@lingui/core/macro';
+import { plural, t } from '@lingui/core/macro';
 import { isAssetConflict, ReplacePrompt } from './ReplacePrompt';
 import type { OpenShareOutcome } from './use-open-git-share';
 import { dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
@@ -60,7 +60,7 @@ function GitPointerPreview({ ma }: { ma: MessageAttachment }) {
     >
       <p>
         <Trans>
-          Shared by Git — Download opens exactly the version that was shared, without touching your own checkout.
+          Shared by Git — Open brings in exactly the version that was shared, without touching your own checkout.
         </Trans>
       </p>
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-xs">
@@ -450,7 +450,7 @@ function AttachmentReviewDialog({
     setReplace(null);
     try {
       for (const a of installable) await a.install('user', undefined, { overwrite });
-      notify.success({ title: t`Installed`, message: t`${installable.length} attachments` });
+      notify.success({ title: t`Installed`, message: plural(installable.length, { one: '# attachment', other: '# attachments' }) });
     } catch (err) {
       if (!overwrite && isAssetConflict(err)) {
         setReplace(() => () => void handleInstallGlobal(true));

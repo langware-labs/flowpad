@@ -12,12 +12,17 @@ description: Allocating a mailbox for an agent whose hub row belongs to another 
 
 > Ground truth. Proven by the fix 476a919eb (PR #814, 2026-11-10): the bound test failed without it and passes with it. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.foreign_agent_mailbox.rules
 sites:
-  - rel_path: "tests/hub_tests/test_agent_email_foreign_agent.py"
+  - rel_path: tests/hub_tests/test_agent_email_foreign_agent.py
     line: 91
-    note: "FAILING? read this tag's rules before touching _publish_then_probe or confirm_hub_row_is_ours"
+    note: FAILING? read this tag's rules before touching _publish_then_probe or confirm_hub_row_is_ours
+proven: '2026-11-10'
+statements:
+  - text: 'Both ways of learning "someone else''s agent" (an `ID_TAKEN` from `share()`, or a probe that still says `TARGET_NOT_FOUND` after publishing) raise the one `foreign` error: 403, `FOREIGN_TARGET`, the same sentence.'
+  - text: A refused allocation never leaves `agent.remote` True.
+  - text: Only `ID_TAKEN` or a masked `TARGET_NOT_FOUND` counts as "foreign".
 ```
 
 ## Expected behavior
@@ -47,10 +52,6 @@ She gets `AgentMailboxError` with `code == FOREIGN_TARGET` and `status_code == 4
 
 ## Invariants
 
-* Both ways of learning "someone else's agent" (an `ID_TAKEN` from `share()`, or a
-  probe that still says `TARGET_NOT_FOUND` after publishing) raise the one `foreign`
-  error: 403, `FOREIGN_TARGET`, the same sentence.
-* A refused allocation never leaves `agent.remote` True.
 * Only `ID_TAKEN` or a masked `TARGET_NOT_FOUND` counts as "foreign". Offline, signed-out
   or 5xx failures pass through as themselves, because calling an outage "not yours"
   would be a false diagnosis.

@@ -32,7 +32,7 @@ people's machines.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Optional, Union
+from typing import Any, ClassVar, Literal, Optional, Union
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -280,6 +280,10 @@ class TriggerSpec(DataSpec):
 
     #: What it does: a wizard (see ``ThenSpec``). Preferred over ``actions``.
     then: Optional[ThenSpec] = None
+
+    #: Where a real run's answer is posted: the conversation of the message that fired it, as a private
+    #: message, or the rule's own conversation on the Automations channel. Unset: the former when there is one.
+    report_to: Optional[Literal["conversation", "automations"]] = None
 
     #: Dispatched in order when it fires. Empty is legal and means "nothing
     #: yet" — a trigger a person is still authoring should not fail to load.

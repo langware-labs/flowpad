@@ -12,12 +12,19 @@ description: A dev-server port has TWO correct urls in a cloud box — loopback 
 
 > Ground truth. Proven by RCA on 2026-08-26. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.sandbox_browser_url.rules
 sites:
-  - rel_path: "tests/unit/test_own_sandbox_id_source.py"
+  - rel_path: tests/unit/test_own_sandbox_id_source.py
     line: 20
-    note: "FAILING? read this tag's rules before editing. The sandbox id does NOT come from E2B_SANDBOX_ID \u2014 it is empty in the server process."
+    note: FAILING? read this tag's rules before editing. The sandbox id does NOT come from E2B_SANDBOX_ID — it is empty in the server process.
+proven: '2026-08-26'
+statements:
+  - text: A loopback url must never leave the backend as a browser's address in a cloud box.
+  - text: A process's port must never leave the backend as a browser's address in a cloud box either.
+  - text: '`E2B_SANDBOX_ID` is not a source of truth — ask the metadata service, unconditionally.'
+  - text: Sandbox-ness is the hub's to assign, via `runtime_kind` in the instance config; an instance must not promote itself by sniffing locally.
+  - text: Server-side callers keep loopback.
 ```
 
 ## Expected behavior
@@ -70,7 +77,6 @@ Firecracker's metadata service (`169.254.169.254`, token handshake then
   - **Populated by E2B.** True in the interactive shells it spawns.
   - **Populated by us.** `flow_sdk/core/flow/mcp_servers/copy_to_sandbox/shell_mcp.py:86` copies our environment into spawned shells, stripping `E2B_SANDBOX` but **not** `E2B_SANDBOX_ID` — so a child can hold an id we handed down while failing the sandbox gate. A value being present therefore does not mean E2B put it there.
   This is why "use it if set, fall back if empty" is rejected: the fast path never fires in the process that actually asks (always empty there), it costs nothing to skip (`own_sandbox_id` is cached for the process lifetime), and accepting a set value re-opens the failure mode below. The metadata service answers for the process doing the asking and cannot be inherited, copied, or set by a test.
-- **Sandbox-ness is the hub's to assign,** via `runtime_kind` in the instance config; an instance must not promote itself by sniffing locally.
 - **Server-side callers keep loopback.** Routing the endpoint's `probe` or MCP through the public url sends a local call out to the internet and back.
 
 ## Failure modes

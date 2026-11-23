@@ -99,8 +99,9 @@ async def test_an_unanswered_wait_is_cancelled_with_a_message():
     assert process.typeid in spent.shared_context_entities
     assert spent.typeid not in (await AgenticProcess.get_by_id(process.id)).shared_context_entities
     note = await Conversation.get_one({"channel": "automations", "channel_source_id": f"trigger-{rule.id}"})
-    texts = [m.text for m in await FlowMessage.get_all({"conversation_id": note.id})]
-    assert any(t.startswith("Prompt handling cancelled") for t in texts)
+    [said] = await FlowMessage.sent_in(note.id)
+    assert said.card()["status"] == "expired" and said.card()["session"] == str(process.typeid)
+    assert said.text == "Nobody replied to “Which plan should we lead with?” within 3 days, so the follow-up was not sent."
     await _arrive(spent, await _message(conv.id, "late answer"))
     assert _queued(process) == []
 
@@ -132,3 +133,18 @@ async def test_the_sessions_own_send_is_not_the_reply():
     await settle()
 
     assert _queued(process) == []
+
+
+@pytest.mark.parametrize("how, status", [("cancelled", "cancelled"), ("reply", "done")])
+@async_context
+async def test_a_wait_says_how_it_ended(how, status):
+    _, conv, _, rule = await _setup()
+
+    if how == "reply":
+        await _arrive(rule, await _message(conv.id, "Team, most leads are small"))
+    else:
+        await end(rule, "cancelled")
+
+    note = await Conversation.get_one({"channel": "automations", "channel_source_id": f"trigger-{rule.id}"})
+    [said] = await FlowMessage.sent_in(note.id)
+    assert said.card()["status"] == status and said.text == said.card()["summary"]

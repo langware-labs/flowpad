@@ -145,6 +145,10 @@ class SecretStore:
         """Remove what the store owns: ``(deleted, kept)`` names."""
         raise NotImplementedError
 
+    async def open_url(self) -> str:
+        """Where a person opens this store in its own screen (an app link, a console page); "" when it has none."""
+        return ""
+
     async def validate_keys(self, names: Iterable[str]) -> None:
         """Nothing when every name has a value; :class:`MissingSecrets` naming the rest."""
         wanted = list(dict.fromkeys(names))

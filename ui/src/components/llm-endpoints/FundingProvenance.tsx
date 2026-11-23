@@ -175,7 +175,7 @@ function HarnessFunding({
       </div>
       {present.length === 0 && (
         <div className="text-xs text-muted-foreground" data-testid="llm-funding-none-installed">
-          <Trans>No assistant is installed on this machine.</Trans>
+          <Trans>No assistant is installed on this computer.</Trans>
         </div>
       )}
       {present.map((kind) => {

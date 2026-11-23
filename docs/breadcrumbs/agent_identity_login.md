@@ -11,12 +11,17 @@ description: A box signed in as an agent Identity has no cloudUser by design, so
 
 > Ground truth. Proven by RCA on 2026-11-15 (FLOWPAD-2368). Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.agent_identity_login.rules
 sites:
-  - rel_path: "ui/tests/unit/stream-inbox-agent-identity-login.test.tsx"
+  - rel_path: ui/tests/unit/stream-inbox-agent-identity-login.test.tsx
     line: 29
-    note: "FAILING? read this tag's rules before editing — an agent Identity is signed in although cloudUser is null"
+    note: FAILING? read this tag's rules before editing — an agent Identity is signed in although cloudUser is null
+proven: 2026-11-15 · FLOWPAD-2368
+statements:
+  - text: '"Signed in" means a cloud principal exists — a person OR an Identity.'
+  - text: '`cloudUser` stays null on an Identity box.'
+  - text: '`currentPrincipal` falls back to the local user, so `!currentPrincipal` is never a logged-out test; gate on `useCloudAuthed()`.'
 ```
 
 ## Expected behavior
@@ -50,8 +55,6 @@ source page's stream inbox (`StreamInboxView` with `sourceId`, `embedded`) must 
 - `cloudUser` stays null on an Identity box. Do not "fix" a gate by stuffing the Identity into
   `CloudUserTypeId`: everything that reads `cloudUser` / `currentUser` as a person (email, "me",
   profile) would then treat the agent as a human.
-- `currentPrincipal` falls back to the local user, so `!currentPrincipal` is never a logged-out test;
-  gate on `useCloudAuthed()`.
 
 ## Failure modes
 

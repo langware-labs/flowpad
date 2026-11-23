@@ -14,12 +14,17 @@ version: 2
 
 > Ground truth. Proven by RCA on 2026-11-02. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.spaced_path_links.rules
 sites:
-  - rel_path: "ui/tests/unit/remark-link-refs.test.ts"
+  - rel_path: ui/tests/unit/remark-link-refs.test.ts
     line: 25
-    note: "FAILING? a whole inline-code absolute path with spaces in its folders must stay ONE link (SPACED_ABSOLUTE_FILE in wrapCode). Read this tag's rules before touching link-matches TOKENS or remark-link-refs wrapCode."
+    note: FAILING? a whole inline-code absolute path with spaces in its folders must stay ONE link (SPACED_ABSOLUTE_FILE in wrapCode). Read this tag's rules before touching link-matches TOKENS or remark-link-refs wrapCode.
+proven: '2026-11-02'
+statements:
+  - text: A whole inline-code span that is an absolute path ending in a space-free file name is one link, whatever spaces its folders hold.
+  - text: A code span that is a command (`` `/usr/bin/env -S python x.py` ``) is not — its last segment carries a space, so `SPACED_ABSOLUTE_FILE` rejects it.
+  - text: 'Do not widen `link_roots` to "find the file anywhere" to compensate for a dead link: the full path must be linkable instead.'
 ```
 
 ## Expected behavior
@@ -50,15 +55,6 @@ does not break the reference.
   workdir, project root, mounted dirs. A bare name outside them is a correct 404.
 
 ## Invariants
-
-* A whole inline-code span that is an absolute path ending in a space-free file
-  name is one link, whatever spaces its folders hold.
-
-* A code span that is a command (`` `/usr/bin/env -S python x.py` ``) is not —
-  its last segment carries a space, so `SPACED_ABSOLUTE_FILE` rejects it.
-
-* Do not widen `link_roots` to "find the file anywhere" to compensate for a dead
-  link: the full path must be linkable instead.
 
 ## Failure modes
 

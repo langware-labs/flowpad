@@ -57,10 +57,13 @@ EXEMPT_FILES = {
     r"^flow_sdk/server/icons/|^examples/icon-gallery/|^docs/icons(_map\.html|\.md)$": "the lucide icon set and its catalogs",
     r"^flow_sdk/system_projects/flowpad_assistant/migrations/0\.2\.26/": "a shipped historical migration",
     r"^tests/unit/test_no_bare_inbox_name\.py$": "this guard",
+    r"^flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/agent/|^flow_sdk/system_projects/flowpad_assistant/agentic-assets/agent/linkedin-reader/|^flow_sdk/system_projects/flowpad_assistant/\.claude/agents/linkedin_analyzer\.md$": "LinkedIn's own word: its messaging page is the inbox, and `inbox` the driver's mailbox key",
 }
 
 #: ``path regex -> phrases`` a file may say, each for the reason on its line.
 PHRASES = {
+    # a browser driver reading the wrong signed-in account
+    r"^docs/browser-drivers\.md$": ["another account's inbox"],
     # the name a person's own Slack app is given, as Slack shows it in their workspace
     r"^flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/slack/(source\.py|tests/test_slack_source\.py|agentic-assets/wizard/slack-connect/wizard\.json)$|^ts_sdk/src/entities/data-driver\.ts$|^ui/src/components/data-sources/source-form\.ts$|^ui/tests/unit/data-source-dialog-group\.test\.tsx$": ["'s inbox", "Flowpad inbox", "%27s%20inbox", "in your Flowpad inbox"],
     # the retired names, where they are retired

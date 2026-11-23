@@ -50,7 +50,7 @@ export function useSetupIncompleteWarning(): UserWarning | null {
       id: WARNING_IDS.SETUP_INCOMPLETE,
       icon: 'AlertTriangle',
       color: 'yellow',
-      message: t`Setup did not finish successfully`,
+      message: t`Setup didn't finish successfully.`,
       description: t`An install failed or was cancelled, so Flowpad may be missing tools it needs.`,
       targetView: ViewType.HOME,
       onClick: rerun,

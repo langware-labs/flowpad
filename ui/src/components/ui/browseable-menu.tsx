@@ -72,6 +72,8 @@ export function useMenuDialogs(): {
   requestName: (title: string, opts?: { placeholder?: string; defaultValue?: string }) => Promise<string | null>;
   confirm: (title: string, description?: string) => Promise<boolean>;
   dialogs: ReactNode;
+  /** A dialog is up — a popover hosting the tree stays open under it. */
+  open: boolean;
 } {
   const [nameState, setNameState] = useState<{
     title: string;
@@ -140,5 +142,5 @@ export function useMenuDialogs(): {
     </>
   );
 
-  return { requestName, confirm, dialogs };
+  return { requestName, confirm, dialogs, open: nameState !== null || confirmState !== null };
 }

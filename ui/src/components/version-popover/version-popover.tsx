@@ -16,7 +16,6 @@ import {
   OPEN_VERSION_POPOVER_EVENT,
   useUpdateReady,
   type ActivationResult,
-  type OpenVersionPopoverDetail,
 } from '@src/components/update-ready/update-ready';
 import apiClient from '@sdk/client';
 import { connectionManager } from '@sdk/websocket';
@@ -466,20 +465,19 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
     }
   }, [electronApi, desktopUpdate?.state, t, activationMessage]);
 
-  // The ONE ready update set (desktop and/or engine), applied from here or from the "Update Ready" toast; the top
-  // bar's indicator opens this popover for it.
+  // The ONE ready update set (desktop and/or engine), applied from here; the top bar's indicator opens
+  // this popover for it.
   const updateReady = useUpdateReady();
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
   useEffect(() => {
-    const openIt = (e: Event) => {
+    const openIt = () => {
       setOpen(true);
-      const activation = (e as CustomEvent<OpenVersionPopoverDetail | null>).detail?.activation;
-      setActivateError(activation ? activationMessage(activation) : null); // a plain open shows no stale error
+      setActivateError(null); // no stale error
     };
     window.addEventListener(OPEN_VERSION_POPOVER_EVENT, openIt);
     return () => window.removeEventListener(OPEN_VERSION_POPOVER_EVENT, openIt);
-  }, [activationMessage]);
+  }, []);
   const handleActivate = useCallback(async () => {
     const api = getUpdateReadyApi();
     if (!api?.activateUpdate) return;
@@ -600,10 +598,12 @@ export function VersionPopover({ currentVersion: pageVersion }: VersionPopoverPr
         <VersionChip
           ref={targetRef}
           version={runningVersion}
-          // A desktop with the ready state shows the top bar's "Update ready" instead; a browser tab, and an
-          // older desktop running this UI (no getUpdateReadyInfo), keep the dot.
-          updateAvailable={
-            !getUpdateReadyApi()?.getUpdateReadyInfo && Boolean(pypi?.update_available || githubUpdateAvailable)
+          // The dot: on a desktop with the ready state, an update is downloaded and ready to install; in a browser
+          // tab, and on an older desktop running this UI (no getUpdateReadyInfo), a newer release exists.
+          update={
+            getUpdateReadyApi()?.getUpdateReadyInfo
+              ? updateReady?.ready && 'ready'
+              : (pypi?.update_available || githubUpdateAvailable) && 'available'
           }
           data-testid="version-popover-trigger"
         />

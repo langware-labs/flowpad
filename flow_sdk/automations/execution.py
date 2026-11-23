@@ -67,6 +67,19 @@ class AutomationExecution:
         return None
 
     @property
+    def state(self) -> Any:
+        """What the run was about (a message's ``MessageState``), or None when the fire carried none."""
+        prepared = self.result.steps.get("prepare")
+        value = prepared.value if prepared is not None else None
+        return value.state if isinstance(value, PreparedAutomation) else None
+
+    @property
+    def answer(self) -> ReturnedValue | None:
+        """What the work answered: the last step of the ``then``, or None when it ran none."""
+        then = self.result.steps.get("then")
+        return list(then.steps.values())[-1] if isinstance(then, WizardResult) and then.steps else None
+
+    @property
     def process_id(self) -> str | None:
         instruction = self.result.steps.get("instruction")
         executor = getattr(instruction, "executor", None) or self.result.first_executor()

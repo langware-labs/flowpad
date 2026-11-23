@@ -17,6 +17,12 @@ const STORE = 'flowpad.stateKey';
 export const STATE_HEADER = 'X-Flowpad-State';
 /** The query a page's address carries its key in (the server reads the same name: `page_state.QUERY`). */
 export const STATE_QUERY = 'state';
+/**
+ * The same key under the name the app's own navigation carries it (the dock option `stateKey`, `STATE_KEY_PARAM` in
+ * `ui/src/navigation/DockPointer.ts`). A framed shell that moved inside itself has only this one: a frame never reads
+ * the stored copy, so without it every call after the first move answers 403.
+ */
+const DOCK_STATE_QUERY = 'stateKey';
 const HAS_STATE_QUERY = new RegExp(`[?&]${STATE_QUERY}=`);
 
 type Reason = 'missing' | 'unknown';
@@ -58,7 +64,8 @@ export function stateKey(): string | null {
     if (isTopLevel()) remember(injected);
     return injected;
   }
-  const fromUrl = new URLSearchParams(globalThis.location?.search ?? '').get(STATE_QUERY);
+  const query = new URLSearchParams(globalThis.location?.search ?? '');
+  const fromUrl = query.get(STATE_QUERY) || query.get(DOCK_STATE_QUERY);
   if (fromUrl) return fromUrl;
   return isTopLevel() ? recall() : null;
 }
@@ -94,6 +101,34 @@ export function showPageStateError(reason: Reason): void {
     'position:fixed;inset:0 0 auto 0;z-index:2147483647;padding:12px 16px;font:14px/1.4 system-ui,sans-serif;' +
     'background:#fff3cd;color:#664d03;border-bottom:1px solid #ffda6a';
   (document.body ?? document.documentElement).prepend(notice);
+}
+
+const OFFLINE = '[data-testid="flowpad-page-offline"]';
+
+/** Say, inside the page, that Flowpad cannot be reached: a small tag in the corner the user can close. Never blocks the page. */
+export function showOfflineTag(): void {
+  if (typeof document === 'undefined' || document.querySelector(OFFLINE)) return;
+  const tag = document.createElement('div');
+  tag.setAttribute('data-testid', 'flowpad-page-offline');
+  tag.setAttribute('role', 'status');
+  tag.style.cssText =
+    'position:fixed;right:12px;bottom:12px;z-index:2147483647;display:flex;gap:8px;align-items:center;' +
+    'padding:6px 10px;border-radius:6px;font:12px/1.4 system-ui,sans-serif;background:#fff3cd;color:#664d03;' +
+    'border:1px solid #ffda6a';
+  const text = document.createElement('span');
+  text.textContent = "Flowpad isn't running";
+  const close = document.createElement('button');
+  close.setAttribute('aria-label', 'Close');
+  close.textContent = '✕';
+  close.style.cssText = 'border:0;background:none;color:inherit;cursor:pointer;padding:0;font:inherit';
+  close.onclick = () => tag.remove();
+  tag.append(text, close);
+  (document.body ?? document.documentElement).append(tag);
+}
+
+/** Take the offline tag away: a call got through. */
+export function hideOfflineTag(): void {
+  if (typeof document !== 'undefined') document.querySelector(OFFLINE)?.remove();
 }
 
 export interface HtmlPage {

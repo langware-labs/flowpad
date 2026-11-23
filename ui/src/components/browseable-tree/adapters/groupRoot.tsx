@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro';
 import React, { type ReactNode } from 'react';
 import { FolderPlus, Pencil, Trash2 } from 'lucide-react';
-import { Group, type GroupChildren, type IEntity } from '@sdk';
+import { Group, type GroupChildren, type GroupLeafMatch, type IEntity } from '@sdk';
 import type { DockPointer } from '@src/navigation';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { refreshNode } from '../refresh-store';
@@ -26,6 +26,15 @@ export interface GroupLeafView {
   /** Real navigation target (also the picker selection key). */
   pointer: DockPointer | null;
   toolbar?: ToolbarAction[];
+  /** A full-row body — the tree's own `Browseable.content` slot. */
+  content?: ReactNode;
+}
+
+/** Manual order of a folder's members: the consumer owns where the order is stored. */
+export interface GroupMemberOrder {
+  sort: (members: IEntity[]) => IEntity[];
+  /** Persist `dragId` next to its anchor among `siblings` (the container's members, dragged one included). */
+  reorder: (siblings: IEntity[], dragId: string, anchor: { afterId?: string; beforeId?: string }) => Promise<void>;
 }
 
 export interface GroupRootConfig {
@@ -37,6 +46,10 @@ export interface GroupRootConfig {
   leafTypes: string[];
   /** Scope listings to a project (optional). */
   projectId?: string | null;
+  /** Which entities of `leafTypes` are leaves of this tree (built by the consumer). */
+  leafMatch?: GroupLeafMatch;
+  /** Members keep a manual order (drag between rows) instead of sorting by name. */
+  order?: GroupMemberOrder;
   /** Map a leaf entity to its row. */
   leafToBrowseable: (entity: IEntity) => GroupLeafView;
   /** Picker mode: leaf click selects instead of navigating. */
@@ -59,6 +72,8 @@ export interface GroupRootHandle {
   root: BrowseableRoot;
   /** Wire as the tree's `onNavigate`: picker-select for leaves, else navigate. */
   onNavigate: (pointer: DockPointer) => void;
+  /** Ask for a name and create a top-level folder — for a host whose tree shows no root row. */
+  newFolder: () => Promise<void>;
 }
 
 const DRAG_FOLDER = 'group-folder';
@@ -73,6 +88,8 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
   const caps = { createFolder: true, rename: true, delete: true, move: true, ...(cfg.capabilities ?? {}) };
   /** pointerKey -> leaf entity, rebuilt as levels load; powers picker clicks. */
   const leafByPointer = new Map<string, IEntity>();
+  /** Container (group id, '' for the root) -> its members as last listed, in display order. */
+  const membersOf = new Map<string, IEntity[]>();
   const refresh = () => refreshNode(rootId);
 
   const dragForFolder = (group: Group): BrowseableDragData => ({
@@ -91,6 +108,18 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
   const canDrop = (drag: BrowseableDragData, targetGroupId: string | null) =>
     caps.move && (drag.kind === DRAG_FOLDER || drag.kind === DRAG_LEAF) && drag.id !== targetGroupId;
 
+  const moveLeaf = async (type: string, id: string, groupId: string | null) => {
+    const entity = await Group.resolveEntity(type, id);
+    await entity?.setGroup(groupId);
+  };
+
+  const createFolder = async (groupId: string | null) => {
+    const name = await cfg.requestName?.('New folder', { placeholder: t`Folder name` });
+    if (!name) return;
+    await Group.create({ name, namespace: cfg.namespace, groupId, projectId: cfg.projectId ?? null });
+    refresh();
+  };
+
   const onDrop = async (drag: BrowseableDragData, targetGroupId: string | null) => {
     // One-line SDK delegations — validation (cycles, namespaces, projects)
     // is backend-owned; a rejection simply leaves the tree unchanged.
@@ -98,11 +127,22 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
       const group = await Group.byId(drag.id);
       await group?.move(targetGroupId);
     } else if (drag.kind === DRAG_LEAF) {
-      const entity = await Group.resolveEntity(String(drag.entityType), drag.id);
-      await entity?.setGroup(targetGroupId);
+      await moveLeaf(String(drag.entityType), drag.id, targetGroupId);
     }
     refresh();
   };
+
+  /** A drop between two member rows: into this container first if it came from another, then into the gap. */
+  const reorderIn = (groupId: string | null): Browseable['reorderChildren'] =>
+    cfg.order &&
+    (async (dragId, anchor) => {
+      const dragged = [...membersOf.values()].flat().find((m) => String(m.id) === dragId);
+      if (!dragged) return onDrop({ kind: DRAG_FOLDER, id: dragId, label: '' }, groupId);
+      if ((dragged.group_id ?? null) !== groupId) await moveLeaf(String(dragged.type), dragId, groupId);
+      const siblings = (membersOf.get(groupId ?? '') ?? []).filter((m) => String(m.id) !== dragId);
+      await cfg.order!.reorder([...siblings, dragged], dragId, anchor);
+      refresh();
+    });
 
   const containerToolbar = (group: Group | null): ToolbarAction[] => {
     const groupId = group?.id ?? null;
@@ -112,12 +152,7 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
         id: `new-folder:${groupId ?? 'root'}`,
         icon: <FolderPlus />,
         label: t`New folder`,
-        run: async () => {
-          const name = await cfg.requestName!('New folder', { placeholder: t`Folder name` });
-          if (!name) return;
-          await Group.create({ name, namespace: cfg.namespace, groupId, projectId: cfg.projectId ?? null });
-          refresh();
-        },
+        run: () => createFolder(groupId),
       });
     }
     if (group && caps.rename && cfg.requestName) {
@@ -164,6 +199,7 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
       hasChildren: false,
       pointer: view.pointer,
       toolbar: view.toolbar,
+      content: view.content,
       dragData: caps.move ? dragForLeaf(entity, view.label) : undefined,
     };
   };
@@ -179,16 +215,18 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
     dragData: caps.move ? dragForFolder(group) : undefined,
     canDrop: (drag) => canDrop(drag, group.id),
     onDrop: (drag) => onDrop(drag, group.id),
+    reorderChildren: reorderIn(group.id),
     listChildren: async () => {
-      const children = await group.listChildren({ types: cfg.leafTypes });
-      return toRows(children);
+      const children = await group.listChildren({ types: cfg.leafTypes, leafMatch: cfg.leafMatch });
+      return toRows(children, group.id);
     },
   });
 
-  const toRows = (children: GroupChildren): Browseable[] => [
-    ...children.groups.map(folderNode),
-    ...children.members.map(leafNode),
-  ];
+  const toRows = (children: GroupChildren, groupId: string | null): Browseable[] => {
+    const members = cfg.order ? cfg.order.sort(children.members) : children.members;
+    membersOf.set(groupId ?? '', members);
+    return [...children.groups.map(folderNode), ...members.map(leafNode)];
+  };
 
   const root: BrowseableRoot = {
     id: rootId,
@@ -200,12 +238,14 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
     toolbar: containerToolbar(null),
     canDrop: (drag) => canDrop(drag, null),
     onDrop: (drag) => onDrop(drag, null),
+    reorderChildren: reorderIn(null),
     listChildren: async () => {
       const children = await Group.listRoot(cfg.namespace, {
         types: cfg.leafTypes,
         projectId: cfg.projectId ?? null,
+        leafMatch: cfg.leafMatch,
       });
-      return toRows(children);
+      return toRows(children, null);
     },
     ownsPointer: () => false,
     pathFor: async () => [],
@@ -220,5 +260,5 @@ export function groupRoot(cfg: GroupRootConfig): GroupRootHandle {
     cfg.navigate?.(pointer);
   };
 
-  return { root, onNavigate };
+  return { root, onNavigate, newFolder: () => createFolder(null) };
 }

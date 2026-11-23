@@ -1,14 +1,17 @@
 import { forwardRef, useEffect, useState } from 'react';
-import { CircleDot, type LucideIcon, type LucideProps } from 'lucide-react';
+import { CircleDot, type LucideProps } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
+import { DropdownMenuItem } from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { chromeEntityActionClassName, wideClusterButtonAttrs } from '@src/components/entity-actions/action-button-styles';
+import {
+  recordingEntityActionClassName,
+  wideClusterButtonAttrs,
+} from '@src/components/entity-actions/action-button-styles';
 import { cn } from '@src/lib/utils';
-import { NavIconButton } from './NavIconButton';
 import { RecordingReadyDialog } from './RecordingReadyDialog';
 import { formatElapsed, startRecording, stopRecording, useScreenRecorder } from './use-screen-recorder';
 
-/** The elapsed time, ticking once a second — its own component so the idle button has no timer. */
+/** The elapsed time, ticking once a second — its own component so nothing else re-renders with it. */
 function Elapsed({ since }: { since: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -20,56 +23,65 @@ function Elapsed({ since }: { since: number }) {
 
 /** The record glyph: a ring with a red dot. */
 const RecordIcon = forwardRef<SVGSVGElement, LucideProps>(({ className, ...props }, ref) => (
-  <CircleDot ref={ref} className={cn('[&>circle:last-child]:fill-red-500 [&>circle:last-child]:stroke-red-500', className)} {...props} />
+  <CircleDot
+    ref={ref}
+    className={cn('[&>circle:last-child]:fill-red-500 [&>circle:last-child]:stroke-red-500', className)}
+    {...props}
+  />
 ));
 RecordIcon.displayName = 'RecordIcon';
 
+/** "Record screen" in the bar's menu: starts a recording. Off while one is running or being saved. */
+export function RecordScreenMenuItem() {
+  const { t } = useLingui();
+  const { phase, busy } = useScreenRecorder();
+  return (
+    <DropdownMenuItem
+      className="gap-2"
+      disabled={busy || phase !== 'idle'}
+      onSelect={() => void startRecording()}
+      title={t`Record screen (video only)`}
+      data-testid="top-nav-more-record"
+    >
+      <RecordIcon className="size-4 shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1 truncate">{t`Record screen`}</span>
+      <span className="shrink-0 text-[11px] text-muted-foreground">{t`this window`}</span>
+    </DropdownMenuItem>
+  );
+}
+
 /**
- * The bar's Record button, first in the action cluster. Idle it is a record glyph (ring + dot); while
- * recording it is a glowing red pulsing square with the elapsed time (a wide cluster button), and
- * clicking it stops. The finished recording opens `RecordingReadyDialog`.
+ * The recording's presence ON THE BAR: nothing while idle; while recording, a glowing red stop
+ * button with the elapsed time (a click stops). The finished recording opens
+ * `RecordingReadyDialog` from here, not from the menu, so it outlives the menu closing.
  */
-export function RecordScreenButton() {
+export function RecordingIndicator() {
   const { t } = useLingui();
   const { phase, busy, startedAt, recording } = useScreenRecorder();
 
-  if (phase === 'recording') {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={stopRecording}
-            disabled={busy}
-            aria-label={t`Stop recording`}
-            data-testid="top-nav-record-screen"
-            data-recording="true"
-            {...wideClusterButtonAttrs}
-            className={cn(chromeEntityActionClassName, 'relative w-auto gap-1.5 px-2 text-xs font-medium tabular-nums text-red-500 hover:text-red-500')}
-          >
-            {!busy && <span aria-hidden className="pointer-events-none absolute inset-0 animate-pulse rounded-md bg-red-500/10 shadow-[0_0_10px_2px_rgba(239,68,68,0.55)] ring-1 ring-red-500/60" />}
-            <span className={cn('inline-block h-2.5 w-2.5 rounded-sm bg-red-500', !busy && 'animate-pulse')} />
-            {busy ? t`Saving…` : startedAt && <Elapsed since={startedAt} />}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          {busy ? t`Saving the recording` : t`Stop recording`}
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
+  if (phase === 'ready' && recording) return <RecordingReadyDialog recording={recording} />;
+  if (phase !== 'recording') return null;
 
   return (
-    <>
-      <NavIconButton
-        icon={RecordIcon as LucideIcon}
-        label={t`Record screen`}
-        tooltipContent={t`Record screen (video only)`}
-        onClick={() => void startRecording()}
-        disabled={busy}
-        testId="top-nav-record-screen"
-      />
-      {phase === 'ready' && recording && <RecordingReadyDialog recording={recording} />}
-    </>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={stopRecording}
+          disabled={busy}
+          aria-label={t`Stop recording`}
+          data-testid="top-nav-recording-stop"
+          data-recording="true"
+          {...wideClusterButtonAttrs}
+          className={cn(recordingEntityActionClassName, busy && 'animate-none')}
+        >
+          <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-sm bg-current" />
+          {busy ? t`Saving…` : startedAt && <Elapsed since={startedAt} />}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="text-xs">
+        {busy ? t`Saving the recording` : t`Stop recording`}
+      </TooltipContent>
+    </Tooltip>
   );
 }

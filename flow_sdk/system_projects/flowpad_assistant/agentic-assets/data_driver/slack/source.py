@@ -680,6 +680,7 @@ class SlackSource(MessageSource):
                 ready=False,
                 detail="The Slack app is missing the history permission. It needs `channels:history` (and "
                 "`groups:history` for private channels); an admin has to add it and everyone reconnects.",
+                refused=True,
             )
         if error:
             return Verdict(ready=False, detail=f"Slack refused the request: {error}")
@@ -689,15 +690,15 @@ class SlackSource(MessageSource):
         me = await self._api("auth.test", {})
         error = str(me.get("error") or "")
         if error in REFUSED_CREDENTIAL:
-            return Verdict(ready=False, detail=f"Slack refused the credential ({error}). Paste the User OAuth Token of your own Slack app, installed in your workspace.")
+            return Verdict(ready=False, detail=f"Slack refused the credential ({error}). Paste the User OAuth Token of your own Slack app, installed in your workspace.", refused=True)
         if error:
             return Verdict(ready=False, detail=f"Slack refused the request: {error}")
         if not str(me.get("user_id") or ""):
-            return Verdict(ready=False, detail="This token is a bot's, not a person's. Everything you are in needs your own app's User OAuth Token (xoxp-…).")
+            return Verdict(ready=False, detail="This token is a bot's, not a person's. Everything you are in needs your own app's User OAuth Token (xoxp-…).", refused=True)
         listed = await self._api("users.conversations", {"types": CONVERSATION_TYPES, "exclude_archived": "true", "limit": "1"})
         error = str(listed.get("error") or "")
         if error == "missing_scope":
-            return Verdict(ready=False, detail=f"Your Slack app is missing permissions. Its user scopes must include {', '.join(USER_SCOPES)}; add them and reinstall the app.")
+            return Verdict(ready=False, detail=f"Your Slack app is missing permissions. Its user scopes must include {', '.join(USER_SCOPES)}; add them and reinstall the app.", refused=True)
         if error:
             return Verdict(ready=False, detail=f"Slack refused the request: {error}")
         who = f"@{me.get('user')}" if me.get("user") else "you"

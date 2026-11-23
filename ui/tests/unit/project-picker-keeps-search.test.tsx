@@ -12,7 +12,7 @@ vi.mock('@src/hooks/use-claude-projects', () => ({
   useProjectList: () => ({
     projects: [
       { id: 'a', name: 'alpha', cwd: '/w/alpha' },
-      { id: 'b', name: 'waha-service', cwd: '/w/waha-service' },
+      { id: 'b', name: 'bridge-service', cwd: '/w/bridge-service' },
     ],
     isLoading: false,
   }),
@@ -28,9 +28,9 @@ describe('ProjectPickerModal', () => {
     const props = { open: true, onOpenChange: () => {}, onConfirm: () => {} };
     const { rerender } = render(<ProjectPickerModal {...props} selectedIds={[]} />);
     const box = screen.getByRole('textbox');
-    await userEvent.type(box, 'waha');
+    await userEvent.type(box, 'bridge');
     rerender(<ProjectPickerModal {...props} selectedIds={[]} />);
-    expect(screen.getByRole('textbox')).toHaveValue('waha');
+    expect(screen.getByRole('textbox')).toHaveValue('bridge');
     expect(screen.queryByText('alpha')).not.toBeInTheDocument();
   });
 });

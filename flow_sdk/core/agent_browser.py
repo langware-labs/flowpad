@@ -1,17 +1,20 @@
-"""The agent browser: Flowpad's own Chrome window, one per instance.
+"""A managed browser window: one per instance and browser driver, on a profile of Flowpad's own.
 
-The user's installed Chrome (or Edge) on a profile of its own under
-``~/.flow/instances/<instance>/browser/profile`` — none of the user's sign-ins, and
-the ones made there are kept. Same files as the real-browser skill's ``browser.mjs``
-(``state.json``: ``{mode, browser, pid, port, session}``), so the skill and a
-session's ``browser`` MCP server reuse one window.
+Every MANAGED browser driver (``agentic-assets/browser_driver/<name>/``, ``managed: true``) runs
+through this module; its config (``browser_drivers.read_config``) says which app, which of
+Flowpad's own profiles and which debugging port — none of the user's sign-ins, and the ones made
+there are kept.
 
-A session whose browser is ``agent`` gets ONE MCP server, ``browser``, whose command
-is this module (``python -m flow_sdk.core.agent_browser``): a small stdio proxy that
-answers ``initialize`` and ``tools/list`` itself (the tool list is cached per
-instance), and starts (or reuses) the window only on the FIRST ``tools/call`` — then
-pipes everything to Playwright MCP attached over CDP. A session that never browses
-never opens a window.
+The default driver (``agent``) keeps ``~/.flow/instances/<instance>/browser/`` and the same files
+as the real-browser skill's ``browser.mjs`` (``state.json``: ``{mode, browser, pid, port,
+session}``), so the skill and a session's MCP server reuse one window. Any other driver has a
+folder of its own under ``browser/drivers/<name>/``.
+
+A session gets ONE MCP server whose command is this module (``python -m
+flow_sdk.core.agent_browser mcp --driver <name>``): a small stdio proxy that answers
+``initialize`` and ``tools/list`` itself (the tool list is cached per instance), and starts (or
+reuses) the window only on the FIRST ``tools/call`` — then pipes everything to Playwright MCP
+attached over CDP. A session that never browses never opens a window.
 """
 
 from __future__ import annotations
@@ -27,14 +30,12 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
+from flow_sdk.core import browser_drivers
 from flow_sdk.core.app_ports import free_port
 from flow_sdk.instances.paths import instance_dir
 from flow_sdk.pid_probe import pid_is_alive
 from flow_sdk.schema.data_spec.spec import DataSpec
 
-#: The MCP server's name in a session — its tools are ``mcp__agent_browser__*``. Not
-#: ``browser``: Copilot's model API reserves that namespace and refuses the whole turn.
-MCP_NAME = "agent_browser"
 PLAYWRIGHT_MCP = "@playwright/mcp@latest"
 
 
@@ -53,15 +54,32 @@ def _base_dir(instance: str | None = None) -> Path:
     return instance_dir(instance or _instance()) / "browser"
 
 
-def _state_path(instance: str | None = None) -> Path:
-    return _base_dir(instance) / "state.json"
+def _driver_dir(instance: str | None = None, driver: str = browser_drivers.DEFAULT) -> Path:
+    """The driver's own folder: the default driver keeps the shared ``browser/`` one."""
+    base = _base_dir(instance)
+    return base if driver == browser_drivers.DEFAULT else base / "drivers" / driver
 
 
-def _read_state(instance: str | None = None) -> dict:
+def _profile_dir(base: Path, profile: str) -> Path:
+    """A profile of Flowpad's own; ``default`` is the folder the window always used."""
+    return base / "profile" if profile in ("", "default") else base / "profiles" / profile
+
+
+def _state_path(instance: str | None = None, driver: str = browser_drivers.DEFAULT) -> Path:
+    return _driver_dir(instance, driver) / "state.json"
+
+
+def _read_state(instance: str | None = None, driver: str = browser_drivers.DEFAULT) -> dict:
     try:
-        return json.loads(_state_path(instance).read_text())
+        return json.loads(_state_path(instance, driver).read_text())
     except (OSError, ValueError):
         return {}
+
+
+def _fixed_port(driver: str) -> Optional[int]:
+    """The port the driver's config pins, or None when it takes a free one."""
+    port = browser_drivers.read_config(driver).get("port") or ""
+    return int(port) if port.isdigit() else None
 
 
 def cdp_up(port: object) -> bool:
@@ -74,17 +92,37 @@ def cdp_up(port: object) -> bool:
         return False
 
 
-def status(instance: str | None = None) -> AgentBrowserStatus:
+def status(instance: str | None = None, driver: str = browser_drivers.DEFAULT) -> AgentBrowserStatus:
     """What is running now. Never starts anything."""
-    state = _read_state(instance)
+    state = _read_state(instance, driver)
     pid = state.get("pid") if isinstance(state.get("pid"), int) else None
-    up = state.get("mode") == "agent" and pid_is_alive(pid) and cdp_up(state.get("port"))
+    pinned = _fixed_port(driver)
+    if pinned is not None:
+        # A pinned port is the window whoever started it: a browser the person launched on it counts.
+        up, port = cdp_up(pinned), pinned
+        pid = pid if pid_is_alive(pid) else None
+    else:
+        ours = driver != browser_drivers.DEFAULT or state.get("mode") == "agent"
+        up, port = bool(ours and pid_is_alive(pid) and cdp_up(state.get("port"))), state.get("port")
     return AgentBrowserStatus(
         up=up,
-        pid=state.get("pid") if up else None,
-        port=state.get("port") if up else None,
+        pid=pid if up else None,
+        port=port if up else None,
         browser=Path(state.get("browser") or "").name if up else "",
     )
+
+
+def open_urls(instance: str | None = None) -> set[str]:
+    """The addresses of the pages open in the agent browser now (no fragment); empty when it is not up."""
+    port = status(instance).port
+    if not port:
+        return set()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=1) as resp:
+            tabs = json.loads(resp.read())
+    except (OSError, ValueError):
+        return set()
+    return {str(tab.get("url") or "").split("#")[0] for tab in tabs if isinstance(tab, dict) and tab.get("type") == "page"}
 
 
 def find_browser() -> Optional[str]:
@@ -111,18 +149,36 @@ class AgentBrowserError(RuntimeError):
     pass
 
 
-def ensure_running(instance: str | None = None) -> AgentBrowserStatus:
-    """Start the window, or reuse the one running. Raises ``AgentBrowserError``."""
-    current = status(instance)
+def executable_for(driver: str = browser_drivers.DEFAULT) -> Optional[str]:
+    """The program the driver's window runs: the app its config names, else the first of its
+    ``apps`` installed here. None when none is."""
+    from flow_sdk.core.browser_profiles import app_binary  # noqa: PLC0415
+
+    spec = browser_drivers.get(driver)
+    if spec is None:
+        return None
+    chosen = browser_drivers.read_config(driver).get("app") or ""
+    if chosen:
+        return app_binary(chosen)
+    if driver == browser_drivers.DEFAULT and (found := find_browser()):
+        return found
+    return next((exe for exe in map(app_binary, spec.apps) if exe), None)
+
+
+def ensure_running(instance: str | None = None, driver: str = browser_drivers.DEFAULT) -> AgentBrowserStatus:
+    """Start the driver's window, or reuse the one running. Raises ``AgentBrowserError``."""
+    current = status(instance, driver)
     if current.up:
         return current
-    exe = find_browser()
+    exe = executable_for(driver)
     if not exe:
-        raise AgentBrowserError("NO_BROWSER: neither Chrome nor Edge is installed")
-    base = _base_dir(instance)
-    profile = base / "profile"
+        spec = browser_drivers.get(driver)
+        wanted = browser_drivers.read_config(driver).get("app") or ", ".join(spec.apps if spec else ())
+        raise AgentBrowserError(f"NO_BROWSER: none of these is installed: {wanted}")
+    base = _driver_dir(instance, driver)
+    profile = _profile_dir(base, browser_drivers.read_config(driver).get("profile") or "")
     profile.mkdir(parents=True, exist_ok=True)
-    port = free_port()
+    port = _fixed_port(driver) or free_port()
     with open(base / "browser.log", "w") as log:
         child = subprocess.Popen(
             [exe, f"--remote-debugging-port={port}", f"--user-data-dir={profile}",
@@ -138,17 +194,28 @@ def ensure_running(instance: str | None = None) -> AgentBrowserStatus:
         time.sleep(0.2)
     if not up:
         raise AgentBrowserError(f"BROWSER_DID_NOT_START: the agent profile may be open elsewhere ({profile})")
-    state = _read_state(instance)
+    state = _read_state(instance, driver)
     state.update({"mode": "agent", "browser": exe, "pid": child.pid, "port": port})
-    _state_path(instance).write_text(json.dumps(state, indent=2))
+    _state_path(instance, driver).write_text(json.dumps(state, indent=2))
     return AgentBrowserStatus(up=True, pid=child.pid, port=port, browser=Path(exe).name)
 
 
-def mcp_spec():
-    """The session's ``browser`` server: this module, run by this interpreter."""
-    from flow_sdk.schema.data_spec.mcp_spec import McpSpec  # noqa: PLC0415
+def stop(instance: str | None = None, driver: str = browser_drivers.DEFAULT) -> bool:
+    """Close the window THIS module started for the driver. False when there is none of ours:
+    a browser the person launched on a pinned port is theirs to close."""
+    pid = _read_state(instance, driver).get("pid")
+    if not isinstance(pid, int) or not pid_is_alive(pid):
+        return False
+    try:
+        os.kill(pid, 15)
+    except OSError:
+        return False
+    return True
 
-    return McpSpec(name=MCP_NAME, command=sys.executable, args=["-m", "flow_sdk.core.agent_browser", "mcp"])
+
+def mcp_spec(driver: str = browser_drivers.DEFAULT):
+    """The driver's server for a session — its manifest's ``mcp``, run by this interpreter."""
+    return browser_drivers.mcp_spec_for(driver)
 
 
 def _spawn_playwright(port: int) -> subprocess.Popen:
@@ -213,9 +280,9 @@ def _tools(init: dict) -> list:
     return tools
 
 
-def _start_playwright(init: dict, out) -> subprocess.Popen:
+def _start_playwright(init: dict, out, driver: str = browser_drivers.DEFAULT) -> subprocess.Popen:
     """The window (started or reused), then Playwright MCP on it, its replies piped to ``out``."""
-    child = _spawn_playwright(ensure_running().port)
+    child = _spawn_playwright(ensure_running(driver=driver).port)
     _handshake(child, init)
 
     def pump() -> None:
@@ -227,8 +294,10 @@ def _start_playwright(init: dict, out) -> subprocess.Popen:
     return child
 
 
-def serve(inp, out) -> None:
+def serve(inp, out, driver: str = browser_drivers.DEFAULT) -> None:
     """The lazy proxy: no window and no Playwright until the first ``tools/call``."""
+    spec = browser_drivers.get(driver)
+    server_name = spec.mcp.name if spec is not None and spec.mcp is not None else driver
     init: dict = {"jsonrpc": "2.0", "method": "initialize", "params": {}}
     child: Optional[subprocess.Popen] = None
     for line in inp:
@@ -245,10 +314,10 @@ def serve(inp, out) -> None:
             init = {k: v for k, v in msg.items() if k != "id"}
             version = (msg.get("params") or {}).get("protocolVersion", "2025-03-26")
             _reply(out, msg_id, {"protocolVersion": version, "capabilities": {"tools": {}},
-                                 "serverInfo": {"name": MCP_NAME, "version": "1"}})
+                                 "serverInfo": {"name": server_name, "version": "1"}})
         elif method == "tools/call":
             try:
-                child = _start_playwright(init, out)
+                child = _start_playwright(init, out, driver)
             except (AgentBrowserError, OSError) as exc:
                 _reply(out, msg_id, {"isError": True, "content": [{"type": "text", "text": str(exc)}]})
                 continue
@@ -270,5 +339,10 @@ def serve(inp, out) -> None:
         child.wait()
 
 
+def _driver_arg(argv: list[str]) -> str:
+    """``mcp [--driver NAME]`` — the default driver when none is named."""
+    return argv[argv.index("--driver") + 1] if "--driver" in argv[:-1] else browser_drivers.DEFAULT
+
+
 if __name__ == "__main__":
-    serve(sys.stdin, sys.stdout)
+    serve(sys.stdin, sys.stdout, _driver_arg(sys.argv[1:]))

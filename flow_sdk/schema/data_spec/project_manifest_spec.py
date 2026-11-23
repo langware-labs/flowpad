@@ -137,8 +137,11 @@ class PublishedAssetSpec(DataSpec):
         return split_typeid(self.typeid)[1]
 
 
-#: The browsers a session can use (``project_manifest.json`` ``browser``); the first is the default.
-BROWSERS: tuple[str, ...] = ("agent", "extension")
+def browser_names() -> tuple[str, ...]:
+    """The browsers a project can recommend — the shipped browser drivers' names, the default first."""
+    from flow_sdk.core import browser_drivers  # noqa: PLC0415  (lazy: reads asset folders)
+
+    return browser_drivers.names() or (browser_drivers.DEFAULT,)
 
 
 class ProjectManifestSpec(DataSpec):
@@ -191,16 +194,20 @@ class ProjectManifestSpec(DataSpec):
     #: in, a receiver fetches it into their own store. Empty: the project has none, and a
     #: credential cannot be shared with its values. A vault names a place, never a value.
     secret_vaults: dict[str, SecretVaultSpec] = Field(default_factory=dict)
-    #: The browser this project's agent sessions use: ``agent`` — Flowpad's own Chrome window
-    #: (always available) — or ``extension`` — the user's Chrome through Claude in Chrome. A
-    #: session may override it; a harness with no extension (Codex) always gets ``agent``.
+    #: The vault this project's agents and shares use when nothing more specific names one
+    #: (``flow_sdk/secrets/active.py``). Empty: the first of ``secret_vaults`` by name.
+    default_secret_vault: str = ""
+    #: The browser this project RECOMMENDS for its agent sessions — a browser driver's name
+    #: (``agentic-assets/browser_driver/<name>/``). A person's own pick on their computer wins over
+    #: it (``browser_choice``); a harness with no extension switch always gets the default.
     browser: str = "agent"
 
     @field_validator("browser", mode="before")
     @classmethod
     def _known_browser(cls, value: object) -> str:
         """Lenient like ``home_page``: an unknown value is the default, not a broken ledger."""
-        return value if value in BROWSERS else BROWSERS[0]
+        known = browser_names()
+        return value if value in known else known[0]
 
     @field_validator("env_files", mode="before")
     @classmethod
@@ -323,6 +330,9 @@ class ProjectManifestSpec(DataSpec):
         if not document.get("secret_vaults"):
             # Silent for ``home_page``'s second reason: an older desk would refuse the key.
             document.pop("secret_vaults", None)
+        if not document.get("default_secret_vault"):
+            # Silent for ``home_page``'s second reason: an older desk would refuse the key.
+            document.pop("default_secret_vault", None)
         return document
 
 

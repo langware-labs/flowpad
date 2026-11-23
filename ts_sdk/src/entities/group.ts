@@ -22,6 +22,9 @@ export interface IGroup extends IEntity {
   project_id?: string | null;
 }
 
+/** Which entities of a tree's leaf types are its leaves — a match the consumer builds, ANDed into every listing. */
+export type GroupLeafMatch = ExpressionNode;
+
 /** One folder level: subgroups + member entities of the requested leaf types. */
 export interface GroupChildren {
   groups: Group[];
@@ -95,37 +98,41 @@ export class Group extends APIEntity<Group> implements IGroup {
    */
   static async listRoot(
     namespace: string,
-    opts: { types?: string[]; projectId?: string | null } = {},
+    opts: { types?: string[]; projectId?: string | null; leafMatch?: GroupLeafMatch } = {},
   ): Promise<GroupChildren> {
     const projectLeaf = opts.projectId ? [new ExpressionNode({ project_id: opts.projectId })] : [];
-    const groups = (await queryEntities<IGroup>(
-      Group.type,
-      new ExpressionNode({
-        op: '$AND',
-        operands: [new ExpressionNode({ group_namespace: namespace }), groupIdIsNull(), ...projectLeaf],
-      }),
-    )) as Group[];
-    const members = await Group._members(opts.types ?? [], (extra) =>
-      new ExpressionNode({ op: '$AND', operands: [groupIdIsNull(), ...extra, ...projectLeaf] }),
-    );
+    const [groups, members] = await Promise.all([
+      queryEntities<IGroup>(
+        Group.type,
+        new ExpressionNode({
+          op: '$AND',
+          operands: [new ExpressionNode({ group_namespace: namespace }), groupIdIsNull(), ...projectLeaf],
+        }),
+      ) as Promise<Group[]>,
+      Group._members(opts.types ?? [], [groupIdIsNull(), ...projectLeaf], opts.leafMatch),
+    ]);
     return { groups: groups.sort(byName), members };
   }
 
   /** Children of this folder: subgroups + members of the requested leaf types. */
-  async listChildren(opts: { types?: string[] } = {}): Promise<GroupChildren> {
-    const groups = (await queryEntities<IGroup>(
-      Group.type,
-      new ExpressionNode({ group_id: this.id }),
-    )) as Group[];
-    const members = await Group._members(opts.types ?? [], () => new ExpressionNode({ group_id: this.id }));
+  async listChildren(opts: { types?: string[]; leafMatch?: GroupLeafMatch } = {}): Promise<GroupChildren> {
+    const inThis = new ExpressionNode({ group_id: this.id });
+    const [groups, members] = await Promise.all([
+      queryEntities<IGroup>(Group.type, inThis) as Promise<Group[]>,
+      Group._members(opts.types ?? [], [inThis], opts.leafMatch),
+    ]);
     return { groups: groups.sort(byName), members };
   }
 
+  /** `leafMatch` narrows which members count as leaves (e.g. one subkind); it is ANDed into the level's match. */
   private static async _members(
     types: string[],
-    matchFor: (extra: ExpressionNode[]) => ExpressionNode,
+    level: ExpressionNode[],
+    leafMatch?: GroupLeafMatch,
   ): Promise<IEntity[]> {
-    const perType = await Promise.all(types.map((t) => queryEntities<IEntity>(t, matchFor([]))));
+    const operands = leafMatch ? [...level, leafMatch] : level;
+    const match = operands.length === 1 ? operands[0] : new ExpressionNode({ op: '$AND', operands });
+    const perType = await Promise.all(types.map((t) => queryEntities<IEntity>(t, match)));
     return perType.flat().sort(byName as any);
   }
 

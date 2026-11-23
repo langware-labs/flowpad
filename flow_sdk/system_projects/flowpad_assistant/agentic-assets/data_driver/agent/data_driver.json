@@ -5,23 +5,30 @@
   "icon_name": "AgentTransport",
   "channel_icon_names": {
     "gmail": "Gmail",
-    "slack": "Slack"
+    "slack": "Slack",
+    "linkedin": "Linkedin"
   },
-  "description": "Reads Gmail or Slack by having your Claude Code session fetch it with the connectors you already authorised there.",
+  "description": "Reads Gmail, Slack or LinkedIn messages by having your Claude Code session fetch them — with the connectors you already authorised there, or through a browser.",
   "kind": "datasource.agent",
   "config": {
     "connector": {
       "type": "text",
       "label": "Service",
-      "placeholder": "gmail | slack",
+      "placeholder": "gmail | slack | linkedin",
       "account_key": true,
-      "hint": "gmail or slack."
+      "hint": "gmail, slack or linkedin."
     },
     "mailbox": {
       "type": "text",
       "label": "Label or channel",
       "placeholder": "INBOX",
-      "hint": "Gmail: a label (defaults to INBOX). Slack: a channel ID (C…), required."
+      "hint": "Gmail: a label (defaults to INBOX). Slack: a channel ID (C…), required. LinkedIn: leave empty."
+    },
+    "browser": {
+      "type": "text",
+      "label": "Browser",
+      "placeholder": "extension | chrome_debug | agent",
+      "hint": "For a service read through a browser (LinkedIn): the browser driver the worker uses. That browser must be signed in to the service."
     },
     "harness": {
       "type": "text",

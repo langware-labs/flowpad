@@ -250,6 +250,7 @@ def post_graph_json(
     timeout: int = 15,
     on_error: "Callable[[int, dict], NoReturn]",
     answer_may_lag: bool = False,
+    params: Optional[dict] = None,
 ) -> dict:
     """POST JSON to a graph endpoint and return the SUCCESS envelope's ``data``.
 
@@ -263,7 +264,8 @@ def post_graph_json(
     the POST/parse/envelope boilerplate.
     """
     return (
-        _graph_json("POST", url, json=payload or {}, timeout=timeout, on_error=on_error, answer_may_lag=answer_may_lag)
+        _graph_json("POST", url, json=payload or {}, params=params or {}, timeout=timeout, on_error=on_error,
+                    answer_may_lag=answer_may_lag)
         or {}
     )
 
@@ -283,6 +285,11 @@ def get_graph_json(
 def delete_graph_json(url: str, *, timeout: int = 15, on_error: "Callable[[int, dict], NoReturn]") -> dict:
     """DELETE a graph endpoint and return the SUCCESS envelope's ``data``."""
     return _graph_json("DELETE", url, timeout=timeout, on_error=on_error) or {}
+
+
+def patch_graph_json(url: str, payload: dict, *, timeout: int = 15, on_error: "Callable[[int, dict], NoReturn]") -> dict:
+    """PATCH fields of a graph entity and return the SUCCESS envelope's ``data``."""
+    return _graph_json("PATCH", url, json=payload, timeout=timeout, on_error=on_error) or {}
 
 
 def server_error(status_code: int, body: dict) -> NoReturn:

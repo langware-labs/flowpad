@@ -360,3 +360,8 @@ async def _run_start(request: HeadlessTurnRequest) -> int:
     async for event in headless_turn(request):
         printer.feed(event)
     return printer.result()
+
+
+# The monitor commands live in their own module and register on ``process_app``; importing it here is what
+# adds them to ``flow process``. Last, so everything it imports from this module is already defined.
+from flow_sdk.cli.commands import process_monitor_cmd  # noqa: E402, F401

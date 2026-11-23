@@ -17,6 +17,7 @@ import { NavIconButton } from './NavIconButton';
 import { ProjectSetupButton } from './ProjectSetupButton';
 import { RuntimeChip } from './RuntimeChip';
 import { TopBarActions } from './TopBarActions';
+import { StalePageIndicator } from './StalePageIndicator';
 import { UpdateReadyIndicator } from './UpdateReadyIndicator';
 import { TopBarAskForHelp } from './TopBarAskForHelp';
 import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
@@ -146,6 +147,7 @@ export function TopNavBar() {
           onAsk={assistant ? () => setMode('ask') : undefined}
         />
       )}
+      <StalePageIndicator />
       <UpdateReadyIndicator />
       <TopBarActions targetTypeId={targetTypeId} targetTitle={targetTitle} dock={currentDock} />
     </div>

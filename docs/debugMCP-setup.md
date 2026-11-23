@@ -4,6 +4,11 @@ id: a178d785-4b50-5d10-8539-528ef362d418
 
 # debugMCP Setup
 
+> Flowpad sessions get the same thing without any of this setup: pick **Chrome debug** in the footer's
+> browser menu (the `chrome_debug` [browser driver](browser-drivers.md)). It starts Chrome Canary on port
+> 9222 on a profile of Flowpad's own, or reuses a Canary already running there. What follows is the
+> hand-made setup for a harness run outside Flowpad.
+
 ## Overview
 
 Two separate browser MCP servers are configured — `debugMcp` for live browser debugging via CDP, and `playwright` for headless automated tests. They use different browsers and never share state.

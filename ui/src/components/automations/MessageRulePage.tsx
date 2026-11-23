@@ -11,7 +11,7 @@
  * recent real messages. Every call goes through the hooks layer → `Trigger.*`.
  */
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FlowMessage, TypeId, messageRuleFields, parseTarget, stepsOfThen, type DataSource, type ITrigger, type RuleStep, type TryRow } from '@sdk';
+import { FlowMessage, TypeId, messageRuleFields, parseTarget, stepsOfThen, type DataSource, type ITrigger, type ReportTo, type RuleStep, type TryRow } from '@sdk';
 import { AlertTriangle, ArrowLeft, Check, ExternalLink, Loader2, Play, Save, Trash2, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
@@ -56,6 +56,8 @@ interface Draft {
   sources: string[];
   /** The Then, in order. Empty on a rule whose `then` this screen does not edit. */
   steps: RuleStep[];
+  /** The run's answer goes into the message's conversation, for this person only (else: Automations). */
+  report_to: ReportTo;
 }
 
 function draftOf(t: ITrigger): Draft {
@@ -65,6 +67,7 @@ function draftOf(t: ITrigger): Draft {
     catch: t.gate?.sentence ?? '',
     sources: (t.tag_scope ?? []).map((s) => parseTarget(s)[1] ?? s),
     steps: stepsOfThen(t.then),
+    report_to: t.report_to ?? 'conversation',
   };
 }
 
@@ -105,6 +108,7 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
         // Started from a tag ("automate this tag"): the tag is already chosen.
         message_tags: route.tag ? [route.tag] : [],
         enabled: true,
+        report_to: 'conversation',
         catch: recipe?.catch ?? '',
         sources: route.source ? [route.source] : [],
         steps: [{ kind: 'run_agent', agent: '', prompt: recipe?.prompt ?? '' }],
@@ -406,6 +410,19 @@ export function MessageRulePage({ route }: { route: AutomationsRoute }) {
                 <Trans>Steps run in order. An agent gets the message and can reply in the conversation. Only agents that can run on this computer are offered.</Trans>
               </p>
               </>}
+              <label className="flex items-center gap-2 text-sm" data-testid="message-rule-report-to">
+                <Switch
+                  checked={draft.report_to === 'conversation'}
+                  disabled={readOnly}
+                  onCheckedChange={(on) => setDraft({ report_to: on ? 'conversation' : 'automations' })}
+                />
+                <span>
+                  <Trans>Post the answer in the conversation, for you only</Trans>
+                </span>
+              </label>
+              <p className="text-xs text-muted-foreground">
+                <Trans>You can share it with everyone from there. Off: it is posted in this automation's own conversation.</Trans>
+              </p>
             </section>
 
             <div className="flex items-center gap-3">

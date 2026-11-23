@@ -284,6 +284,12 @@ class EntityType(StrEnum):
     #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD) — the only way secrets are
     #: declared, in user or project scope.
     CREDENTIAL = "credential"
+    #: A driver over a tool that holds secret vaults (1Password, GCP Secret Manager): a folder
+    #: asset, ``agentic-assets/secret_manager/<name>/``. A vault is one configured instance of it.
+    SECRET_MANAGER = "secret_manager"
+    #: One way a session drives a browser (Flowpad's own window, the user's Chrome through an
+    #: extension): a folder asset, ``agentic-assets/browser_driver/<name>/``.
+    BROWSER_DRIVER = "browser_driver"
     # One thread of ingested cloud messages (a Gmail thread, a Slack
     # `thread_ts`). MANY threads may point at ONE conversation — that is the
     # merge seam, and why the conversation id is not derived from the thread.
@@ -312,6 +318,10 @@ class EntityType(StrEnum):
     # ── Skillit ──────────────────────────────────────────────────────────────
     SKILLIT_SESSION = "skillit_session"
     SKILLIT_CONFIG = "skillit_config"
+
+    # ── Monitor ──────────────────────────────────────────────────────────────
+    # A session's goal watched on a clock (``flow process monitor``): ``monitor.json``, beside its cron trigger.
+    MONITOR = "monitor"
 
 
 #: Membership containers: hub-owned roots whose rows only the hub membership

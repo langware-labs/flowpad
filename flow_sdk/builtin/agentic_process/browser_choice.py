@@ -1,11 +1,18 @@
 """Which browser a session uses — one rule, read at every launch.
 
-Session override (``context_data["browser"]``) > the legacy ``chrome`` flag (a caller
-that asked for ``--chrome``) > the project's ``browser`` in ``project_manifest.json``
-> ``agent``. A harness whose driver has no extension always gets ``agent``.
+Most specific first:
 
-``agent`` attaches ONE MCP server, ``browser`` (``flow_sdk/core/agent_browser.py``);
-``extension`` passes ``--chrome`` and attaches no browser server.
+==========  ==================================================================================
+``pick``    the person's own choice for this project on THIS computer (:func:`set_browser_pick`)
+``session`` ``context_data["browser"]``, then the legacy ``chrome`` flag (a caller's ``--chrome``)
+``project`` the ``browser`` the project recommends in ``project_manifest.json``
+``default`` ``agent``
+==========  ==================================================================================
+
+A browser is a browser driver (``agentic-assets/browser_driver/<name>/``,
+``flow_sdk/core/browser_drivers.py``), and its manifest names the workers it supports. A choice
+the session's worker cannot use falls to the default driver, and the answer keeps what was asked
+(``requested``) so a menu can say why.
 """
 
 from __future__ import annotations
@@ -15,46 +22,103 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from flow_sdk.schema.data_spec.project_manifest_spec import BROWSERS
+from flow_sdk.core import browser_drivers
+from flow_sdk.schema.data_spec.browser_driver_spec import BrowserAttach
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
-Browser = Literal["agent", "extension"]
+#: The person's pick per project, on this computer only: ``{<project id>: <browser driver name>}``.
+PREF_BROWSER_PICK = "preferences.browser.pick"
 
 
 class BrowserLaunch(DataSpec):
     """The session's browser for one launch, decided at the agentic-process level. Each worker
     renders it with its own CLI switches (``AgentOptions.EXTENSION_FLAG`` / ``STRICT_MCP_FLAG``)."""
 
-    kind: Browser = "agent"
+    #: A browser driver's name.
+    kind: str = browser_drivers.DEFAULT
+    #: Which rung decided: ``pick`` | ``session`` | ``project`` | ``default``.
+    source: str = "default"
+    #: The session's worker, by vendor key — a driver reaches each worker its own way.
+    worker: str = ""
+    #: The driver that was asked for but cannot serve this worker; "" when the choice stood.
+    requested: str = ""
+
+    @property
+    def attach(self) -> Optional[BrowserAttach]:
+        return browser_drivers.attach_for(self.kind, self.worker)
 
     @property
     def extension(self) -> bool:
-        return self.kind == "extension"
+        """The worker's own browser switch carries this launch."""
+        return self.attach is BrowserAttach.HARNESS_EXTENSION
 
-#: Tool-name prefixes that mean "drove a browser", per family.
-_FAMILIES = {
-    "mcp__claude-in-chrome__": "extension",
-    "mcp__agent_browser__": "agent",
+    def mcp_spec(self):
+        """The MCP server this launch adds to the session, or None when it rides the worker's switch."""
+        return browser_drivers.mcp_spec_for(self.kind) if self.attach is BrowserAttach.MCP_SERVER else None
+
+    def instructions(self) -> str:
+        """What the session is told about its browser — the driver's own text."""
+        return browser_drivers.instructions_for(self.kind)
+
+
+#: Browser tools a session may carry that are no driver of ours, by tool-name prefix.
+_OTHER_TOOLS = {
     "mcp__playwright__": "playwright",
     "mcp__debugMcp__": "playwright",
     "mcp__chrome-devtools__": "playwright",
 }
 
 
-def resolve(*, override: object, legacy_chrome: bool, project_browser: str, supports_extension: bool) -> Browser:
-    """The pure rule — see the module docstring."""
-    if not supports_extension:
-        return "agent"
-    if override in BROWSERS:
-        return override  # type: ignore[return-value]
-    if legacy_chrome:
-        return "extension"
-    return project_browser if project_browser in BROWSERS else "agent"  # type: ignore[return-value]
+def _family(tool_name: str) -> Optional[str]:
+    """Which browser a tool call drove: a driver's name, ``playwright`` for another one, else None."""
+    return browser_drivers.family_of(tool_name) or next((f for p, f in _OTHER_TOOLS.items() if tool_name.startswith(p)), None)
+
+
+def decide(
+    *, override: object, legacy_chrome: bool, project_browser: str, worker: str = "", has_switch: bool = False,
+    pick: object = None,
+) -> BrowserLaunch:
+    """The pure rule — see the module docstring. ``worker``: the session's vendor key;
+    ``has_switch``: that worker has a browser switch of its own."""
+    known = browser_drivers.names()
+    extension = next((name for name in known if browser_drivers.uses_switch(name)), "")
+    asked = (
+        (pick, "pick"),
+        (override, "session"),
+        (extension if legacy_chrome else None, "session"),
+        # The manifest is silent on the default, so the default there is no recommendation.
+        (project_browser if project_browser != browser_drivers.DEFAULT else None, "project"),
+    )
+    kind, source = next(((name, rung) for name, rung in asked if name and name in known), (browser_drivers.DEFAULT, "default"))
+    if not browser_drivers.supports(str(kind), worker, has_switch=has_switch):
+        return BrowserLaunch(worker=worker, requested=str(kind))
+    return BrowserLaunch(kind=str(kind), source=source, worker=worker)
+
+
+def resolve(**asked: Any) -> str:
+    """:func:`decide`, answering the driver's name alone."""
+    return decide(**asked).kind
+
+
+def browser_pick(project_id: Any) -> str:
+    """The person's pick for the project on this computer: a browser driver's name, or ""."""
+    from flow_sdk.preferences import read_project_pick  # noqa: PLC0415
+
+    return read_project_pick(PREF_BROWSER_PICK, project_id)
+
+
+def set_browser_pick(project_id: Any, name: str) -> None:
+    """Pick the project's browser on this computer; "" clears the pick. ``ValueError`` for an unknown driver."""
+    from flow_sdk.preferences import write_project_pick  # noqa: PLC0415
+
+    if name and browser_drivers.get(name) is None:
+        raise ValueError(f"browser {name!r} must be one of {', '.join(browser_drivers.names())}")
+    write_project_pick(PREF_BROWSER_PICK, project_id, name)
 
 
 @functools.lru_cache(maxsize=None)
@@ -72,13 +136,22 @@ def worker_options(worker_type: str | None) -> type:
     return _options_class(type(get_driver(worker_type)))
 
 
-def supports_extension(process: "AgenticProcess") -> bool:
-    """The worker declares a switch for the extension (Claude: ``--chrome``)."""
-    return _options_class(type(process.driver)).EXTENSION_FLAG is not None
+def has_switch(worker_type: object) -> bool:
+    """The worker has a browser switch of its own (Claude: ``--chrome``) — what a
+    ``harness_extension`` driver rides."""
+    return worker_options(worker_type).EXTENSION_FLAG is not None  # type: ignore[arg-type]
+
+
+def worker_key(worker_type: object) -> str:
+    """A worker type as the vendor key a browser driver's ``workers`` names; "" when unknown."""
+    from flow_sdk.flowpad_types.vendors import vendor_or_none  # noqa: PLC0415
+
+    vendor = vendor_or_none(worker_type)
+    return vendor.key if vendor is not None else ""
 
 
 async def resolve_for(process: "AgenticProcess", project_browser: Optional[str] = None) -> BrowserLaunch:
-    """``project_browser``: the project's setting when the caller already read it."""
+    """``project_browser``: the project's recommendation when the caller already read it."""
     if project_browser is None:
         from flow_sdk.assets.project_manifest import read_browser  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
@@ -86,13 +159,15 @@ async def resolve_for(process: "AgenticProcess", project_browser: Optional[str] 
         project = await Project.get_by_id(process.project_id) if process.project_id else None
         mount = project.fs_storage_mount_path if project is not None else None
         root = mount or process.workdir
-        project_browser = read_browser(Path(root)) if root else "agent"
-    return BrowserLaunch(kind=resolve(
+        project_browser = read_browser(Path(root)) if root else browser_drivers.DEFAULT
+    return decide(
+        pick=browser_pick(process.project_id),
         override=(process.context_data or {}).get("browser"),
         legacy_chrome=bool((process.cli_config or {}).get("chrome")),
         project_browser=project_browser,
-        supports_extension=supports_extension(process),
-    ))
+        worker=worker_key(process.worker_type),
+        has_switch=has_switch(process.worker_type),
+    )
 
 
 def extension_hint() -> dict:
@@ -115,9 +190,17 @@ def _use(family: str, tool: str, args: object, at: object, failed: bool) -> dict
     return {"family": family, "tool": tool, "url": url or "", "at": at, "failed": failed}
 
 
-def last_browser_use(transcript: Optional[Path], tail_bytes: int = 400_000) -> Optional[dict]:
+def _iso(at: object) -> object:
+    """A record's clock as ISO text: epoch milliseconds (OpenCode) become what the others write."""
+    return datetime.fromtimestamp(at / 1000, tz=timezone.utc).isoformat() if isinstance(at, (int, float)) else at
+
+
+def last_browser_use(transcript: Optional[Path], tail_bytes: int = 400_000, *, unnamed: str = "") -> Optional[dict]:
     """The session's last browser tool call: ``{family, tool, url, at, failed}``. Reads the
-    transcript's tail only — a session's last call is near its end."""
+    transcript's tail only — a session's last call is near its end.
+
+    ``unnamed``: the session's own browser driver, credited for a ``browser_*`` call a worker
+    records with no server name (Deep Agents)."""
     if transcript is None or not transcript.exists():
         return None
     with transcript.open("rb") as fh:
@@ -133,17 +216,35 @@ def last_browser_use(transcript: Optional[Path], tail_bytes: int = 400_000) -> O
         item = row.get("item")
         if isinstance(item, dict) and item.get("type") == "mcp_tool_call":
             # A finished call with server and tool apart (the Codex stream).
-            family = _FAMILIES.get(f"mcp__{item.get('server')}__")
+            family = _family(f"mcp__{item.get('server')}__")
             if family:
                 failed = bool(item.get("error")) or item.get("status") == "failed"
                 last = _use(family, str(item.get("tool") or ""), item.get("arguments"), row.get("timestamp"), failed)
+            continue
+        part = row.get("part")
+        if row.get("type") == "tool_use" and isinstance(part, dict) and part.get("type") == "tool":
+            # OpenCode: one finished call, the tool named ``<server>_<tool>``.
+            family, state = _family(str(part.get("tool") or "")), part.get("state") or {}
+            if family:
+                last = _use(family, str(part["tool"]), state.get("input"), _iso(row.get("timestamp")), state.get("status") == "error")
+            continue
+        if row.get("type") in ("tool_call", "tool_result") and "tool_call_id" in row:
+            # Deep Agents: a call names the bare tool, its result carries the outcome.
+            name, call_id = str(row.get("name") or ""), row["tool_call_id"]
+            if row["type"] == "tool_call":
+                family = _family(name) or (unnamed if name.startswith("browser_") else None)
+                if family:
+                    last = _use(family, name, row.get("input"), row.get("timestamp"), False)
+                    pending[call_id] = last
+            elif call_id in pending:
+                pending.pop(call_id)["failed"] = bool(row.get("is_error"))
             continue
         data = row.get("data")
         if isinstance(data, dict) and row.get("type") in ("tool.execution_start", "tool.execution_complete"):
             # Copilot: a start names the server and tool, its complete carries the outcome.
             call_id = data.get("toolCallId", "")
             if row["type"] == "tool.execution_start":
-                family = _FAMILIES.get(f"mcp__{data.get('mcpServerName')}__")
+                family = _family(f"mcp__{data.get('mcpServerName')}__")
                 if family:
                     last = _use(family, str(data.get("mcpToolName") or ""), data.get("arguments"), row.get("timestamp"), False)
                     pending[call_id] = last
@@ -156,7 +257,7 @@ def last_browser_use(transcript: Optional[Path], tail_bytes: int = 400_000) -> O
                 continue
             if block.get("type") == "tool_use":
                 name = str(block.get("name") or "")
-                family = next((f for p, f in _FAMILIES.items() if name.startswith(p)), None)
+                family = _family(name)
                 if family:
                     last = _use(family, name.rsplit("__", 1)[-1], block.get("input"), row.get("timestamp"), False)
                     pending[block.get("id", "")] = last

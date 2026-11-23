@@ -136,14 +136,12 @@ Electron (main.js)
   an optional update never holds the start. Only the recovery asks pre-start: after a failed start, or for an
   install that cannot say its version, the native engine question stays (a fix on PyPI is the way out).
 - **"Update Ready":** once a set is ready (`updateReadyState`: the downloaded desktop with the engine saved to ride
-  it, or a prepared engine alone while no desktop goes first), ONE non-blocking toast — "Update Ready", Restart /
-  Later, gone after 30 s (`ui/.../update-ready/UpdateReadyBridge.tsx`) — and an "Update ready" indicator in the top bar
-  for as long as it stays ready; it opens the version popover, which lists the set and applies it. The same set is
-  toasted once; the 90-minute reminder (`READY_REMINDER_MS`) toasts it again while it stays pending. Later, the X
-  and the timeout only close the toast. A toast asked for while the UI is still mounting is not lost: the UI takes
-  it on mount (`update-ready-take-toast`, handed out once). A prepared engine is the newest release THIS desktop runs
-  — PyPI's newest, or an older one when the newest needs a newer desktop — and is offered while it is newer than the
-  installed one. A new desktop download replaces the downloaded installer, so that one stops being ready.
+  it, or a prepared engine alone while no desktop goes first), the UI shows an "Update ready" indicator in the top
+  bar and a green dot on the footer's version chip for as long as it stays ready; both open the version popover,
+  which lists the set and applies it. The UI shows NO toast: the desktop still sends `update-ready-toast` (once per
+  set, and on the 90-minute reminder, `READY_REMINDER_MS`), and the UI does not listen for it. A prepared engine is
+  the newest release THIS desktop runs — PyPI's newest, or an older one when the newest needs a newer desktop — and
+  is offered while it is newer than the installed one. A new desktop download replaces the downloaded installer, so that one stops being ready.
   While an engine-only update waits (the user said Later), every pass — the 20-minute desktop look included,
   and passes due only to the feed's backoff — also looks for a newer engine (`engineUpdateWaiting`) and prepares
   it in place of the waiting one, quietly (`quiet`: no new toast; the indicator, the popover and the next

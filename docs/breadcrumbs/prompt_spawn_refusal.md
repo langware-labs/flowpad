@@ -12,12 +12,16 @@ description: A WorkerSpawnError raised in _http_prompt's setup (an unfunded harn
 
 > Ground truth. Proven by the fix 5f401a15b (PR #814, 2026-11-10) after the bound test's codex row failed with "HTTP error 500". Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.prompt_spawn_refusal.rules
 sites:
-  - rel_path: "ui/tests/long_tests/process_hook_acceptance.test.ts"
+  - rel_path: ui/tests/long_tests/process_hook_acceptance.test.ts
     line: 24
-    note: "FAILING? on a 500 from prompt, read this tag's rules before touching _http_prompt's WorkerSpawnError branch"
+    note: FAILING? on a 500 from prompt, read this tag's rules before touching _http_prompt's WorkerSpawnError branch
+proven: '2026-11-10'
+statements:
+  - text: 'A spawn refusal is typed and latched wherever it is raised: before the turn (this branch) or inside it.'
+  - text: Admission is always released on a setup failure, so the next prompt is not refused 409 "another prompt turn is already in flight".
 ```
 
 ## Expected behavior
@@ -48,11 +52,6 @@ All in `flow_sdk/builtin/agentic_process/`:
   `except BaseException: … raise`, which produced a 500.
 
 ## Invariants
-
-* A spawn refusal is typed and latched wherever it is raised: before the turn
-  (this branch) or inside it.
-* Admission is always released on a setup failure, so the next prompt is not refused
-  409 "another prompt turn is already in flight".
 
 ## Failure modes
 

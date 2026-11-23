@@ -36,6 +36,7 @@ INDEXED_TYPES = {
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
     "task", "todo_file", "trigger", "usage_report", "chart", "wizard", "workflow_run", "icon_pack",
     "qa_phase", "qa_test_file", "qa_test_case", "qa_cycle", "qa_iteration", "qa_test_execution", "rca",
+    "secret_manager", "browser_driver", "monitor",
 }
 
 FRONTMATTER_PORTABLE = ("subagent", "claude_md", "markdown")
@@ -48,7 +49,7 @@ FOLDER_PORTABLE = (
 #: Folder-capsule types introduced after the json capsule; they mint +
 #: persist + adopt like the rest. ``project_manifest`` is the per-project
 #: published-asset ledger: a singleton folder whose main is JSON.
-FOLDER_NO_LEGACY = ("credential", "mcp", "project_manifest", "trigger")
+FOLDER_NO_LEGACY = ("credential", "mcp", "project_manifest", "trigger", "monitor")
 #: Folder types whose main document is markdown: the id lives in that
 #: document's frontmatter (``Frontmatter``).
 FOLDER_MARKDOWN = ("skill", "task", "chart")
@@ -110,14 +111,14 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     derived_types = INDEXED_TYPES - capsule_types - native_types
     # Capsule: base's 17 + `mcp` + `wizard` + `project_manifest` +
     # `credential` (an asset we AUTHOR carries its own v4; the shipped
-    # credential templates commit theirs, so every install indexes one row).
+    # credential templates commit theirs, so every install indexes one row) + `monitor`.
     # The sibling `mcp_server` SCAN is derived, because its source is a vendor
     # config file we cannot write an id into. 15 derived, including `micro_app`,
     # whose webapp.json carries no id — so it still owes an install-independent
     # key. See `test_shipped_asset_declares_an_install_independent_key`.
     # Native JSON: the three reports + the entity documents `agent`, `asset_setup`, `compute_op`,
     # `data_source`, `data_schema`, the six QA types and `rca`, which carry their ids.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (23, 15, 18)
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (24, 15, 20)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
@@ -291,6 +292,16 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
         folder.mkdir()
         (folder / "data_driver.json").write_text(json.dumps({"schema": 1, "name": "rss"}), encoding="utf-8")
         return FSRef(folder), "data_driver:rss", namespace
+    if type_name == "secret_manager":
+        folder = root / "memvault"
+        folder.mkdir()
+        (folder / "secret_manager.json").write_text(json.dumps({"name": "memvault"}), encoding="utf-8")
+        return FSRef(folder), "secret_manager:memvault", namespace
+    if type_name == "browser_driver":
+        folder = root / "agent"
+        folder.mkdir()
+        (folder / "browser_driver.json").write_text(json.dumps({"name": "agent"}), encoding="utf-8")
+        return FSRef(folder), "browser_driver:agent", namespace
     if type_name == "dynamic_workflow":
         path.write_text("export const meta = {name: 'W'};", encoding="utf-8")
         return FSRef(path), f"dynamic_workflow:{path.resolve()}", namespace
@@ -319,7 +330,7 @@ DETERMINISTIC_TYPES = (
     "deepagents_session", "opencode_session",
     "data_driver", "dynamic_workflow", "markdown_index", "mcp_server",
     "plugin", "project", "spreadsheet", "document_file", "todo_file",
-    "workflow_run",
+    "workflow_run", "secret_manager", "browser_driver",
 )
 
 
@@ -381,10 +392,14 @@ def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -
 #: change from FLOWPAD-2070; xfail keeps the defect visible until then.
 SHIPPED_RELOCATABLE_TYPES = (
     "data_driver",
+    "secret_manager",
+    "browser_driver",
     pytest.param("micro_app", marks=pytest.mark.xfail(strict=True, reason="needs an owner-scoped key; nine assets are named 'editor'")),
 )
 
 _SHIPPED_MANIFEST = {
+    "browser_driver": ("browser_driver", "browser_driver.json", {"name": "agent", "title": "Agent browser"}),
+    "secret_manager": ("secret_manager", "secret_manager.json", {"name": "memvault", "title": "Mem vault"}),
     "data_driver": ("data_driver", "data_driver.json", {"schema": 1, "name": "rss", "title": "RSS / Atom"}),
     "micro_app": ("webapp", "webapp.json", {"schema": 1, "name": "editor", "title": "Editor"}),
 }

@@ -204,7 +204,7 @@ async def _git(dep: FlowDependency, url: str, branch: str, *, fetch: bool, updat
             # needs no network, so a status read finds it too.
             repo = target
         elif not fetch:
-            raise _NotReady("missing", "not on this machine yet — sync to fetch it")
+            raise _NotReady("missing", "not on this computer yet")
         else:
             result = await git_clone(
                 origin.clone_url(), str(target), branch=branch or None, token=await _github_token()
@@ -242,7 +242,7 @@ async def _file(target: str, base: Path) -> _Found:
 
     path = expand_file_target(target, base=base)
     if not path.is_dir():
-        raise _NotReady("missing", f"{path} is not a folder on this machine")
+        raise _NotReady("missing", f"{path} is not a folder on this computer")
     canonical = canonical_posix_path(str(path))
     folder = await Folder.mint_for_path(canonical)
     return _Found(folder, canonical, "local", False)
@@ -285,7 +285,7 @@ async def _hub_fetch(dep: FlowDependency, project_id: str, *, fetch: bool, updat
     from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
 
     if not fetch:
-        raise _NotReady("missing", "not on this machine yet — sync to fetch it")
+        raise _NotReady("missing", "not on this computer yet")
     try:
         row = await HubProxy.call("GET", BuiltinEntityType.PROJECT, project_id)
     except HubError as exc:
@@ -816,7 +816,7 @@ async def _resolve(
                         # locations are inspected only through already resolved links.
                         path = expand_file_target(source.target, base=base) if source.kind == "file" else None
                         if path is None or not path.is_dir():
-                            raise _NotReady("missing", "not on this machine yet — sync to fetch it")
+                            raise _NotReady("missing", "not on this computer yet")
                         found = _Found(None, canonical_posix_path(str(path)), "local", False)
                     else:
                         found = await _materialize(dep, base, fetch=fetch, update=update, cloned=_was_cloned(project, dep.name, via))

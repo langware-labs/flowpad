@@ -3,7 +3,7 @@ import { i18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
 import { render, screen } from '@testing-library/react';
 import { RouterProvider, createMemoryRouter } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import ErrorScreen from '@src/components/agent-layout/error-screen/error-screen';
 
@@ -19,6 +19,12 @@ function renderWithRouteError(error: Error) {
     </I18nProvider>,
   );
 }
+
+// React (dev) re-dispatches a render error on window; jsdom reports it as uncaught, which fails the
+// whole run although the error boundary caught it. The error is this file's own, thrown on purpose.
+const swallow = (event: ErrorEvent) => event.preventDefault();
+beforeEach(() => window.addEventListener('error', swallow));
+afterEach(() => window.removeEventListener('error', swallow));
 
 describe('error screen', () => {
   // The exact error prod logged when a chart was opened on a page loaded before an upgrade.

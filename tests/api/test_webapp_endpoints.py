@@ -299,8 +299,8 @@ async def test_a_dependency_projects_apps_come_up_on_the_deployed_projects_place
 async def test_an_exposed_app_is_installed_before_it_is_started(client, tmp_path):
     """A box brings an app up the one way an app comes up: what it needs installed first, then its start.
 
-    The WAHA bridge's start command names the runtime its install makes. Exposing ran the bare start
-    command — ``/bin/sh: ../../../.flow/waha-runtime/venv/bin/python: not found`` — and the admin page
+    The bridge's start command names the runtime its install makes. Exposing ran the bare start
+    command — ``/bin/sh: ../../../.flow/bridge-runtime/venv/bin/python: not found`` — and the admin page
     stayed down until somebody opened it by hand."""
     from flow_sdk.builtin import webapp_setup
 
@@ -475,6 +475,56 @@ async def test_a_webapp_is_served_here_by_one_static_route_of_its_project(client
     await unplace_webapp(app.id)
     assert await webapp_routes(app.id) == [], "a removed webapp takes its route along"
     assert await ServiceEndpoint.get_by_id(placed.id) is None, "and the proxy that served nothing else"
+
+
+async def test_a_served_page_carries_the_presence_script_and_an_open_page_lists_its_app(client, tmp_path):
+    """Files Flowpad serves itself are always "up", so such an app is hosted only while somebody has it open."""
+    from datetime import datetime, timezone
+
+    from flow_sdk.core.webapp import presence
+    from flow_sdk.schema.data_spec.webapp_hosted_spec import PagePresence
+
+    presence.reset_for_tests()
+    project = await _project(tmp_path)
+    folder = tmp_path / "agentic-assets" / "webapp" / "shop"
+    folder.mkdir(parents=True)
+    (folder / "index.html").write_text("<head></head><title>local shop</title>")
+    app = await _webapp(project, folder)
+    placed = await place_webapp_locally(app)
+
+    page = await client.get(f"/api/v1/graph/service_endpoint/{placed.id}/service/{placed.mount}/")
+    assert "__flowpadPresence" in page.text, "every served page reports itself"
+
+    async def hosted() -> list[dict]:
+        rows = (await client.get("/api/v1/graph/micro_app/hosted")).json()["data"]
+        return [row for row in rows if row["webapp_id"] == app.id]
+
+    assert await hosted() == [], "nobody has it open"
+    handle = presence.add(PagePresence(webapp_id=app.id, path="/cart", browser="chrome", since=datetime.now(timezone.utc)))
+    (row,) = await hosted()
+    assert (row["title"], row["state"], row["port"]) == ("shop", "up", None)
+    assert [(c["path"], c["browser"], c["opened_by"]) for c in row["connections"]] == [("/cart", "chrome", "")]
+    presence.remove(handle)
+    assert await hosted() == [], "the page closed"
+
+
+async def test_an_app_whose_process_died_is_not_hosted(client, tmp_path):
+    """Nothing writes the record when a process dies, so "up" with a port can be days old: the list asks."""
+    from flow_sdk.core.webapp import record
+    from flow_sdk.schema.data_spec.webapp_lifecycle_spec import LifecycleState
+
+    port = _unused_port()
+    project = await _project(tmp_path)
+    folder = tmp_path / "agentic-assets" / "webapp" / "admin"
+    app = await _webapp(project, folder, name="admin", mounts=[{"serving": _served(port)}])
+    (folder / "index.html").write_text("admin")
+    await place_webapp_locally(app)
+
+    # What a reboot leaves behind: the process is gone, the record still says up on its port.
+    await record.set_state(str(app.id), LifecycleState.UP, project_id=str(project.id), ports={"": port}, pids={"": 0})
+
+    rows = (await client.get("/api/v1/graph/micro_app/hosted")).json()["data"]
+    assert [row for row in rows if row["webapp_id"] == app.id] == []
 
 
 async def test_an_unchanged_index_pass_writes_nothing(tmp_path, monkeypatch):

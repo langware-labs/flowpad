@@ -28,10 +28,10 @@ from flow_sdk.builtin.agentic_process.launch_health import (
     emit_launch_failed,
     ensure_launchable,
 )
-from flow_sdk.ingest.driver_runtime import ingest_run_context
+from flow_sdk.ingest.driver_runtime import ingest_run_context, message_files_root
 from flow_sdk.ingest.health import SourceError
 
-from .source import profile_of
+from .source import PERSON_FIXES, browser_of, profile_of
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ DEFAULT_SEND_DEADLINE_SECONDS = 120
 class HarnessWorker:
     """The ``WorkerTransport`` the ``agent`` source is handed on this machine."""
 
-    async def fetch(self, *, source_id: str, name: str, config: Mapping[str, Any], mailbox: str, since: str) -> dict:
+    async def fetch(self, *, source_id: str, name: str, config: Mapping[str, Any], mailbox: str, since: str, account: str = "") -> dict:
         harness = config.get("harness") or None
         deadline = int(config.get("deadline_seconds") or DEFAULT_DEADLINE_SECONDS)
         target = f"data_source:{source_id}"
@@ -67,7 +67,7 @@ class HarnessWorker:
             raise problem.as_source_error()
         async with _slots:
             try:
-                return await asyncio.wait_for(self._run_fetch(source_id, name, config, harness, mailbox, since), timeout=deadline)
+                return await asyncio.wait_for(self._run_fetch(source_id, name, config, harness, mailbox, since, account), timeout=deadline)
             except asyncio.TimeoutError:
                 error = LaunchError.transient(LaunchErrorCode.TIMEOUT, f"the worker did not finish within {deadline}s", str(harness or ""))
                 emit_launch_failed(error, target)
@@ -80,7 +80,8 @@ class HarnessWorker:
                 raise error.as_source_error() from exc
 
     async def send(
-        self, *, source_id: str, config: Mapping[str, Any], channel: str, thread_key: str, to: str, text: str, subject: str, conversation_id: str
+        self, *, source_id: str, config: Mapping[str, Any], channel: str, thread_key: str, to: str, text: str, subject: str, conversation_id: str,
+        account: str = "",
     ) -> dict:
         harness = config.get("harness") or None
         deadline = int(config.get("send_deadline_seconds") or DEFAULT_SEND_DEADLINE_SECONDS)
@@ -93,7 +94,7 @@ class HarnessWorker:
             try:
                 receipt = await asyncio.wait_for(
                     self._run_send(source_id, config, harness, thread_key=thread_key, to=to, text=text, subject=subject,
-                                   channel=channel, conversation_id=conversation_id),
+                                   channel=channel, conversation_id=conversation_id, account=account),
                     timeout=deadline,
                 )
             except asyncio.TimeoutError:
@@ -115,7 +116,7 @@ class HarnessWorker:
 
     # ── the spawn ─────────────────────────────────────────────────────────────
 
-    async def _run_fetch(self, source_id: str, name: str, config: Mapping[str, Any], harness: Any, mailbox: str, since: str) -> dict:
+    async def _run_fetch(self, source_id: str, name: str, config: Mapping[str, Any], harness: Any, mailbox: str, since: str, account: str) -> dict:
         """Launch through the NAMED agent, the way every preset launch does, so the Agent's persona
         (worker, model, permission mode, subagents) is what runs."""
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
@@ -126,16 +127,18 @@ class HarnessWorker:
             deployment = await get_agent_local_deployment(agent_name)
         except LookupError as exc:
             raise SourceError.config("unknown_agent", str(exc)) from exc
-        row = SimpleNamespace(id=source_id)
+        row = SimpleNamespace(id=source_id, account=account)
+        browser = browser_of(config)
         options: dict[str, Any] = {
             "name": f"ingest {name or source_id[:8]} · {mailbox}",
             "visible": False,
             # The run's only handle: an ingest worker has no spawning entity to browse from.
-            "context_data": ingest_run_context(row),
+            "context_data": {**ingest_run_context(row), **browser_ask(browser)},
         }
         if harness:
             options["worker_type"] = harness
         proc = await deployment.create_process("", **options)
+        await require_browser(proc, browser)
         base = execution_base(proc)
         (base / "output").mkdir(parents=True, exist_ok=True)
         receipt_path = base / "output" / RECEIPT_FILENAME
@@ -146,16 +149,14 @@ class HarnessWorker:
         if not taken.ok:
             raise SourceError.transient("launch_failed", taken.detail or "prompt refused")
         await proc.wait()
-        try:
-            await proc.exit()
-        except Exception:  # noqa: BLE001 — the run is what matters
-            logger.debug("ingest/agent: exit failed", exc_info=True)
+        await _exit_quietly(proc)
         receipt = read_receipt(receipt_path)
         receipt.setdefault("last_run_at", datetime.now(timezone.utc).isoformat())
         return receipt
 
     async def _run_send(
-        self, source_id: str, config: Mapping[str, Any], harness: Any, *, thread_key: str, to: str, text: str, subject: str, channel: str, conversation_id: str
+        self, source_id: str, config: Mapping[str, Any], harness: Any, *, thread_key: str, to: str, text: str, subject: str, channel: str, conversation_id: str,
+        account: str,
     ) -> dict:
         from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
         from flow_sdk.graph_workflow_manager.manager import execution_base  # noqa: PLC0415
@@ -165,19 +166,25 @@ class HarnessWorker:
             deployment = await get_agent_local_deployment(agent_name)
         except LookupError as exc:
             raise LaunchError.config(LaunchErrorCode.UNKNOWN, str(exc), "") from exc
-        row = SimpleNamespace(id=source_id)
+        row = SimpleNamespace(id=source_id, account=account)
+        browser = browser_of(config)
         options: dict[str, Any] = {
             "name": f"reply · {to}",
             "visible": False,
             # Provenance: without it a send is an anonymous worker the conversation cannot find again.
             "context_data": {
                 **ingest_run_context(row),
+                **browser_ask(browser),
                 "channel_send": {"to": to, "thread_key": thread_key, "channel": channel, "conversation_id": conversation_id or ""},
             },
         }
         if harness:
             options["worker_type"] = harness
         proc = await deployment.create_process("", **options)
+        try:
+            await require_browser(proc, browser)
+        except SourceError as exc:
+            raise LaunchError.config(LaunchErrorCode.UNKNOWN, exc.detail, str(harness or "")) from exc
         base = execution_base(proc)
         (base / "output").mkdir(parents=True, exist_ok=True)
         receipt_path = base / "output" / SEND_RECEIPT_FILENAME
@@ -188,11 +195,37 @@ class HarnessWorker:
         if not taken.ok:
             raise LaunchError.config(LaunchErrorCode.UNKNOWN, taken.detail or "prompt refused", "")
         await proc.wait()
-        try:
-            await proc.exit()
-        except Exception:  # noqa: BLE001
-            logger.debug("send worker exit failed", exc_info=True)
+        await _exit_quietly(proc)
         return read_receipt(receipt_path)
+
+
+async def _exit_quietly(proc: Any) -> None:
+    """End a finished run's process; the receipt is what matters, not how the exit went."""
+    try:
+        await proc.exit()
+    except Exception:  # noqa: BLE001
+        logger.debug("ingest/agent: exit failed", exc_info=True)
+
+
+# ── the browser a browser-read connector runs on ─────────────────────────────
+
+
+def browser_ask(browser: str) -> dict[str, str]:
+    """The session's browser, asked the way every launch asks (``context_data["browser"]``)."""
+    return {"browser": browser} if browser else {}
+
+
+async def require_browser(proc: Any, wanted: str) -> None:
+    """Refuse a run whose session got another browser than the source names (a person's pick for
+    the project, or a worker the driver does not support): that browser is another account. The
+    process is neither saved nor started yet, so refusing leaves nothing behind."""
+    if not wanted:
+        return
+    from flow_sdk.builtin.agentic_process.browser_choice import resolve_for  # noqa: PLC0415
+
+    got = await resolve_for(proc)
+    if got.kind != wanted:
+        raise SourceError.config("wrong_browser", f"this source reads through the {wanted!r} browser, but the session got {got.kind!r} ({got.source})")
 
 
 # ── the contract a worker is handed ──────────────────────────────────────────
@@ -207,8 +240,25 @@ def accepted_fields() -> str:
 
 
 def _run_prefix(source: Any, config: Mapping[str, Any]) -> list[str]:
-    profile_of(config)  # every prompt re-asserts the invariant it prints
-    return [f"- data-source id (`data_source_id`): `{source.id}`", f"- provider: `{config.get('connector')}`"]
+    profile = profile_of(config)  # every prompt re-asserts the invariant it prints
+    lines = [f"- data-source id (`data_source_id`): `{source.id}`", f"- provider: `{config.get('connector')}`"]
+    if profile.browser:
+        lines.append(f"- the page-batch command — run it as written, adding `--in <observed file> --out <batch file>`: `{page_batch_command(source, config)}`")
+    return lines
+
+
+def page_batch_command(source: Any, config: Mapping[str, Any]) -> str:
+    """The batch script's whole command line but its two files: a worker that assembles flags from
+    prose gets one wrong."""
+    import shlex  # noqa: PLC0415
+
+    argv = [
+        "python3", str(Path(__file__).with_name("page_batch.py")), "--source", str(source.id),
+        "--provider", str(config.get("connector")), "--kind", profile_of(config).kind,
+        *(("--account", source.account) if source.account else ()),
+        "--media", str(message_files_root(source.id)),
+    ]
+    return shlex.join(argv)
 
 
 def _run_suffix(receipt_path: Any, flow_cli: Path) -> list[str]:
@@ -233,15 +283,29 @@ def _subagent_prompt(name: str) -> str:
         return ""
 
 
+def page_clock(since: str) -> list[str]:
+    """Now and the floor on the clock a page prints — this machine's local time, weekday named: a
+    page says "Friday 11:55 PM", and a worker resolving that against a UTC date is a day off around midnight."""
+    from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
+
+    form = "%A %Y-%m-%d %H:%M (UTC%z)"
+    lines = [f"- now, on the page's clock (local time): `{datetime.now().astimezone().strftime(form)}`"]
+    if floor := iso_to_utc(since):
+        lines.append(f"- the floor on the page's clock: `{floor.astimezone().strftime(form)}`")
+    return lines
+
+
 def fetch_instruction(source: Any, config: Mapping[str, Any], receipt_path: Any, *, mailbox: str, since: str) -> str:
     """The subagent markdown leads; only the per-run addendum is built here. The CLI is named by
     ABSOLUTE path: a stale ``flow`` on the worker's PATH once shadowed this backend's."""
-    body = _subagent_prompt(str(config.get("subagent") or profile_of(config).subagent))
+    profile = profile_of(config)
+    body = _subagent_prompt(str(config.get("subagent") or profile.subagent))
     flow_cli = Path(sys.executable).parent / "flow"
     run_lines = [
         *_run_prefix(source, config),
-        f"- {profile_of(config).mailbox_noun}: `{mailbox}`",
+        f"- {profile.mailbox_noun}: `{mailbox}`",
         f"- fetch messages newer than: `{since or '(no floor — fetch the most recent)'}`",
+        *(page_clock(since) if profile.browser else []),
         f"- record at most {int(config.get('max_items') or 25)} messages, newest first",
         *_run_suffix(receipt_path, flow_cli),
     ]
@@ -289,8 +353,8 @@ def send_result_from(receipt: dict) -> dict:
     ambiguous, and ambiguity must never read as success."""
     reported = receipt.get("error")
     if reported:
-        code = LaunchErrorCode.NOT_AUTHENTICATED if str(reported) == "no_connector" else LaunchErrorCode.UNKNOWN
-        raise LaunchError.config(code, str(reported), "")
+        code = LaunchErrorCode.NOT_AUTHENTICATED if str(reported) in PERSON_FIXES else LaunchErrorCode.UNKNOWN
+        raise LaunchError.config(code, PERSON_FIXES.get(str(reported), str(reported)), "")
     drafted = bool(receipt.get("drafted"))
     if not receipt.get("sent") and not drafted:
         raise LaunchError.config(LaunchErrorCode.UNKNOWN, "the worker returned a receipt that confirms neither a send nor a draft", "")

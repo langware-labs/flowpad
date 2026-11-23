@@ -11,18 +11,24 @@ description: GTM's tags send GA4 and Reddit the page URL with its query, and the
 
 > Ground truth. Proven by RCA on 2026-11-10. Do not edit without the user's approval.
 
-```breadcrumb
+```test_debug
 tag: breadcrumb.test.analytics_url_secrets.rules
 sites:
-  - rel_path: "ui/tests/unit/google-tag-manager.test.ts"
+  - rel_path: ui/tests/unit/google-tag-manager.test.ts
     line: 19
-    note: "FAILING? GTM reports each page's full URL - never allow a page whose URL can carry a secret. Read this tag's rules before editing"
-  - rel_path: "ui/tests/unit/home-loader-hub-redirect.test.ts"
+    note: FAILING? GTM reports each page's full URL - never allow a page whose URL can carry a secret. Read this tag's rules before editing
+  - rel_path: ui/tests/unit/home-loader-hub-redirect.test.ts
     line: 28
-    note: "FAILING? forward only the login marker from the root query - GA4 receives the hub home URL. Read this tag's rules before editing"
-  - rel_path: "ui/tests/unit/invite-page-referrer.test.tsx"
+    note: FAILING? forward only the login marker from the root query - GA4 receives the hub home URL. Read this tag's rules before editing
+  - rel_path: ui/tests/unit/invite-page-referrer.test.tsx
     line: 16
-    note: "FAILING? keep the invite token out of the next page's referrer - GA4 sends it as dr. Read this tag's rules before editing"
+    note: FAILING? keep the invite token out of the next page's referrer - GA4 sends it as dr. Read this tag's rules before editing
+proven: '2026-11-10'
+statements:
+  - text: A page joins `measured` only if nothing in its URL (path, query or fragment) can be a token, an email address, a private name or an id the user did not publish, and nothing navigates into it with such a page as the referrer.
+  - text: The list is an allowlist.
+  - text: A full-page navigation away from a URL that holds a secret goes with `no-referrer`.
+  - text: Once loaded, GTM stays for in-app navigation, and its history-change page views report each later in-app URL.
 ```
 
 ## Expected behavior
@@ -47,9 +53,7 @@ The hub home URL that GA4 receives carries no query except `?signup` or `?login`
 
 ## Invariants
 
-* A page joins `measured` only if nothing in its URL (path, query or fragment) can be a token, an email address, a private name or an id the user did not publish, and nothing navigates into it with such a page as the referrer.
 * The list is an allowlist. Never turn it into a blocklist.
-* A full-page navigation away from a URL that holds a secret goes with `no-referrer`.
 * Once loaded, GTM stays for in-app navigation, and its history-change page views report each later in-app URL. This is accepted: no in-app link leads to `/invite/`.
 
 ## Failure modes

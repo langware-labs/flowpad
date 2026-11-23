@@ -124,6 +124,9 @@ export function IncomingDeepLink() {
   // A link that would start something, from outside Flowpad, waits here for the user's yes.
   const [asked, setAsked] = useState<{ params: URLSearchParams; does: 'launch' | 'clone' } | null>(null);
 
+  // A navigation this link asked for: it does not get the app's page key, so a page it names still asks first.
+  const openFromLink = (dock: DockPointer) => navigation.openDock(dock, undefined, { fromOutside: true });
+
   const handleLink = (params: URLSearchParams) => {
     // A launch link (`/launch` on the hub → this machine): its SETUP stage, one handler for
     // the desktop and a cloud box alike. A malformed one is scrubbed and dropped.
@@ -206,7 +209,7 @@ export function IncomingDeepLink() {
       return;
     }
     if (projectId && !isGitSetup) {
-      navigation.openDock(withHomePage(DockPointer.forProject(projectId)));
+      openFromLink(withHomePage(DockPointer.forProject(projectId)));
       return;
     }
 
@@ -216,7 +219,7 @@ export function IncomingDeepLink() {
     }
 
     if (convId) {
-      navigation.openDock(DockPointer.forConversation(convId));
+      openFromLink(DockPointer.forConversation(convId));
       return;
     }
 
@@ -225,7 +228,7 @@ export function IncomingDeepLink() {
     // params for diagnostics / future fallback.
     void fmId;
     if (taskId) {
-      navigation.openDock(DockPointer.fromUrl('tasks', taskId));
+      openFromLink(DockPointer.fromUrl('tasks', taskId));
     }
   };
 

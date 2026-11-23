@@ -31,6 +31,8 @@ except ImportError as e:
 # A core type: a failure here must be loud, not a WARN that leaves the type unregistered.
 from flow_sdk.builtin.credential import Credential  # noqa: F401
 from flow_sdk.builtin.data_driver import DataDriver  # noqa: F401
+from flow_sdk.builtin.secret_manager import SecretManager  # noqa: F401
+from flow_sdk.builtin.browser_driver import BrowserDriver  # noqa: F401
 
 try:
     from flow_sdk.builtin.workspace import Workspace  # noqa: F401
@@ -219,6 +221,11 @@ try:
     from flow_sdk.builtin.asset_cleanup_report import AssetCleanupReport  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import AssetCleanupReport: {e}")
+
+try:
+    from flow_sdk.builtin.monitor import Monitor  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Monitor: {e}")
 
 try:
     from flow_sdk.builtin.workflow_run import WorkflowRun  # noqa: F401

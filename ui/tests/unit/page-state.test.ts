@@ -60,6 +60,17 @@ describe('where the key comes from', () => {
   });
 });
 
+describe('a framed shell after it moves inside itself', () => {
+  it('still sends its key: the address then carries it as ?stateKey=, and a frame has no stored copy', async () => {
+    window.history.replaceState(null, '', `/win/shell/${PROCESS}?viewMode=standard&stateKey=${KEY}`);
+    const seen = server({ data: {} });
+
+    await apiClient.post(`/graph/${PROCESS.replace('-', '/')}/switch-mode`, {});
+
+    expect(seen[0].headers[STATE_HEADER]).toBe(KEY);
+  });
+});
+
 describe('what a refusal says', () => {
   it('reads the reason from the gate header', () => {
     expect(stateRefusal({ 'x-flowpad-gate': 'request=9c8daa; state=missing' })).toBe('missing');
@@ -93,6 +104,26 @@ describe('every call carries the key', () => {
     await expect(apiClient.get('/api/v1/anything')).rejects.toBeTruthy();
 
     expect(notice()?.textContent).toContain('not valid here');
+  });
+});
+
+describe('when Flowpad is not running', () => {
+  it('shows a small closeable tag, never an error overlay, and drops it once a call gets through', async () => {
+    apiClient.defaults.adapter = async (config) => {
+      throw new AxiosError('Network Error', 'ERR_NETWORK', config);
+    };
+    await expect(apiClient.get('/api/v1/anything')).rejects.toBeTruthy();
+    const tag = document.querySelector('[data-testid="flowpad-page-offline"]');
+
+    expect(tag).not.toBeNull();
+    expect(notice()).toBeNull();
+    (tag?.querySelector('button') as HTMLButtonElement).click();
+    expect(document.querySelector('[data-testid="flowpad-page-offline"]')).toBeNull();
+
+    await expect(apiClient.get('/api/v1/anything')).rejects.toBeTruthy();
+    server({ data: {} });
+    await apiClient.get('/api/v1/anything');
+    expect(document.querySelector('[data-testid="flowpad-page-offline"]')).toBeNull();
   });
 });
 

@@ -21,7 +21,7 @@ import { HARNESS_CAPABILITY_BY_WORKER, LAUNCHABLE_WORKERS, type WorkerType } fro
 /** The opener warning for one harness: set only when the record says it is not installed. */
 export function installWarning(harness: HarnessStatus | undefined): string | null {
   if (harness?.install !== InstallState.NotInstalled) return null;
-  return i18n._(msg`${harness.label} is not installed on this machine.`);
+  return i18n._(msg`${harness.label} is not installed on this computer.`);
 }
 
 /** The warning for a worker, looked up by its capability kind in `record`. */

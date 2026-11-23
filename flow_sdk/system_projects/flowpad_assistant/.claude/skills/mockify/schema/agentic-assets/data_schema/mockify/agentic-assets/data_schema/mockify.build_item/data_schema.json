@@ -1,0 +1,49 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "mock": {
+      "shape": "mockify.mock",
+      "description": "The approved mock the item comes from (a link to its row)."
+    },
+    "n": {
+      "shape": "int",
+      "description": "The item's place in the build order: the mock tree's walk, and within a screen the screen, its state, its changes, its decisions, its actions."
+    },
+    "kind": {
+      "shape": "enum:screen|state|action|change|decision",
+      "description": "What is owed: a whole screen, a state reached for real, an action that leads where the tree says, a proposed change, a decision as answered."
+    },
+    "step": {
+      "shape": "string",
+      "description": "The screen id the item is on."
+    },
+    "ref": {
+      "shape": "?string",
+      "description": "The action, change or decision id on that screen; absent for the screen itself and its state."
+    },
+    "title": {
+      "shape": "string",
+      "description": "What is owed, in one sentence."
+    },
+    "sig": {
+      "shape": "string",
+      "description": "A hash of the mock content the item came from. A redraw changes it, and the item starts again at todo."
+    },
+    "where": {
+      "shape": "?string",
+      "description": "Where the product carries it: the file or component (mockify plan), then the place in the running product."
+    },
+    "status": {
+      "shape": "enum:todo|built|matches|differs|not_checked|flagged",
+      "description": "todo: not built; built: in the code, not yet proven; matches: proven beside the mock screen (needs shot); differs: built but not as drawn (note says what); not_checked: could not be checked (note says why); flagged: cannot be built as drawn -- the screen is redrawn and re-approved first."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "What differs, why it was not checked, or the flag."
+    },
+    "shot": {
+      "shape": "?binary",
+      "description": "A screenshot of the built product showing the item, taken beside the mock screen."
+    }
+  }
+}

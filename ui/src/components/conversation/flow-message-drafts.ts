@@ -68,8 +68,21 @@ async function findComposerDraft(key: ComposerDraftKey): Promise<FlowMessage | n
     true,
   );
   return (
-    rows.find((fm) => !fm.remote_worker_session_id && (fm.draft_options?.thread_id ?? null) === (key.threadId ?? null)) ??
+    rows.find(
+      (fm) => !fm.remote_worker_session_id && !fm.is_private && (fm.draft_options?.thread_id ?? null) === (key.threadId ?? null),
+    ) ??
     null
+  );
+}
+
+/** The files a draft holds, as the bytes that were attached. */
+export function draftFiles(row: FlowMessage): Promise<File[]> {
+  const typeId = new TypeId(FlowMessage.type, row.id ?? '');
+  return Promise.all(
+    fileNamesOf(row).map(async (name) => {
+      const blob = (await fsManager.download(typeId, `${FILE_PREFIX}${name}`, { asBlob: true })) as Blob;
+      return new File([blob], name, { type: blob.type });
+    }),
   );
 }
 
@@ -77,13 +90,7 @@ async function findComposerDraft(key: ComposerDraftKey): Promise<FlowMessage | n
 export async function loadComposerDraft(key: ComposerDraftKey): Promise<{ row: FlowMessage; draft: ComposerDraft } | null> {
   const row = await findComposerDraft(key);
   if (!row?.id) return null;
-  const typeId = new TypeId(FlowMessage.type, row.id);
-  const files = await Promise.all(
-    fileNamesOf(row).map(async (name) => {
-      const blob = (await fsManager.download(typeId, `${FILE_PREFIX}${name}`, { asBlob: true })) as Blob;
-      return new File([blob], name, { type: blob.type });
-    }),
-  );
+  const files = await draftFiles(row);
   const options = row.draft_options;
   // A draft stored before the prompt had its own box holds the prompt as its text (the backend's
   // `_send` reads an unopened one the same way).

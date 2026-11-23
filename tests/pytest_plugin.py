@@ -658,7 +658,8 @@ def sod_env(monkeypatch, tmp_path):
     from pathlib import Path
 
     instance_name = f"test-{_uuid.uuid4().hex[:8]}"
-    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    # FLOW_HOME inside the temp home, as ~/.flow sits in ~: a project made in tmp_path is then not inside Flowpad state.
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path / ".flow"))
     monkeypatch.setenv("FLOW_INSTANCE", instance_name)
     monkeypatch.delenv("FLOWPAD_DEV", raising=False)
     monkeypatch.delenv("FLOWPAD_TEST", raising=False)

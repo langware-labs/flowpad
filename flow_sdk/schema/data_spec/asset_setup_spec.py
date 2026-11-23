@@ -18,7 +18,7 @@ Two shapes live here:
 
 * ``AssetSetupSpec`` — the DECLARED node, an asset document (``agentic-assets/asset_setup/<name>/``).
   Most nodes are derived (a project's credentials, its sources); a declaration adds children or wizards a
-  derivation cannot know — a WAHA source's container, say.
+  derivation cannot know — a bridge source's container, say.
 * ``SetupNodeResult`` / ``SetupTreeResult`` — the run's answer, the same tree, each node with its state
   and its wizards' own ``WizardResult``. Recorded as the run goes, so a screen that missed a push
   reads the whole picture.
