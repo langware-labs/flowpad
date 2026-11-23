@@ -75,6 +75,12 @@ export function ChainTree({ chain, onOpen }: ChainTreeProps) {
             {n.name}
           </button>
           {n.hop?.provider && <span className="font-mono text-[11px] text-muted-foreground">{n.hop.provider}</span>}
+          {/* An API endpoint's root says what it serves where an LLM root names its provider. */}
+          {n.hop?.kinds?.map((kind) => (
+            <span key={kind} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {kind}
+            </span>
+          ))}
           {n.depth > 0 && n.pathIndexes.length > 0 && (
             <span className="text-[11px] text-muted-foreground" title={t`Fallback order under its parent`}>
               #{n.order + 1}

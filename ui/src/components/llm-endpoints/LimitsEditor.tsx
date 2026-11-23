@@ -1,6 +1,7 @@
 /**
  * The optimistic limits of an endpoint. Empty = no limit. Grouped as the hub
- * groups them: tokens by window, cost by window, then the per-minute rate.
+ * groups them: tokens by window, cost by window, then the per-minute rate. The rows are the
+ * endpoint family's (`endpoint-family`): an API endpoint has requests per window and no tokens.
  */
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
@@ -9,9 +10,10 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 
-import type { LimitKey, LimitsForm } from './filters-limits-forms';
+import { useEndpointFamily } from './endpoint-family';
+import type { AnyLimitKey, LimitKey, LimitsForm } from './filters-limits-forms';
 
-export const LIMIT_LABELS: Record<LimitKey, MessageDescriptor> = {
+export const LIMIT_LABELS: Record<AnyLimitKey, MessageDescriptor> = {
   tokens_total: msg`Tokens, total`,
   tokens_per_day: msg`Tokens / day`,
   tokens_per_week: msg`Tokens / week`,
@@ -21,13 +23,11 @@ export const LIMIT_LABELS: Record<LimitKey, MessageDescriptor> = {
   cost_usd_per_week: msg`Cost (USD) / week`,
   cost_usd_per_month: msg`Cost (USD) / month`,
   requests_per_minute: msg`Requests / minute`,
+  requests_total: msg`Requests, total`,
+  requests_per_day: msg`Requests / day`,
+  requests_per_week: msg`Requests / week`,
+  requests_per_month: msg`Requests / month`,
 };
-
-const GROUPS: { keys: LimitKey[]; step: string }[] = [
-  { keys: ['tokens_total', 'tokens_per_day', 'tokens_per_week', 'tokens_per_month'], step: '1' },
-  { keys: ['cost_usd_total', 'cost_usd_per_day', 'cost_usd_per_week', 'cost_usd_per_month'], step: '0.01' },
-  { keys: ['requests_per_minute'], step: '1' },
-];
 
 export interface LimitsEditorProps {
   value: LimitsForm;
@@ -41,10 +41,10 @@ export interface LimitsEditorProps {
 
 export function LimitsEditor({ value, onChange, disabled, omit }: LimitsEditorProps) {
   const { t } = useLingui();
-  const hidden = new Set(omit ?? []);
-  const groups = GROUPS.map((g) => ({ ...g, keys: g.keys.filter((k) => !hidden.has(k)) })).filter(
-    (g) => g.keys.length > 0,
-  );
+  const hidden = new Set<AnyLimitKey>(omit ?? []);
+  const groups = useEndpointFamily()
+    .limitGroups.map((g) => ({ ...g, keys: g.keys.filter((k) => !hidden.has(k)) }))
+    .filter((g) => g.keys.length > 0);
   return (
     <div className="space-y-3" data-testid="limits-editor">
       {groups.map((group) => (
@@ -58,7 +58,7 @@ export function LimitsEditor({ value, onChange, disabled, omit }: LimitsEditorPr
                 min={0}
                 step={group.step}
                 inputMode="decimal"
-                value={value[key]}
+                value={value[key] ?? ''}
                 disabled={disabled}
                 placeholder={t`unlimited`}
                 onChange={(e) => onChange({ ...value, [key]: e.target.value })}

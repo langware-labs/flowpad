@@ -2575,6 +2575,10 @@ msgstr "A budget others can share"
 msgid "A call here spends"
 msgstr "A call here spends"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "A call that matches no row is free. A call is booked when its answer is delivered. Times multiplies the price by a number in the request, e.g. parameters.durationSeconds=8 (8 when the request does not say)."
+msgstr "A call that matches no row is free. A call is booked when its answer is delivered. Times multiplies the price by a number in the request, e.g. parameters.durationSeconds=8 (8 when the request does not say)."
+
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "A capped sub-budget of yours, for an agent or app."
 msgstr "A capped sub-budget of yours, for an agent or app."
@@ -2741,6 +2745,14 @@ msgstr "A place and channel by hand…"
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "A port is a whole number from 1 to 65535."
 msgstr "A port is a whole number from 1 to 65535."
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "A price multiplier is a request field, optionally with =default."
+msgstr "A price multiplier is a request field, optionally with =default."
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "A price must be a non-negative number."
+msgstr "A price must be a non-negative number."
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 msgid "a project"
@@ -4548,6 +4560,10 @@ msgstr "Anthropic"
 msgid "Anthropic API key for direct API access"
 msgstr "Anthropic API key for direct API access"
 
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "any call"
+msgstr "any call"
+
 #: src/components/automations/MessageRulePage.tsx
 msgid "Any channel"
 msgstr "Any channel"
@@ -4559,6 +4575,10 @@ msgstr "any diagram written as mermaid text"
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "any free port"
 msgstr "any free port"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "any HTTP API"
+msgstr "any HTTP API"
 
 #: src/components/automations/RunsView.tsx
 msgid "Any result"
@@ -5699,6 +5719,10 @@ msgstr "Base URL"
 msgid "Base URL must be an http(s) URL."
 msgstr "Base URL must be an http(s) URL."
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Base URL must be an https URL."
+msgstr "Base URL must be an https URL."
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
 msgstr "Bash Command *"
@@ -6066,6 +6090,10 @@ msgid "By"
 msgstr "By"
 
 #: src/components/llm-endpoints/UsagePanel.tsx
+msgid "By caller"
+msgstr "By caller"
+
+#: src/components/llm-endpoints/UsagePanel.tsx
 msgid "By child"
 msgstr "By child"
 
@@ -6084,6 +6112,10 @@ msgstr "By name"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "By scope"
 msgstr "By scope"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "by the tokens the answer reports"
+msgstr "by the tokens the answer reports"
 
 #: src/components/quick-create/ChartCreateDialog.tsx
 msgid "C4 architecture"
@@ -6141,6 +6173,11 @@ msgstr "call"
 msgid "Call"
 msgstr "Call"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Call (path)"
+msgstr "Call (path)"
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "Call {0} with the stored token"
@@ -6165,6 +6202,10 @@ msgstr "Call stack — which assets were called, by whom"
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "Call tree"
 msgstr "Call tree"
+
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+msgid "Caller"
+msgstr "Caller"
 
 #. placeholder {0}: answer.to || to
 #. placeholder {1}: answer.status || 'queued'
@@ -7661,6 +7702,14 @@ msgstr "Cloud · {0}"
 #: src/notifications/ingest.ts
 msgid "Cloud access denied"
 msgstr "Cloud access denied"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Cloud API Endpoints"
+msgstr "Cloud API Endpoints"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Cloud APIs"
+msgstr "Cloud APIs"
 
 #. placeholder {0}: cloudWarning.message
 #: src/components/automations/AutomationsList.tsx
@@ -9254,6 +9303,11 @@ msgstr "Could not list the changes"
 msgid "Could not list the secret managers."
 msgstr "Could not list the secret managers."
 
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Could not load API endpoints"
+msgstr "Could not load API endpoints"
+
 #: src/components/automations/AutomationsList.tsx
 msgid "Could not load automations"
 msgstr "Could not load automations"
@@ -9293,6 +9347,10 @@ msgstr "Could not load the bus"
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Could not load the context."
 msgstr "Could not load the context."
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "Could not load the prices."
+msgstr "Could not load the prices."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not load this automation"
@@ -15008,6 +15066,10 @@ msgstr "Found {0} rules"
 msgid "found in {0}, not where it is declared"
 msgstr "found in {0}, not where it is declared"
 
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "free"
+msgstr "free"
+
 #: src/i18n/pref-labels.ts
 msgid "Free-form JSON for experimental feature toggles. Invalid JSON is not saved."
 msgstr "Free-form JSON for experimental feature toggles. Invalid JSON is not saved."
@@ -16399,6 +16461,10 @@ msgstr "Ignored"
 msgid "Image"
 msgstr "Image"
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Images"
+msgstr "Images"
+
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Import"
@@ -17568,6 +17634,14 @@ msgstr "Key ending {0} — only the owner can change it."
 msgid "Key filled in"
 msgstr "Key filled in"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Key format"
+msgstr "Key format"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Key header"
+msgstr "Key header"
+
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Key is in {manager}"
 msgstr "Key is in {manager}"
@@ -18376,6 +18450,10 @@ msgstr "Live sessions are not available here"
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "live stream connection"
 msgstr "live stream connection"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "LLM"
+msgstr "LLM"
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "LLM APIs"
@@ -19621,6 +19699,10 @@ msgstr "Meta official Cloud API"
 msgid "Method"
 msgstr "Method"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Methods allowed"
+msgstr "Methods allowed"
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Metrics"
 msgstr "Metrics"
@@ -20117,6 +20199,10 @@ msgstr "Name of invite ••••{0}"
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Name the Google Cloud project"
 msgstr "Name the Google Cloud project"
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Name the header the key is sent in."
+msgstr "Name the header the key is sent in."
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 msgid "Name the operation with at least one letter or digit."
@@ -21821,6 +21907,10 @@ msgstr "No revision history yet. Saving this asset records its first revision."
 msgid "No room selected."
 msgstr "No room selected."
 
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "No root to price a call."
+msgstr "No root to price a call."
+
 #: src/components/automations/AutomationPage.tsx
 msgid "No rule code to show."
 msgstr "No rule code to show."
@@ -22490,6 +22580,10 @@ msgstr "Not opened yet"
 #: src/components/helpdesk/HelpDeskPage.tsx
 msgid "Not picked up"
 msgstr "Not picked up"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "not priced"
+msgstr "not priced"
 
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Not published"
@@ -23204,6 +23298,10 @@ msgstr "Onboarding"
 msgid "Onboarding reset"
 msgstr "Onboarding reset"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "once"
+msgstr "once"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Once"
 msgstr "Once"
@@ -23291,6 +23389,10 @@ msgstr "One of these"
 #: src/components/credentials-view/RequirementChip.tsx
 msgid "One of these is enough"
 msgstr "One of these is enough"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "One per line. Empty means every method."
+msgstr "One per line. Empty means every method."
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "One per line. Empty means everything the sources allow."
@@ -24642,6 +24744,10 @@ msgstr "OS"
 msgid "OS:"
 msgstr "OS:"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Other"
+msgstr "Other"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Other assets"
 msgstr "Other assets"
@@ -25770,6 +25876,16 @@ msgstr "Previous page"
 #: src/journey/JourneyViewer.tsx
 msgid "Previous runs"
 msgstr "Previous runs"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "Price"
+msgstr "Price"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "Prices"
+msgstr "Prices"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "primary"
@@ -27228,6 +27344,11 @@ msgstr "Refreshing…"
 msgid "Refund requests → an agent"
 msgstr "Refund requests → an agent"
 
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "Refused"
+msgstr "Refused"
+
 #: src/i18n/pref-labels.ts
 msgid "Regenerate onboarding assets on next start"
 msgstr "Regenerate onboarding assets on next start"
@@ -27953,8 +28074,20 @@ msgid "Requests (month)"
 msgstr "Requests (month)"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests / day"
+msgstr "Requests / day"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Requests / minute"
 msgstr "Requests / minute"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests / month"
+msgstr "Requests / month"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests / week"
+msgstr "Requests / week"
 
 #. placeholder {0}: redirected.join(' and ')
 #. placeholder {1}: next[0]
@@ -27965,6 +28098,10 @@ msgstr "Requests for {0} will be served as {1} — nobody has to change their ow
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Requests through this root will fail until a new key is saved."
 msgstr "Requests through this root will fail until a new key is saved."
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests, total"
+msgstr "Requests, total"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "required"
@@ -28544,6 +28681,10 @@ msgstr "Root cause"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "roots"
 msgstr "roots"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Roots hold a provider key and the price of a call; other endpoints draw from them and narrow what passes with filters and limits. Spend is booked along the chain."
+msgstr "Roots hold a provider key and the price of a call; other endpoints draw from them and narrow what passes with filters and limits. Spend is booked along the chain."
 
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "Roots talk to a provider with a stored key; chains are fed from other endpoints in fallback order and narrow what passes with filters and limits. Usage is accumulated along the chain."
@@ -30584,6 +30725,10 @@ msgstr "Set budget"
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Set budget · {scopeName}"
 msgstr "Set budget · {scopeName}"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "Set by the owner of each root. A call that matches no row is free. A call is booked when its answer is delivered; a refused or failed call costs nothing."
+msgstr "Set by the owner of each root. A call that matches no row is free. A call is booked when its answer is delivered; a refused or failed call costs nothing."
 
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set conversation project"
@@ -33679,6 +33824,10 @@ msgstr "The attachments of this message could not be delivered."
 msgid "The backend may have restarted. Click to reattach."
 msgstr "The backend may have restarted. Click to reattach."
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "The base URL and where the key goes are fixed once created."
+msgstr "The base URL and where the key goes are fixed once created."
+
 #: src/components/voice/CallControls.tsx
 msgid "The call failed."
 msgstr "The call failed."
@@ -33972,6 +34121,10 @@ msgstr "The key could not be saved."
 #: src/components/conversation/SecureSendDialog.tsx
 msgid "The key could not be sent."
 msgstr "The key could not be sent."
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "The key format must name the key placeholder exactly once."
+msgstr "The key format must name the key placeholder exactly once."
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "The key is stored here"
@@ -35185,6 +35338,10 @@ msgstr "This removes the project from the list on this computer. It has no files
 msgid "This removes the schedule from the agent. Past runs stay in the run history."
 msgstr "This removes the schedule from the agent. Past runs stay in the run history."
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "This root is priced by the tokens each answer reports. That is set through the API, not here."
+msgstr "This root is priced by the tokens each answer reports. That is set through the API, not here."
+
 #: src/components/runs/RunDetail.tsx
 msgid "This run wrote no files. Runs launched outside a flow only produce artifacts when the agent is told where to write them."
 msgstr "This run wrote no files. Runs launched outside a flow only produce artifacts when the agent is told where to write them."
@@ -35542,6 +35699,11 @@ msgstr "Timeout for Anthropic API calls in ms"
 #: src/notifications/error-detail.ts
 msgid "Times"
 msgstr "Times"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Times (request field)"
+msgstr "Times (request field)"
 
 #: src/components/items/IssueView.tsx
 msgid "times it happened"
@@ -36651,6 +36813,11 @@ msgstr "Usage scan failed"
 msgid "Usage unavailable"
 msgstr "Usage unavailable"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "USD"
+msgstr "USD"
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/tags/ClassifyTable.tsx
@@ -37071,6 +37238,10 @@ msgstr "Vibe agents"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Vibe only"
 msgstr "Vibe only"
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Video"
+msgstr "Video"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
@@ -37566,6 +37737,10 @@ msgstr "What it is"
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 msgid "What it runs"
 msgstr "What it runs"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "What it serves, e.g. speech.generate (optional)"
+msgstr "What it serves, e.g. speech.generate (optional)"
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What it worked on"

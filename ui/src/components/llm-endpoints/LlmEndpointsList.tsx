@@ -11,7 +11,7 @@
  * (react-query dedupes and caches them; the same query feeds the detail's
  * Today tab), so the list is a glance at spend without a second endpoint.
  */
-import type { LLMEndpoint, LLMEndpointKind, LLMEndpointOffer, LLMUsageReport } from '@sdk';
+import type { APIEndpoint, LLMEndpoint, LLMEndpointKind, LLMEndpointOffer, LLMUsageReport } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQueries } from '@tanstack/react-query';
 import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { LimitChips } from '@src/components/assets/LlmEndpointsAssetList';
 import { formatValue } from '@src/components/cost-dashboard/constants';
 
+import { useEndpointFamily } from './endpoint-family';
 import { canConfigure, canRemove } from './endpoint-catalog';
 import { TestEndpointButton } from './TestEndpointButton';
 import { TONE } from './tone';
@@ -44,7 +45,11 @@ export interface LlmEndpointsListProps {
 
 export function KindBadge({ kind }: { kind: 'root' | 'chain' }) {
   return (
-    <Badge variant="outline" data-testid={`kind-badge-${kind}`} className={kind === 'root' ? TONE.sky : TONE.violet}>
+    <Badge
+      variant="outline"
+      data-testid={`kind-badge-${kind}`}
+      className={`whitespace-nowrap ${kind === 'root' ? TONE.sky : TONE.violet}`}
+    >
       {kind === 'root' ? <Trans>API key</Trans> : <Trans>existing source</Trans>}
     </Badge>
   );
@@ -110,11 +115,12 @@ export function CredentialChip({ endpoint, kind }: { endpoint: LLMEndpoint; kind
 
 /** Today's usage per endpoint id, one query each, batched by react-query. */
 export function useTodayUsage(ids: readonly string[]) {
+  const family = useEndpointFamily();
   // Computed once per mount; `cohortRange` floors `to` to the minute, so a
   // remount within the minute (list ↔ detail) lands on the same cache entry.
   const range = useMemo(() => cohortRange('today'), []);
   const results = useQueries({
-    queries: ids.map((id) => usageQueryOptions(id, range)),
+    queries: ids.map((id) => usageQueryOptions(id, range, family)),
   });
   const byId = new Map<string, LLMUsageReport | undefined>();
   ids.forEach((id, i) => byId.set(id, results[i]?.data));
@@ -131,6 +137,7 @@ export function LlmEndpointsList({
   local = false,
 }: LlmEndpointsListProps) {
   const { t } = useLingui();
+  const family = useEndpointFamily();
   // Usage is the hub's ledger; a local endpoint has none to ask for.
   const usage = useTodayUsage(local ? [] : endpoints.map((e) => e.id));
   // Keyed by bare id: `parentIds` is the hub's own reading of an endpoint's sources (the stored `sources`
@@ -150,6 +157,26 @@ export function LlmEndpointsList({
     }
     return out;
   }, [endpoints, byId]);
+  // What an API endpoint serves: a root says (`kinds`), an allocation serves what its sources do.
+  const servesById = useMemo(() => {
+    const out = new Map<string, string[]>();
+    const serves = (e: LLMEndpoint, seen: Set<string>): string[] => {
+      const known = out.get(e.id);
+      if (known) return known;
+      if (seen.has(e.id)) return [];
+      seen.add(e.id);
+      const own = (e as APIEndpoint).kinds ?? [];
+      const drawn = e.parentIds.flatMap((id) => {
+        const source = byId.get(id);
+        return source ? serves(source, seen) : [];
+      });
+      const all = [...new Set([...own, ...drawn])].sort();
+      out.set(e.id, all);
+      return all;
+    };
+    if (!family.llm) for (const e of endpoints) serves(e, new Set());
+    return out;
+  }, [endpoints, byId, family.llm]);
 
   return (
     <div className="space-y-3" data-testid="llm-endpoints-list">
@@ -180,9 +207,7 @@ export function LlmEndpointsList({
                   <TableHead>
                     <Trans>Kind</Trans>
                   </TableHead>
-                  <TableHead>
-                    <Trans>Provider</Trans>
-                  </TableHead>
+                  <TableHead>{family.llm ? <Trans>Provider</Trans> : <Trans>Serves</Trans>}</TableHead>
                   <TableHead>
                     <Trans>Sources</Trans>
                   </TableHead>
@@ -245,7 +270,20 @@ export function LlmEndpointsList({
                     <KindBadge kind={e.kind} />
                   </TableCell>
                   <TableCell>
-                    <ProviderBadge provider={e.kind === 'root' ? e.provider : null} />
+                    {family.llm ? (
+                      <ProviderBadge provider={e.kind === 'root' ? e.provider : null} />
+                    ) : (
+                      <span className="flex flex-wrap items-center gap-1" data-testid={`llm-serves-${e.id}`}>
+                        {(servesById.get(e.id) ?? []).map((kind) => (
+                          <span
+                            key={kind}
+                            className="whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                          >
+                            {kind}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell data-testid={`llm-sources-${e.id}`}>
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -291,8 +329,12 @@ export function LlmEndpointsList({
                       <LimitChips limits={e.limits as unknown as LLMEndpointOffer['limits']} />
                     </TableCell>
                   )}
-                  <TableCell className="text-end font-mono text-xs" data-testid="today-usage">
-                    {local ? '—' : totals ? `${formatValue(totals.total_tokens, 'tokens')} · ${formatUsd(totals.cost_usd)}` : '…'}
+                  <TableCell className="whitespace-nowrap text-end font-mono text-xs" data-testid="today-usage">
+                    {local
+                      ? '—'
+                      : totals
+                        ? `${family.llm ? formatValue(totals.total_tokens, 'tokens') : totals.requests} · ${formatUsd(totals.cost_usd)}`
+                        : '…'}
                   </TableCell>
                   <TableCell className="text-end">
                     <span className="inline-flex items-center gap-1" onClick={(ev) => ev.stopPropagation()}>

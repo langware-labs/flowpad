@@ -13,7 +13,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { Progress } from '@src/components/ui/progress';
 
 import { LIMIT_LABELS } from './LimitsEditor';
-import type { LimitKey } from './filters-limits-forms';
+import type { AnyLimitKey } from './filters-limits-forms';
 import { RATIO_TONE } from './tone';
 import { formatAmount, ratioTone, usedRatio } from './usage-math';
 
@@ -29,7 +29,7 @@ export interface LimitBarProps {
 export function LimitBar({ limitKey, remaining, resetsText, testId }: LimitBarProps) {
   const { t } = useLingui();
   const used = usedRatio(remaining);
-  const label = LIMIT_LABELS[limitKey as LimitKey];
+  const label = LIMIT_LABELS[limitKey as AnyLimitKey];
   const resets = remaining.resets_at ? new Date(remaining.resets_at * 1000).toLocaleString() : null;
   return (
     <div className="space-y-0.5" data-testid={testId ?? `limit-bar-${limitKey}`}>

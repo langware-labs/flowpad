@@ -23,7 +23,8 @@ import {
   type FiltersForm,
   type LimitsForm,
 } from './filters-limits-forms';
-import { endpointTypeId } from './llm-endpoints-pointer';
+import type { ApiDraft } from './api-endpoint-draft';
+import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 
 /** Mirrors hub `vertex.VERTEX_DEFAULT_BASE_URL`. */
 const VERTEX_BASE_URL = 'https://aiplatform.googleapis.com/v1';
@@ -254,6 +255,8 @@ export interface EndpointDraft {
   models: string;
   /** Root only, create only; NEVER part of the entity payload. */
   key: string;
+  /** An API endpoint's own fields (`api-endpoint-draft`); absent on an LLM endpoint. */
+  api?: ApiDraft;
 }
 
 export function emptyDraft(kind: LLMEndpointKind = 'root'): EndpointDraft {
@@ -310,7 +313,8 @@ export function withProvider(draft: EndpointDraft, provider: LLMEndpointProvider
  * wrong guess in exactly the case this exists to fix.
  */
 export function kindFromChain(chain: LLMChain | undefined, endpointId: string): LLMEndpointKind | null {
-  const hop = chain?.hops.find((h) => h.id === endpointTypeId(endpointId));
+  // Compared as bare ids: a hop id is the family's typeid (`llm_endpoint-…` or `api_endpoint-…`).
+  const hop = chain?.hops.find((h) => endpointIdFromTypeId(h.id) === endpointId);
   if (!hop) return null;
   return hop.is_root ? 'root' : 'chain';
 }

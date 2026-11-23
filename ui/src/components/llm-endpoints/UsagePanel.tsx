@@ -16,6 +16,7 @@ import { TimeCohortTabs } from '@src/components/cost-dashboard/TimeCohortTabs';
 import { formatValue, type TimeCohort, type ValueFormat } from '@src/components/cost-dashboard/constants';
 
 import { UsageByChildTable } from './UsageByChildTable';
+import { useEndpointFamily } from './endpoint-family';
 import { canConfigure } from './endpoint-catalog';
 import { useLlmEndpointUsage } from './use-llm-endpoints';
 import { COST_CHART_COLOR, ZERO_COUNTERS, cohortRange, formatUsd, toChartPoints, type ChartPoint } from './usage-math';
@@ -23,7 +24,7 @@ import { COST_CHART_COLOR, ZERO_COUNTERS, cohortRange, formatUsd, toChartPoints,
 type Metric = {
   id: keyof Pick<
     LLMUsageCounters,
-    'cost_usd' | 'total_tokens' | 'input_tokens' | 'output_tokens' | 'requests' | 'errors' | 'fallbacks'
+    'cost_usd' | 'total_tokens' | 'input_tokens' | 'output_tokens' | 'requests' | 'errors' | 'fallbacks' | 'refusals'
   >;
   label: string;
   icon: LucideIcon;
@@ -77,7 +78,10 @@ export function UsagePanel({ endpointId, endpoint, all }: UsagePanelProps) {
   const { t } = useLingui();
   const [cohort, setCohort] = useState<TimeCohort>('today');
   const [selected, setSelected] = useState<Metric['id']>('cost_usd');
-  const [by, setBy] = useState<LLMUsageBy>('child');
+  const family = useEndpointFamily();
+  const [chosenBy, setBy] = useState<LLMUsageBy>('child');
+  // A breakdown the family does not have (the toggle's state outlives a switch) falls back to its first.
+  const by = family.usageBy.includes(chosenBy) ? chosenBy : family.usageBy[0];
   const isAdmin = canConfigure(endpoint);
 
   const range = useMemo(() => cohortRange(cohort), [cohort]);
@@ -90,7 +94,9 @@ export function UsagePanel({ endpointId, endpoint, all }: UsagePanelProps) {
   const points = useMemo<ChartPoint[]>(() => toChartPoints(data?.series ?? [], range), [data, range]);
 
   const metrics = useMemo<Metric[]>(
-    () => [
+    () =>
+      ([
+
       {
         id: 'cost_usd',
         label: t`Cost`,
@@ -154,11 +160,24 @@ export function UsagePanel({ endpointId, endpoint, all }: UsagePanelProps) {
         chartColor: '#f59e0b',
         format: 'number',
       },
-    ],
-    [t],
+      {
+        id: 'refusals',
+        label: t`Refused`,
+        icon: Repeat,
+        color: 'text-amber-500',
+        bgColor: 'bg-amber-500/10',
+        chartColor: '#f59e0b',
+        format: 'number',
+      },
+      ] as Metric[]).filter((m) =>
+        // An API endpoint has no tokens and one root per call, so no fallbacks: it counts refusals.
+        family.llm ? m.id !== 'refusals' : !m.format.startsWith('token') && m.id !== 'fallbacks',
+      ),
+    [t, family.llm],
   );
   const active = metrics.find((m) => m.id === selected) ?? metrics[0];
-  const useBars = active.id === 'requests' || active.id === 'errors' || active.id === 'fallbacks';
+  const useBars =
+    active.id === 'requests' || active.id === 'errors' || active.id === 'fallbacks' || active.id === 'refusals';
 
   return (
     <div className="space-y-4" data-testid="usage-panel">
@@ -168,7 +187,7 @@ export function UsagePanel({ endpointId, endpoint, all }: UsagePanelProps) {
         </div>
         {isAdmin && (
           <div className="flex rounded-lg bg-muted p-0.5 text-xs">
-            {(['child', 'model'] as const).map((b) => (
+            {family.usageBy.map((b) => (
               <button
                 key={b}
                 type="button"
@@ -176,7 +195,7 @@ export function UsagePanel({ endpointId, endpoint, all }: UsagePanelProps) {
                 onClick={() => setBy(b)}
                 className={`rounded-md px-2 py-1 font-medium ${by === b ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}
               >
-                {b === 'child' ? t`By child` : t`By model`}
+                {b === 'child' ? t`By child` : b === 'model' ? t`By model` : t`By caller`}
               </button>
             ))}
           </div>
@@ -193,12 +212,12 @@ export function UsagePanel({ endpointId, endpoint, all }: UsagePanelProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+      <div className={`grid grid-cols-2 gap-2 md:grid-cols-4 ${family.llm ? 'xl:grid-cols-7' : ''}`}>
         {metrics.map((m) => (
           <Tile
             key={m.id}
             metric={m}
-            value={totals[m.id]}
+            value={totals[m.id] ?? 0}
             selected={m.id === active.id}
             onClick={() => setSelected(m.id)}
           />

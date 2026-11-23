@@ -65,6 +65,14 @@ Design, the mock's own three phases:
 The failure this order prevents: a mock that is one base screen with small patches, where clicking a
 control changes nothing. Every screen is planned, then built in full, then checked against its plan.
 
+**Questions end with planning; a build is whole.** Every open question — a decision on a screen, a flag, an
+approval you would want, a branch or a permission you need — is asked and answered before the build starts.
+Once the build starts (an approved plan, `mockify implement`, or the person saying "go") you build ALL of it in
+one run: no partial build, no stopping between steps to ask or to wait for a review, no "say go for the next
+part". Never write such a stop into a plan. Stop mid-build only for a real blocker (something that cannot be
+built at all, or an action that needs the person's confirmation), say it in the first line, and keep building
+everything that does not depend on it.
+
 After approval the mock is a **contract**: "Approve", "`mockify plan`" and "`mockify implement`" below are how it is kept.
 
 ## Phase 1 — Tree: write the mock tree
@@ -395,10 +403,19 @@ No product code yet. For every item, in order:
 3. A plan, a review finding, a technical limit or your own better idea never changes a screen. Only the person
    does, on the mock.
 
-Done when no item is without `where` and none is `flagged`. Send the person the list with its `where` column.
+4. Ask now everything the build will need answered: every decision still open on a screen (`decisions`), every
+   choice between two ways to build an item, which branch the work goes on, anything you would otherwise stop for
+   later. One round of questions, here; an open decision the person leaves unanswered is built as drawn.
+
+Done when no item is without `where`, none is `flagged`, and no question is open. Send the person the list with
+its `where` column.
 Whatever plan document you write is this list in its order; it adds nothing the list does not have.
 
 ## `mockify implement` — build one item, prove it, then the next
+
+The build is whole: every item, in one run, with no stop to ask or to wait (see "Questions end with planning").
+A question you find now means planning missed it: take the choice that keeps the screen as drawn, note it on the
+item, and go on.
 
 Loop until `report` exits 0. Re-read the rows (`DM ds-rows $B … > <scratch>/items.json`) before each script call.
 

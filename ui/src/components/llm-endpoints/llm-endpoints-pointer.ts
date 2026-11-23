@@ -1,5 +1,6 @@
 /**
- * The LLM endpoints view's pointer: `[<id>[/<tab>]]`.
+ * The LLM endpoints view's pointer: `[<id>[/<tab>]]`, or `api[/<id>[/<tab>]]` for the Cloud APIs
+ * side of the same screen (a first segment that is an id is an LLM endpoint, so old links hold).
  *
  * Empty → the list. `<id>` → that endpoint's detail, on `overview` unless a
  * tab is named. Both live in the URL rather than component state (reload lands
@@ -14,30 +15,61 @@ import { LLMEndpoint, Layout, PageId, TypeId, ViewType, isTypeId } from '@sdk';
 
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 
-export type LlmEndpointTab = 'overview' | 'usage' | 'models';
+/** `models` is an LLM endpoint's third tab, `prices` an API endpoint's. */
+export type LlmEndpointTab = 'overview' | 'usage' | 'models' | 'prices';
+
+/** Which endpoints the screen shows: LLM endpoints, or API endpoints (pictures, video, any cloud API). */
+export type EndpointFamilyId = 'llm' | 'api';
+
+const API_SEGMENT = 'api';
+const API_ENDPOINT_TYPE = 'api_endpoint';
 
 export const LLM_ENDPOINT_TABS: readonly LlmEndpointTab[] = ['overview', 'usage', 'models'];
 
-const TABS = new Set<string>(LLM_ENDPOINT_TABS);
+const TABS = new Set<string>([...LLM_ENDPOINT_TABS, 'prices']);
 
 export function parseLlmEndpointsPointer(pointer?: string | null): { id?: string; tab: LlmEndpointTab } {
-  const [id, rawTab] = (pointer ?? '').split('/').filter(Boolean);
+  const { id, tab } = parseEndpointsPointer(pointer);
+  return { id, tab };
+}
+
+/** The pointer with its family: `api/…` is the Cloud APIs side, anything else the LLM side. */
+export function parseEndpointsPointer(pointer?: string | null): {
+  family: EndpointFamilyId;
+  id?: string;
+  tab: LlmEndpointTab;
+} {
+  const segments = (pointer ?? '').split('/').filter(Boolean);
+  const family: EndpointFamilyId = segments[0] === API_SEGMENT ? 'api' : 'llm';
+  const [id, rawTab] = family === 'api' ? segments.slice(1) : segments;
   const tab = TABS.has(rawTab) ? (rawTab as LlmEndpointTab) : 'overview';
   // A typeid in the URL (`llm_endpoint-<uuid>`) resolves too — hop ids and
   // `sources` are typeids, so a pasted one should land on the endpoint.
-  return { id: id ? endpointIdFromTypeId(id) : undefined, tab };
+  return { family, id: id ? endpointIdFromTypeId(id) : undefined, tab };
 }
 
-export function llmEndpointsPointer(id?: string, tab?: LlmEndpointTab): string {
-  if (!id) return '';
+export function llmEndpointsPointer(id?: string, tab?: LlmEndpointTab, family: EndpointFamilyId = 'llm'): string {
+  const prefix = family === 'api' ? API_SEGMENT : '';
+  if (!id) return prefix;
   id = endpointIdFromTypeId(id);
-  return tab && tab !== 'overview' ? `${id}/${tab}` : id;
+  const rest = tab && tab !== 'overview' ? `${id}/${tab}` : id;
+  return prefix ? `${prefix}/${rest}` : rest;
+}
+
+/** The family a hub typeid belongs to (`api_endpoint-<uuid>` → `api`); `llm` for anything else. */
+export function familyOfTypeId(typeid: string): EndpointFamilyId {
+  return isTypeId(typeid) && new TypeId(typeid).type === API_ENDPOINT_TYPE ? 'api' : 'llm';
 }
 
 /** Navigate to an endpoint's page (page=hub) on `tab` (overview by default);
  *  `id` may be a bare uuid or a typeid. */
-export function openLlmEndpoint(navigation: NavigationActions, id: string, tab?: LlmEndpointTab): void {
-  navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(id, tab));
+export function openLlmEndpoint(
+  navigation: NavigationActions,
+  id: string,
+  tab?: LlmEndpointTab,
+  family: EndpointFamilyId = 'llm',
+): void {
+  navigation.openPage(PageId.HUB, ViewType.LLM_ENDPOINTS, llmEndpointsPointer(id, tab, family));
 }
 
 /**
@@ -59,8 +91,8 @@ export function endpointShareLandingPath(id: string): string {
 export const ENDPOINT_TYPE = LLMEndpoint.type;
 
 /** `llm_endpoint-<uuid>` — the typeid form `sources` holds. */
-export function endpointTypeId(id: string): string {
-  return new TypeId(ENDPOINT_TYPE, id).toString();
+export function endpointTypeId(id: string, type: string = ENDPOINT_TYPE): string {
+  return new TypeId(type, id).toString();
 }
 
 /** The uuid out of a `llm_endpoint-<uuid>` typeid; the input when it is

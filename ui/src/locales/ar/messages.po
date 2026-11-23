@@ -2575,6 +2575,10 @@ msgstr "ميزانية يمكن للآخرين مشاركتها"
 msgid "A call here spends"
 msgstr "يستخدم أي استدعاء هنا"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "A call that matches no row is free. A call is booked when its answer is delivered. Times multiplies the price by a number in the request, e.g. parameters.durationSeconds=8 (8 when the request does not say)."
+msgstr "النداء الذي لا يطابق أي صف مجاني. يُسجَّل النداء عند تسليم جوابه. \"مضروبًا في\" يضرب السعر في رقم من الطلب، مثل parameters.durationSeconds=8 (8 عندما لا يحدده الطلب)."
+
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "A capped sub-budget of yours, for an agent or app."
 msgstr ""
@@ -2741,6 +2745,14 @@ msgstr "مكان وقناة يدوياً…"
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "A port is a whole number from 1 to 65535."
 msgstr ""
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "A price multiplier is a request field, optionally with =default."
+msgstr "مضاعِف السعر هو حقل في الطلب، ويمكن إتباعه بـ ‎=القيمة الافتراضية."
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "A price must be a non-negative number."
+msgstr "يجب أن يكون السعر رقمًا غير سالب."
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 msgid "a project"
@@ -4548,6 +4560,10 @@ msgstr "Anthropic"
 msgid "Anthropic API key for direct API access"
 msgstr "مفتاح Anthropic API للوصول المباشر إلى الـ API"
 
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "any call"
+msgstr "أي نداء"
+
 #: src/components/automations/MessageRulePage.tsx
 msgid "Any channel"
 msgstr "أي قناة"
@@ -4559,6 +4575,10 @@ msgstr "أي مخطط مكتوب كنص mermaid"
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "any free port"
 msgstr ""
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "any HTTP API"
+msgstr "أي API عبر HTTP"
 
 #: src/components/automations/RunsView.tsx
 msgid "Any result"
@@ -5699,6 +5719,10 @@ msgstr "عنوان URL الأساسي"
 msgid "Base URL must be an http(s) URL."
 msgstr "يجب أن يكون عنوان URL الأساسي بصيغة http(s)."
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Base URL must be an https URL."
+msgstr "يجب أن يكون عنوان الأساس عنوان https."
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
 msgstr "أمر Bash *"
@@ -6066,6 +6090,10 @@ msgid "By"
 msgstr "بواسطة"
 
 #: src/components/llm-endpoints/UsagePanel.tsx
+msgid "By caller"
+msgstr "حسب المنادي"
+
+#: src/components/llm-endpoints/UsagePanel.tsx
 msgid "By child"
 msgstr "حسب الفرع"
 
@@ -6084,6 +6112,10 @@ msgstr "حسب الاسم"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "By scope"
 msgstr "حسب النطاق"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "by the tokens the answer reports"
+msgstr "حسب التوكنات التي يذكرها الجواب"
 
 #: src/components/quick-create/ChartCreateDialog.tsx
 msgid "C4 architecture"
@@ -6141,6 +6173,11 @@ msgstr "استدعاء"
 msgid "Call"
 msgstr "مكالمة"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Call (path)"
+msgstr "النداء (المسار)"
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "Call {0} with the stored token"
@@ -6165,6 +6202,10 @@ msgstr "مكدس الاستدعاءات — أي الأصول استُدعيت �
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "Call tree"
 msgstr "شجرة الاستدعاءات"
+
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+msgid "Caller"
+msgstr "المنادي"
 
 #. placeholder {0}: answer.to || to
 #. placeholder {1}: answer.status || 'queued'
@@ -7661,6 +7702,14 @@ msgstr "السحابة · {0}"
 #: src/notifications/ingest.ts
 msgid "Cloud access denied"
 msgstr "تم رفض الوصول إلى السحابة"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Cloud API Endpoints"
+msgstr "نقاط نهاية API السحابية"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Cloud APIs"
+msgstr "API السحابية"
 
 #. placeholder {0}: cloudWarning.message
 #: src/components/automations/AutomationsList.tsx
@@ -9254,6 +9303,11 @@ msgstr "تعذر عرض قائمة التغييرات"
 msgid "Could not list the secret managers."
 msgstr ""
 
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Could not load API endpoints"
+msgstr "تعذّر تحميل نقاط نهاية API"
+
 #: src/components/automations/AutomationsList.tsx
 msgid "Could not load automations"
 msgstr "تعذّر تحميل الأتمتة"
@@ -9293,6 +9347,10 @@ msgstr "تعذّر تحميل ناقل الأحداث"
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Could not load the context."
 msgstr "تعذّر تحميل السياق."
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "Could not load the prices."
+msgstr "تعذّر تحميل الأسعار."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not load this automation"
@@ -15008,6 +15066,10 @@ msgstr "تم العثور على {0} قاعدة"
 msgid "found in {0}, not where it is declared"
 msgstr "موجود في {0}، وليس حيث يُصرَّح به"
 
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "free"
+msgstr "مجاني"
+
 #: src/i18n/pref-labels.ts
 msgid "Free-form JSON for experimental feature toggles. Invalid JSON is not saved."
 msgstr "JSON حر لمفاتيح الميزات التجريبية. لا يتم حفظ JSON غير الصالح."
@@ -16399,6 +16461,10 @@ msgstr "مُتجاهَل"
 msgid "Image"
 msgstr "الصورة"
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Images"
+msgstr "صور"
+
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Import"
@@ -17568,6 +17634,14 @@ msgstr "المفتاح المنتهي بـ {0} — لا يغيّره إلا ال
 msgid "Key filled in"
 msgstr ""
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Key format"
+msgstr "صيغة المفتاح"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Key header"
+msgstr "ترويسة المفتاح"
+
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Key is in {manager}"
 msgstr ""
@@ -18376,6 +18450,10 @@ msgstr ""
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "live stream connection"
 msgstr "اتصال البث المباشر"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "LLM"
+msgstr "LLM"
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "LLM APIs"
@@ -19621,6 +19699,10 @@ msgstr "Meta Cloud API الرسمية"
 msgid "Method"
 msgstr ""
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Methods allowed"
+msgstr "الطرق المسموح بها"
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Metrics"
 msgstr "المقاييس"
@@ -20117,6 +20199,10 @@ msgstr ""
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Name the Google Cloud project"
 msgstr "حدّد مشروع Google Cloud"
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Name the header the key is sent in."
+msgstr "حدّد الترويسة التي يُرسَل فيها المفتاح."
 
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 msgid "Name the operation with at least one letter or digit."
@@ -21821,6 +21907,10 @@ msgstr "لا يوجد سجل مراجعات بعد. حفظ هذا الأصل ي�
 msgid "No room selected."
 msgstr "لا توجد غرفة مختارة."
 
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "No root to price a call."
+msgstr "لا يوجد جذر يسعّر النداء."
+
 #: src/components/automations/AutomationPage.tsx
 msgid "No rule code to show."
 msgstr "لا يوجد كود قاعدة لعرضه."
@@ -22490,6 +22580,10 @@ msgstr "لم يُفتح بعد"
 #: src/components/helpdesk/HelpDeskPage.tsx
 msgid "Not picked up"
 msgstr "لم تُستلم بعد"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "not priced"
+msgstr "غير مسعَّر"
 
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Not published"
@@ -23204,6 +23298,10 @@ msgstr "الإعداد الأولي"
 msgid "Onboarding reset"
 msgstr "إعادة تعيين الإعداد الأولي"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "once"
+msgstr "مرة واحدة"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Once"
 msgstr "مرة واحدة"
@@ -23291,6 +23389,10 @@ msgstr ""
 #: src/components/credentials-view/RequirementChip.tsx
 msgid "One of these is enough"
 msgstr "يكفي واحد من هذه"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "One per line. Empty means every method."
+msgstr "واحدة في كل سطر. الفارغ يعني كل الطرق."
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "One per line. Empty means everything the sources allow."
@@ -24642,6 +24744,10 @@ msgstr "نظام التشغيل"
 msgid "OS:"
 msgstr "نظام التشغيل:"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Other"
+msgstr "أخرى"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Other assets"
 msgstr "أصول أخرى"
@@ -25770,6 +25876,16 @@ msgstr ""
 #: src/journey/JourneyViewer.tsx
 msgid "Previous runs"
 msgstr "التشغيلات السابقة"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "Price"
+msgstr "السعر"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "Prices"
+msgstr "الأسعار"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "primary"
@@ -27228,6 +27344,11 @@ msgstr "جارٍ التحديث…"
 msgid "Refund requests → an agent"
 msgstr "طلبات الاسترداد → وكيل"
 
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "Refused"
+msgstr "مرفوضة"
+
 #: src/i18n/pref-labels.ts
 msgid "Regenerate onboarding assets on next start"
 msgstr "إعادة إنشاء أصول الإعداد الأولي عند التشغيل التالي"
@@ -27953,8 +28074,20 @@ msgid "Requests (month)"
 msgstr "الطلبات (الشهر)"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests / day"
+msgstr "الطلبات / اليوم"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Requests / minute"
 msgstr "الطلبات في الدقيقة"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests / month"
+msgstr "الطلبات / الشهر"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests / week"
+msgstr "الطلبات / الأسبوع"
 
 #. placeholder {0}: redirected.join(' and ')
 #. placeholder {1}: next[0]
@@ -27965,6 +28098,10 @@ msgstr "ستُعالَج طلبات {0} على أنها {1} — دون حاجة 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Requests through this root will fail until a new key is saved."
 msgstr "ستفشل الطلبات عبر هذا الجذر حتى يُحفظ مفتاح جديد."
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests, total"
+msgstr "الطلبات، الإجمالي"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "required"
@@ -28544,6 +28681,10 @@ msgstr "السبب الجذري"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "roots"
 msgstr "الجذور"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Roots hold a provider key and the price of a call; other endpoints draw from them and narrow what passes with filters and limits. Spend is booked along the chain."
+msgstr "الجذور تحمل مفتاح المزوّد وسعر النداء؛ نقاط النهاية الأخرى تسحب منها وتضيّق ما يمرّ بالمرشّحات والحدود. يُسجَّل الإنفاق على طول السلسلة."
 
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "Roots talk to a provider with a stored key; chains are fed from other endpoints in fallback order and narrow what passes with filters and limits. Usage is accumulated along the chain."
@@ -30584,6 +30725,10 @@ msgstr "تعيين الميزانية"
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Set budget · {scopeName}"
 msgstr "تعيين الميزانية · {scopeName}"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "Set by the owner of each root. A call that matches no row is free. A call is booked when its answer is delivered; a refused or failed call costs nothing."
+msgstr "يحدّده مالك كل جذر. النداء الذي لا يطابق أي صف مجاني. يُسجَّل النداء عند تسليم جوابه؛ والنداء المرفوض أو الفاشل لا يكلّف شيئًا."
 
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set conversation project"
@@ -33679,6 +33824,10 @@ msgstr ""
 msgid "The backend may have restarted. Click to reattach."
 msgstr "ربما أُعيد تشغيل الخادم. اضغطوا لإعادة الاتصال."
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "The base URL and where the key goes are fixed once created."
+msgstr "عنوان الأساس وموضع المفتاح يثبتان بعد الإنشاء."
+
 #: src/components/voice/CallControls.tsx
 msgid "The call failed."
 msgstr "فشلت المكالمة."
@@ -33972,6 +34121,10 @@ msgstr ""
 #: src/components/conversation/SecureSendDialog.tsx
 msgid "The key could not be sent."
 msgstr ""
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "The key format must name the key placeholder exactly once."
+msgstr "يجب أن تتضمن صيغة المفتاح موضع المفتاح مرة واحدة بالضبط."
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "The key is stored here"
@@ -35185,6 +35338,10 @@ msgstr ""
 msgid "This removes the schedule from the agent. Past runs stay in the run history."
 msgstr "سيُزال الجدول الزمني من الوكيل. تبقى عمليات التشغيل السابقة في سجل التشغيلات."
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "This root is priced by the tokens each answer reports. That is set through the API, not here."
+msgstr "يُسعَّر هذا الجذر حسب التوكنات التي يذكرها كل جواب. يُضبط ذلك عبر API، لا هنا."
+
 #: src/components/runs/RunDetail.tsx
 msgid "This run wrote no files. Runs launched outside a flow only produce artifacts when the agent is told where to write them."
 msgstr "لم يكتب هذا التشغيل أي ملفات. التشغيلات التي تُطلق خارج Flow لا تُنتج مخرجات إلا عندما يُخبَر الوكيل بمكان كتابتها."
@@ -35542,6 +35699,11 @@ msgstr "المهلة الزمنية لاستدعاءات Anthropic API بالم�
 #: src/notifications/error-detail.ts
 msgid "Times"
 msgstr ""
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Times (request field)"
+msgstr "مضروبًا في (حقل في الطلب)"
 
 #: src/components/items/IssueView.tsx
 msgid "times it happened"
@@ -36651,6 +36813,11 @@ msgstr "فشل فحص الاستخدام"
 msgid "Usage unavailable"
 msgstr "الاستخدام غير متاح"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "USD"
+msgstr "دولار"
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/tags/ClassifyTable.tsx
@@ -37071,6 +37238,10 @@ msgstr "وكلاء vibe"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Vibe only"
 msgstr "Vibe فقط"
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Video"
+msgstr "فيديو"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
@@ -37566,6 +37737,10 @@ msgstr "ما هو"
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 msgid "What it runs"
 msgstr "ما الذي يشغّله"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "What it serves, e.g. speech.generate (optional)"
+msgstr "ما الذي تقدّمه، مثل speech.generate (اختياري)"
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What it worked on"

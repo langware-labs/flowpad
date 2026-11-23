@@ -37,6 +37,7 @@ export * from './agent-mailbox';
 export * from './source-item';
 export * from './dataset';
 export * from './llm-endpoint';
+export * from './api-endpoint';
 export * from './connection-spec';
 export * from './llm-source';
 export * from './status-record';

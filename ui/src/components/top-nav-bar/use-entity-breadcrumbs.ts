@@ -189,7 +189,12 @@ function basename(ref: string | null): string | null {
 function viewLabel(dock: DockPointer | null): string {
   if (!dock) return i18n._(HOME_CRUMB_LABEL);
   const tab = tabManager.findByDockKey(dock.tabHash);
-  return tab?.name?.trim() || viewerTitle(dock.viewType) || labelForType(dock.viewType ?? '') || i18n._(HOME_CRUMB_LABEL);
+  return (
+    tab?.name?.trim() ||
+    viewerTitle(dock.viewType, dock.pointer) ||
+    labelForType(dock.viewType ?? '') ||
+    i18n._(HOME_CRUMB_LABEL)
+  );
 }
 
 // Type names only (the crumb needs no entity class): a live session and the conversation it sits in.

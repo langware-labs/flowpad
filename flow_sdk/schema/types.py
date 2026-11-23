@@ -36,6 +36,8 @@ class EntityType(StrEnum):
     WEBHOOK = "webhook"
     # The hub's Issues — something stopped working and who must fix it (builtin/issue.py): hub-only, read-only.
     ISSUE = "issue"
+    # The hub's API endpoints -- a budget over a third-party HTTP API (builtin/api_endpoint.py): hub-only.
+    API_ENDPOINT = "api_endpoint"
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"

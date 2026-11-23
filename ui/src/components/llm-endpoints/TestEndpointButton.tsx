@@ -25,10 +25,12 @@
  * which already carries the listing. The verdict shape is identical either way, so every
  * surface renders one button and never has to know which runtime it is on.
  */
-import { isHubOnly, llmEndpointsService, llmSourcesService, type LLMEndpointTestResult } from '@sdk';
+import { isHubOnly, llmSourcesService, type LLMEndpointTestResult } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { Check, Loader2, X, Zap } from 'lucide-react';
 import { useState } from 'react';
+
+import { useEndpointFamily } from './endpoint-family';
 
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
@@ -59,6 +61,7 @@ export function TestEndpointButton({
   inlineVerdict = true,
 }: TestEndpointButtonProps) {
   const { t } = useLingui();
+  const family = useEndpointFamily();
   const [busy, setBusy] = useState(false);
   const [verdict, setVerdict] = useState<LLMEndpointTestResult | null>(null);
 
@@ -75,8 +78,9 @@ export function TestEndpointButton({
         localProvider
           ? // This machine's key: spend one call with it here — the hub does not know the endpoint.
             await llmSourcesService.testSource({ kind: 'api_key', provider: localProvider })
-          : isHubOnly()
-            ? await llmEndpointsService.testEndpoint(endpointId)
+          : isHubOnly() || !family.llm
+            ? // An API endpoint is the hub's alone: no box action carries it, the hub is asked directly.
+              await family.service.testEndpoint(endpointId)
             : await llmSourcesService.test(endpointId),
       );
     } catch (e) {
@@ -91,7 +95,10 @@ export function TestEndpointButton({
   const title = !verdict
     ? t`Send one minimal call through this endpoint`
     : verdict.ok
-      ? t`${verdict.status} · ${verdict.model} · ${verdict.latency_ms}ms`
+      ? verdict.model
+        ? t`${verdict.status} · ${verdict.model} · ${verdict.latency_ms}ms`
+        : // No model answered (an API endpoint): the hub's own words say what was checked.
+          [verdict.status || '', `${verdict.latency_ms}ms`, verdict.message].filter(Boolean).join(' · ')
       : `${verdict.status || ''} ${verdict.message}`.trim();
 
   return (

@@ -10,6 +10,7 @@ import type { ReactNode } from 'react';
 import { TableCell, TableRow } from '@src/components/ui/table';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
+import { useEndpointFamily } from './endpoint-family';
 import { openLlmEndpoint } from './llm-endpoints-pointer';
 
 export interface UsageChildRowProps {
@@ -25,11 +26,12 @@ export interface UsageChildRowProps {
 
 export function UsageChildRow({ id, label, suffix, testId, values }: UsageChildRowProps) {
   const { navigation } = useDockNavigation();
+  const family = useEndpointFamily();
   return (
     <TableRow
       data-testid={testId}
       className={id ? 'cursor-pointer' : undefined}
-      onClick={id ? () => openLlmEndpoint(navigation, id, 'usage') : undefined}
+      onClick={id ? () => openLlmEndpoint(navigation, id, 'usage', family.id) : undefined}
     >
       <TableCell className={id ? 'font-medium underline-offset-2 hover:underline' : ''}>
         {label}
