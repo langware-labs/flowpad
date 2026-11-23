@@ -523,6 +523,8 @@ export type SessionBrowser = string;
 
 /** One word for a driver's availability to this worker, decided on the backend (`browser_drivers.state_of`). */
 export type BrowserDriverState = 'ready' | 'running' | 'connected' | 'not_connected' | 'not_installed' | 'unsupported';
+/** A kind's state: its driver's, or `error` when a session reported it failing. */
+export type BrowserKindState = BrowserDriverState | 'error';
 
 /** One browser driver as the backend lists it (`BrowserDriverSpec`), with this machine's view of it. */
 export interface BrowserDriverInfo {
@@ -555,7 +557,9 @@ export interface BrowserKindInfo {
   driver: SessionBrowser;
   icon: string;
   install_url: string;
-  state: BrowserDriverState;
+  state: BrowserKindState;
+  /** What a session reported when `state` is `error`; "" otherwise. */
+  error: string;
   /** ISO times of the profile's folder; null where the OS keeps none or it never browsed. */
   created: string | null;
   last_used: string | null;
@@ -568,6 +572,8 @@ export interface BrowserStatus {
   pick: SessionBrowser;
   /** The browser in use: for a session what it resolves to, else what a new session here gets. */
   effective: SessionBrowser;
+  /** The one kind in use: the profile that was chosen, else the driver's first usable one; "" when none. */
+  effective_kind: string;
   /** Which rung decided `effective`. */
   source: 'pick' | 'session' | 'project' | 'default';
   /** The driver that was asked for but this worker cannot use; "" when the choice stood. */
@@ -1311,10 +1317,20 @@ export class Project extends APIEntity<Project> {
     return this.post<{ env_files: string[] }>('set-env-files', { paths });
   }
 
-  /** The person's own browser for this project on this computer — a browser driver's name, or ""
+  /** The project's default browser on this computer — a browser kind or a driver's name, or ""
    *  to go back to what the project recommends. Saved on this instance, never in the project. */
   async setBrowser(browser: SessionBrowser): Promise<{ browser: SessionBrowser }> {
     return this.post<{ browser: SessionBrowser }>('set-browser', { browser });
+  }
+
+  /** One session's own browser (a kind or a driver's name); it applies at the session's next launch. */
+  async selectBrowser(processId: string, browser: SessionBrowser): Promise<{ browser: SessionBrowser }> {
+    return this.post<{ browser: SessionBrowser }>('select-browser', { process_id: processId, browser });
+  }
+
+  /** What a person calls a browser kind on this computer; "" goes back to its profile's name. */
+  async renameBrowser(kind: string, name: string): Promise<{ kind: string; name: string }> {
+    return this.post<{ kind: string; name: string }>('browser-name', { kind, name });
   }
 
   /** The project's browser, what is available, and — for a session — what it resolves to

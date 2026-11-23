@@ -3,15 +3,18 @@
 Most specific first:
 
 ==========  ==================================================================================
-``pick``    the person's own choice for this project on THIS computer (:func:`set_browser_pick`)
-``session`` ``context_data["browser"]``, then the legacy ``chrome`` flag (a caller's ``--chrome``)
+``session`` the session's own: ``context_data["browser"]`` — what its launch asked for (a message
+            channel names its browser this way), what ``flow browser select`` set, or what the
+            first launch decided and kept (:func:`keep_choice`); then the legacy ``chrome`` flag
+``pick``    the project default on THIS computer (:func:`set_browser_pick`, ``flow browser default``)
 ``project`` the ``browser`` the project recommends in ``project_manifest.json``
 ``default`` ``agent``
 ==========  ==================================================================================
 
-A browser is a browser driver (``agentic-assets/browser_driver/<name>/``,
-``flow_sdk/core/browser_drivers.py``), and its manifest names the workers it supports. A choice
-the session's worker cannot use falls to the default driver, and the answer keeps what was asked
+A choice holds a browser driver's name (``agentic-assets/browser_driver/<name>/``) or a browser
+kind (``<browser>.<driving>.name.<profile>`` — one profile of it); ``browser_drivers.driver_of``
+reads the driver off either. The manifest names the workers a driver supports: a choice the
+session's worker cannot use falls to the default driver, and the answer keeps what was asked
 (``requested``) so a menu can say why.
 """
 
@@ -41,6 +44,8 @@ class BrowserLaunch(DataSpec):
 
     #: A browser driver's name.
     kind: str = browser_drivers.DEFAULT
+    #: The choice as it was made — a browser kind when one profile was chosen, else the driver's name.
+    chosen: str = ""
     #: Which rung decided: ``pick`` | ``session`` | ``project`` | ``default``.
     source: str = "default"
     #: The session's worker, by vendor key — a driver reaches each worker its own way.
@@ -85,19 +90,21 @@ def decide(
 ) -> BrowserLaunch:
     """The pure rule — see the module docstring. ``worker``: the session's vendor key;
     ``has_switch``: that worker has a browser switch of its own."""
-    known = browser_drivers.names()
-    extension = next((name for name in known if browser_drivers.uses_switch(name)), "")
+    extension = next((name for name in browser_drivers.names() if browser_drivers.uses_switch(name)), "")
     asked = (
-        (pick, "pick"),
         (override, "session"),
         (extension if legacy_chrome else None, "session"),
+        (pick, "pick"),
         # The manifest is silent on the default, so the default there is no recommendation.
         (project_browser if project_browser != browser_drivers.DEFAULT else None, "project"),
     )
-    kind, source = next(((name, rung) for name, rung in asked if name and name in known), (browser_drivers.DEFAULT, "default"))
-    if not browser_drivers.supports(str(kind), worker, has_switch=has_switch):
-        return BrowserLaunch(worker=worker, requested=str(kind))
-    return BrowserLaunch(kind=str(kind), source=source, worker=worker)
+    chosen, kind, source = next(
+        ((str(name), driver, rung) for name, rung in asked if (driver := browser_drivers.driver_of(name))),
+        (browser_drivers.DEFAULT, browser_drivers.DEFAULT, "default"),
+    )
+    if not browser_drivers.supports(kind, worker, has_switch=has_switch):
+        return BrowserLaunch(worker=worker, requested=kind)
+    return BrowserLaunch(kind=kind, chosen=chosen, source=source, worker=worker)
 
 
 def resolve(**asked: Any) -> str:
@@ -106,19 +113,39 @@ def resolve(**asked: Any) -> str:
 
 
 def browser_pick(project_id: Any) -> str:
-    """The person's pick for the project on this computer: a browser driver's name, or ""."""
+    """The project default on this computer: a browser driver's name or a browser kind, or ""."""
     from flow_sdk.preferences import read_project_pick  # noqa: PLC0415
 
     return read_project_pick(PREF_BROWSER_PICK, project_id)
 
 
 def set_browser_pick(project_id: Any, name: str) -> None:
-    """Pick the project's browser on this computer; "" clears the pick. ``ValueError`` for an unknown driver."""
+    """Set the project default on this computer; "" clears it. ``ValueError`` for an unknown browser."""
     from flow_sdk.preferences import write_project_pick  # noqa: PLC0415
 
-    if name and browser_drivers.get(name) is None:
-        raise ValueError(f"browser {name!r} must be one of {', '.join(browser_drivers.names())}")
-    write_project_pick(PREF_BROWSER_PICK, project_id, name)
+    write_project_pick(PREF_BROWSER_PICK, project_id, known_browser(name))
+
+
+def known_browser(name: object) -> str:
+    """``name`` when it is "" or names a driver or one of its kinds. ``ValueError`` otherwise."""
+    value = str(name or "").strip()
+    if value and not browser_drivers.driver_of(value):
+        raise ValueError(f"browser {value!r} is not a browser kind or one of {', '.join(browser_drivers.names())}")
+    return value
+
+
+def keep_choice(process: "AgenticProcess", browser: str) -> bool:
+    """Make ``browser`` the session's own (``context_data["browser"]``), which later launches read
+    first; "" gives the choice back to the project. True when it changed. The caller saves."""
+    data = dict(process.context_data or {})
+    if (data.get("browser") or "") == browser:
+        return False
+    if browser:
+        data["browser"] = browser
+    else:
+        data.pop("browser", None)
+    process.context_data = data
+    return True
 
 
 @functools.lru_cache(maxsize=None)
@@ -168,6 +195,45 @@ async def resolve_for(process: "AgenticProcess", project_browser: Optional[str] 
         worker=worker_key(process.worker_type),
         has_switch=has_switch(process.worker_type),
     )
+
+
+def machine_view(
+    worker_type: object, *, in_use: str = "", chosen: str = "", last_use: Optional[dict] = None,
+) -> tuple[dict, list[dict], list[dict]]:
+    """What this machine offers a session of ``worker_type``: the worker's extension facts, every
+    driver with its state, and the browser kinds (one per profile). Reads files and probes ports;
+    starts nothing. ``in_use``: the driver the session has; ``chosen``: its choice as it was made
+    (a kind, when one profile was chosen); ``last_use``: its last browser call."""
+    worker, switch = worker_key(worker_type), has_switch(worker_type)
+    # Extension facts only for a worker that has one.
+    extension: dict = {"installed": False, "device": ""}
+    scan = None
+    if extension_id := worker_options(worker_type).EXTENSION_ID:
+        from flow_sdk.core.browser_profiles import scan_extension  # noqa: PLC0415
+
+        scan = scan_extension(extension_id)
+        extension = {
+            **extension_hint(),
+            "profiles": [{**p.profile.model_dump(), "browser": p.browser, "installed": p.installed} for p in scan.profiles],
+            "profiles_denied": scan.denied,
+        }
+    drivers = []
+    for spec in browser_drivers.list_drivers():
+        setup = browser_drivers.worker_setup(spec.name, worker)
+        drivers.append({
+            **spec.model_dump(mode="json"),
+            # One word a menu shows, read here so no client re-derives it.
+            "state": browser_drivers.state_of(
+                spec.name, worker, has_switch=switch, extension_installed=bool(extension.get("installed")),
+                in_use=spec.name == in_use, last_use=last_use),
+            "setup": setup.setup if setup is not None else "",
+            "config": browser_drivers.read_config(spec.name),
+        })
+    # The session's last call on its own browser worked: a failure reported before it is over.
+    worked = last_use is not None and last_use.get("family") == in_use and not last_use.get("failed")
+    proven = (chosen or in_use, str(last_use.get("at") or "")) if worked and last_use else ("", "")
+    kinds = browser_drivers.list_kinds({driver["name"]: driver["state"] for driver in drivers}, scan, proven)
+    return extension, drivers, [kind.model_dump(mode="json") for kind in kinds]
 
 
 def extension_hint() -> dict:

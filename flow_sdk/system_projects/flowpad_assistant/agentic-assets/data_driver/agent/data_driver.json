@@ -27,8 +27,8 @@
     "browser": {
       "type": "text",
       "label": "Browser",
-      "placeholder": "extension | chrome_debug | agent",
-      "hint": "For a service read through a browser (LinkedIn): the browser driver the worker uses. That browser must be signed in to the service."
+      "choices": true,
+      "hint": "For a service read through a browser (LinkedIn): the browser profile the worker uses. That profile must be signed in to the service."
     },
     "harness": {
       "type": "text",

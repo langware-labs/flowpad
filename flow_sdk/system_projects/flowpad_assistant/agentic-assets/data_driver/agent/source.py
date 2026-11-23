@@ -98,8 +98,8 @@ def browser_of(config: Mapping[str, Any]) -> str:
     from flow_sdk.core import browser_drivers  # noqa: PLC0415
 
     name = str((config or {}).get("browser") or "").strip()
-    if browser_drivers.get(name) is None:
-        raise Rejected(f"config.browser is required: one of {' | '.join(browser_drivers.names())}")
+    if not browser_drivers.driver_of(name):
+        raise Rejected(f"config.browser is required: a browser kind (`flow browser list`) or one of {' | '.join(browser_drivers.names())}")
     return name
 
 
@@ -186,6 +186,23 @@ class AgentSource(MessageSource):
     def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
         """The worker is handed the application's arguments as they are: it addresses the connector."""
         return AgentSendData(text=text, subject=subject or None, thread_key=thread_key, to=to, conversation_id=conversation_id), None
+
+    @classmethod
+    async def choices_for(cls, row: Any, field: str) -> list:
+        """The browsers this machine can give a worker, one per profile — the footer menu's list.
+        Application state, so it is read from the application."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.agentic_process.browser_choice import machine_view  # noqa: PLC0415
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+        from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.choice_spec import Choice  # noqa: PLC0415
+
+        if field != "browser":
+            return []
+        _, _, kinds = await asyncio.to_thread(machine_view, await resolve_default_worker_type())
+        return [Choice(id=kind["kind"], name=kind["name"], detail=f"{kind['browser']} · {kind['driving']} · {kind['state']}")
+                for kind in kinds if browser_drivers.usable(kind["state"])]
 
     @classmethod
     def origin_kind_for(cls, config: Mapping[str, Any]) -> str:

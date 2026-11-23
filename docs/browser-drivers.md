@@ -42,20 +42,26 @@ the folders; the launch, the footer menu and the editor ask the manifest.
 
 ## Which driver a session gets
 
-`browser_choice.decide`, most specific first: the person's pick for the project on this computer,
-the session's own setting, the project's recommendation, then `agent`. A driver that does not
+`browser_choice.decide`, most specific first: the session's own browser, the project default on
+this computer, the project's recommendation, then `agent`. A choice is a driver's name or a browser
+kind (below); `browser_drivers.driver_of` reads the driver off either. A driver that does not
 support the session's worker is replaced by `agent`, and the answer keeps what was asked
 (`requested`) so the menu can say why.
+
+The session's own browser is `context_data["browser"]`: what its launch asked for, what
+`flow browser select` set, or what its first launch decided — the launch keeps that decision
+(`keep_choice`), so a later change of the project default never moves a session to another browser.
 
 ## A channel read through a browser
 
 A message channel with no API (LinkedIn) is a connector of the `agent` data driver
 (`agentic-assets/data_driver/agent/`, `CONNECTOR_PROFILES` row with `browser=True`). The source's
-config names its browser driver (`browser: extension | chrome_debug | agent`); the worker's launch
-asks for it as the `session` rung (`context_data["browser"]`).
+config names its browser (`browser`: a browser kind, picked in the form from this machine's list, or
+a driver's name); the worker's launch asks for it as the session's own (`context_data["browser"]`),
+so the project default never replaces it.
 
-- The source refuses to run on another browser (`require_browser`, `wrong_browser`): a pick for the
-  project, or a worker the driver does not support, would read another account's inbox.
+- The source refuses to run on another browser (`require_browser`, `wrong_browser`): a worker the
+  driver does not support would read another account's inbox.
 - A page shows no message id and a time to the minute, so `page_batch.py` (run by the worker)
   builds each record's id from the conversation, sender, minute and words, and turns the page's
   local time into UTC. The reader and the sender both use it, so a sent message and its later
@@ -74,6 +80,19 @@ read off the folders, so its entries are named by folder id.
 
 The footer's browser menu and `flow browser list` show that same list (`kinds` of the project's
 `browser-status`); `flow browser show` prints the browser the calling session has.
+
+| Command | What it does |
+|---|---|
+| `flow browser select <kind>` | this session's own browser; it applies at its next launch |
+| `flow browser default <kind>` | the project default on this computer |
+| `flow browser error <kind> <message>` | reports a failing kind: its row shows the message until the kind is selected again or the session's next call on it succeeds |
+
+In the menu, picking a row inside a session selects for that session; elsewhere it sets the project
+default. A row's name can be edited in place: it is kept per machine (`preferences.browser.names`)
+and never changes the kind. The rules an agent follows are in the shipped `instructions/common.md`.
+
+Selecting an extension kind records the profile; nothing yet makes the worker's extension attach to
+that profile rather than another connected one.
 
 ## Settings are this machine's
 
@@ -98,11 +117,9 @@ statements:
       - flow_sdk/core/browser_drivers.py
   - text: The browser driver in Chrome has a name and a profile name; the kind is with the profile name; the name is initialized to the profile name, but the user may edit the name inline.
     basis: stated
-    issues:
-      - ui/src/components/footer/BrowserChip.tsx shows a kind's name as fixed text; nothing there edits a name.
     about:
-      - flow_sdk/schema/data_spec/browser_driver_spec.py
       - ui/src/components/footer/BrowserChip.tsx
+      - flow_sdk/core/browser_drivers.py
   - text: Driving types are extension and cdp.
     basis: stated
     about:
@@ -111,8 +128,6 @@ statements:
     basis: stated
     about:
       - flow_sdk/schema/data_spec/browser_driver_spec.py
-requirements:
-  - text: A kind's name is editable inline in ui/src/components/footer/BrowserChip.tsx and saved for this machine; editing it never changes the kind.
 ```
 
 ```statements
@@ -122,22 +137,14 @@ depends_on:
 statements:
   - text: A process stores the default browser driver in its private context once asked.
     basis: stated
-    issues:
-      - flow_sdk/builtin/agentic_process/browser_choice.py:153 decides the browser again at every launch and writes nothing to the process.
-      - flow_sdk/builtin/agentic_process/browser_choice.py:35 keeps the person's pick per project in preferences (preferences.browser.pick), not on the process.
     about:
-      - flow_sdk/builtin/agentic_process/browser_choice.py:153
+      - flow_sdk/builtin/agentic_process/browser_choice.py
+      - flow_sdk/builtin/agentic_process/process_assets.py
   - text: A message channel or data source may override the process browser.
     basis: stated
-    issues:
-      - flow_sdk/builtin/agentic_process/browser_choice.py:91 asks the person's project pick before the session's context_data["browser"], so a source's browser does not win over a pick.
-      - flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/agent/transport.py:228 refuses the run with wrong_browser instead of overriding.
     about:
-      - flow_sdk/builtin/agentic_process/browser_choice.py:91
-      - flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/agent/transport.py:228
-requirements:
-  - text: The first time a process is asked for its browser, the decided driver is saved in the process's private context and later launches read it from there, in flow_sdk/builtin/agentic_process/browser_choice.py.
-  - text: A browser named by a message channel or data source is decided ahead of the project pick for that source's worker, in flow_sdk/builtin/agentic_process/browser_choice.py, and the agent transport stops refusing that case.
+      - flow_sdk/builtin/agentic_process/browser_choice.py
+      - flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/agent/transport.py
 ```
 
 ```statements
@@ -166,49 +173,31 @@ depends_on:
 statements:
   - text: The agent communicates with the browser status using a new CLI, flow browser list, show and select; this is the same list the user sees.
     basis: stated
-    issues:
-      - flow_sdk/cli/commands/browser_cmd.py has list and show only; flow browser select does not exist.
     about:
       - flow_sdk/cli/commands/browser_cmd.py
       - flow_sdk/builtin/project.py
   - text: Instructions in the common agent set the rules for setting the browser; the CLI helps further.
     basis: stated
-    issues:
-      - flow_sdk/system_projects/flowpad_assistant/instructions/common.md has no rule about setting the browser.
-      - flow_sdk/builtin/agentic_process/system_prompt.py:164 gives a session only the BROWSER layer, the text of the one driver decided at launch; it says nothing about choosing or changing the browser.
     about:
       - flow_sdk/system_projects/flowpad_assistant/instructions/common.md
-      - flow_sdk/builtin/agentic_process/system_prompt.py:164
   - text: If the selected browser, given by flow browser show, is failing, the agent stops, updates the list with the error and asks for guidance.
     basis: stated
-    issues:
-      - Only flow_sdk/system_projects/flowpad_assistant/agentic-assets/browser_driver/extension/instructions.md tells a session what to do on a failed call (tell the user to reconnect or switch); the agent and chrome_debug drivers' instructions say nothing about a failing browser.
-      - flow_sdk/builtin/agentic_process/browser_choice.py:198 learns of a failure only by reading the session's transcript for its last browser call; an agent has no way to write an error onto the list.
     about:
-      - flow_sdk/builtin/agentic_process/browser_choice.py:198
-      - flow_sdk/system_projects/flowpad_assistant/agentic-assets/browser_driver/extension/instructions.md
+      - flow_sdk/system_projects/flowpad_assistant/instructions/common.md
+      - flow_sdk/cli/commands/browser_cmd.py
   - text: The list error state is reported by flow browser error <kind> <error message>.
     basis: stated
-    issues:
-      - flow_sdk/cli/commands/browser_cmd.py has no error command.
-      - flow_sdk/core/browser_drivers.py knows the states unsupported, not_installed, ready, running, connected and not_connected; it has no error state and no error message.
     about:
-      - flow_sdk/core/browser_drivers.py
       - flow_sdk/cli/commands/browser_cmd.py
+      - flow_sdk/core/browser_drivers.py
   - text: Select changes the current process; default sets the project default.
     basis: stated
-    issues:
-      - flow_sdk/cli/commands/browser_cmd.py has neither select nor default.
-      - flow_sdk/builtin/project.py has only set-browser, which sets the person's pick for the project; nothing changes the browser of one running process.
     about:
       - flow_sdk/cli/commands/browser_cmd.py
       - flow_sdk/builtin/project.py
   - text: An error on a row clears when that kind is selected again or its next call succeeds.
     basis: stated
-    issues:
-      - No error state exists yet, so nothing clears one.
-requirements:
-  - text: flow browser gains select, which changes the current process's browser, and default, which sets the project default, in flow_sdk/cli/commands/browser_cmd.py.
-  - text: flow_sdk/system_projects/flowpad_assistant/instructions/common.md states the rules for setting the browser and points to flow browser, whose help text carries the details.
-  - text: flow browser error <kind> <error message> records the error on that browser kind, the state read by the footer menu and by flow browser list gains an error state carrying the message, and the common instructions tell the agent to stop and ask the user for guidance.
+    about:
+      - flow_sdk/builtin/project.py
+      - flow_sdk/core/browser_drivers.py
 ```

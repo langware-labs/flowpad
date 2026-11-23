@@ -787,8 +787,8 @@ class Project(SetupSkippable, Entity):
 
     @action.post(action_name="set-browser")
     async def set_browser_action(self, browser: str = "agent") -> "ApiResponse":
-        """`POST /project/<id>/set-browser {browser}` — the person's own browser for this project
-        on THIS computer (a browser driver's name; "" goes back to what the project recommends).
+        """`POST /project/<id>/set-browser {browser}` — the project default on THIS computer (a
+        browser kind or a driver's name; "" goes back to what the project recommends).
         Saved on this instance, never in ``project_manifest.json``; a session reads it at its
         next launch."""
         from flow_sdk.builtin.agentic_process import browser_choice  # noqa: PLC0415
@@ -822,19 +822,16 @@ class Project(SetupSkippable, Entity):
         from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
 
         worker_type = process.worker_type if process is not None else await resolve_default_worker_type()
-        options = browser_choice.worker_options(worker_type)
-
         worker = browser_choice.worker_key(worker_type)
-        has_switch = browser_choice.has_switch(worker_type)
         pick = browser_choice.browser_pick(self.id)
         launch = (
             await browser_choice.resolve_for(process, setting)
             if process is not None
-            else browser_choice.decide(pick=pick, override=None, legacy_chrome=False,
-                                       project_browser=setting, worker=worker, has_switch=has_switch)
+            else browser_choice.decide(pick=pick, override=None, legacy_chrome=False, project_browser=setting,
+                                       worker=worker, has_switch=browser_choice.has_switch(worker_type))
         )
 
-        def _probe() -> tuple[dict, dict | None, list[dict], list[dict]]:
+        def _probe() -> tuple[dict | None, dict, list[dict], list[dict]]:
             last_use = None
             if process is not None:
                 from flow_sdk.builtin.agentic_process.transcript_cache import transcript_path  # noqa: PLC0415
@@ -844,39 +841,19 @@ class Project(SetupSkippable, Entity):
                 paths = [transcript_path(process), *process._record_dir().glob("*transcript*.jsonl")]
                 uses = [u for u in (browser_choice.last_browser_use(p, unnamed=launch.kind) for p in paths) if u]
                 last_use = max(uses, key=lambda u: u["at"] or "") if uses else None
-            # Extension facts only for a worker that has one.
-            extension: dict = {"installed": False, "device": ""}
-            scan = None
-            if options.EXTENSION_ID:
-                from flow_sdk.core.browser_profiles import scan_extension  # noqa: PLC0415
+            view = browser_choice.machine_view(worker_type, in_use=launch.kind, chosen=launch.chosen, last_use=last_use)
+            return (last_use, *view)
 
-                scan = scan_extension(options.EXTENSION_ID)
-                extension = {
-                    **browser_choice.extension_hint(),
-                    "profiles": [{**p.profile.model_dump(), "browser": p.browser, "installed": p.installed} for p in scan.profiles],
-                    "profiles_denied": scan.denied,
-                }
-            drivers = []
-            for spec in browser_drivers.list_drivers():
-                setup = browser_drivers.worker_setup(spec.name, worker)
-                drivers.append({
-                    **spec.model_dump(mode="json"),
-                    # One word a menu shows, read here so no client re-derives it.
-                    "state": browser_drivers.state_of(
-                        spec.name, worker, has_switch=has_switch, extension_installed=bool(extension.get("installed")),
-                        in_use=spec.name == launch.kind, last_use=last_use),
-                    "setup": setup.setup if setup is not None else "",
-                    "config": browser_drivers.read_config(spec.name),
-                })
-            kinds = browser_drivers.list_kinds({driver["name"]: driver["state"] for driver in drivers}, scan)
-            return extension, last_use, drivers, [kind.model_dump(mode="json") for kind in kinds]
-
-        extension, last_use, drivers, kinds = await asyncio.to_thread(_probe)
+        last_use, extension, drivers, kinds = await asyncio.to_thread(_probe)
+        # The one kind in use: the profile that was chosen, else the driver's first usable one.
+        mine = [k for k in kinds if k["driver"] == launch.kind and browser_drivers.usable(k["state"])]
+        effective_kind = next((k["kind"] for k in mine if k["kind"] == launch.chosen), mine[0]["kind"] if mine else "")
         return ApiSuccessResponse(
             data={
                 "setting": setting,
                 "pick": pick,
                 "effective": launch.kind,
+                "effective_kind": effective_kind,
                 "source": launch.source,
                 # What was asked for but this worker cannot use; "" when the choice stood.
                 "requested": launch.requested,
@@ -888,6 +865,50 @@ class Project(SetupSkippable, Entity):
                 "last_use": last_use,
             }
         )
+
+    @action.post(action_name="select-browser")
+    async def select_browser_action(self, process_id: str = "", browser: str = "") -> "ApiResponse":
+        """`POST /project/<id>/select-browser {process_id, browser}` — the browser of ONE session: a
+        browser kind or a driver's name; "" gives the choice back to the project. The session
+        reads it at its next launch. Selecting a kind ends a failure reported on it."""
+        from flow_sdk.builtin.agentic_process import browser_choice  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+
+        process = await AgenticProcess.get_by_id(process_id) if process_id else None
+        if process is None:
+            return ApiFailResponse(message=f"no session {process_id!r}", status_code=404)
+        try:
+            chosen = browser_choice.known_browser(browser)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        if browser_choice.keep_choice(process, chosen):
+            await process.save()
+        if chosen:
+            await asyncio.to_thread(browser_drivers.report_error, chosen, "")
+        return ApiSuccessResponse(data={"browser": chosen, "applies": "next launch"})
+
+    @action.post(action_name="browser-error")
+    async def browser_error_action(self, kind: str = "", message: str = "") -> "ApiResponse":
+        """`POST /project/<id>/browser-error {kind, message}` — a session's report that a browser
+        kind is failing, shown on its row on this computer; an empty message clears it."""
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+
+        if not browser_drivers.driver_of(kind):
+            return ApiFailResponse(message=f"{kind!r} is not a browser kind", status_code=400)
+        await asyncio.to_thread(browser_drivers.report_error, kind, message)
+        return ApiSuccessResponse(data={"kind": kind, "error": message.strip()})
+
+    @action.post(action_name="browser-name")
+    async def browser_name_action(self, kind: str = "", name: str = "") -> "ApiResponse":
+        """`POST /project/<id>/browser-name {kind, name}` — what a person calls a browser kind on
+        this computer; "" goes back to its profile's name. The kind itself never changes."""
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+
+        if not browser_drivers.driver_of(kind):
+            return ApiFailResponse(message=f"{kind!r} is not a browser kind", status_code=400)
+        await asyncio.to_thread(browser_drivers.rename_kind, kind, name)
+        return ApiSuccessResponse(data={"kind": kind, "name": name.strip()})
 
     async def _reindex_manifest(self) -> None:
         """Re-index ``project_manifest.json`` after a field write. The row is the

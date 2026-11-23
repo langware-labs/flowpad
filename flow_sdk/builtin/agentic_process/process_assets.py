@@ -427,10 +427,12 @@ class ProcessAssets:
             own = (self.process.context_data or {}).get("agent_skills_dir")
             if link_skills(self._process_assets_path(), directories, own=[own] if own else []):
                 self.ensure_process_assets()
-        from flow_sdk.builtin.agentic_process.browser_choice import resolve_for  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.browser_choice import keep_choice, resolve_for  # noqa: PLC0415
 
         # Decided ONCE: the prompt's browser block and the launch switches below read this.
         launch = await resolve_for(self.process)
+        # And kept: a later change of the project default never moves this session to another browser.
+        keep_choice(self.process, launch.chosen or launch.kind)
         instructions = await self._prepare_system_instruction_assets(launch)
         hook_runtime = ProcessHookRuntime()
         supports_hooks = bool(getattr(self.process.driver, "supports_process_hooks", False))

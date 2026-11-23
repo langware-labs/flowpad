@@ -63,8 +63,9 @@ class BrowserKindSpec(DataSpec):
     driver: str
     icon: str = ""
     install_url: str = ""
-    #: One word for a menu (``browser_drivers.state_of``).
+    #: One word for a menu (``browser_drivers.state_of``), or ``error`` with what a session reported.
     state: str = ""
+    error: str = ""
     created: Optional[str] = None
     last_used: Optional[str] = None
 
