@@ -197,7 +197,8 @@ tag details and queue history are opened on demand.
 Read or update instance settings through
 `GET|POST /api/v1/graph/flow_message/classification-settings` using `enabled`,
 `include_flow_tags` and `root` (`enabled` is the classifier rule's switch, moved through
-`set_trigger_on`; the answer also carries its `trigger_id`). Ask where a message would land, without changing it,
+`set_trigger_on` and also recorded on the instance, which is what the rule is seeded from and the
+only place the choice lives before a boot seeded it; the answer also carries its `trigger_id`). Ask where a message would land, without changing it,
 through `POST /api/v1/graph/flow_message/<id>/classify` (the tag editor's Try panel). Replace a message's tags atomically through
 `POST /api/v1/graph/flow_message/<id>/set-tags` with `{"tags": [...]}`.
 

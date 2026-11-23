@@ -4941,7 +4941,13 @@ async def message_classification_settings() -> ApiResponse:
     """Instance-owned incoming-message policy; omitted settings retain their value. ``enabled`` is the
     classifier automation's own switch, read and moved here for the tag screens."""
     from flow_sdk.builtin.trigger import set_trigger_on
-    from flow_sdk.stream_inbox.message_tags import classifier, save_settings, settings
+    from flow_sdk.stream_inbox.message_tags import (
+        classifier,
+        save_classifier_on,
+        save_settings,
+        settings,
+        stored_classifier_on,
+    )
 
     info = get_current_request_info()
     if info is None:
@@ -4949,18 +4955,28 @@ async def message_classification_settings() -> ApiResponse:
     current, rule = settings(), await classifier()
     if info.request.method.upper() == "POST":
         body = await info.get_post_data()
-        if not isinstance(body, dict) or set(body) - {"enabled", "include_flow_tags", "root"}:
+        # ``trigger_id`` is read-only and part of the answer, so the object this endpoint GAVE
+        # is accepted back unchanged (it is ignored): without that, handing the settings straight
+        # back - which is how a caller restores them - was answered 400 and stored nothing.
+        if not isinstance(body, dict) or set(body) - {"enabled", "include_flow_tags", "root", "trigger_id"}:
             return ApiFailResponse(message="Expected enabled, include_flow_tags and/or root settings", status_code=400)
         if not isinstance(body.get("enabled", False), bool):
             return ApiFailResponse(message="enabled must be true or false", status_code=400)
-        if "enabled" in body and rule is not None:
-            await set_trigger_on(rule, body["enabled"])
+        if "enabled" in body:
+            # The row is the live switch when there is one; the recorded setting is what a row
+            # seeded later starts from, and the only place the choice can live until then. Both,
+            # so an instance whose classifier row is not seeded yet does not answer 200 to
+            # "turn it off", store nothing, and keep reporting it on.
+            if rule is not None:
+                await set_trigger_on(rule, body["enabled"])
+            save_classifier_on(body["enabled"])
         try:
             current = save_settings({**current.model_dump(mode="json"),
-                                     **{k: v for k, v in body.items() if k != "enabled"}})
+                                     **{k: v for k, v in body.items() if k not in ("enabled", "trigger_id")}})
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
-    return ApiSuccessResponse(data={**current.model_dump(mode="json"), "enabled": rule is None or bool(rule.enabled),
+    return ApiSuccessResponse(data={**current.model_dump(mode="json"),
+                                    "enabled": stored_classifier_on() if rule is None else bool(rule.enabled),
                                     "trigger_id": str(rule.id) if rule is not None else None})
 
 

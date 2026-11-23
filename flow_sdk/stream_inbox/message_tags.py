@@ -81,7 +81,25 @@ async def classifier():
 
 async def classifier_on() -> bool:
     rule = await classifier()
-    return rule is None or bool(rule.enabled)
+    return stored_classifier_on() if rule is None else bool(rule.enabled)
+
+
+def stored_classifier_on() -> bool:
+    """The switch as the instance has it recorded — what ``server/builtin_triggers.py`` seeds the
+    classifier row's ``enabled`` from, and the only record of the person's choice while no row
+    carries it. On (the seed's own default) until someone turns it off."""
+    from flow_sdk.cli.app_config import get_config
+
+    return bool(get_config(_CONFIG, {}).get("enabled", True))
+
+
+def save_classifier_on(on: bool) -> None:
+    """Record the switch where the seed reads it. The row is the live switch, but it exists only
+    once a boot seeded it: without this, turning the classifier off on an instance with no row
+    was accepted and stored nowhere, and a row seeded later started on again."""
+    from flow_sdk.cli.app_config import get_config, set_config
+
+    set_config(_CONFIG, {**get_config(_CONFIG, {}), "enabled": bool(on)})
 
 
 def _classifier_entry(rule) -> list[MessageAutomationEntry]:
@@ -109,10 +127,14 @@ def settings() -> MessageClassificationSettings:
 
 
 def save_settings(value: dict) -> MessageClassificationSettings:
-    from flow_sdk.cli.app_config import set_config
+    from flow_sdk.cli.app_config import get_config, set_config
 
     parsed = MessageClassificationSettings.model_validate(value)
-    set_config(_CONFIG, parsed.model_dump(mode="json"))
+    # ``enabled`` lives beside these but is not one of them (it is the rule's switch, recorded by
+    # ``save_classifier_on``): writing the model alone used to drop it from the config.
+    stored = get_config(_CONFIG, {})
+    kept = {"enabled": stored["enabled"]} if "enabled" in stored else {}
+    set_config(_CONFIG, {**kept, **parsed.model_dump(mode="json")})
     return parsed
 
 
