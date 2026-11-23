@@ -60,7 +60,7 @@ interface MessageBubbleProps {
    *  are not drawn, and what they offered is here, first in ⋮. */
   extraItems?: MessageMenuExtra[];
   /** The session started from this message, if any: an Open button with its name on the header row. */
-  messageSession?: { name: string; onOpen: () => void } | null;
+  messageSession?: { name: string; onOpen: () => void; onDetach?: () => void } | null;
   /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
    *  from the chips under the body, which also show its status and owner. */
   taskIt?: { onClick: () => void; task?: Task | null; people?: TaskPeople };
@@ -553,6 +553,12 @@ export function MessageBubble({
                 onOpen={messageSession.onOpen}
                 name={messageSession.name}
                 title={t`Open the session started from this message`}
+                detach={
+                  messageSession.onDetach && {
+                    onClick: messageSession.onDetach,
+                    title: t`Detach this message from the session`,
+                  }
+                }
                 testIdPrefix={`message-${flowMessageId}`}
               />
             ) : (

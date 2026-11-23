@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, Forward, Loader2, Play } from 'lucide-react';
+import { ChevronRight, Forward, Loader2, Play, X } from 'lucide-react';
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
 import { cn } from '@src/lib/utils';
 import { useIsDev } from '@src/components/view-mode';
@@ -226,18 +226,24 @@ export function OpenSessionButton({
   title,
   name,
   testIdPrefix,
+  detach,
 }: {
   onOpen: () => void;
   title: string;
   name?: string;
   testIdPrefix: string;
+  /** Set → an X beside the button that takes the session off what it hangs on. */
+  detach?: { onClick: () => void; title: string };
 }) {
-  return (
+  const open = (
     <button
       type="button"
       onClick={onOpen}
       data-testid={`${testIdPrefix}-open-session`}
-      className="inline-flex h-7 items-center gap-1.5 rounded border border-border px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+      className={cn(
+        'inline-flex h-7 items-center gap-1.5 rounded border border-border px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted',
+        detach && 'rounded-e-none',
+      )}
       title={title}
     >
       <Play className="h-3.5 w-3.5 text-orange-500" />
@@ -250,6 +256,22 @@ export function OpenSessionButton({
         </span>
       )}
     </button>
+  );
+  if (!detach) return open;
+  return (
+    <span className="inline-flex items-center">
+      {open}
+      <button
+        type="button"
+        onClick={detach.onClick}
+        title={detach.title}
+        aria-label={detach.title}
+        data-testid={`${testIdPrefix}-detach-session`}
+        className="inline-flex h-7 w-6 items-center justify-center rounded-e border border-s-0 border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
   );
 }
 

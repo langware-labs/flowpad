@@ -8,6 +8,15 @@ import { resolveWorkdir } from './apply-project-choice';
 import type { WorkerType } from './conversation-session-constants';
 import { SESSION_ROLE, hasSessionRole, isConversationSession } from './conversation-session-role';
 
+/** Undo of a message launch's stamp (`sendToSession` / `startSession`): the message leaves the session's
+ *  context, and with it the session's chip leaves the message. */
+export function detachMessageFromSession(session: AgenticProcess, messageId: string): void {
+  session.unshareContextEntities(new TypeId(FlowMessage.type, messageId)).catch((err) => {
+    console.error('[useConversationSession] detach message failed', err);
+    notify.error({ title: t`Could not detach the message from the session` });
+  });
+}
+
 /**
  * The single launch/open lifecycle for a conversation's owning worker session.
  *

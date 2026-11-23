@@ -98,6 +98,7 @@ import { openArtifact } from '@src/components/artifacts/open-artifact';
 import { useOpenGitShare, type OpenShareOutcome } from './asset-review/use-open-git-share';
 import { ShareReplyCard } from './ShareReplyCard';
 import type { WorkerType } from './conversation-session-constants';
+import { detachMessageFromSession } from './useConversationSession';
 import { PromptCallCard } from './PromptCallCard';
 import { MessageFormCard } from './MessageFormCard';
 import { FormAnswersCard } from './FormAnswersCard';
@@ -955,7 +956,11 @@ export function FlowMessageBubble({
         onLaunchWorker={onLaunchWorker && !fm.is_draft ? (worker) => onLaunchWorker(messageId, worker) : undefined}
         messageSession={
           session
-            ? { name: resolveProcessDisplayName(session), onOpen: () => void navigation.openShellProcess(session.id) }
+            ? {
+                name: resolveProcessDisplayName(session),
+                onOpen: () => void navigation.openShellProcess(session.id),
+                onDetach: () => detachMessageFromSession(session, messageId),
+              }
             : null
         }
         taskIt={
