@@ -70,7 +70,19 @@ def test_a_slow_import_phase_keeps_reporting_growth(tmp_path):
 
     assert len(lines) >= 4, [m.group(0) for m in lines]
     counts = [int(m["modules"]) for m in lines]
-    assert counts == sorted(counts) and len(set(counts)) == len(counts), "every line is a strictly larger count"
+    assert counts == sorted(counts), f"the module count never goes backwards: {counts}"
+    # One line per step forward, and a step is a larger count OR a new phase --
+    # ``flow_sdk/boot_progress.py``'s own contract ("a line whenever the module count or
+    # the declared phase changed since the last look"), pinned in
+    # tests/unit/test_boot_progress.py by ``test_a_phase_change_reports_at_once_without_any_import``
+    # and ``test_stop_writes_the_done_line_once_and_ends_reporting``: both report at
+    # whatever count is current. So the closing ``phase=done`` line legitimately repeats the
+    # last tick's count whenever the import finishes between two ticks -- which is what 40
+    # modules x 0.1s does on a host where the ticks land on the 1s boundary. Demanding growth
+    # of that line too asserted more than the product promises. What still may not happen: a
+    # line that reports neither a new count nor a new phase.
+    steps = [(int(m["modules"]), m["phase"]) for m in lines]
+    assert len(set(steps)) == len(steps), f"every line reports a step forward (count or phase): {steps}"
     assert lines[0]["t"] == "0.0"
     assert lines[-1]["phase"] == "done"
 
