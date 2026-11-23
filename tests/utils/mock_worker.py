@@ -32,6 +32,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -322,6 +323,10 @@ class MockWorker(AgenticWorker):
         return self._session_id
 
 
+#: The context line a channel turn opens with (``agent_serve.turn_body``): where the message came from.
+_CHANNEL_CONTEXT_LINE = re.compile(r"\A<flowpad>.*?</flowpad>\n", re.S)
+
+
 class _MockDriverMixin:
     """The mock half of a driver: the worker is :class:`MockWorker`, the transcript is its JSONL."""
 
@@ -341,6 +346,11 @@ class _MockDriverMixin:
         #: Every behavior turn taken, in order (what it saw and what it did).
         self.turns: list[MockTurn] = []
         self._transcripts: dict[str, Path] = {}
+
+    @property
+    def received_messages(self) -> list[str]:
+        """``received_prompts`` without the context line a channel turn opens with: what the person wrote."""
+        return [_CHANNEL_CONTEXT_LINE.sub("", prompt, count=1) for prompt in self.received_prompts]
 
     async def _mock_turn(self, process) -> Optional[MockTurn]:
         if self.behavior is None:

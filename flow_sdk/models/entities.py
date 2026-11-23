@@ -223,6 +223,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import AssetCleanupReport: {e}")
 
 try:
+    from flow_sdk.builtin.monitor import Monitor  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Monitor: {e}")
+
+try:
     from flow_sdk.builtin.workflow_run import WorkflowRun  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import WorkflowRun: {e}")

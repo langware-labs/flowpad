@@ -51,7 +51,7 @@ async def test_1_mail_concierge(worker):
     with scripted_provider("agentmail") as mail:
         mail.push({"name": "Probe", "body": "are we on?", "author": "alice@example.com", "thread_key": "t1"})
         await _run("1.", "agentmail", {"KEY": "not-a-real-key"}, mail)
-    assert worker.received_prompts == ["are we on?"]
+    assert worker.received_messages == ["are we on?"]
     assert len(mail.sent) == 1 and mail.sent[0]["to"] == "alice@example.com"
     assert mail.sent[0]["text"].startswith("Mock reply")
 
@@ -64,7 +64,7 @@ async def test_1_control_flow_acks_what_it_ignores(worker):
             {"name": "URGENT: prod", "body": "help", "author": "boss@corp.com", "thread_key": "t2"},
         )
         await _run("1.", "agentmail", {"KEY": "k"}, mail, nth=1)
-    assert worker.received_prompts == ["help"], "the newsletter never reached the agent"
+    assert worker.received_messages == ["help"], "the newsletter never reached the agent"
     assert len(mail.sent) == 1 and mail.sent[0]["thread_key"] == "t2"
     # The ignored item was acked, not skipped: the loop variable is the LAST item and it is
     # acked by reply(); an offset ack covers the newsletter before it. The ephemeral position
@@ -76,7 +76,7 @@ async def test_2_telegram(worker):
     with scripted_provider("telegram") as bot:
         bot.push({"body": "hi bot", "author": "12345", "thread_key": "12345/7"})
         await _run("2.", "telegram", {"TOKEN": "000:token"}, bot)
-    assert worker.received_prompts == ["hi bot"] and len(bot.sent) == 1
+    assert worker.received_messages == ["hi bot"] and len(bot.sent) == 1
 
 
 async def test_3_slack(worker):
@@ -84,7 +84,7 @@ async def test_3_slack(worker):
     with scripted_provider("slack") as slack:
         slack.push({"body": "summarize?", "author": "U1", "thread_key": "1700000000.000100"})
         await _run("3.", "slack", {}, slack)
-    assert worker.received_prompts == ["summarize?"] and len(slack.sent) == 1
+    assert worker.received_messages == ["summarize?"] and len(slack.sent) == 1
 
 
 async def test_a_second_run_under_the_same_name_resumes_after_the_reply(worker):
@@ -99,7 +99,7 @@ async def test_a_second_run_under_the_same_name_resumes_after_the_reply(worker):
         mail.settled.clear()
         mail.push({"body": "second", "author": "a@x", "thread_key": "t1"})
         await run_fence_until(source, {"KEY": "k"}, mail.settled, filename=DOC)
-    assert worker.received_prompts == ["first", "second"], "one turn per item, none repeated"
+    assert worker.received_messages == ["first", "second"], "one turn per item, none repeated"
     assert len(mail.sent) == 2
 
 
@@ -132,7 +132,7 @@ async def test_4_the_same_loop_on_every_channel_for_a_user_or_an_agent(worker, o
         script.push({"body": f"hello on {channel}", "author": sender, "thread_key": "t1"})
         await _run("4.", channel, {"CHANNEL": channel, "ADDRESS": address, "OWNER": owner}, script)
         sources = [s for s in await DataSource.get_all({"provider": channel}) if s.account_key == address or (s.config or {}).get("address") == address]
-    assert worker.received_prompts[-1] == f"hello on {channel}"
+    assert worker.received_messages[-1] == f"hello on {channel}"
     assert len(script.sent) == 1 and script.sent[0]["text"].startswith("Mock reply")
     assert sources, "the fence adopted or created the owner's source"
     expected = owner.typeid if owner is not None else await local_user_typeid()
@@ -152,7 +152,7 @@ async def test_6_the_opening_program_runs_as_shown_on_every_channel(worker, chan
     with scripted_provider(channel) as script:
         script.push({"body": f"hello on {channel}", "author": sender, "thread_key": "t1"})
         await run_fence_until(OPENING[channel], {}, script.settled, filename=f"{DOC} § 6 ({channel})")
-    assert worker.received_prompts[-1] == f"hello on {channel}"
+    assert worker.received_messages[-1] == f"hello on {channel}"
     assert len(script.sent) == 1 and script.sent[0]["text"].startswith("Mock reply")
 
 

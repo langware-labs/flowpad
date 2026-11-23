@@ -35,7 +35,10 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.blocks.delivery import Delivered
+    from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+    from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 
 from flow_sdk.builtin import deployment_process
 
@@ -960,7 +963,14 @@ async def _keep_attention(sources) -> None:
         await asyncio.sleep(ATTENTION_RENEW_SECONDS)
 
 
-async def answer(engine: TurnEngine, message, *, source=None, session: Optional[str] = None, process=None) -> bool:
+async def answer(
+    engine: TurnEngine,
+    message: Delivered[SourceItemSpec],
+    *,
+    source: Optional[DataSource] = None,
+    session: Optional[str] = None,
+    process=None,
+) -> bool:
     """One channel message: :func:`answer_one`, and once a turn on the deployment is answered again, the
     messages held while its turns failed (:func:`answer_held`)."""
     answered = await answer_one(engine, message, source=source, session=session, process=process)
@@ -972,7 +982,14 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
     return answered
 
 
-async def answer_one(engine: TurnEngine, message, *, source=None, session: Optional[str] = None, process=None) -> bool:
+async def answer_one(
+    engine: TurnEngine,
+    message: Delivered[SourceItemSpec],
+    *,
+    source: Optional[DataSource] = None,
+    session: Optional[str] = None,
+    process=None,
+) -> bool:
     """One channel message: gate it, run it in its conversation, reply on its channel.
 
     Answers whether a reply went out. Every refusal — our own outgoing copy, a
@@ -1029,6 +1046,7 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     hook = getattr(driver_cls, "turn_session", None)
     if not session and callable(hook):
         session = str(hook(message) or "")
+    conversation: Optional[str] = None
     if not session:
         conversation = await conversation_of(message, source)
         if not conversation:
@@ -1037,12 +1055,19 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
         session = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation))
     who = display_name_of(getattr(message, "author_display", "") or "", author)
     outbox = reply_outbox(source, turn_key(message))
+    # The person sees an agent has their message while it works on it (a channel without reactions: nothing).
+    await message.react_seen()
+    # Told before the turn whether its text goes back by itself, so the agent knows when to reply explicitly.
+    spoke = bool(getattr(driver_cls, "answers_once", False)) and await _answered_before(message, source, agent)
     outcome = await engine.run(
         Turn(
             session=session,
             key=turn_key(message),
             body=turn_body(
-                message, outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None
+                message,
+                outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None,
+                conversation_id=conversation,
+                forwarded=sends_turn_text(driver_cls, spoke=spoke),
             ),
             name=" · ".join(p for p in (agent.name, source.channel or source.provider, who) if p) or None,
         ),
@@ -1068,6 +1093,8 @@ async def answer_one(engine: TurnEngine, message, *, source=None, session: Optio
     # quote=None: the answer quotes the message only when the person wrote again meanwhile.
     await message.reply(await message.reply_spec(body=outcome.text or "", files=answer_files))
     console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
+    # The answer is out: the person sees their message was received (it replaces 👀 where one reaction is kept).
+    await message.react_received()
     return True
 
 
@@ -1176,11 +1203,42 @@ def outbox_files(outbox) -> list[str]:
     return sorted(str(p) for p in outbox.iterdir() if p.is_file()) if outbox is not None and outbox.is_dir() else []
 
 
-def turn_body(message, *, outbox=None) -> str:
-    """What the agent reads for one channel message: the message it quotes, its words, the files it
-    carried (local paths it can open) and — when it carried files, on a channel that takes them —
-    where to put files to send back. A plain message is exactly its words."""
+def generate_conversation_source_context_prompt(
+    source: str, *, sender: str = "", sender_id: str = "", conversation_id: str = "", forwarded: bool = True
+) -> str:
+    """Where a channel message came from — the channel, who sent it, its Flowpad conversation — and, when
+    *forwarded*, that the agent's answer is sent back to them by itself."""
+    parts = [f"The user has sent a message from this source {source}"]
+    if sender or sender_id:
+        parts.append(f"sender: {sender or sender_id}" + (f" (id: {sender_id})" if sender and sender_id else ""))
+    if conversation_id:
+        parts.append(f"flowpad conversation: {conversation_id}")
+    parts.append("reply in a format suitable for the message.")
+    context = ", ".join(parts)
+    if forwarded:
+        context += " Your reply will be forwarded to the user automatically via flowpad."
+    return f"<flowpad>{context}</flowpad>"
+
+
+def turn_body(
+    message: Delivered[SourceItemSpec], *, outbox=None, conversation_id: Optional[str] = None, forwarded: bool = True
+) -> str:
+    """What the agent reads for one channel message: where it came from (the channel, its sender, its
+    conversation, and whether the turn's text is sent back by itself — *forwarded*), the message it quotes,
+    its words, the files it carried (local paths it can open) and — when it carried files, on a channel that
+    takes them — where to put files to send back."""
     lines = []
+    source = getattr(message, "provider", None)
+    if source:
+        context_prompt = generate_conversation_source_context_prompt(
+            source,
+            sender=str(getattr(message, "author_display", "") or ""),
+            sender_id=str(getattr(message, "author_external_id", "") or ""),
+            conversation_id=str(conversation_id or ""),
+            forwarded=forwarded,
+        )
+        lines.append(context_prompt)
+
     quoted = getattr(message, "reply_to", None)
     if quoted is not None:
         said = " ".join(str(getattr(quoted, "body", "") or "").split())

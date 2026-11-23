@@ -53,6 +53,8 @@ class FlowHub(Protocol):
 
     async def reply(self, claim_id: str, text: str, event_id: str) -> dict: ...
 
+    async def react(self, claim_id: str, event_id: str, emoji: str, *, remove: bool = False) -> dict: ...
+
 
 class AppHub:
     """The hub, as this desktop's signed-in user reaches it."""
@@ -84,6 +86,10 @@ class AppHub:
 
     async def reply(self, claim_id: str, text: str, event_id: str) -> dict:
         return dict(await self._post(claim_id, "reply", {"text": text, "event_id": event_id}) or {})
+
+    async def react(self, claim_id: str, event_id: str, emoji: str, *, remove: bool = False) -> dict:
+        body = {"event_id": event_id, "emoji": emoji, "remove": remove}
+        return dict(await self._post(claim_id, "react", body) or {})
 
     @staticmethod
     async def _post(claim_id: Optional[str], action: str, payload: dict) -> dict:
@@ -355,12 +361,28 @@ class FlowChannel(MessageSource):
         sent = await self._send(sender, data, quoted=origin.key)
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": origin}))
 
-    async def _send(self, sender: str, data: MessageData, *, quoted: str) -> MessageItem:
+    # ── react: the stages of a person's message, on the platform's account (the hub holds its credentials) ──
+    async def react(self, target: CloudOrigin, emoji: str) -> None:
+        self._require_open()
+        self._require_reachable(self._person_of_message(target), quoted=target.key)
+        await self.hub.react(self.claim_id, target.key, emoji)
+
+    async def unreact(self, target: CloudOrigin, emoji: str = "") -> None:
+        self._require_open()
+        self._require_reachable(self._person_of_message(target), quoted=target.key)
+        await self.hub.react(self.claim_id, target.key, emoji, remove=True)
+
+    def _require_reachable(self, sender: str, *, quoted: str) -> None:
+        """What a machine may address through its claim: a private machine only the messages delivered to it,
+        any other only the linked account."""
         if self.answers_delivered:
             if not quoted or not self.claim_id:
                 raise NotFound(f"a private {self.title} machine only answers the messages delivered to it")
         elif sender != self.linked_sender or not self.claim_id:
             raise NotFound(f"only the linked {self.title} account is reached here")
+
+    async def _send(self, sender: str, data: MessageData, *, quoted: str) -> MessageItem:
+        self._require_reachable(sender, quoted=quoted)
         body = await self.hub.reply(self.claim_id, data.text or "", quoted)
         message_id = str(body.get("message_id") or "")
         if not message_id:
