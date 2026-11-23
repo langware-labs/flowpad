@@ -43,6 +43,7 @@ export * from './icons';
 // are.
 export * from './stores/project-cleanup-store';
 export * from './stores/project-readiness-store';
+export * from './stores/md-sync-store';
 export * from './utils';
 export * from './websocket';
 export * from './worldview';

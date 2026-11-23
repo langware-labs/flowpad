@@ -74,6 +74,12 @@ def load_actions():
     except ImportError:
         pass  # Credentials action not available
 
+    # Markdown sync (syncmd) status for the footer chip
+    try:
+        from flow_sdk.app.actions import md_sync_action  # noqa: F401
+    except ImportError:
+        pass
+
     # Import desktop-notify action to register it
     try:
         from flow_sdk.app.actions import desktop_notify_action  # noqa: F401
