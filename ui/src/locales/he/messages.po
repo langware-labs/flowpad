@@ -399,6 +399,11 @@ msgstr "{0, plural, one {שגיאה אחת} other {# שגיאות}}"
 msgid "{0, plural, one {# Event captured} other {# Events captured}}"
 msgstr "{0, plural, one {אירוע אחד נלכד} other {# אירועים נלכדו}}"
 
+#. placeholder {0}: u.paths.length
+#: src/components/footer/MdSyncChip.tsx
+msgid "{0, plural, one {# file} other {# files}}"
+msgstr ""
+
 #. placeholder {0}: s.findings.length
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "{0, plural, one {# finding} other {# findings}}"
@@ -476,6 +481,11 @@ msgstr "{0, plural, one {סשן אחד השתמש במיומנות הזו} other
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "{0, plural, one {# session} other {# sessions}}"
 msgstr "{0, plural, one {סשן אחד} other {# סשנים}}"
+
+#. placeholder {0}: unsynced.length
+#: src/components/footer/MdSyncChip.tsx
+msgid "{0, plural, one {# source} other {# sources}}"
+msgstr ""
 
 #. placeholder {0}: teams.length
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -612,10 +622,9 @@ msgstr "{0} שונו"
 msgid "{0} chats — their transcripts stay on disk."
 msgstr ""
 
-#. placeholder {0}: rows.length
 #: src/components/tags/ClassifyTable.tsx
-msgid "{0} classified · {changing} would change · {done} applied"
-msgstr ""
+#~ msgid "{0} classified · {changing} would change · {done} applied"
+#~ msgstr ""
 
 #. placeholder {0}: whens.length
 #: src/components/automations/PackageRow.tsx
@@ -631,6 +640,16 @@ msgstr "{0} מחובר"
 #: src/components/connections-manager.tsx
 msgid "{0} connection failed"
 msgstr "החיבור ל{0} נכשל"
+
+#. placeholder {0}: asked.length
+#: src/components/tags/ClassifyTable.tsx
+msgid "{0} conversations"
+msgstr "{0} שיחות"
+
+#. placeholder {0}: target.split('/')[0]
+#: src/components/footer/MdSyncChip.tsx
+msgid "{0} copy behind"
+msgstr ""
 
 #. placeholder {0}: result.kept.join(', ')
 #: src/components/connections-manager.tsx
@@ -1077,7 +1096,6 @@ msgstr "{0} סוד{1}"
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/StreamInboxTags.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -1433,9 +1451,17 @@ msgstr "{eventCount} אירועים · {executionCount} הרצות"
 msgid "{failed} of {0} failed to delete."
 msgstr "{failed} מתוך {0} נכשלו במחיקה."
 
+#: src/components/footer/MdSyncChip.tsx
+msgid "{files, plural, one {# file} other {# files}}"
+msgstr ""
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "{files} files need merging — let the assistant merge them"
 msgstr "{files} קבצים דורשים מיזוג — ניתן לתת לעוזר למזג אותם"
+
+#: src/components/footer/MdSyncChip.tsx
+msgid "{filesWord} out of sync · {sourcesWord} not synced"
+msgstr ""
 
 #: src/components/git/RepoPicker.tsx
 msgid "{filteredCount} of {totalCount} repos"
@@ -2123,6 +2149,10 @@ msgstr "השיחה הזו נמצאת אצל {who} בפרויקט {0}, שאינו
 msgid "{widerCount, plural, one {# error in the last {widerSpanLabel} — switch} other {# errors in the last {widerSpanLabel} — switch}}"
 msgstr "{widerCount, plural, one {שגיאה אחת ב-{widerSpanLabel} האחרונים — מעבר} other {# שגיאות ב-{widerSpanLabel} האחרונים — מעבר}}"
 
+#: src/components/footer/MdSyncChip.tsx
+msgid "{written, plural, one {# file updated} other {# files updated}}"
+msgstr ""
+
 #: src/components/cron-view/CronForm.tsx
 msgid "* * * * *"
 msgstr "* * * * *"
@@ -2173,6 +2203,11 @@ msgstr ""
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 msgid "↻ re-run"
 msgstr "↻ הרצה חוזרת"
+
+#. placeholder {0}: unsynced.length - sources.length
+#: src/components/footer/MdSyncChip.tsx
+msgid "+ {0} more"
+msgstr ""
 
 #: src/components/agents/MailboxListsEditor.tsx
 msgid "+ Add"
@@ -2790,8 +2825,8 @@ msgid "A project with that name exists"
 msgstr "כבר קיים פרויקט בשם הזה"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth."
-msgstr ""
+#~ msgid "A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth."
+#~ msgstr ""
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "A real email address the hub creates for one of your agents. Nothing to set up."
@@ -3133,6 +3168,7 @@ msgstr "פעילות"
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/footer/MdSyncChip.tsx
 #: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -3735,7 +3771,6 @@ msgstr "סוכן"
 #: src/components/automations/blocks/ThenBlock.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/quick-create/registry.ts
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
@@ -3850,7 +3885,7 @@ msgstr "סוכנים"
 
 #: src/components/tags/ClassifyTable.tsx
 msgid "Agents are reading — closing keeps it running"
-msgstr ""
+msgstr "הסוכנים קוראים — סגירת החלון לא עוצרת את הריצה"
 
 #: src/i18n/pref-labels.ts
 msgid "AI & chat"
@@ -3910,6 +3945,7 @@ msgstr "הכל"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/home-tiles/HomeTiles.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -4805,8 +4841,8 @@ msgstr "הוספה לתור הפרומפטים של העובד הנוכחי, מ�
 
 #: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/ClassifyTable.tsx
-msgid "applied"
-msgstr ""
+#~ msgid "applied"
+#~ msgstr ""
 
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Applied to each member's own default endpoint; a member's budget can only be narrower."
@@ -4820,22 +4856,20 @@ msgstr "חל על"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
-#: src/components/tags/ClassifyTable.tsx
-#: src/components/tags/ClassifyTable.tsx
 msgid "Apply"
 msgstr "החילו"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Apply all"
-msgstr ""
+#~ msgid "Apply all"
+#~ msgstr ""
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Apply every row you did not reject, with the tag changes they need"
-msgstr ""
+#~ msgid "Apply every row you did not reject, with the tag changes they need"
+#~ msgstr ""
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Apply tag changes"
-msgstr ""
+#~ msgid "Apply tag changes"
+#~ msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Apply to message"
@@ -4877,8 +4911,8 @@ msgid "Approve this live session only"
 msgstr "לאשר רק את הסשן החי הזה"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Approved as a new tag."
-msgstr ""
+#~ msgid "Approved as a new tag."
+#~ msgstr ""
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
@@ -5120,8 +5154,8 @@ msgid "Asked by"
 msgstr "התבקש על ידי"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Asked for"
-msgstr ""
+#~ msgid "Asked for"
+#~ msgstr ""
 
 #: src/components/help/AskForHelpButton.tsx
 msgid "Asked of you"
@@ -5774,6 +5808,11 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Behaviour — who this agent is, its system prompt"
 msgstr "התנהגות — מי הסוכן, הנחיית המערכת שלו"
+
+#. placeholder {0}: stale.source
+#: src/components/footer/MdSyncChip.tsx
+msgid "behind {0}"
+msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Betas allowed"
@@ -6430,8 +6469,9 @@ msgid "cancelled"
 msgstr "בוטל"
 
 #: src/components/automations/AutomationsList.tsx
+#: src/components/nano-app/AppStatusChip.tsx
 msgid "Cancelled"
-msgstr ""
+msgstr "בוטל"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Cancelled · ran {runs}"
@@ -6651,7 +6691,6 @@ msgstr ""
 msgid "Change your answers"
 msgstr ""
 
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "changed"
 msgstr "השתנה"
@@ -7118,21 +7157,26 @@ msgstr "שם הכיתה…"
 msgid "Classification failed. You can still assign tags."
 msgstr ""
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Classification is in progress. An <0/> message will be sent once it is done. You can close this window."
+msgstr "הסיווג מתבצע. הודעת <0/> תישלח כשיסתיים. אפשר לסגור את החלון."
+
 #: src/components/task-bar/task-utils.ts
 #: src/components/task-bar/task-utils.ts
 msgid "classification.json"
 msgstr "classification.json"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Classify"
-msgstr ""
+msgstr "סיווג"
 
-#. placeholder {0}: value ? rows.length : asked.length
+#. placeholder {0}: asked.length
 #: src/components/tags/ClassifyTable.tsx
 msgid "Classify {0} conversations"
-msgstr ""
+msgstr "סיווג {0} שיחות"
 
 #: src/components/tags/ClassifyTable.tsx
 #~ msgid "Classify {0} messages"
@@ -7156,7 +7200,7 @@ msgstr ""
 
 #: src/components/tags/ClassifyTable.tsx
 msgid "Classifying…"
-msgstr ""
+msgstr "מסווג…"
 
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/terminal/interactive-terminal/PaneSelectorBar.tsx
@@ -7370,7 +7414,6 @@ msgstr "נקו את אינדקס החיפוש?"
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/tags/ClassifyTable.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Clear selection"
 msgstr "נקו בחירה"
@@ -7686,8 +7729,8 @@ msgid "Close terminal"
 msgstr "סגרו טרמינל"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Close the tag tree"
-msgstr ""
+#~ msgid "Close the tag tree"
+#~ msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Close ticket"
@@ -7731,6 +7774,7 @@ msgid "Cloud access denied"
 msgstr "הגישה לענן נדחתה"
 
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
+#: src/types/ViewType.ts
 msgid "Cloud API Endpoints"
 msgstr "נקודות קצה של API בענן"
 
@@ -8053,6 +8097,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "אשרו את כל השינויים ובצעו מיזוג לענף הראשי. Claude יצא מ-worktree בעת סיום."
+
+#: src/components/status-bar/GitPushButton.tsx
+msgid "Commit all pending changes and push"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -8971,8 +9019,8 @@ msgid "Could not answer the prompt"
 msgstr "לא ניתן היה לענות על הפרומפט"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Could not apply"
-msgstr ""
+#~ msgid "Could not apply"
+#~ msgstr ""
 
 #: src/components/conversation/DiagnosisCard.tsx
 #: src/components/help/AskForHelpDialog.tsx
@@ -9196,6 +9244,10 @@ msgstr "לא ניתן היה לדחות"
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 msgid "Could not deploy"
 msgstr "לא ניתן לפרוס"
+
+#: src/components/conversation/useConversationSession.ts
+msgid "Could not detach the message from the session"
+msgstr ""
 
 #: src/notifications/commands.ts
 msgid "Could not disable the sniffer"
@@ -9640,6 +9692,10 @@ msgstr "לא היה ניתן להסיר את קבצי העזרה"
 msgid "Could not remove the key"
 msgstr "לא ניתן היה להסיר את המפתח"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Could not remove the link"
+msgstr ""
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Could not remove the package"
@@ -9752,6 +9808,10 @@ msgstr "לא ניתן להריץ שם"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Could not run schedule"
 msgstr "הרצת התזמון נכשלה"
+
+#: src/components/footer/MdSyncChip.tsx
+msgid "Could not run syncmd."
+msgstr ""
 
 #: src/components/links/link-handlers.ts
 msgid "Could not run the command"
@@ -10003,7 +10063,7 @@ msgstr "לא ניתן להתחיל את ההתחברות ל-{0}."
 
 #: src/components/tags/ClassifyTable.tsx
 msgid "Could not start the classification"
-msgstr ""
+msgstr "לא ניתן להתחיל את הסיווג"
 
 #: src/notifications/diagnose/diagnose-and-fix.ts
 msgid "Could not start the diagnosis"
@@ -11730,6 +11790,10 @@ msgstr "עדכוני האפליקציה נבדקים כל 20 דקות."
 msgid "Desktop version"
 msgstr "גרסת שולחן עבודה"
 
+#: src/components/conversation/MessageBubble.tsx
+msgid "Detach this message from the session"
+msgstr ""
+
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Detail"
 msgstr "פרטים"
@@ -11745,6 +11809,7 @@ msgstr "פרטים"
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Details"
 msgstr "פרטים"
@@ -12070,7 +12135,6 @@ msgstr "מנוע קלט/פלט לדיסק"
 #: src/components/conversation/PrivateMessageFrame.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
-#: src/components/footer/ActivityStatusPill.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -12248,6 +12312,7 @@ msgstr "הושלם"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/nano-app/AppStatusChip.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/stream-inbox-view/TagFilterButton.tsx
 #: src/components/tags/MessageTags.tsx
@@ -13667,8 +13732,9 @@ msgid "Expert details"
 msgstr "פרטים למומחים"
 
 #: src/components/automations/AutomationsList.tsx
+#: src/components/nano-app/AppStatusChip.tsx
 msgid "Expired"
-msgstr ""
+msgstr "פג תוקף"
 
 #. placeholder {0}: card.sender_name || t`the sender`
 #: src/components/conversation/SealedValuesPanel.tsx
@@ -13764,6 +13830,7 @@ msgstr "נכשל"
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/nano-app/AppStatusChip.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
@@ -15068,6 +15135,7 @@ msgid "formats unknown"
 msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -16265,8 +16333,8 @@ msgid "How it runs"
 msgstr ""
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "How it was decided"
-msgstr ""
+#~ msgid "How it was decided"
+#~ msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "How many hook-sniffer events to retain in the buffer."
@@ -17028,8 +17096,8 @@ msgid "instead?"
 msgstr "במקום זאת?"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "instead."
-msgstr ""
+#~ msgid "instead."
+#~ msgstr ""
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Instruction"
@@ -17487,10 +17555,9 @@ msgstr ""
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "התוכן שלו נראה כנתונים בינאריים (לדוגמה תמונה), ולכן לא ניתן להציג אותו בעורך."
 
-#. placeholder {0}: change.merged_into.split('.').at(-1)
 #: src/components/tags/ClassifyTable.tsx
-msgid "its conversations go to {0}"
-msgstr ""
+#~ msgid "its conversations go to {0}"
+#~ msgstr ""
 
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Its files are not on this computer yet"
@@ -18102,8 +18169,8 @@ msgid "Leave out"
 msgstr ""
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Leave this conversation as it is"
-msgstr ""
+#~ msgid "Leave this conversation as it is"
+#~ msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
@@ -19180,7 +19247,6 @@ msgid "Mailbox settings saved"
 msgstr "הגדרות תיבת הדואר נשמרו"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-#: src/components/tags/ClassifyTable.tsx
 msgid "Main agent"
 msgstr "סוכן ראשי"
 
@@ -19213,8 +19279,8 @@ msgid "Make the two the same — edit either one — then Pull, or wait for the 
 msgstr "השוו בין השניים — ערכו את אחד מהם — ואז לחצו על משיכה, או המתינו לסנכרון הבא."
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Make this the conversation's tag. No automation runs."
-msgstr ""
+#~ msgid "Make this the conversation's tag. No automation runs."
+#~ msgstr ""
 
 #: src/components/harness-login/StatusRow.tsx
 msgid "Make this the default assistant"
@@ -19322,9 +19388,17 @@ msgstr "מסמך Markdown"
 msgid "Markdown files"
 msgstr "קבצי Markdown"
 
+#: src/components/footer/MdSyncChip.tsx
+msgid "Markdown files out of sync"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Markdown Index"
 msgstr "אינדקס Markdown"
+
+#: src/components/footer/MdSyncChip.tsx
+msgid "Markdown sync"
+msgstr ""
 
 #. placeholder {0}: index.name ?? index.id
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -20293,9 +20367,9 @@ msgstr "דורש טיפול · {count}"
 msgid "Needs git"
 msgstr ""
 
-#: src/components/conversation/AutomationResultCard.tsx
-#~ msgid "Needs review"
-#~ msgstr ""
+#: src/components/nano-app/AppStatusChip.tsx
+msgid "Needs review"
+msgstr "ממתין לבדיקה"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "needs setup"
@@ -20653,8 +20727,8 @@ msgid "New tab"
 msgstr "כרטיסייה חדשה"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "new tag"
-msgstr ""
+#~ msgid "new tag"
+#~ msgstr ""
 
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
@@ -22125,10 +22199,9 @@ msgid "no tag"
 msgstr ""
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "no tag fits"
-msgstr ""
+#~ msgid "no tag fits"
+#~ msgstr ""
 
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "No tags"
@@ -22765,6 +22838,10 @@ msgstr "טרם הופעל — הטרמינל שלו יופיע בהפעלה הר
 msgid "Not sure, so no"
 msgstr "לא ודאי, אז לא"
 
+#: src/components/footer/MdSyncChip.tsx
+msgid "Not synced · {sourcesWord}"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Not tested yet"
 msgstr "טרם נבדק"
@@ -23355,8 +23432,8 @@ msgid "Once, on {date} at {time}"
 msgstr ""
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval."
-msgstr ""
+#~ msgid "One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval."
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "One click — a new code for one user."
@@ -24251,6 +24328,10 @@ msgstr ""
 msgid "Open the assistant in its own window, beside Flowpad"
 msgstr "פתיחת העוזר בחלון משלו, לצד Flowpad"
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Open the automation"
+msgstr "פתיחת האוטומציה"
+
 #: src/components/automations/RunDetail.tsx
 msgid "Open the automation to fix it"
 msgstr "פתחו את האוטומציה לתיקון"
@@ -24381,6 +24462,10 @@ msgstr ""
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
 msgstr "פתחו את סשן ניתוח התמליל"
+
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Open the value"
+msgstr "פתיחת הערך"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Open the watched file"
@@ -26059,6 +26144,7 @@ msgstr "פרויקט"
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/explorer-view/useExplorerModel.tsx
+#: src/components/home-tiles/HomeTiles.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -26413,7 +26499,7 @@ msgstr "מאפיינים"
 
 #: src/components/tags/ClassifyTable.tsx
 msgid "Proposed"
-msgstr ""
+msgstr "מוצע"
 
 #: src/components/git/BranchPicker.tsx
 msgid "protected"
@@ -26670,7 +26756,6 @@ msgstr "משיכה…"
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
-#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Push"
 msgstr "דחפו"
 
@@ -26682,6 +26767,11 @@ msgstr "דחפו את {folderName}"
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push & notify"
 msgstr "דחפו & הודיעו"
+
+#: src/components/status-bar/GitPushButton.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Push all"
+msgstr ""
 
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push to {branch} — optionally tell people about it."
@@ -27391,14 +27481,13 @@ msgstr "רשום ב-hub, אך המסמך שלו עדיין לא הועלה למ�
 msgid "registered watchers: <0>{registeredCount}</0>"
 msgstr "צופים רשומים: <0>{registeredCount}</0>"
 
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Reject"
 msgstr "דחייה"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "rejected"
-msgstr ""
+#~ msgid "rejected"
+#~ msgstr ""
 
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/harness-login/funding-pill.ts
@@ -27731,6 +27820,11 @@ msgstr "להסיר את התקציב הזה?"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "הסרת הקובץ הזה מה-commit הבא (git restore --staged)"
+
+#: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Remove this link"
+msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Remove this message from Flowpad?"
@@ -29082,6 +29176,7 @@ msgstr "פועל"
 #: src/components/items/item-state.ts
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "פועל"
@@ -30154,7 +30249,6 @@ msgstr "בחרו גרסה להתקנה:"
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/tags/ClassifyTable.tsx
 msgid "Select all"
 msgstr "בחרו הכל"
 
@@ -30191,7 +30285,6 @@ msgid "Select Chrome profile"
 msgstr "בחירת פרופיל Chrome"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Select conversation"
 msgstr "בחרו שיחה"
@@ -32634,6 +32727,10 @@ msgstr "הופעל {0}"
 msgid "Started {ago}"
 msgstr ""
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "started {started}"
+msgstr "התחיל {started}"
+
 #: src/components/automations/RunDetail.tsx
 msgid "Started again as a test run."
 msgstr "הופעלה מחדש כהרצת בדיקה."
@@ -32901,6 +32998,7 @@ msgstr "עצרו"
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "Stopped"
 msgstr "נעצר"
 
@@ -33245,6 +33343,10 @@ msgstr "סנכרנו {0} שינויים"
 msgid "Sync {0} changes and refresh stats"
 msgstr "סנכרון שינויי {0} ורענון הסטטיסטיקות"
 
+#: src/components/footer/MdSyncChip.tsx
+msgid "Sync {filesWord}"
+msgstr ""
+
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/entity-card/entity-card-rows.ts
@@ -33328,8 +33430,8 @@ msgid "Tag"
 msgstr "תגית"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Tag changes"
-msgstr ""
+#~ msgid "Tag changes"
+#~ msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
 #~ msgid "Tag created"
@@ -33354,8 +33456,8 @@ msgid "Tag shape"
 msgstr "צורת תצוגת התגים"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Tag tree"
-msgstr ""
+#~ msgid "Tag tree"
+#~ msgstr ""
 
 #: src/components/graph-view/TagGraphView.tsx
 msgid "Tag Tree"
@@ -33379,8 +33481,8 @@ msgid "Tags: {short}"
 msgstr ""
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Take the proposal back into Apply all"
-msgstr ""
+#~ msgid "Take the proposal back into Apply all"
+#~ msgstr ""
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Takes ~4 seconds"
@@ -33882,7 +33984,7 @@ msgstr "הבדיקה לא בוצעה."
 
 #: src/components/tags/ClassifyTable.tsx
 msgid "The classification did not finish."
-msgstr ""
+msgstr "הסיווג לא הסתיים."
 
 #: src/components/tags/MessageTags.tsx
 msgid "The classifier was off when this arrived."
@@ -35299,6 +35401,10 @@ msgstr "הפרויקט הזה לא מגדיר אף סוג."
 msgid "This project doesn't exist or is no longer available."
 msgstr "הפרויקט הזה לא קיים או כבר אינו זמין."
 
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "This project has no agents."
+msgstr ""
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "This project has no dataset."
 msgstr "לפרויקט הזה אין מאגר נתונים."
@@ -36361,7 +36467,6 @@ msgstr "תחת OAuth & Permissions הוסיפו את ה-bot scopes channels:hist
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/notifications-view/NotificationsView.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#: src/components/tags/ClassifyTable.tsx
 msgid "Undo"
 msgstr "בטלו"
 
@@ -36857,7 +36962,6 @@ msgstr "דולר"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Use"
@@ -37586,10 +37690,9 @@ msgstr "אזהרה: {warning}"
 msgid "Warnings"
 msgstr ""
 
-#. placeholder {0}: change.was
 #: src/components/tags/ClassifyTable.tsx
-msgid "was {0}"
-msgstr ""
+#~ msgid "was {0}"
+#~ msgstr ""
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "was {previous}"
@@ -38108,8 +38211,8 @@ msgid "Whose it is"
 msgstr ""
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Why"
-msgstr ""
+#~ msgid "Why"
+#~ msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Why is this needed?"

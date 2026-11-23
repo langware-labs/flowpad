@@ -328,6 +328,8 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
                 "it_request",
                 # `issue_reply`: a Monitoring message's issue, re-derived from the hub's metadata on every arrival.
                 "issue_reply",
+                # `app`: an app message's status and header line, written by this machine when it posts one.
+                "app",
                 # `message_processing`: this machine's classification, tag provenance and automation queue.
                 "message_processing",
                 # `draft_options`: an unsent draft's composer thread and send choices.
@@ -355,7 +357,9 @@ HUB_READ_BY_TYPE: dict[str, set[str]] = {"Conversation": {"initiated_by", "membe
             # `invite` is a nested MessageInvite, None on every message but an invite.
             # `message_processing` is a nested MessageProcessing, None until the message is enrolled.
             # `draft_options` is a nested MessageDraftOptions, None on every message but a draft.
+            # `app` is a nested MessageAppSpec, None on every message but an app message.
             [
+                "app",
                 "attachment",
                 "body_status",
                 "delivery_failure",

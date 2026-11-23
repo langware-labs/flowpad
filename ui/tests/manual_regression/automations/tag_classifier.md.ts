@@ -4,7 +4,8 @@
  * and the telegram arrival path are real. Run it with `bash scripts/test_message_tags_browser.sh tag_classifier`.
  *
  * Scenarios: the row cell (no tags / one / many), the quick menu (see, remove, tick), Edit tags… → the
- * editor with the message carried, add a sub-tag, Run, edit instructions → Rerun, Another message → Run, Apply.
+ * editor with the message carried, add a sub-tag, Run, edit instructions → Rerun, Another message → Run, Apply,
+ * and Classify on ticked rows: the notice, then the proposal reviewed and applied inside the automation's message.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -200,20 +201,59 @@ test('Another message → pick → Run; Apply tags the message', async ({ page }
   await expect.poll(() => tagsOf('one')).toContain('stream_inbox.sales.intro');
 });
 
-test('ticked Stream Inbox rows → Classify: a dry-run table; Why shows the decision; Apply tags without running anything', async ({ page }) => {
+test('ticked Stream Inbox rows → Classify: a notice, not a wait; the proposal arrives as a message and is applied in it', async ({ page }) => {
   await graph('post', `flow_message/${arrived.one.id}/set-tags`, { tags: [] });
+  // The run itself is not driven here: its record is a fixture holding the fields the window reads. The
+  // hand-in, the automation's message and Apply are the real backend.
+  const call = '0d6c3d0e-5a51-4f0c-9d55-7a1a1c5f2b11';
+  const conversations = [arrived.one.conversation_id, arrived.many.conversation_id];
+  const value = {
+    root: 'stream_inbox',
+    conversations: [
+      { conversation_id: arrived.one.conversation_id, message_id: arrived.one.id, title: `one-${stamp}`, before: [],
+        proposed: ['stream_inbox.sales.intro'], action: 'apply', reason: 'Asks to book an introduction call.' },
+    ],
+    tree_changes: [],
+  };
+  let state = 'running';
+  await page.route('**/classify-conversations*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'SUCCESS',
+        data: {
+          call_id: call, block: 'stream-inbox-classifier', input: { conversations }, state, created_at: new Date().toISOString(),
+          result: state === 'completed' ? { exit_code: 0, value } : null,
+        },
+      }),
+    }),
+  );
   await page.goto('/dock/stream_inbox');
   for (const key of ['one', 'many'] as const) await row(page, key).getByTestId('stream-inbox-row-select').click();
   await page.getByTestId('stream-inbox-selection-classify').click();
-  const one = page.getByTestId(`classify-row-${arrived.one.id}`);
+  await expect(page.getByTestId('classify-notice')).toContainText('message will be sent once it is done');
+  await expect(page.getByTestId('classify-run-line')).toContainText('Running · 2 conversations');
+  await expect(page.getByTestId('classify-table'), 'the list stays behind Details').toHaveCount(0);
+  await page.getByTestId('classify-details').click();
+  await expect(page.locator('[data-testid^="classify-row-"]')).toHaveCount(2);
+
+  await graph('post', 'flow_message/stream-inbox-classification', { value });
+  state = 'completed';
+  await expect(page.getByTestId('classify-dialog'), 'the window closes once the proposal is handed in').toHaveCount(0);
+  expect(await tagsOf('one'), 'a proposal tags nothing').toEqual([]);
+
+  const message = page.locator('[data-testid="stream-inbox-conversation-row"]').filter({ has: page.getByTestId('stream-inbox-row-app-header') }).first();
+  await expect(message.getByTestId('app-status-chip')).toHaveText('Needs review');
+  await message.click();
+  const review = page.frameLocator('[data-testid="nano-app-frame"]');
+  const one = review.getByTestId(`classify-row-${arrived.one.conversation_id}`);
   await expect(one.getByTestId('classify-row-new')).toContainText('intro');
-  expect(await tagsOf('one'), 'the table is a dry run').toEqual([]);
   await one.getByTestId('classify-row-why').click();
-  await expect(page.getByTestId('classify-row-run')).toContainText('sure');
-  await one.getByRole('checkbox').click();
-  await page.getByTestId('classify-selection-apply').click();
-  await expect(page.getByTestId('classify-summary')).toHaveText('1 applied · no automation started');
-  expect(await tagsOf('one')).toEqual(['stream_inbox.sales.intro']);
+  await expect(review.getByTestId('classify-row-trace')).toContainText('introduction call');
+  await one.getByTestId('classify-row-apply').click();
+  await expect.poll(() => tagsOf('one')).toEqual(['stream_inbox.sales.intro']);
+  await expect(review.getByTestId('classify-summary')).toContainText('1 applied');
   const applied = await graph<{ message_processing: { queue: Array<{ tag: string }> } }>('get', `flow_message/${arrived.one.id}`);
-  expect(applied.message_processing.queue.filter((entry) => entry.tag)).toEqual([]);
+  expect(applied.message_processing.queue.filter((entry) => entry.tag), 'applying starts no automation').toEqual([]);
 });

@@ -61,7 +61,7 @@ export function ClassifyDialog({ callId, onClose }: { callId: string; onClose: (
       state.status !== 'error' && (!state.data || state.data.state === 'running') ? READ_EVERY_MS : false,
   });
   const [details, setDetails] = useState(false);
-  // The Automations chip as an inbox row wears it: the channel's name, the automation type's own icon.
+  // The Automations chip as a Stream Inbox row wears it: the channel's name, the automation type's own icon.
   const channel = attributionFor({ kind: AUTOMATIONS_CHANNEL, namespace: '', key: '', url: null });
   const automations = channel && { ...channel, icon: iconForType('trigger') };
   const asked = (run?.input as { conversations?: string[] } | null | undefined)?.conversations ?? [];

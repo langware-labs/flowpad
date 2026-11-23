@@ -1755,7 +1755,10 @@ export function StreamInboxView({
                   variant="ghost"
                   size="sm"
                   className="h-7 text-xs"
-                  onClick={() => classifying.start(selectedConvs.map((conv) => conv.id).filter((id): id is string => !!id))}
+                  onClick={() => {
+                    classifying.start(selectedConvs.map((conv) => conv.id).filter((id): id is string => !!id));
+                    clearSelection(); // as the other bulk actions: the run has the rows, a click opens a row again
+                  }}
                   data-testid="stream-inbox-selection-classify"
                 >
                   <Tags className="me-1 h-3.5 w-3.5" />
