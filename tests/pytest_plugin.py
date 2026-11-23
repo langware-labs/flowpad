@@ -118,6 +118,19 @@ atexit.register(shutil.rmtree, _TEST_RUN_ROOT, ignore_errors=True)
 # pytest-env's legacy shared defaults during import.
 os.environ["SQLITE_DATABASE_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test.db")
 os.environ["FS_RECORD_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test_records")
+# The sandbox root is path-bearing too, and it is the one selector that had no
+# pin. ``TestInstanceSettings._resolve_sandbox`` falls back to
+# ``$TMPDIR/flowpad-test-<pid>``, so an UNPINNED sandbox is per-PROCESS: every
+# child this session spawns — a worker CLI, a skill's ``python -c``, a renderer
+# subprocess — invents its own records-data root and writes where this session
+# will never look. ``records_data_dir`` hangs off it and has no env override of
+# its own, which is how a markdown_index cold build wrote all three per-file
+# summaries into the child's sandbox while the test read the session's.
+# Pinned to the same value the fallback would have computed here, so this
+# session's own paths are unchanged and only children are pulled into line.
+# ``setdefault``: an explicitly exported sandbox still wins, and a child that
+# must stay isolated drops the variable (tests/unit/test_pytest_process_isolation.py).
+os.environ.setdefault("FLOWPAD_TEST_SANDBOX", str(_Path(tempfile.gettempdir()) / f"flowpad-test-{os.getpid()}"))
 
 _TEST_HOME = _TEST_RUN_ROOT / "home"
 for _sub in (".claude", ".codex", ".flow"):
