@@ -238,13 +238,17 @@ class _Rule:
             if self.flags & _ENDSWITH:
                 return len(pattern) - 1 <= len(basename) and basename.endswith(pattern[1:])
             return wildmatch(pattern, basename, pathname=False)
-        # match_pathname, relative to the file's own folder. The literal prefix is only a
-        # shortcut: the whole pattern is matched, so a "**" right after it ("ab**/c") stays an
-        # ordinary star, as git has it.
+        # match_pathname, relative to the file's own folder. The literal prefix is matched
+        # itself and then cut off both pattern and name, as git does: a "**" right after it
+        # ("ab**/c") is pattern-initial again and still crosses directories.
         if pattern[:1] == b"/":
             pattern, prefix = pattern[1:], prefix - 1
-        if not rel or (prefix and pattern[:prefix] != rel[:prefix]):
+        if not rel:
             return False
+        if prefix:
+            if pattern[:prefix] != rel[:prefix]:
+                return False
+            pattern, rel = pattern[prefix:], rel[prefix:]
         return wildmatch(pattern, rel, pathname=True)
 
 

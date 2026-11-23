@@ -302,15 +302,23 @@ impl Rule {
             }
             return wildmatch(pattern, basename, false);
         }
-        // match_pathname, relative to the file's own folder. The literal prefix is only a
-        // shortcut: the whole pattern is matched, so a "**" right after it ("ab**/c") stays
-        // an ordinary star, as git has it.
+        // match_pathname, relative to the file's own folder. The literal prefix is matched
+        // itself and then cut off both pattern and name, as git does: a "**" right after it
+        // ("ab**/c") is pattern-initial again and still crosses directories.
         if pattern.first() == Some(&b'/') {
             pattern = &pattern[1..];
             prefix = prefix.saturating_sub(1);
         }
-        if rel.is_empty() || (prefix > 0 && rel.get(..prefix) != Some(&pattern[..prefix])) {
+        if rel.is_empty() {
             return false;
+        }
+        let mut rel = rel;
+        if prefix > 0 {
+            if rel.get(..prefix) != Some(&pattern[..prefix]) {
+                return false;
+            }
+            pattern = &pattern[prefix..];
+            rel = &rel[prefix..];
         }
         wildmatch(pattern, rel, true)
     }
@@ -405,7 +413,7 @@ mod tests {
         assert_eq!(f.decide(b"a/x/y/b", false), Some(true));
         assert_eq!(f.decide(b"docs/sub/x.tmp", false), None);
         assert_eq!(f.decide(b"abq/c", false), Some(true));
-        assert_eq!(f.decide(b"ab/x/c", false), None); // "**" after a literal is one star
+        assert_eq!(f.decide(b"ab/x/c", false), Some(true)); // "**" after a literal crosses "/"
     }
 
     #[test]

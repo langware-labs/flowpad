@@ -67,9 +67,10 @@ def test_the_walk_keeps_exactly_what_git_keeps(scanner, tmp_path, name):
 
     assert kept_files(scanner, tmp_path) == git_keeps
     # The rules bite both ways: a nested "!" re-includes, an excluded folder stays excluded,
-    # and a "**" right after a literal is one star.
-    assert {"sub/keep.md", "sub/deeper/d.log", "sub/out/o.txt", "ab/x/c"} <= git_keeps
-    assert not {"sub/a.md", "sub/local/inner.txt", "abq/c", "out/o.txt"} & git_keeps
+    # and a "**" right after a literal still crosses directories (git cuts the literal prefix
+    # off the pattern first, so "ab**/c" takes "ab/x/c" as well as "abq/c").
+    assert {"sub/keep.md", "sub/deeper/d.log", "sub/out/o.txt"} <= git_keeps
+    assert not {"sub/a.md", "sub/local/inner.txt", "abq/c", "ab/x/c", "out/o.txt"} & git_keeps
 
 
 def test_a_flowignore_decides_before_the_gitignore_and_the_force_include(scanner, tmp_path):
