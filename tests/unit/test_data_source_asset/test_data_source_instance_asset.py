@@ -23,7 +23,7 @@ from flow_sdk.builtin.data_source import (
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.schema.data_spec.data_source_spec import DataSourceSpec
 from flow_sdk.sources.config import SourceConfig, config_field
-from flow_sdk.sources.families import RecordSource
+from flow_sdk.sources.families import MessageSource, RecordSource
 from tests.fixtures.identity import index_path
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -535,3 +535,45 @@ async def test_resume_returns_a_source_to_where_it_stood_and_asks_its_driver(sco
         await source.set_enabled(True)
         row = await DataSource.get_by_id(str(source.id))
         assert (row.status, row.setup_detail) == lands
+
+
+# ── where a new source lands ────────────────────────────────────────────────
+class _Chat(MessageSource):
+    provider = "asset-chat-test"
+
+
+class _MyTasks(MessageSource):
+    provider = "asset-principal-test"
+    principal_channel = True
+
+
+@pytest.fixture
+async def in_project(scope, tmp_path_factory, monkeypatch):
+    """A script run from a project folder: the working directory is the project's, and there is no request."""
+    from flow_sdk.builtin.project import Project
+
+    for cls in (_Chat, _MyTasks):
+        DataDriver.register(DataDriver.for_class(cls, kind="datasource.test.asset"))
+    mount = tmp_path_factory.mktemp("proj")  # not under tmp_path: that is the flow home here
+    project = Project(name=str(mount))
+    project.fs_storage_mount_path = str(mount)
+    await project.save()
+    monkeypatch.chdir(mount)
+    return mount.resolve()
+
+
+@pytest.mark.parametrize(
+    ("provider", "channel", "lands_in_project"),
+    [
+        (_Chat.provider, "testchat", False),  # a person's message channel is theirs, never the folder's
+        (_MyTasks.provider, "tasks", False),  # one principal's channel on this machine
+        (_Mailbox.provider, "", True),  # a data source is the project's business
+    ],
+)
+async def test_a_persons_channel_is_not_placed_by_the_folder_a_script_ran_in(in_project, scope, provider, channel, lands_in_project):
+    source = DataSource(name="mine", provider=provider, channel=channel, config={"address": "me@x.test"})
+    await source.save()
+
+    root = in_project if lands_in_project else scope.resolve()
+    assert _folder(source) == root / "agentic-assets" / "data_source" / "mine"
+    assert bool(source.project_id) is lands_in_project

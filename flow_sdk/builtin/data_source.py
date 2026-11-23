@@ -554,9 +554,11 @@ class DataSource(SetupSkippable, Entity):
         """The project whose ``agentic-assets/data_source/`` holds this source.
 
         Its owning agent's project first — a channel travels with its agent, whatever project the request
-        came from; then a project-scoped request; the row's own project; and, for code running outside
-        any request (a script, a block), the working directory's project. None lands it in the user
-        scope — a mailbox source the heartbeat creates has no project to belong to.
+        came from; then a project-scoped request (the project was NAMED: the add form's "Project", the
+        CLI's ``--project``); the row's own project; and, for code running outside any request (a script,
+        a block), the working directory's project — except a person's message channel, which is never
+        placed by where the code ran. None lands it in the user scope — a mailbox source the heartbeat
+        creates has no project to belong to.
         """
         if self.exist_in_db:  # placement happens once, at create; a poll's save never asks again
             return await super()._resolve_scope_project()
@@ -580,7 +582,13 @@ class DataSource(SetupSkippable, Entity):
         if getattr(self, "project_id", None):
             return await Project.get_by_id(str(self.project_id))
         # A script or block run from a project folder; the server's cwd never counts (context.current_project).
+        # A person's message channel is theirs, not the folder's: it lands in a project only when the
+        # project is named (the request above), never because a script happened to run inside one.
         if agent is None and get_current_request_info() is None:
+            from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
+
+            if is_message_source(self):
+                return None
             from flow_sdk import context  # noqa: PLC0415
 
             return await context.current_project()

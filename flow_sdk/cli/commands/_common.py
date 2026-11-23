@@ -290,21 +290,40 @@ def server_error(status_code: int, body: dict) -> NoReturn:
     fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", str(body.get("message") or f"HTTP {status_code}"))
 
 
-def data_source_create_path(port: int, project_id: "str | None" = None) -> str:
-    """Where a new data source is POSTed (under ``/graph/``): into a project, the way the app saves one
-    into the project open there — ``project_id`` when given, else the working directory's project, else
-    the project this instance was last used in (``project/last-active``, the one the app opens on). A
-    source belongs to a project because its setup is a node of that project's setup tree; only an
+def data_source_create_path(port: int, project_id: "str | None" = None, provider: str = "") -> str:
+    """Where a new data source is POSTed (under ``/graph/``).
+
+    A named ``project_id`` always wins — the project was chosen. Unnamed, a MESSAGE CHANNEL (a driver
+    that sends) is the person's own and goes to the user scope, whatever folder the command ran in.
+    Any other source goes into a project, the way the app's add form starts on "Project": the working
+    directory's, else the one this instance was last used in (``project/last-active``); only an
     instance with no project at all lands it in the user scope."""
     from flow_sdk.fs_store.path_utils import is_valid_project_cwd  # noqa: PLC0415
 
     if not project_id:
+        if provider and _driver_sends(port, provider):
+            return "data_source"
         cwd = os.getcwd()
         project_id = project_for_path(port, cwd, create=False) if is_valid_project_cwd(cwd, include_temp=True) else None
     if not project_id:
         last = get_graph_json(graph_url(port, "project/last-active"), on_error=server_error) or {}
         project_id = last.get("project_id") if isinstance(last, dict) else None
     return f"project/{project_id}/data_source" if project_id else "data_source"
+
+
+def _driver_sends(port: int, provider: str) -> bool:
+    """Whether the installed driver ``provider`` can send — what makes its source a message channel."""
+    drivers = rows_of(get_graph_json(graph_url(port, "data_driver"), on_error=server_error))
+    return any(isinstance(r, dict) and r.get("name") == provider and r.get("sends") for r in drivers)
+
+
+def rows_of(data) -> list:
+    """The rows of a list answer, whichever envelope key carries them."""
+    if isinstance(data, dict):
+        for key in ("items", "entities", "results", "data"):
+            if isinstance(data.get(key), list):
+                return data[key]
+    return data if isinstance(data, list) else []
 
 
 def project_for_path(port: int, cwd: str, *, create: bool) -> "str | None":

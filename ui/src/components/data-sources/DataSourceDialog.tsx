@@ -23,6 +23,8 @@ import { SteppedDialogContent, type StepCrumb } from '@src/components/ui/stepped
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Switch } from '@src/components/ui/switch';
+import { ScopeBar } from '@src/components/ui/scope-bar';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Textarea } from '@src/components/ui/textarea';
 import { SetupWizardPanel } from '@src/components/setup-wizard/SetupWizardDialog';
@@ -51,6 +53,7 @@ import {
   offeredSpecs,
   sourceChoices,
   useSourceSpecs,
+  isMessageDriverSpec,
   isObjectDriverSpec,
 } from './use-source-specs';
 import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
@@ -122,8 +125,10 @@ export function DataSourceDialog({
   // shows up here with no frontend release.
   const { specs: installed, specFor } = useSourceSpecs();
   const allocateMailbox = useAllocateAgentMailbox();
-  // A source is an asset: it is saved into the project open here (an agent's into the agent's project).
+  // Where a source is saved is the person's choice: "Me" (in no project) or "Project" (the one open here).
   const { project } = useDataContext();
+  // Null until they pick — the driver's default stands. Apart from `draft`, which every step back replaces.
+  const [placePick, setPlacePick] = useState<'user' | 'project' | null>(null);
   const ownerAgentId = owner?.type === Agent.type ? owner.id : null;
   const offered = offeredSpecs(installed, !!ownerAgentId);
   const specs = only ? offered.filter(only) : offered;
@@ -152,6 +157,7 @@ export function DataSourceDialog({
   // A group's tile opens its ways to connect; any other tile, its form.
   const pickTile = (p: DataDriver) => {
     setGroup(p.group || '');
+    setPlacePick(null);
     setDraft(p.group ? emptyDraft() : emptyDraft(p));
     setStep(p.group ? 'choice' : 'form');
     // A channel that only needs a sign-in asks nothing on a form: picking it adds it, and its setup follows.
@@ -168,6 +174,7 @@ export function DataSourceDialog({
       setGroup('');
       setStep(editing ? 'form' : 'provider');
     }
+    setPlacePick(null);
     setShowAdvanced(false);
     setTried(false);
   }, [open, editing]);
@@ -180,6 +187,11 @@ export function DataSourceDialog({
   const provisioned = !editing && spec?.provisioned ? ownerAgentId : null;
   // The wizard asks for this driver's config — the form asks only for a name, then hands over.
   const byWizard = setUpByWizard(spec, !!editing);
+  // Asked only where there is a choice to make: a new source of a person, on a machine that has project folders.
+  const asksPlace = !editing && !ownerAgentId && !isHubOnly();
+  // A message channel is the person's own; any other data source is the project's.
+  const place =
+    asksPlace && project?.typeId ? (placePick ?? (isMessageDriverSpec(spec) ? 'user' : 'project')) : 'user';
   const [settingUp, setSettingUp] = useState<DataSource | null>(null);
   // A source added that reads through a sign-in (its driver's `auth.connector`): the dialog goes on to its
   // setup — the sign-in asked in place, then its tree — instead of closing on "Added".
@@ -288,7 +300,7 @@ export function DataSourceDialog({
           allowed_senders: allowedSenders,
           open_to_all: draft.open_to_all,
         });
-        await source.save(project?.typeId && !ownerAgentId ? [project.typeId] : []);
+        await source.save(place === 'project' && project?.typeId ? [project.typeId] : []);
         // Sync now rather than on the next heartbeat; a source still in setup has nothing to read yet.
         if (source.status === 'active') void source.requestPoll().catch(() => {});
         notify.success({ title: t`Added ${source.name}` });
@@ -570,6 +582,32 @@ export function DataSourceDialog({
                     onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
                   />
                 </div>
+
+                {asksPlace && (
+                  <div className="space-y-1" data-testid="ds-scope" data-scope={place}>
+                    <Label>
+                      <Trans>Saved for</Trans>
+                    </Label>
+                    <ScopeBar
+                      value={place}
+                      onChange={setPlacePick}
+                      options={[
+                        { value: 'user', label: t`Me` },
+                        {
+                          value: 'project',
+                          label: t`Project`,
+                          disabled: !project?.typeId,
+                          title: project?.typeId ? undefined : t`Open a project to save it there`,
+                        },
+                      ]}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {place === 'user'
+                        ? t`Yours alone: kept outside every project, never shared with one.`
+                        : t`Saved in this project's folder: it goes into git and to everyone who sets the project up.`}
+                    </p>
+                  </div>
+                )}
 
                 {byWizard ? (
                   <p

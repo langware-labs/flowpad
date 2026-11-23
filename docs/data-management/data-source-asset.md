@@ -28,6 +28,15 @@ agentic-assets/data_source/work_gmail/
                    #  "data_driver_name": "gmail", "data_driver_config": {...}, "owner": ...}
 ```
 
+**Where it is saved is asked, not inferred.** The add form offers **Me** (the user scope:
+`~/agentic-assets/data_source/` on prod, `<instance>/home/agentic-assets/data_source/` elsewhere —
+in no project, never in git) or **Project** (the open project's folder). A message channel starts on
+Me: whose LinkedIn or WhatsApp it is is not the project's business. Any other data source starts on
+Project. The same rule holds off the form (`DataSource._resolve_scope_project`): an agent's source
+goes with its agent; a request that NAMES a project (the form's Project, `flow source create
+--project`) lands there; a script run from a project folder places a data source in that project but
+never a person's message channel. A source saved for Me is no part of any project's setup.
+
 The file (`DataSourceSpec`) is what a person authors and nothing the engine writes: status,
 health, the cursor, the next poll, discovered identities and inbound access (`allowed_senders`, `open_to_all`,
 PRIVATE: who may drive the source is this machine's business) are row-only (`Persist.FALSE`), and the
@@ -42,7 +51,7 @@ loads the driver. Only a source that owes a setup (`setup_owed`) holds its proje
 watches one account once: `save()` of a new source for an account its owner already watches adopts
 that row (`find_for_account` on the driver's `identity_config_key`) — the authored fields and the
 config merged onto it, its cursor kept — instead of minting a twin. Items are the same: `SourceItem.find_existing` (`flow_sdk/builtin/source_item.py`) looks a row up by its natural key, so a re-ingest updates instead of duplicating.
-`gitignored` (default true) keeps the source's reflected/copied DATA out of git (`keep_out_of_git`, `flow_sdk/ingest/reflect.py`); `data_source.json` itself is a committed project asset: it goes into git with the project, so it holds config only (an address, a channel, an id), never a secret. Tokens, passwords, API keys and other personal secrets live in the credential store (`flow credentials set`, `.env.local` style), which the driver reads through its manifest's `auth`; `tests/unit/test_data_source_holds_no_secret.py` fails on any tracked data source file that names one. `owner=` takes the entity itself
+`gitignored` (default true) keeps the source's reflected/copied DATA out of git (`keep_out_of_git`, `flow_sdk/ingest/reflect.py`); `data_source.json` of a source saved in a project is a committed project asset: it goes into git with the project, so it holds config only (an address, a channel, an id), never a secret. Tokens, passwords, API keys and other personal secrets live in the credential store (`flow credentials set`, `.env.local` style), which the driver reads through its manifest's `auth`; `tests/unit/test_data_source_holds_no_secret.py` fails on any tracked data source file that names one. `owner=` takes the entity itself
 (an `Agent`) or its `TypeId`; a source an Agent owns is that agent's channel, the one way to give it one. Deleting the source removes its folder with the items it ingested; a
 row with no folder (one written before sources were files) is removed at boot.
 

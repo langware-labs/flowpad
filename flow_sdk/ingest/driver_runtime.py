@@ -476,8 +476,9 @@ class DriverRuntime:
         """A configured instance of this driver, in memory: nothing is written until ``save()``.
 
         ``config`` is what ``create_config`` returned, or a plain dict ``save()`` validates the same way.
-        ``await source.save()`` places ``data_source.json`` in the project scope (the request's
-        project, the owning agent's, else the working directory's).
+        ``await source.save()`` places ``data_source.json`` in the owning agent's project, else the
+        project the request names, else the working directory's — a person's message channel excepted:
+        unnamed, it goes to the user scope.
         """
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 

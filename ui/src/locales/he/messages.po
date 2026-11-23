@@ -19565,6 +19565,8 @@ msgid "Me"
 msgstr "אני"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "Meaning"
 msgstr "תיאור"
 
@@ -23755,6 +23757,10 @@ msgstr "יש לפתוח פרויקט כדי להריץ את השינויים ה�
 msgid "Open a project to see its assets."
 msgstr "יש לפתוח פרויקט כדי לראות את הנכסים שלו."
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Open a project to save it there"
+msgstr "פתחו פרויקט כדי לשמור אותו שם"
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Open a project to see its data model."
 msgstr "פתחו פרויקט כדי לראות את מודל הנתונים שלו."
@@ -26144,6 +26150,8 @@ msgstr "פרויקט"
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/explorer-view/useExplorerModel.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/home-tiles/HomeTiles.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
@@ -29555,6 +29563,15 @@ msgstr "הקשרים שנשמרו"
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Saved to My project"
 msgstr "נשמר ב-My project"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Saved for"
+msgstr "נשמר עבור"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Saved in this project's folder: it goes into git and to everyone who sets the project up."
+msgstr "נשמר בתיקיית הפרויקט: הוא נכנס ל-git ומגיע לכל מי שמגדיר את הפרויקט."
 
 #: src/components/top-nav-bar/RecordingReadyDialog.tsx
 msgid "Saved to project"
@@ -38999,6 +39016,10 @@ msgstr "zendesk, gmail"
 #: src/components/drag-drop-overlay.tsx
 msgid "ZIP files will be added as codebase connections"
 msgstr "קבצי ZIP יתווספו כחיבורי קוד בסיס"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Yours alone: kept outside every project, never shared with one."
+msgstr "שלכם בלבד: נשמר מחוץ לכל פרויקט ואינו משותף עם אף אחד מהם."
 
 #: src/components/assets/editor/chart/chartControls.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx

@@ -16,12 +16,13 @@
  * machine's source. The tab rides the URL (`/dock/data-sources/<id>/<tab>`); the view owns the dialogs, as it does
  * for the rows.
  */
-import { type DataSource, type DataDriver, Agent } from '@sdk';
+import { type DataSource, type DataDriver, Agent, Project } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo } from 'react';
 import { ArrowLeft, ExternalLink, History, SlidersHorizontal } from 'lucide-react';
 import type { Conversation } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { timeSince, timeUntil } from '@src/utils/duration';
 import { cn } from '@src/lib/utils';
@@ -61,6 +62,8 @@ export function DataSourcePage({ source, id, tab, conversation, thread, files, s
   const { t } = useLingui();
   // Verify is pressed in the actions and answered on the status line beside them, never in a toast.
   const { verify, busy: verifying, last: verdict } = useSourceVerify(source, { quiet: true });
+  // The project whose folder holds this source; none when it is the person's own.
+  const [project] = useEntityBatch<Project>(Project.type, source?.project_id ? [source.project_id] : []);
   const { navigation } = useDockNavigation();
   const hosted = useHostedDatasets(source);
   if (!source) {
@@ -246,6 +249,12 @@ export function DataSourcePage({ source, id, tab, conversation, thread, files, s
               <Trans>Owner</Trans>
             </dt>
             <dd className="text-xs">{agentId ? <span className="font-mono">{owner}</span> : t`you`}</dd>
+            <dt className="text-muted-foreground">
+              <Trans>Saved for</Trans>
+            </dt>
+            <dd className="text-xs" data-testid="data-source-page-scope">
+              {source.project_id ? project?.name || t`Project` : t`Me`}
+            </dd>
             {source.asset_ref && (
               <>
                 <dt className="text-muted-foreground">
