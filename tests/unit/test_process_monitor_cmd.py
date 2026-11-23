@@ -3,8 +3,8 @@
 The server is faked at the HTTP boundary (``_common.local_request``), so these tests pin what each
 command refuses, what it writes into the project and which calls it makes. They do NOT test the
 automation engine: that the cron rule fires and runs the nudge is the trigger system's job.
-The nudge forks and asks in its own process, through the SDK: faked at ``process_monitor_cmd._try_fork_agentic_process`` and
-``process_monitor_cmd.try_prompt_ap``.
+The nudge forks, asks and deletes the fork in its own process, through the SDK: faked at
+``process_monitor_cmd._try_fork_agentic_process``, ``try_prompt_ap`` and ``delete_check_fork``.
 """
 
 from __future__ import annotations
@@ -69,6 +69,7 @@ class FakeFlowpad:
         self.fork_refused = False
         self.prompt_refused = False
         self.forked: list[str] = []
+        self.deleted_forks: list[str] = []
         self.prompt_responses: list[_Response] = []
         self.calls: list[tuple[str, str, dict]] = []
         self.answers: list[str] = []
@@ -110,6 +111,14 @@ class FakeFlowpad:
         self.forked.append((process_id, name))
         return None if self.fork_refused else FORK_ID
 
+    async def delete_fork(self, fork_id: str) -> None:
+        self.deleted_forks.append(fork_id)
+
+    def nudge_results(self) -> list[str]:
+        """The ``nudge_log`` in ``monitor.json``, as its results."""
+        saved = MonitorSpec.model_validate_json((self.monitor_folder / "monitor.json").read_text(encoding="utf-8"))
+        return [entry.result for entry in saved.nudge_log]
+
     async def ask(self, process_id: str, prompt: str) -> str | None:
         self.asked.append((process_id, prompt))
         return self.answers.pop(0)
@@ -131,6 +140,7 @@ def flowpad(tmp_path, monkeypatch) -> FakeFlowpad:
     monkeypatch.setattr(process_monitor_cmd, "discover_port", lambda *a, **k: 4242)
     monkeypatch.setattr(process_monitor_cmd, "_try_fork_agentic_process", fake.fork)
     monkeypatch.setattr(process_monitor_cmd, "try_prompt_ap", fake.ask)
+    monkeypatch.setattr(process_monitor_cmd, "delete_check_fork", fake.delete_fork)
     return fake
 
 
@@ -286,6 +296,7 @@ def test_nudge_skips_a_busy_process(monitored):
     assert result.exit_code == 0, result.output
     assert monitored.forked == [] and monitored.asked == []
     assert monitored.prompted() == []
+    assert monitored.nudge_results() == ["skipped_busy"]
 
 
 def test_nudge_asks_a_fork_not_the_session(monitored):
@@ -309,6 +320,27 @@ def test_continue_to_work_prompts_the_session_to_go_on(monitored):
     # Nothing in it is read, but a terminal session's turn is cancelled when its listener hangs up.
     assert monitored.prompt_responses[0].drained
     assert monitored.folder.exists()  # still monitoring
+    assert monitored.deleted_forks == [FORK_ID]
+
+
+def test_each_nudge_adds_its_result_to_the_nudge_log(monitored):
+    monitored.answers = [_reply("continue_to_work"), None, _reply("continue_to_work")]
+    assert nudge().exit_code == 0
+    refused(nudge(), "ASK_FAILED")
+    assert nudge().exit_code == 0
+    assert monitored.nudge_results() == ["continue_to_work", "ASK_FAILED", "continue_to_work"]
+    assert monitored.deleted_forks == [FORK_ID] * 3  # a fork that did not answer is deleted too
+
+
+def test_the_nudge_log_keeps_only_the_newest_results(monitored, monkeypatch):
+    monkeypatch.setattr(MonitorSpec, "NUDGE_LOG_LIMIT", 2)
+    monitored.process["busy"] = True
+    assert nudge().exit_code == 0
+    monitored.process["busy"] = False
+    monitored.answers = [_reply("continue_to_work"), None]
+    assert nudge().exit_code == 0
+    refused(nudge(), "ASK_FAILED")
+    assert monitored.nudge_results() == ["continue_to_work", "ASK_FAILED"]
 
 
 def test_a_prompt_the_session_does_not_take_fails_the_nudge(monitored):
@@ -326,6 +358,7 @@ def test_a_met_goal_or_a_reached_stop_ends_the_monitor_and_tells_no_one(monitore
     assert ("DELETE", f"trigger/{TRIGGER_ID}", {}) in monitored.calls
     assert ("DELETE", f"monitor/{MONITOR_ID}", {}) in monitored.calls
     assert monitored.prompted() == []
+    assert monitored.deleted_forks == [FORK_ID]
 
 
 def test_an_invalid_answer_is_asked_again_on_the_same_fork(monitored):
@@ -372,6 +405,7 @@ def test_a_session_that_cannot_fork_checks_itself(monitored):
     assert GOAL in prompt and STOP in prompt
     assert f"flow process unmonitor {KEY}" in prompt
     assert monitored.folder.exists()
+    assert monitored.nudge_results() == ["self_check"]
 
 
 # ── unmonitor ───────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ from typing import Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
+from flow_sdk.schema.data_spec.monitor_spec import NudgeLogEntry
 from flow_sdk.schema.types import EntityType
 
 
@@ -19,4 +20,5 @@ class Monitor(Entity):
     goal: str = APIField("", description="What done looks like")
     stop_condition: str = APIField("", description="When to stop even if the goal is not met")
     cron: str = APIField("", description="When to check: a crontab mask")
+    nudge_log: list[NudgeLogEntry] = APIField(default_factory=list, description="The result of each nudge, oldest first")
     asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)

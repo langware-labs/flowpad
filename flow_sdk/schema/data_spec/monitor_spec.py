@@ -9,7 +9,20 @@ from __future__ import annotations
 import re
 from typing import ClassVar
 
+from pydantic import Field
+
 from flow_sdk.schema.data_spec.frontmatter import AssetDocumentSpec
+from flow_sdk.schema.data_spec.spec import DataSpec
+
+
+class NudgeLogEntry(DataSpec):
+    """One nudge of a monitor: when it ran and how it ended."""
+
+    #: When the nudge ran: an ISO 8601 UTC time.
+    at: str
+    #: A verdict (``goal_met`` | ``stop_condition_reached`` | ``continue_to_work``), ``skipped_busy``,
+    #: ``self_check`` (the session cannot fork and was asked itself), or the failure's error code.
+    result: str
 
 
 class MonitorSpec(AssetDocumentSpec):
@@ -18,6 +31,8 @@ class MonitorSpec(AssetDocumentSpec):
     KEY_SEP: ClassVar[str] = "_monitor_"
     #: A monitor's name: part of a folder name, so letters, digits, '-' and '_' only, up to 40.
     NAME_RE: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}")
+    #: How many nudges ``nudge_log`` keeps: the newest ones.
+    NUDGE_LOG_LIMIT: ClassVar[int] = 100
 
     #: The monitor's own name (the key's last part).
     name: str
@@ -29,6 +44,8 @@ class MonitorSpec(AssetDocumentSpec):
     stop_condition: str = ""
     #: When to check: a crontab mask, the same one the trigger beside it runs on.
     cron: str
+    #: The result of each nudge, oldest first. Removed with the monitor.
+    nudge_log: list[NudgeLogEntry] = Field(default_factory=list)
 
     @staticmethod
     def make_key(agentic_process_id: str, name: str) -> str:

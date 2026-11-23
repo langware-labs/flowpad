@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, NamedTuple, Optional
 
@@ -22,6 +23,7 @@ import typer
 from pydantic import BaseModel, ConfigDict, ValidationError
 from typing_extensions import Annotated
 
+from flow_sdk.capsules.atomic import atomic_write
 from flow_sdk.cli.commands._common import (
     EXIT_CONNECTION_ERROR,
     EXIT_INVALID_ARG,
@@ -38,7 +40,7 @@ from flow_sdk.cli.commands._common import (
     run_async,
 )
 from flow_sdk.cli.commands.process_cmd import EXIT_ACTION_FAILED, _action_failed, process_app
-from flow_sdk.schema.data_spec.monitor_spec import MonitorSpec
+from flow_sdk.schema.data_spec.monitor_spec import MonitorSpec, NudgeLogEntry
 
 # ── monitor: a goal watched on a clock ──────────────────────────────────────
 #
@@ -267,24 +269,37 @@ class GoalCheck(NamedTuple):
     problem: Optional[str]
 
 
+async def delete_check_fork(fork_id: str) -> None:
+    """Delete the fork a check asked, row and transcript (``AgenticProcess.delete``): this command made
+    it, so nothing else holds it. Left alone, each check would add a session to the user's session list."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+    fork = await AgenticProcess.get_by_id(fork_id)
+    if fork is not None:
+        await fork.delete()
+
+
 async def try_check_goal(process_id: str, goal: str, stop_condition: str, monitor_name: str) -> GoalCheck:
-    """Fork the session and ask the fork, here."""
+    """Fork the session and ask the fork, here. The fork is deleted once it has answered, or failed to."""
     fork_id = await _try_fork_agentic_process(process_id, f"goal and stop condition check for monitor {monitor_name}")
     if fork_id is None:
         return GoalCheck(fork_id=None, verdict=None, problem=None)
-    prompt = _check_prompt(goal, stop_condition)
-    for _attempt in range(1 + _NUDGE_RETRIES):
-        reply = await try_prompt_ap(fork_id, prompt)
-        if reply is None:
-            return GoalCheck(fork_id=fork_id, verdict=None, problem="ASK_FAILED")
-        try:
-            verdict = MonitorVerdict.from_raw_agent_response(reply)
-        except ValidationError as e:
-            errors = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'reply'}: {err['msg']}" for err in e.errors())
-            prompt = f"Invalid answer, error on {errors}. Reply with only this JSON, nothing else: {_REPLY_FORMAT}"
-            continue
-        return GoalCheck(fork_id=fork_id, verdict=verdict, problem=None)
-    return GoalCheck(fork_id=fork_id, verdict=None, problem="INVALID_ANSWER")
+    try:
+        prompt = _check_prompt(goal, stop_condition)
+        for _attempt in range(1 + _NUDGE_RETRIES):
+            reply = await try_prompt_ap(fork_id, prompt)
+            if reply is None:
+                return GoalCheck(fork_id=fork_id, verdict=None, problem="ASK_FAILED")
+            try:
+                verdict = MonitorVerdict.from_raw_agent_response(reply)
+            except ValidationError as e:
+                errors = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'reply'}: {err['msg']}" for err in e.errors())
+                prompt = f"Invalid answer, error on {errors}. Reply with only this JSON, nothing else: {_REPLY_FORMAT}"
+                continue
+            return GoalCheck(fork_id=fork_id, verdict=verdict, problem=None)
+        return GoalCheck(fork_id=fork_id, verdict=None, problem="INVALID_ANSWER")
+    finally:
+        await delete_check_fork(fork_id)
 
 
 def _prompt_session(port: int, process_id: str, message: str) -> None:
@@ -330,6 +345,15 @@ def _self_check_prompt(goal: str, stop_condition: str, key: str) -> str:
             "Otherwise, continue working toward the goal.")
 
 
+def log_nudge(document: Path, result: str) -> None:
+    """Add this nudge's result to the monitor's ``nudge_log`` (``monitor.json``), keeping the newest."""
+    monitor = MonitorSpec.model_validate_json(document.read_text(encoding="utf-8"))
+    entry = NudgeLogEntry(at=datetime.now(timezone.utc).isoformat(timespec="seconds"), result=result)
+    logged = monitor.model_copy(update={"nudge_log": [*monitor.nudge_log, entry][-MonitorSpec.NUDGE_LOG_LIMIT:]})
+    text = json.dumps(logged.model_dump(mode="json", exclude_defaults=True), indent=2)
+    atomic_write(document, f"{text}\n".encode("utf-8"))
+
+
 @process_app.command(
     "monitor-nudge",
     help="Check a monitor now -- what its trigger runs. Skipped while the session is busy.",
@@ -347,6 +371,7 @@ def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `moni
     monitor = MonitorSpec.model_validate_json(document.read_text(encoding="utf-8"))
     goal, stop_condition = monitor.goal, monitor.stop_condition
     if process.get("busy"):
+        log_nudge(document, "skipped_busy")
         ok({"key": key, "skipped": "the session is busy"})
         return
     # No lock against a second check: the scheduler runs one instance of a trigger's job at a time
@@ -354,13 +379,16 @@ def nudge_monitor(key: Annotated[str, typer.Argument(help="The monitor key `moni
     check = run_async(try_check_goal(process_id, goal, stop_condition, name))
     fork_id, verdict, problem = check.fork_id, check.verdict, check.problem
     if fork_id is None:
+        log_nudge(document, "self_check")
         _prompt_session(port, process_id, _self_check_prompt(goal, stop_condition, key))
         ok({"key": key, "answer": None, "asked": process_id, "note": "cannot fork: the session checks itself"})
         return
     if verdict is None:
         message = (f"The fork {fork_id} did not answer." if problem == "ASK_FAILED"
                    else f"No valid answer after {_NUDGE_RETRIES} retries; the monitor is unchanged.")
+        log_nudge(document, problem or "INVALID_ANSWER")
         fail(EXIT_ACTION_FAILED, problem or "INVALID_ANSWER", message)
+    log_nudge(document, verdict.answer)
     if verdict.answer == "continue_to_work":
         _prompt_session(port, process_id, _continue_prompt(goal, stop_condition))
         ok({"key": key, "answer": verdict.answer, "asked": fork_id})
