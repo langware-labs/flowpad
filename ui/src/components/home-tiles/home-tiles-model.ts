@@ -69,15 +69,40 @@ function tileOf(
   return { ...base, deployments, issueCount: all.size, deploymentIssues };
 }
 
+/** Which agents a project's home lists: every one you can reach, or only the project's own. */
+export type AgentScope = 'all' | 'project';
+
+const AGENT_SCOPE_KEY = 'flowpad.home.agentScope';
+
+/** The viewer's last choice; `all` when absent or unreadable. */
+export function loadAgentScope(): AgentScope {
+  try {
+    if (localStorage.getItem(AGENT_SCOPE_KEY) === 'project') return 'project';
+  } catch {
+    // private mode / blocked storage
+  }
+  return 'all';
+}
+
+export function saveAgentScope(scope: AgentScope): void {
+  try {
+    localStorage.setItem(AGENT_SCOPE_KEY, scope);
+  } catch {
+    // a per-viewer convenience; losing it is harmless
+  }
+}
+
 /**
  * The agent icons: the project's agents, then every other agent that has deployments you can reach.
  * `knownAgents` names those others when you can read them; one you own counts as yours.
+ * `scope: 'project'` stops after the project's own.
  */
 export function buildAgentTiles(
   projectAgents: Agent[],
   knownAgents: Agent[],
   deployments: Deployment[],
   issues: Issue[],
+  scope: AgentScope = 'all',
 ): HomeTile[] {
   const byAgent = deploymentsByAgent(deployments);
   const open = openIssuesByTypeid(issues);
@@ -85,6 +110,7 @@ export function buildAgentTiles(
     const key = agent.typeId.toString();
     return tileOf({ key, kind: 'agent', label: agent.displayName, agent, own: true }, byAgent.get(key) ?? [], open);
   });
+  if (scope === 'project') return tiles;
   const shown = new Set(tiles.map((tile) => tile.key));
   const known = new Map(knownAgents.filter(isUserAgent).map((agent) => [agent.typeId.toString(), agent]));
   for (const [key, list] of byAgent) {
