@@ -18,9 +18,8 @@ import { LLM_MODEL_SIZES, LLMEndpoint, dataManager, lmKeysService, type LMApiPro
 
 import { errorMessage } from '@src/lib/error-message';
 
-import { buildApiAllocateBody, buildApiEntityJson } from './api-endpoint-draft';
 import { LLM_FAMILY, type EndpointFamily } from './endpoint-family';
-import { buildAllocateBody, buildEntityJson, providerSpec, type EndpointDraft } from './endpoint-catalog';
+import { buildEntityJson, providerSpec, type EndpointDraft } from './endpoint-catalog';
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 import { invalidateLocalEndpoints } from './local-endpoints';
 
@@ -96,12 +95,12 @@ async function saveLocal(draft: EndpointDraft, isEdit: boolean): Promise<SaveRes
 async function saveHub(draft: EndpointDraft, editing: LLMEndpoint | null, family: EndpointFamily): Promise<SaveResult> {
   // Same three calls for both families; only the JSON differs (an API endpoint has a target, kinds
   // and prices where an LLM endpoint has a provider and models).
-  const json = family.llm ? buildEntityJson(draft, !!editing) : buildApiEntityJson(draft, !!editing);
+  const json = family.draft.entityJson(draft, !!editing);
   if (editing) {
     return { endpoint: await dataManager.save<LLMEndpoint>(editing.typeId, [], json as never), outcome: 'updated' };
   }
   if (draft.kind === 'chain') {
-    const body = family.llm ? buildAllocateBody(draft) : buildApiAllocateBody(draft);
+    const body = family.draft.allocateBody(draft);
     const endpoint = await family.service.allocate(endpointIdFromTypeId(draft.source), body as never);
     return { endpoint, outcome: 'allocated' };
   }

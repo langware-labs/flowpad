@@ -169,11 +169,8 @@ export function UsagePanel({ endpointId, endpoint, all }: UsagePanelProps) {
         chartColor: '#f59e0b',
         format: 'number',
       },
-      ] as Metric[]).filter((m) =>
-        // An API endpoint has no tokens and one root per call, so no fallbacks: it counts refusals.
-        family.llm ? m.id !== 'refusals' : !m.format.startsWith('token') && m.id !== 'fallbacks',
-      ),
-    [t, family.llm],
+      ] as Metric[]).filter((m) => family.usageMetrics.includes(m.id)),
+    [t, family.usageMetrics],
   );
   const active = metrics.find((m) => m.id === selected) ?? metrics[0];
   const useBars =

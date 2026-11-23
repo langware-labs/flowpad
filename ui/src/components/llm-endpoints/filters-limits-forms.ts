@@ -11,7 +11,7 @@
  * **Pure — no React, no SDK.** Unit-tested by round-trip.
  */
 import type { APIEndpointLimits, LLMEndpointFilters, LLMEndpointLimits, LLMStreamingPolicy } from '@sdk';
-import { DEFAULT_LLM_FILTERS, DEFAULT_LLM_LIMITS } from '@sdk';
+import { DEFAULT_API_LIMITS, DEFAULT_LLM_FILTERS, DEFAULT_LLM_LIMITS } from '@sdk';
 
 export const STREAMING_POLICIES: readonly LLMStreamingPolicy[] = ['allow', 'require', 'deny'];
 
@@ -71,17 +71,7 @@ export const LIMIT_KEYS: readonly LimitKey[] = [
 ];
 
 /** An API endpoint's limits: dollars first, then requests. No tokens. */
-export const API_LIMIT_KEYS: readonly AnyLimitKey[] = [
-  'cost_usd_total',
-  'cost_usd_per_day',
-  'cost_usd_per_week',
-  'cost_usd_per_month',
-  'requests_total',
-  'requests_per_day',
-  'requests_per_week',
-  'requests_per_month',
-  'requests_per_minute',
-];
+export const API_LIMIT_KEYS = Object.keys(DEFAULT_API_LIMITS) as readonly AnyLimitKey[];
 
 export type LimitsForm = Record<LimitKey, string> & Partial<Record<AnyLimitKey, string>>;
 

@@ -22,11 +22,8 @@ export type LlmEndpointTab = 'overview' | 'usage' | 'models' | 'prices';
 export type EndpointFamilyId = 'llm' | 'api';
 
 const API_SEGMENT = 'api';
-const API_ENDPOINT_TYPE = 'api_endpoint';
 
-export const LLM_ENDPOINT_TABS: readonly LlmEndpointTab[] = ['overview', 'usage', 'models'];
-
-const TABS = new Set<string>([...LLM_ENDPOINT_TABS, 'prices']);
+const TABS = new Set<string>(['overview', 'usage', 'models', 'prices']);
 
 export function parseLlmEndpointsPointer(pointer?: string | null): { id?: string; tab: LlmEndpointTab } {
   const { id, tab } = parseEndpointsPointer(pointer);
@@ -54,11 +51,6 @@ export function llmEndpointsPointer(id?: string, tab?: LlmEndpointTab, family: E
   id = endpointIdFromTypeId(id);
   const rest = tab && tab !== 'overview' ? `${id}/${tab}` : id;
   return prefix ? `${prefix}/${rest}` : rest;
-}
-
-/** The family a hub typeid belongs to (`api_endpoint-<uuid>` → `api`); `llm` for anything else. */
-export function familyOfTypeId(typeid: string): EndpointFamilyId {
-  return isTypeId(typeid) && new TypeId(typeid).type === API_ENDPOINT_TYPE ? 'api' : 'llm';
 }
 
 /** Navigate to an endpoint's page (page=hub) on `tab` (overview by default);

@@ -55,7 +55,7 @@ export function useLlmEndpoints({
   });
   const endpoints = useMemo(() => {
     const byId = new Map<string, LLMEndpoint>();
-    for (const row of (family.llm && shared.data) || []) if (row.id) byId.set(row.id, row);
+    for (const row of shared.data ?? []) if (row.id) byId.set(row.id, row);
     // Only this family's rows: for one render after the switch the live query still holds the other's.
     for (const row of data ?? []) if (row.id && row.getType() === family.type) byId.set(row.id, row);
     return [...byId.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));

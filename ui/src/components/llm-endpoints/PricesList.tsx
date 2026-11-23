@@ -9,6 +9,7 @@ import type { APIEndpointPriceRule, LLMChainHop } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMemo } from 'react';
 
+import { KindChips } from './KindChips';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 
 import { formatUsd } from './usage-math';
@@ -77,11 +78,7 @@ export function PricesList({ endpointId }: { endpointId: string }) {
                 <TableCell className="font-mono text-xs">{rule ? rule.path : t`any call`}</TableCell>
                 <TableCell>
                   <span className="flex flex-wrap items-center gap-1">
-                    {(root.kinds ?? []).map((kind) => (
-                      <span key={kind} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                        {kind}
-                      </span>
-                    ))}
+                    <KindChips kinds={root.kinds} />
                   </span>
                 </TableCell>
                 <TableCell className="text-end font-mono text-xs">

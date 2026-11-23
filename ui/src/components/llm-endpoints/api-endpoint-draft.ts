@@ -11,9 +11,8 @@
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import type { APIEndpoint, APIEndpointPriceRule, LLMEndpointKind } from '@sdk';
-import { EMPTY_LLM_TIERS } from '@sdk';
 
-import type { EndpointDraft } from './endpoint-catalog';
+import { emptyDraft, type EndpointDraft } from './endpoint-catalog';
 import {
   API_LIMIT_KEYS,
   badNonNegative,
@@ -69,18 +68,10 @@ export function emptyApiDraft(): ApiDraft {
 /** A new API endpoint's draft: the shared fields empty, the API ones at their defaults. */
 export function emptyApiEndpointDraft(kind: LLMEndpointKind = 'root'): EndpointDraft {
   return {
-    kind,
-    name: '',
-    enabled: true,
-    provider: 'openrouter',
+    ...emptyDraft(kind),
     base_url: '',
-    source: '',
     filters: filtersToForm(null),
     limits: limitsToForm(null, API_LIMIT_KEYS),
-    tiers: { ...EMPTY_LLM_TIERS },
-    default_model: null,
-    models: '',
-    key: '',
     api: emptyApiDraft(),
   };
 }

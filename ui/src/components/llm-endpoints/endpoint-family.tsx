@@ -7,11 +7,44 @@
  * Components read the family from context (`useEndpointFamily`). Outside a provider it is the LLM
  * family, so every screen that embeds one of these components keeps its behaviour.
  */
-import { APIEndpoint, LLMEndpoint, apiEndpointsService, llmEndpointsService, type LLMUsageBy } from '@sdk';
+import type { MessageDescriptor } from '@lingui/core';
+import {
+  APIEndpoint,
+  LLMEndpoint,
+  apiEndpointsService,
+  llmEndpointsService,
+  type LLMEndpointKind,
+  type LLMUsageBy,
+} from '@sdk';
 import { createContext, useContext } from 'react';
 
-import { API_LIMIT_KEYS, LIMIT_KEYS, type AnyLimitKey } from './filters-limits-forms';
+import {
+  apiEndpointDraftFrom,
+  buildApiAllocateBody,
+  buildApiEntityJson,
+  emptyApiEndpointDraft,
+  validateApiEndpointDraft,
+} from './api-endpoint-draft';
+import {
+  buildAllocateBody,
+  buildEntityJson,
+  draftFrom,
+  emptyDraft,
+  validateDraft,
+  type EndpointDraft,
+} from './endpoint-catalog';
+import type { AnyLimitKey } from './filters-limits-forms';
 import type { EndpointFamilyId, LlmEndpointTab } from './llm-endpoints-pointer';
+
+export type UsageMetricId =
+  | 'cost_usd'
+  | 'total_tokens'
+  | 'input_tokens'
+  | 'output_tokens'
+  | 'requests'
+  | 'errors'
+  | 'fallbacks'
+  | 'refusals';
 
 export interface LimitGroup {
   keys: readonly AnyLimitKey[];
@@ -29,7 +62,16 @@ export interface EndpointFamily {
   queryKey: string;
   /** Tokens, models and model sizes exist (LLM only). */
   llm: boolean;
-  limitKeys: readonly AnyLimitKey[];
+  /** The dialog's draft: a new one, one from a row, its problems, and the JSON the hub takes. */
+  draft: {
+    empty: (kind?: LLMEndpointKind) => EndpointDraft;
+    from: (entity: LLMEndpoint, kind?: LLMEndpointKind | null) => EndpointDraft;
+    validate: (draft: EndpointDraft) => MessageDescriptor[];
+    entityJson: (draft: EndpointDraft, isEdit: boolean) => object;
+    allocateBody: (draft: EndpointDraft) => object;
+  };
+  /** The usage counters shown, in tile order. */
+  usageMetrics: readonly UsageMetricId[];
   /** The limits editor's rows, in order. */
   limitGroups: readonly LimitGroup[];
   /** The usage breakdowns, in toggle order. */
@@ -49,7 +91,14 @@ export const LLM_FAMILY: EndpointFamily = {
   service: llmEndpointsService,
   queryKey: 'llm-endpoint',
   llm: true,
-  limitKeys: LIMIT_KEYS,
+  draft: {
+    empty: emptyDraft,
+    from: draftFrom,
+    validate: (draft) => validateDraft(draft),
+    entityJson: buildEntityJson,
+    allocateBody: buildAllocateBody,
+  },
+  usageMetrics: ['cost_usd', 'total_tokens', 'input_tokens', 'output_tokens', 'requests', 'errors', 'fallbacks'],
   limitGroups: [
     { keys: ['tokens_total', 'tokens_per_day', 'tokens_per_week', 'tokens_per_month'], step: '1' },
     COST,
@@ -66,7 +115,15 @@ export const API_FAMILY: EndpointFamily = {
   service: apiEndpointsService,
   queryKey: 'api-endpoint',
   llm: false,
-  limitKeys: API_LIMIT_KEYS,
+  draft: {
+    empty: emptyApiEndpointDraft,
+    from: (entity, kind) => apiEndpointDraftFrom(entity as APIEndpoint, kind),
+    validate: validateApiEndpointDraft,
+    entityJson: buildApiEntityJson,
+    allocateBody: buildApiAllocateBody,
+  },
+  // No tokens, and one root per call so no fallbacks: an API endpoint counts refusals.
+  usageMetrics: ['cost_usd', 'requests', 'errors', 'refusals'],
   limitGroups: [
     COST,
     { keys: ['requests_total', 'requests_per_day', 'requests_per_week', 'requests_per_month'], step: '1' },

@@ -212,7 +212,6 @@ export function ApiPricesField({ value, onChange, disabled }: FieldProps) {
 
 /** An API endpoint's filters: which sub paths and methods pass. Down a chain they only narrow. */
 export function ApiFiltersFields({ value, onChange, disabled }: FieldProps) {
-  const { t } = useLingui();
   return (
     <div className="space-y-3" data-testid="filters-editor">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

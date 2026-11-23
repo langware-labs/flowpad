@@ -26,13 +26,7 @@
  * where the provider is, the header its key is sent in, prices where the models are, and paths for
  * filters (`ApiEndpointFields`). It lives on the hub only.
  */
-import {
-  LLM_MODEL_SIZES,
-  type APIEndpoint,
-  type DeviceEndpointWire,
-  type LLMEndpoint,
-  type LLMEndpointKind,
-} from '@sdk';
+import { LLM_MODEL_SIZES, type DeviceEndpointWire, type LLMEndpoint, type LLMEndpointKind } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -54,12 +48,7 @@ import { notify } from '@src/notifications';
 
 import { AliasesEditor } from './AliasesEditor';
 import { ApiFiltersFields, ApiKeyHeaderField, ApiPricesField, ApiServesField } from './ApiEndpointFields';
-import {
-  apiEndpointDraftFrom,
-  emptyApiDraft,
-  emptyApiEndpointDraft,
-  validateApiEndpointDraft,
-} from './api-endpoint-draft';
+import { emptyApiDraft } from './api-endpoint-draft';
 import { CredentialField } from './CredentialField';
 import { useEndpointFamily } from './endpoint-family';
 import { FiltersEditor } from './FiltersEditor';
@@ -78,12 +67,9 @@ import {
 import {
   canConfigure,
   catalogFromText,
-  draftFrom,
-  emptyDraft,
   kindFromChain,
   PROVIDERS,
   providerSpec,
-  validateDraft,
   withProvider,
   type EndpointDraft,
 } from './endpoint-catalog';
@@ -126,7 +112,7 @@ export function LlmEndpointDialog({
   const isApi = !family.llm;
   // An API endpoint is the hub's alone: there is no "this machine" to choose.
   const canChooseLocal = hasLocalEndpoints() && !isApi;
-  const newDraft = (kind: LLMEndpointKind) => (isApi ? emptyApiEndpointDraft(kind) : emptyDraft(kind));
+  const newDraft = family.draft.empty;
 
   const openedAs: EndpointDestination = device ? 'device' : canChooseLocal ? initialDestination : 'hub';
   const [destination, setDestination] = useState<EndpointDestination>(openedAs);
@@ -158,13 +144,7 @@ export function LlmEndpointDialog({
     if (!open) return;
     const where = openedAs;
     setDestination(where);
-    setDraft(
-      editing
-        ? isApi
-          ? apiEndpointDraftFrom(editing as APIEndpoint, resolvedKind)
-          : draftFrom(editing, resolvedKind)
-        : draftFor(newDraft('root'), where),
-    );
+    setDraft(editing ? family.draft.from(editing, resolvedKind) : draftFor(newDraft('root'), where));
     setCustom(
       Object.entries(device?.tiers ?? {})
         .filter(([name]) => !isSize(name))
@@ -185,10 +165,7 @@ export function LlmEndpointDialog({
   }, [open, editing, resolvedKind]);
 
   // A device row has no provider or base URL to validate: only its sizes and names are edited.
-  const problems = useMemo(
-    () => (isDevice ? [] : isApi ? validateApiEndpointDraft(draft) : validateDraft(draft)),
-    [draft, isDevice, isApi],
-  );
+  const problems = useMemo(() => (isDevice ? [] : family.draft.validate(draft)), [draft, isDevice, family]);
   const rootCatalog = useMemo(
     () => (draft.kind === 'root' ? catalogFromText(draft.models) : []),
     [draft.kind, draft.models],

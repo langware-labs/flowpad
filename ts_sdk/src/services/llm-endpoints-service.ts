@@ -16,10 +16,7 @@ import {
   type LLMEndpointLimits,
   type LLMModelSize,
 } from '../entities/llm-endpoint';
-import type { APIEndpointMeter } from '../entities/api-endpoint';
-
-const LLM_TYPE = 'llm_endpoint';
-const API_TYPE = 'api_endpoint';
+import { APIEndpoint, type APIEndpointMeter } from '../entities/api-endpoint';
 
 export interface LLMCredentialSetResult {
   ok: true;
@@ -209,7 +206,7 @@ export { hubAction };
  * `test`), so one class serves both; `models`, `model-config` and `provider-sizes` exist on LLM only.
  */
 export class LlmEndpointsService {
-  constructor(readonly type: string = LLM_TYPE) {}
+  constructor(readonly type: string = LLMEndpoint.type) {}
 
   private action(name: string, id: string, method: HttpMethod, subpath?: string): ActionInfo {
     return hubAction(name, this.type, id, method, subpath);
@@ -344,4 +341,4 @@ export class LlmEndpointsService {
 
 export const llmEndpointsService = new LlmEndpointsService();
 /** The same actions on the hub's `api_endpoint` (pictures, video, any cloud API). */
-export const apiEndpointsService = new LlmEndpointsService(API_TYPE);
+export const apiEndpointsService = new LlmEndpointsService(APIEndpoint.type);

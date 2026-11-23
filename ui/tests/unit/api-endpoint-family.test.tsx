@@ -26,11 +26,7 @@ import {
 import { API_FAMILY, EndpointFamilyProvider, LLM_FAMILY } from '@src/components/llm-endpoints/endpoint-family';
 import { kindFromChain } from '@src/components/llm-endpoints/endpoint-catalog';
 import { API_LIMIT_KEYS, formToLimits, limitsToForm } from '@src/components/llm-endpoints/filters-limits-forms';
-import {
-  familyOfTypeId,
-  llmEndpointsPointer,
-  parseEndpointsPointer,
-} from '@src/components/llm-endpoints/llm-endpoints-pointer';
+import { llmEndpointsPointer, parseEndpointsPointer } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { LimitsEditor } from '@src/components/llm-endpoints/LimitsEditor';
 import { priceText } from '@src/components/llm-endpoints/PricesList';
 import { UsageByChildTable } from '@src/components/llm-endpoints/UsageByChildTable';
@@ -52,8 +48,6 @@ describe('the pointer', () => {
     expect(llmEndpointsPointer(undefined, undefined, 'api')).toBe('api');
     expect(llmEndpointsPointer(ID, 'usage', 'api')).toBe(`api/${ID}/usage`);
     expect(llmEndpointsPointer(ID, 'overview', 'api')).toBe(`api/${ID}`);
-    expect(familyOfTypeId(`api_endpoint-${ID}`)).toBe('api');
-    expect(familyOfTypeId(`llm_endpoint-${ID}`)).toBe('llm');
   });
 });
 

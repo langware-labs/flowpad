@@ -228,7 +228,8 @@ export function LlmEndpointsView({ pointer, embed, source = 'hub' }: LlmEndpoint
           onSaved={(saved) => {
             invalidateLocalEndpoints();
             void refetchHub();
-            void queryClient.invalidateQueries({ queryKey: [family.queryKey, saved.id] });
+            for (const part of ['chain', 'model-config'])
+              void queryClient.invalidateQueries({ queryKey: [family.queryKey, saved.id, part] });
           }}
           destination={local ? 'local' : 'hub'}
         />

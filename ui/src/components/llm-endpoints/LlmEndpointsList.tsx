@@ -25,6 +25,7 @@ import { formatValue } from '@src/components/cost-dashboard/constants';
 
 import { useEndpointFamily } from './endpoint-family';
 import { canConfigure, canRemove } from './endpoint-catalog';
+import { KindChips } from './KindChips';
 import { TestEndpointButton } from './TestEndpointButton';
 import { TONE } from './tone';
 import { cohortRange, formatUsd } from './usage-math';
@@ -274,14 +275,7 @@ export function LlmEndpointsList({
                       <ProviderBadge provider={e.kind === 'root' ? e.provider : null} />
                     ) : (
                       <span className="flex flex-wrap items-center gap-1" data-testid={`llm-serves-${e.id}`}>
-                        {(servesById.get(e.id) ?? []).map((kind) => (
-                          <span
-                            key={kind}
-                            className="whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                          >
-                            {kind}
-                          </span>
-                        ))}
+                        <KindChips kinds={servesById.get(e.id)} />
                       </span>
                     )}
                   </TableCell>
