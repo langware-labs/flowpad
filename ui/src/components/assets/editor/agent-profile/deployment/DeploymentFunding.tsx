@@ -198,6 +198,7 @@ function ChangeAllocation({
           environment={deployment.environment}
           provider={deployment.target.provider}
           deploymentId={deployment.id}
+          identity={deployment.identity}
           value={value}
           onChange={setValue}
           disabled={busy}

@@ -6,6 +6,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
+import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
+import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
 import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
 import {
   canonicalPath,
@@ -137,6 +139,8 @@ export function ConversationRoute() {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const { cloudUser } = useAuth();
+  // Signed in as a person OR an agent Identity: `cloudUser` alone is empty on an agent's box.
+  const signedIn = useCloudAuthed();
   const hub = isHubOnly();
   const isMobile = useIsMobile();
 
@@ -328,6 +332,20 @@ export function ConversationRoute() {
       <PhoneMenuButton />
     </div>
   );
+
+  // Signed out → don't get stuck on "Loading conversation…" (the hub fetch
+  // 401s and never resolves). Show the standard chrome with a Login CTA
+  // overlay instead, regardless of whether the conversation is cached locally.
+  if (!signedIn) {
+    return (
+      <div className="relative flex h-full flex-col">
+        <LoginRequiredOverlay
+          description={t`Sign in to your Flowpad Cloud account to view and reply to this conversation.`}
+        />
+        {header}
+      </div>
+    );
+  }
 
   if (!conversation) {
     return (

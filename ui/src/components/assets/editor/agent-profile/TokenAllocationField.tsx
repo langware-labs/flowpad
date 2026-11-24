@@ -5,6 +5,7 @@ import {
   type AgentTokenAllocation,
   type CloudDeployProvider,
   type DeploymentFunding,
+  type DeploymentIdentity,
   type LLMChain,
   type Project,
 } from '@sdk';
@@ -51,6 +52,8 @@ export interface TokenAllocationFieldProps {
   provider: CloudDeployProvider;
   /** The existing deployment whose allocation this changes; `null` = a new deployment (Configure plans a new one). */
   deploymentId: string | null;
+  /** Who the planned machine signs in as: an existing deployment's own identity (a plan re-casts the row). */
+  identity?: DeploymentIdentity;
   /** `null` = unchecked: the agent spends its owner's capped default. */
   value: AgentTokenAllocation | null;
   onChange: (next: AgentTokenAllocation | null) => void;
@@ -69,6 +72,7 @@ export function TokenAllocationField({
   environment,
   provider,
   deploymentId,
+  identity,
   value,
   onChange,
   disabled,
@@ -181,6 +185,7 @@ export function TokenAllocationField({
               environment={environment}
               provider={provider}
               deploymentId={deploymentId}
+              identity={identity}
               value={value}
               disabled={disabled}
             />
@@ -319,6 +324,7 @@ function ConfigureButton({
   environment,
   provider,
   deploymentId,
+  identity,
   value,
   disabled,
 }: {
@@ -327,6 +333,7 @@ function ConfigureButton({
   environment: string;
   provider: CloudDeployProvider;
   deploymentId: string | null;
+  identity?: DeploymentIdentity;
   value: AgentTokenAllocation;
   disabled?: boolean;
 }) {
@@ -343,7 +350,7 @@ function ConfigureButton({
         tokenAllocation: value,
         deploymentId: deploymentId ?? undefined,
         mainAgentId,
-        ...(mainAgentId ? { identity: 'deployment' as const } : {}),
+        identity,
       });
       const allocation = planned.deployment?.llm_endpoint_typeid;
       if (allocation) openLlmEndpoint(navigation, allocation);

@@ -17,6 +17,9 @@ sites:
   - rel_path: ui/tests/unit/stream-inbox-agent-identity-login.test.tsx
     line: 29
     note: FAILING? read this tag's rules before editing — an agent Identity is signed in although cloudUser is null
+  - rel_path: ui/tests/unit/conversation-route-agent-identity-login.test.tsx
+    line: 54
+    note: FAILING? read this tag's rules before editing — an agent Identity is signed in although cloudUser is null
 proven: 2026-11-15 · FLOWPAD-2368
 statements:
   - text: '"Signed in" means a cloud principal exists — a person OR an Identity.'
@@ -62,5 +65,6 @@ source page's stream inbox (`StreamInboxView` with `sourceId`, `embedded`) must 
   Cloud account to view your stream inbox and conversations." Proven on the live VM
   (v0.2.266): setting `CloudUserTypeId` to the Identity removed the overlay; setting it back to
   null brought it back. The test fails with that exact overlay text when the gate reads `cloudUser`.
-- The same `!cloudUser` gate exists in `ui/src/components/conversation/ConversationRoute.tsx:325`
-  (opening a conversation on an agent box) — not fixed by FLOWPAD-2368.
+- The same `!cloudUser` gate sat in `ui/src/components/conversation/ConversationRoute.tsx` (opening a
+  conversation on an agent box). FLOWPAD-2383 moved it to `useCloudAuthed()`; with the gate back on
+  `cloudUser`, `conversation-route-agent-identity-login.test.tsx` fails on the overlay still showing.

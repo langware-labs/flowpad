@@ -7,7 +7,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Agent, Project, type AgentTokenAllocation } from '@sdk';
+import { Agent, Project, type AgentTokenAllocation, type DeploymentIdentity } from '@sdk';
 
 const SOURCE_ID = 'a8473a10-74e5-4ce1-9fda-2babd551a399';
 const SOURCE = `llm_endpoint-${SOURCE_ID}`;
@@ -131,7 +131,7 @@ describe('Token allocation model', () => {
 });
 
 describe('Configure', () => {
-  async function configure(deploymentId: string | null) {
+  async function configure(deploymentId: string | null, identity?: DeploymentIdentity) {
     h.models.mockReturnValue(offered('openai/gpt-5'));
     const post = vi.spyOn(project as unknown as { post: () => Promise<unknown> }, 'post').mockResolvedValue({});
     try {
@@ -142,6 +142,7 @@ describe('Configure', () => {
           environment="production"
           provider="e2b"
           deploymentId={deploymentId}
+          identity={identity}
           value={allocation('openai/gpt-5')}
           onChange={vi.fn()}
         />,
@@ -164,6 +165,11 @@ describe('Configure', () => {
     const [action, body] = await configure(null);
     expect(action).toBe('plan_deployment');
     expect(body).not.toHaveProperty('deployment_id');
+  });
+
+  it("an existing deployment's Configure keeps the row's own sign-in: the hub re-casts the row a plan names", async () => {
+    const [, body] = await configure('44444444-4444-4444-8444-444444444444', 'agent');
+    expect(body.identity).toBe('agent');
   });
 });
 
