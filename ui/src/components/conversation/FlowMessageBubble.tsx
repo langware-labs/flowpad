@@ -295,6 +295,8 @@ interface FlowMessageBubbleProps {
   callPeerName?: string | null;
   /** Same sender as the bubble above, moments later — drawn without avatar and name. */
   continuation?: boolean;
+  /** The feed's last message: its Reply / Forward stay under it (an earlier one shows them on hover). */
+  latest?: boolean;
 }
 
 export function FlowMessageBubble({
@@ -333,6 +335,7 @@ export function FlowMessageBubble({
   formAnswers = null,
   callPeerName = null,
   continuation = false,
+  latest = true,
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
@@ -993,6 +996,7 @@ export function FlowMessageBubble({
         onReply={onReply && fm && (channelTraits?.native ? !fm.is_draft : fm.origin) ? () => onReply(fm) : undefined}
         replyInThread={!channelTraits?.quotes}
         continuation={continuation}
+        latest={latest}
       />
       {fm.invite && (
         <div className="ms-10" data-testid="message-invite">

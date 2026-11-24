@@ -36,6 +36,12 @@ import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator
 import { SealedNoteLine, SealedValuesPanel } from './SealedValuesPanel';
 
 const HUB_ONLY_KINDS = new Set(['sealed_value', 'sealed_ack', 'sealed_pending', 'sealed_request']);
+/** A message the feed draws as a line (or not at all), never as a bubble. */
+const isLineKind = (kind: unknown) =>
+  kind === FlowMessageKind.SESSION_EVENT ||
+  kind === FlowMessageKind.TICKET_EVENT ||
+  kind === FlowMessageKind.SEALED_NOTE ||
+  HUB_ONLY_KINDS.has(String(kind));
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
@@ -782,6 +788,22 @@ export function ConversationView({
     return keys;
   }, [groupedItems, messagesById]);
 
+  // The feed's last message bubble keeps its Reply / Forward row; earlier ones show theirs on hover.
+  const latestBubbleKey = useMemo(() => {
+    for (let i = groupedItems.length - 1; i >= 0; i--) {
+      const item = groupedItems[i];
+      const row =
+        item.kind === ConversationItemKind.THREAD_GROUP
+          ? item.head
+          : item.kind === ConversationItemKind.SESSION_ANCHOR
+            ? item.anchor
+            : item;
+      if (row.kind !== ConversationItemKind.POINTER) continue;
+      if (!isLineKind(messagesById.get(row.messageId)?.kind)) return row.key;
+    }
+    return null;
+  }, [groupedItems, messagesById]);
+
   // Each live session's messages, in feed order: its card offers Retry on a failed prompt
   // (nothing answered it since) and names the prompt the host is working on.
   const messagesBySession = useMemo(() => {
@@ -937,6 +959,7 @@ export function ConversationView({
           formAnswers={formAnswersFor(id)}
           callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
           continuation={continuation}
+          latest={item.key === latestBubbleKey}
         />
       );
     }

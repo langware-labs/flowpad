@@ -110,6 +110,9 @@ interface MessageBubbleProps {
   replyInThread?: boolean;
   /** Same sender as the message just above, moments later: no avatar or name; time and actions on hover. */
   continuation?: boolean;
+  /** The conversation's last message keeps Reply / Forward under it; an earlier one (`false`) shows them at the
+   *  row's end on hover or when selected, and draws a line under itself. */
+  latest?: boolean;
 }
 
 /**
@@ -339,6 +342,7 @@ export function MessageBubble({
   onReply,
   replyInThread,
   continuation = false,
+  latest = true,
 }: MessageBubbleProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
@@ -416,6 +420,48 @@ export function MessageBubble({
     onSelect();
   };
 
+  const showActions = !editing && !extraItems;
+  const canLaunch = !messageSession && flowMessageId && onLaunchWorker;
+  const actionButtons =
+    showActions && (onReply || onForwardMessage || canLaunch) ? (
+      <>
+        {onReply && (
+          <button type="button" onClick={onReply} className={LABELED_ACTION_CLASS} data-testid="message-reply">
+            <Reply className="size-3.5" />
+            {replyInThread ? t`Reply in thread` : t`Reply`}
+          </button>
+        )}
+        {onForwardMessage && (
+          <button type="button" onClick={onForwardMessage} className={LABELED_ACTION_CLASS} data-testid="message-forward">
+            <Forward className="size-3.5 rtl:-scale-x-100" />
+            {t`Forward`}
+          </button>
+        )}
+        {canLaunch && (
+          <QuickWorkerButton
+            onLaunch={canLaunch}
+            labeled
+            className={LABELED_ACTION_CLASS}
+            testId={`message-quick-worker-${flowMessageId}`}
+          />
+        )}
+      </>
+    ) : null;
+  // An earlier message: the same buttons at the row's end, shown on hover, on focus, or once it is selected (a tap).
+  const belowActions = latest ? actionButtons : null;
+  const reveal = !latest && actionButtons && isSelected ? 'opacity-100' : 'opacity-0';
+  const hoverActions =
+    !latest && actionButtons ? (
+      <span
+        className={`flex items-center gap-1.5 self-center ${
+          continuation ? '' : `ms-auto transition-opacity focus-within:opacity-100 group-hover:opacity-100 ${reveal}`
+        }`}
+        data-testid="message-hover-actions"
+      >
+        {actionButtons}
+      </span>
+    ) : null;
+
   return (
     <div
       className={`group relative flex gap-2 rounded p-1 transition-colors ${continuation ? '-mt-3 pt-0' : ''} ${
@@ -437,10 +483,11 @@ export function MessageBubble({
         <div
           className={
             continuation
-              ? 'absolute end-1 top-0 z-10 flex items-baseline gap-2 rounded bg-background px-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100'
+              ? `absolute end-1 top-0 z-10 flex items-baseline gap-2 rounded bg-background px-1 transition-opacity focus-within:opacity-100 group-hover:opacity-100 ${reveal}`
               : 'flex items-baseline gap-2'
           }
         >
+          {continuation && hoverActions}
           {!editing && favoriteRef && (
             <span className="self-center" data-testid={`message-favorite-star-${flowMessageId}`}>
               <FavoriteStar {...favoriteRef} size={16} hoverSurface="none" className="p-0.5" />
@@ -506,6 +553,7 @@ export function MessageBubble({
               />
             </span>
           )}
+          {!continuation && hoverActions}
         </div>
         {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
         {flowMessage?.mark && <MessageMarkChip mark={flowMessage.mark} />}
@@ -528,26 +576,10 @@ export function MessageBubble({
           />
         )}
         {footer}
-        {!editing && !extraItems && (onReply || onForwardMessage || messageSession || (flowMessageId && onLaunchWorker)) && (
+        {showActions && (belowActions || messageSession) && (
           <div className="mt-1.5 flex items-center gap-1.5" data-testid="message-reply-forward">
-            {onReply && (
-              <button type="button" onClick={onReply} className={LABELED_ACTION_CLASS} data-testid="message-reply">
-                <Reply className="size-3.5" />
-                {replyInThread ? t`Reply in thread` : t`Reply`}
-              </button>
-            )}
-            {onForwardMessage && (
-              <button
-                type="button"
-                onClick={onForwardMessage}
-                className={LABELED_ACTION_CLASS}
-                data-testid="message-forward"
-              >
-                <Forward className="size-3.5 rtl:-scale-x-100" />
-                {t`Forward`}
-              </button>
-            )}
-            {messageSession ? (
+            {belowActions}
+            {messageSession && (
               // Once a session was started from this message, the button opens it, named by its short description.
               <OpenSessionButton
                 onOpen={messageSession.onOpen}
@@ -561,16 +593,6 @@ export function MessageBubble({
                 }
                 testIdPrefix={`message-${flowMessageId}`}
               />
-            ) : (
-              flowMessageId &&
-              onLaunchWorker && (
-                <QuickWorkerButton
-                  onLaunch={onLaunchWorker}
-                  labeled
-                  className={LABELED_ACTION_CLASS}
-                  testId={`message-quick-worker-${flowMessageId}`}
-                />
-              )
             )}
           </div>
         )}
@@ -612,6 +634,7 @@ export function MessageBubble({
         {/* An opened task stays in view: its chip (opens it), its status and its owner — both act here. */}
         {taskIt?.task && !editing && <TaskChips task={taskIt.task} onOpen={taskIt.onClick} people={taskIt.people} />}
         {reactions && reactions.length > 0 && <ReactionChips reactions={reactions} onToggle={onReact} />}
+        {!latest && <div className="mt-2 border-t border-border/60" data-testid="message-divider" />}
       </div>
       {onDeleteMessage && (
         <ConfirmDialog
