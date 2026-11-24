@@ -3,6 +3,7 @@ import pytest
 
 from flow_sdk import evals
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.dataset import Dataset
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.tag import Tag
@@ -147,6 +148,27 @@ async def test_the_decision_model_validates_rows_on_the_tree_to_be_and_one_tag_c
     done = await classification.apply(value, conversations=[], tree=[refund])
     assert done == {"applied": [], "failed": {}, "tree": {refund: "applied"}}
     assert {d["name"]: d["description"] for d in await message_tags.ontology()}[t["billing"]] == "about billing"   # not the other change
+
+
+@async_context
+async def test_a_review_message_needs_review_until_its_conversations_carry_a_tag(monkeypatch, tmp_path):
+    from flow_sdk.server.builtin_triggers import set_service_triggers
+
+    await set_service_triggers()   # the classifier automation: its conversation is where a proposal is posted
+    monkeypatch.setattr(classification, "_values", lambda: tmp_path / "values")
+    base, t = await tree("billing")
+    one, two = await FlowMessage(text="invoice").save(), await FlowMessage(text="charged twice").save()
+    value = StreamInboxClassification.model_validate({"conversations": [row(one, [], [t["billing"]]), row(two, [], [t["billing"]])]})
+    await classification.submit(value)
+    conv = await Conversation.get_one({"channel": "automations", "channel_source_id": f"trigger-{(await message_tags.classifier()).id}"})
+
+    async def review():
+        return await FlowMessage.get_by_id(conv.latest_message_ref().id)
+
+    await classification.apply(value, conversations=[f"c-{one.id}"])
+    assert (await review()).app.status == "needs_review"     # one conversation still waits
+    await classification.apply(value, conversations=[f"c-{two.id}"])
+    assert (await review()).app.status == "done"
 
 
 def test_the_review_app_is_a_nano_app_whose_header_says_what_the_run_proposes():

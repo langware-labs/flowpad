@@ -300,4 +300,39 @@ async def apply(value: StreamInboxClassification, *, conversations: Optional[lis
         truths.append(await _truth_row(message, row.proposed[0], "auto"))
     if truths:
         await GROUND_TRUTH.put_many(truths)
+    if applied:
+        await settle_reviews(applied)
     return {"applied": applied, "failed": failed, "tree": done}
+
+
+async def settle_reviews(applied: list[str]) -> None:
+    """A review message says ``needs_review`` until nothing in it waits. After ``applied`` (conversation ids)
+    got their tags, each waiting review that proposes one of them is looked at again: once every conversation
+    of its proposal carries a tag from the tree -- from it, from a later proposal, or by hand -- it is ``done``."""
+    from flow_sdk.app.automation_message import find_automation_conversation, set_app_status  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.stream_inbox.message_tags import classifier  # noqa: PLC0415
+
+    async def messages(ids: list[str]) -> list:
+        # hydrate=False: only ``app`` and ``tags`` are read, never a body.
+        return await FlowMessage.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])), hydrate=False) if ids else []
+
+    rule = await classifier()
+    conv = await find_automation_conversation(str(rule.id)) if rule is not None else None
+    if conv is None:
+        return
+    waiting = {}
+    for review in await messages([ref.id for ref in conv.message_refs()]):
+        if review.app is None or review.app.status != "needs_review":
+            continue
+        stored = review.attached_value(StreamInboxClassification.spec_kind) or {}
+        held = StreamInboxClassification.model_validate({k: v for k, v in stored.items() if k != "spec_kind"})
+        if any(row.conversation_id in applied for row in held.conversations):
+            waiting[str(review.id)] = held
+    tags = {str(m.id): m.tags for m in await messages(
+        list({row.message_id for held in waiting.values() for row in held.conversations}))}
+    for review_id, held in waiting.items():
+        # A message that is gone waits for nothing.
+        if all(row.message_id not in tags or tags_under(tags[row.message_id], held.root) for row in held.conversations):
+            await set_app_status(review_id, "done")

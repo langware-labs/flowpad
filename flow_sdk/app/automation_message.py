@@ -83,14 +83,28 @@ async def post_message(
 
 async def automation_conversation(automation: AutomationRef, someone: str) -> Conversation:
     """The automation's own conversation on the Automations channel -- found by its trigger, or written."""
-    key = f"trigger-{automation.trigger_id}"
-    found = await Conversation.get_one({"channel": AUTOMATIONS.name, "channel_source_id": key})
+    found = await find_automation_conversation(automation.trigger_id)
     if found is not None:
         return found
     conv = Conversation(title=automation.name or "Automation")
     conv.channel = AUTOMATIONS.name
-    conv.channel_source_id = key
+    conv.channel_source_id = f"trigger-{automation.trigger_id}"
     return await conv.save(someone)
+
+
+async def find_automation_conversation(trigger_id: str) -> Optional[Conversation]:
+    """The automation's conversation when it has one; a lookup, nothing is written."""
+    return await Conversation.get_one({"channel": AUTOMATIONS.name, "channel_source_id": f"trigger-{trigger_id}"})
+
+
+async def set_app_status(message_id: str, status: AutomationResultStatus) -> None:
+    """Where an app message's work stands now (its chip). Read fresh and saved: the row's update is its notice."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    message = await FlowMessage.get_by_id(message_id)
+    if message is not None and message.app is not None and message.app.status != status:
+        message.app = message.app.model_copy(update={"status": status})
+        await message.save()
 
 
 async def post_automation_result(automation: AutomationRef, result: AutomationResult, value: Any = None, *,

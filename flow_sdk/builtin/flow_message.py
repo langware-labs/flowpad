@@ -1355,9 +1355,16 @@ class FlowMessage(Entity):
     def card(self) -> Optional[dict]:
         """The value this message is drawn by -- its ``card.value.json`` as ``{spec_kind, ...}`` -- or None
         (it carries none, or its bytes are not on this machine)."""
+        return self._value_file(CARD_FILE)
+
+    def attached_value(self, kind: str) -> Optional[dict]:
+        """The value of ``kind`` this message carries (its ``<kind>.value.json``), or None."""
+        return self._value_file(f"{kind}.value.json")
+
+    def _value_file(self, name: str) -> Optional[dict]:
         from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
 
-        path = _local_file(get_entity_embedded_storage(self.typeid), f"{FILE_VFS_PREFIX}{CARD_FILE}")
+        path = _local_file(get_entity_embedded_storage(self.typeid), f"{FILE_VFS_PREFIX}{name}")
         return json.loads(Path(path).read_text(encoding="utf-8")) if path else None
 
     def file_names(self) -> list[str]:
