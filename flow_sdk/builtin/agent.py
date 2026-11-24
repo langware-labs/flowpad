@@ -463,6 +463,11 @@ class Agent(Entity):
         """
         from flow_sdk.builtin.mcp import Mcp  # noqa: PLC0415
 
+        # A shipped agent's folder is product source (a checkout, or site-packages):
+        # a launch never writes there. Its servers ship nested in the folder already.
+        if self.shipped:
+            return 0
+
         changed = 0
         for declared in self.mcp_servers or []:
             # Coerced here, not trusted: the field validates on CONSTRUCTION
