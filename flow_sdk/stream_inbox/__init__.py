@@ -219,6 +219,41 @@ def project_unread(
     return UnreadProjection(total=total, by_conversation=flags, counts=counts)
 
 
+def unclassified_ids(*, conversations, fm_by_id: dict, root: str, pending_conv_ids=(), stream_inbox_owner=None) -> list[str]:
+    """The conversations that wait for a tag, newest first -- pure, over the rows :func:`project_unread` reads.
+    One rule: a conversation of the stream inbox (not archived, not a pending invitation, not an automation's
+    own) whose newest message carries no tag from the tree under ``root``."""
+    from flow_sdk.builtin.conversation_channel import AUTOMATIONS  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.stream_inbox_classification_spec import tags_under  # noqa: PLC0415
+
+    waiting = []
+    for conv in conversations:
+        if conv.channel == AUTOMATIONS.name or conv.id in pending_conv_ids or conv.is_archived():
+            continue
+        if not in_stream_inbox_of(conv, stream_inbox_owner):
+            continue
+        ref = conv.latest_message_ref()
+        message = fm_by_id.get(ref.id) if ref is not None else None
+        if message is None or tags_under(message.tags or [], root):
+            continue
+        waiting.append((ref.landed_at.timestamp() if ref.landed_at else 0.0, conv.id))
+    return [conv_id for _, conv_id in sorted(waiting, reverse=True)]
+
+
+def _waiting_for_a_tag(rows: dict) -> list[str]:
+    """:func:`unclassified_ids` over the rows ``_load_rows`` read, with this instance's classification root."""
+    from flow_sdk.stream_inbox.message_tags import settings  # noqa: PLC0415
+
+    pending = [inv for inv in rows["invitations"] if invitation_is_pending(inv, rows["viewer_email"], rows["now"])]
+    return unclassified_ids(conversations=rows["conversations"], fm_by_id=rows["fm_by_id"], root=settings().root,
+                            pending_conv_ids=pending_conversation_ids(pending), stream_inbox_owner=rows["stream_inbox_owner"])
+
+
+async def unclassified() -> list[str]:
+    """The conversations waiting for a tag now, newest first."""
+    return _waiting_for_a_tag((await _load_rows())[1])
+
+
 def count_unread(**rows) -> int:
     """The badge count alone — :func:`project_unread` for callers that need only the number."""
     return project_unread(**rows).total
@@ -403,7 +438,8 @@ def _stamped(conv) -> tuple[bool, int, bool]:
 
 async def recompute_unread(reason: str, owner: "TypeId | None" = None) -> "StreamInboxManager":
     """Recompute unread (and the stored ``archived``) from canonical rows and publish what changed: each
-    conversation whose ``is_unread``, ``unread_count`` or ``archived`` moved, and ``StreamInboxManager.unread`` iff the count moved.
+    conversation whose ``is_unread``, ``unread_count`` or ``archived`` moved, and ``StreamInboxManager.unread`` /
+    ``.unclassified`` iff a count moved.
     Cheap when nothing changed — no save, no broadcast. Mutation call sites should use
     :func:`touch` instead — this awaited form is for callers that need the fresh value."""
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
@@ -432,9 +468,11 @@ async def recompute_unread(reason: str, owner: "TypeId | None" = None) -> "Strea
             fresh._set_projection("unread_count", count, PROJECTION_SENTINEL)
             fresh._set_projection("archived", archived, PROJECTION_SENTINEL)
             await fresh.save(None, notify=True)
-        if manager.unread != projection.total:
-            logger.info("[stream-inbox] unread %d -> %d (%s)", manager.unread, projection.total, reason)
-            manager.unread = projection.total
+        waiting = len(_waiting_for_a_tag(rows))
+        if (manager.unread, manager.unclassified) != (projection.total, waiting):
+            logger.info("[stream-inbox] unread %d -> %d, unclassified %d -> %d (%s)",
+                        manager.unread, projection.total, manager.unclassified, waiting, reason)
+            manager.unread, manager.unclassified = projection.total, waiting
             await manager.save(owner, notify=True)
         return manager
 

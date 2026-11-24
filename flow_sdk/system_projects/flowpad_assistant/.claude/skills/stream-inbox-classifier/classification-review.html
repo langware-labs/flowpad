@@ -42,7 +42,6 @@
   .btn:hover:not(:disabled), .why:hover { background: hsl(var(--accent)); }
   .btn.lg { height: 32px; padding: 0 12px; font-size: 12px; }
   .btn.primary { border-color: transparent; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
-  .btn.on { background: hsl(var(--accent)); }
   .why { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px; border: 0; border-radius: 6px; font-size: 11px; color: hsl(var(--muted-foreground)); }
   .why.on { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
   .trace td { background: hsl(var(--muted) / .2); padding: 16px; }
@@ -52,7 +51,15 @@
   .bar { display: flex; align-items: center; gap: 8px; }
   .bar.selection { padding: 4px 8px; }
   .grow { flex: 1; }
-  .tree { align-self: flex-end; width: 24rem; max-width: 100%; padding: 12px; }
+  .tree { padding: 12px; }
+  html[data-slot="block"] .tree { max-height: 420px; overflow: auto; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid hsl(var(--border)); }
+  .tab { height: 32px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; font-size: 12px; font-weight: 500; color: hsl(var(--muted-foreground)); }
+  .tab.on { color: hsl(var(--foreground)); border-bottom-color: hsl(var(--primary)); }
+  /* An issue is a tinted row with a red edge; its text stays the foreground colour. */
+  tr.issue td { background: hsl(var(--destructive) / .1); }
+  tr.issue td:first-child { box-shadow: inset 2px 0 0 hsl(var(--destructive)); }
+  .state.issue { color: hsl(var(--foreground)); }
   .tree .node { display: flex; align-items: center; gap: 6px; padding: 4px 8px; }
   .tree .note { margin-inline-start: 30px; padding-bottom: 4px; font-size: 11px; color: hsl(var(--muted-foreground)); }
   .tree .gone { text-decoration: line-through; color: hsl(var(--muted-foreground)); }
@@ -63,7 +70,7 @@
 </style>
 </head>
 <body>
-<template data-slot="header">{{conversations}} conversations · {{changing}} would change · {{tag_changes}} tag changes</template>
+<template data-slot="header">{{summary}}</template>
 <template data-slot="block"><div class="app" data-testid="classification-review"></div></template>
 <main data-slot="page"><div class="app" data-testid="classification-review"></div></main>
 <script type="module">
@@ -75,24 +82,32 @@
   const TAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>';
   const OFF = TAG.replace('</svg>', '<path d="M3 3l18 18"/></svg>');   // the crossed tag: no tag
   const WHY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M7 16h8"/><path d="M7 11h12"/><path d="M7 6h3"/></svg>';
-  const MARK = { added: '+', updated: '~', moved: '→', removed: '−' };
   const TINT = { added: 'hsl(142 70% 45%)', updated: 'hsl(var(--primary))', moved: 'hsl(38 92% 50%)', removed: 'hsl(var(--destructive))' };
+  const changes = value?.tree_changes ?? [];
   /** The tag tree's changes per kind: [[op, count]]; and the tags the proposal adds. */
-  const counts = Object.keys(MARK).map((op) => [op, (value?.tree_changes ?? []).filter((c) => c.op === op).length]);
-  const added = new Set((value?.tree_changes ?? []).filter((c) => c.op === 'added').map((c) => c.tag));
+  const counts = Object.keys(TINT).map((op) => [op, changes.filter((c) => c.op === op).length]);
+  const added = new Set(changes.filter((c) => c.op === 'added').map((c) => c.tag));
   const esc = (text) => String(text ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   const leaf = (name) => name.split('.').at(-1);
+  const above = (name) => name.split('.').slice(0, -1).join('.');
   const same = (a, b) => a.length === b.length && a.every((tag) => b.includes(tag));
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  /** What a row does, read off its two tag lists (the schema's `action_of`). */
+  const actionOf = (before, proposed) => (same(before, proposed) ? 'keep' : !before.length ? 'apply' : !proposed.length ? 'remove' : 'change');
 
-  // What the page knows beyond the proposal: each message's tags as they are NOW (live), and the tag colours.
-  const state = { tags: new Map(), colors: new Map(), names: [], ticked: new Set(), rejected: new Set(), opened: null, tree: false, treeDone: false, busy: false, error: '' };
+  // What the page knows beyond the proposal: each message's tags as they are NOW (live), the tag tree (names,
+  // meanings, colours), and what the person decided here: rejected rows and rejected tag changes.
+  const state = { tags: new Map(), colors: new Map(), meanings: new Map(), names: [], loaded: false, ticked: new Set(), rejected: new Set(),
+    rejectedTags: new Set(), approved: new Set(), tab: null, opened: null, busy: false, error: '' };
 
   let queued = false;   // a redraw is already on its way (`schedule`)
+  let kept = new Set();   // the tags a rejected tag's rows may fall back to: in the tree, or still added (per draw)
+  let now = { value, swapped: new Set() };   // the proposal as the Tag changes tab leaves it (`effective`), per draw
 
   if (!value) {
     root.innerHTML = '<p class="err" role="alert">This page opens on a classification proposal; none was given.</p>';
   } else {
-    for (const change of value.tree_changes) if (change.color) state.colors.set(change.tag, change.color);
+    for (const change of changes) if (change.color) state.colors.set(change.tag, change.color);
     root.addEventListener('click', onClick);
     root.addEventListener('change', onClick);
     draw();
@@ -102,7 +117,10 @@
         (message) => { state.tags.set(row.conversation_id, message ? (message.tags ?? []) : null); schedule(); }, true);
     void sdk.dataManager.watchQuery(new sdk.QueryRequest({ type: 'tag', scope: [], name: 'classification-review:tags',
       callback: (tags) => {
-        state.names = tags.filter((tag) => !tag.deprecated).map((tag) => tag.name ?? '');
+        const live = tags.filter((tag) => !tag.deprecated);
+        state.names = live.map((tag) => tag.name ?? '');
+        state.meanings = new Map(live.map((tag) => [tag.name, tag.description ?? '']));
+        state.loaded = true;
         for (const tag of tags) if (tag.color) state.colors.set(tag.name, tag.color);
         schedule();
       } }));
@@ -115,14 +133,48 @@
     queueMicrotask(() => { queued = false; draw(); });
   }
 
+  // ── Tag changes: what the tree already holds, what was rejected, and the proposal that leaves ──
+
+  /** The tag tree already is as this change leaves it: approved here (an apply said so), or made elsewhere. */
+  function settled(c) {
+    if (state.approved.has(c.tag)) return true;
+    const has = (name) => state.names.includes(name);
+    return c.op === 'added' ? has(c.tag) : c.op === 'updated' ? state.meanings.get(c.tag) === c.meaning
+      : c.op === 'moved' ? has(c.tag) && !has(c.was) : state.loaded && !has(c.tag);
+  }
+  function refused(c) { return state.rejectedTags.has(c.tag); }
+  /** The tag changes still to decide. */
+  function pending() { return changes.filter((c) => !settled(c) && !refused(c)); }
+  /** Where a conversation goes when its new tag is rejected: the nearest tag above it that exists; '' = none. */
+  function fallback(tag) {
+    return sdk.tagAncestors(tag).reverse().find((up) => up !== value.root && sdk.tagIsWithin(up, value.root) && kept.has(up)) ?? '';
+  }
+  /** The proposal as the decisions on the Tag changes tab leave it: a rejected change is gone, and the rows on
+   *  its tag carry the tag they fall back to. This is what the Conversations tab shows and what is applied. */
+  function effective() {
+    if (!state.rejectedTags.size) return { value, swapped: new Set() };
+    const out = changes.filter((c) => refused(c) && (c.op === 'added' || c.op === 'moved'));
+    const under = (tag) => out.find((c) => sdk.tagIsWithin(tag, c.tag));
+    const swap = (tag) => { const c = under(tag); return !c ? tag : c.op === 'added' ? fallback(c.tag) : c.was + tag.slice(c.tag.length); };
+    const swapped = new Set();
+    const conversations = value.conversations.map((row) => {
+      const proposed = [...new Set(row.proposed.map(swap).filter(Boolean))];
+      if (same(proposed, row.proposed)) return row;
+      swapped.add(row.conversation_id);
+      return { ...row, proposed, action: actionOf(row.before, proposed), validation: null };
+    });
+    const tree_changes = changes.filter((c) => !refused(c) && !(under(c.tag)?.op === 'added'));
+    return { value: { ...value, conversations, tree_changes }, swapped };
+  }
+
   /** The tags of this tree the message carries now; null while the message is not known. */
   function current(row) {
     const tags = state.tags.get(row.conversation_id);
     return tags && tags.filter((tag) => tag !== value.root && sdk.tagIsWithin(tag, value.root));
   }
-  function applied(row) { const now = current(row); return !!now && same(now, row.proposed); }
-  /** The rows still to decide: not rejected, and not carrying their proposal yet. */
-  function open() { return value.conversations.filter((row) => !state.rejected.has(row.conversation_id) && !applied(row)); }
+  function applied(row) { const has = current(row); return !!has && row.proposed.length > 0 && same(has, row.proposed); }
+  /** The rows still to decide: with a proposed tag, not rejected, and not carrying it yet. */
+  function open() { return now.value.conversations.filter((row) => row.proposed.length && !state.rejected.has(row.conversation_id) && !applied(row)); }
   function allTicked(left) { return left.length > 0 && left.every((row) => state.ticked.has(row.conversation_id)); }
 
   function chip(name) {
@@ -132,99 +184,153 @@
   }
   function chips(tags) { return tags.length ? tags.map(chip).join(' ') : `<span class="chip none" title="No tags">${OFF}</span>`; }
 
-  function rowHtml(row) {
-    const id = esc(row.conversation_id), now = current(row) ?? [], done = applied(row), no = state.rejected.has(row.conversation_id);
-    const fresh = row.proposed.some((tag) => added.has(tag));
-    const word = done ? (row.action === 'keep' ? '' : '<span class="state">✓ applied</span>')
-      : no ? '<span class="state off">rejected</span>' : `<span class="state">${fresh ? 'new tag' : 'changed'}</span>`;
-    const proposed = row.proposed.length ? row.proposed.map(chip).join(' ') : `<span class="small muted" style="display:inline-flex;align-items:center;gap:4px">${OFF}no tag fits</span>`;
-    const asked = row.asked ? `<dt>Asked for</dt><dd><span class="chip none">${TAG}${esc(leaf(row.asked.tag))}</span> <span class="small muted">“${esc(row.asked.meaning)}”</span></dd>
-      <dt>Main agent</dt><dd>${row.asked.answer === 'approved' ? 'Approved as a new tag.' : `Use ${chip(row.asked.use ?? '')} instead.`}</dd>` : '';
-    return `<tr data-row="${id}" class="${state.ticked.has(row.conversation_id) ? 'ticked' : ''}" data-testid="classify-row-${id}">
-      <td style="width:28px">${done || no ? '' : `<input type="checkbox" data-act="tick" aria-label="Select conversation" ${state.ticked.has(row.conversation_id) ? 'checked' : ''}>`}</td>
-      <td class="title">${esc(row.title)}</td>
-      <td data-testid="classify-row-current">${chips(now)}</td>
-      <td><div class="proposed ${no ? 'rejected' : ''}" data-testid="classify-row-new"><span class="chips">${proposed}</span>${word}
-        ${done || no ? '' : `<button class="btn" data-act="apply" data-testid="classify-row-apply" title="Make this the conversation's tag. No automation runs." ${state.busy ? 'disabled' : ''}>Apply</button>`}
-        ${done ? '' : `<button class="btn" data-act="reject" data-testid="classify-row-reject">${no ? 'Undo' : 'Reject'}</button>`}</div></td>
-      <td style="width:64px;text-align:end"><button class="why ${state.opened === row.conversation_id ? 'on' : ''}" data-act="why" data-testid="classify-row-why" title="How it was decided">${WHY} Why</button></td>
-    </tr>${state.opened === row.conversation_id ? `<tr class="trace"><td colspan="5"><dl data-testid="classify-row-trace"><dt>Agent</dt><dd>${esc(row.reason)}</dd>${asked}</dl></td></tr>` : ''}`;
+  /** Why's lines for a row on a tag this run adds: the refactor that defined it, and the decision model's check. */
+  function refactorTrace(row) {
+    const c = changes.find((change) => change.op === 'added' && row.proposed.includes(change.tag));
+    const parent = c && above(c.tag) !== value.root ? ` under ${chip(above(c.tag))}` : '';
+    const made = !c ? '' : `<dt>Ontology refactor</dt><dd>New tag ${chip(c.tag)}${parent} — “${esc(c.meaning)}”.<div class="small muted" style="margin-top:4px">${esc(c.reason)}</div></dd>`;
+    const v = row.validation;
+    const checked = !v ? '' : `<dt>Validation</dt><dd>${v.ok
+      ? `<span class="state">✓ detected</span> The decision model read this conversation again with the new tree and picked ${row.proposed.map(chip).join(' ')}.`
+      : `<span class="state issue">⚠ not detected</span> The decision model read this conversation again with the new tree and picked ${v.detected ? chip(v.detected) : 'no tag'}.`}</dd>`;
+    return made + checked;
   }
 
+  function rowHtml(row) {
+    const id = esc(row.conversation_id), has = current(row) ?? [], done = applied(row), no = state.rejected.has(row.conversation_id);
+    const fresh = row.proposed.some((tag) => added.has(tag)), none = !row.proposed.length, orphan = none && now.swapped.has(row.conversation_id);
+    const issue = !done && !no && (orphan || row.validation?.ok === false);
+    const word = none ? (orphan ? '<span class="state issue">⚠ its tag was rejected</span>' : '')
+      : done ? (row.action === 'keep' ? '' : '<span class="state">✓ applied</span>')
+      : no ? '<span class="state off">rejected</span>'
+      : row.validation?.ok === false ? '<span class="state issue" title="The decision model did not pick this tag for the conversation">⚠ not detected</span>'
+      : `<span class="state">${fresh ? 'new tag' : 'changed'}</span>`;
+    const proposed = none ? `<span class="small muted" style="display:inline-flex;align-items:center;gap:4px">${OFF}no tag</span>` : row.proposed.map(chip).join(' ');
+    const asked = row.asked ? `<dt>Asked for</dt><dd><span class="chip none">${TAG}${esc(leaf(row.asked.tag))}</span> <span class="small muted">“${esc(row.asked.meaning)}”</span></dd>
+      <dt>Main agent</dt><dd>${row.asked.answer === 'approved' ? 'Approved as a new tag.' : `Use ${chip(row.asked.use ?? '')} instead.`}</dd>` : '';
+    const ticked = state.ticked.has(row.conversation_id), actionable = !done && !no && !none;
+    return `<tr data-row="${id}" class="${ticked ? 'ticked' : ''} ${issue ? 'issue' : ''}" data-testid="classify-row-${id}">
+      <td style="width:28px">${actionable ? `<input type="checkbox" data-act="tick" aria-label="Select conversation" ${ticked ? 'checked' : ''}>` : ''}</td>
+      <td class="title">${esc(row.title)}</td>
+      <td data-testid="classify-row-current">${chips(has)}</td>
+      <td><div class="proposed ${no ? 'rejected' : ''}" data-testid="classify-row-new"><span class="chips">${proposed}</span>${word}
+        ${actionable ? `<button class="btn" data-act="apply" data-testid="classify-row-apply" title="Make this the conversation's tag. No automation runs." ${state.busy ? 'disabled' : ''}>Apply</button>` : ''}
+        ${done || none ? '' : `<button class="btn" data-act="reject" data-testid="classify-row-reject">${no ? 'Undo' : 'Reject'}</button>`}</div></td>
+      <td style="width:64px;text-align:end"><button class="why ${state.opened === row.conversation_id ? 'on' : ''}" data-act="why" data-testid="classify-row-why" title="How it was decided">${WHY} Why</button></td>
+    </tr>${state.opened === row.conversation_id ? `<tr class="trace"><td colspan="5"><dl data-testid="classify-row-trace"><dt>Agent</dt><dd>${esc(row.reason)}</dd>${asked}${refactorTrace(row)}</dl></td></tr>` : ''}`;
+  }
+
+  /** The Tag changes tab: the tag tree with every change in its place, each approved or rejected on its own. */
   function treeHtml() {
-    const moved = new Set(value.tree_changes.filter((c) => c.op === 'moved').map((c) => c.was));
-    const names = [...new Set([...state.names.filter((name) => !moved.has(name)), ...value.tree_changes.map((c) => c.tag)])].filter((name) => name !== value.root && sdk.tagIsWithin(name, value.root));
-    const kids = sdk.tagTree(names), by = new Map(value.tree_changes.map((c) => [c.tag, c])), out = [];
+    const moved = new Set(changes.filter((c) => c.op === 'moved').map((c) => c.was));
+    const names = [...new Set([...state.names.filter((name) => !moved.has(name)), ...changes.map((c) => c.tag)])].filter((name) => name !== value.root && sdk.tagIsWithin(name, value.root));
+    const kids = sdk.tagTree(names), by = new Map(changes.map((c) => [c.tag, c])), out = [];
     const walk = (parent, depth) => { for (const name of kids[parent] ?? []) { out.push([name, depth]); walk(name, depth + 1); } };
     walk(value.root, 1);
-    const node = ([name, depth]) => {
-      const c = by.get(name), color = state.colors.get(name);
-      const note = !c ? '' : `<div class="note">${c.op === 'updated' ? `<div class="gone">${esc(c.was)}</div>` : ''}${c.op === 'added' || c.op === 'updated' ? `<div style="color:hsl(var(--foreground))">${esc(c.meaning)}</div>` : ''}
-        ${c.op === 'moved' ? `was ${esc(c.was)}` : ''}${c.op === 'removed' && c.merged_into ? `its conversations go to ${esc(leaf(c.merged_into))}` : ''}<div>${esc(c.reason)}</div></div>`;
-      return `<div style="margin-inline-start:${depth * 16}px" data-testid="classify-tree-row-${esc(name)}"><div class="node"><span style="color:${esc(color ?? 'inherit')};display:inline-flex">${TAG}</span>
-        <span class="${c?.op === 'removed' ? 'gone' : ''}">${esc(leaf(name))}</span>${c ? `<span class="tiny" style="font-weight:500;color:${TINT[c.op]}">${c.op}</span>` : ''}</div>${note}</div>`;
+    const titles = (rows) => rows.slice(0, 3).map((row) => esc(row.title)).join('; ') + (rows.length > 3 ? ` and ${rows.length - 3} more` : '');
+    const addedNote = (c, no) => {
+      const catches = value.conversations.filter((row) => row.proposed.includes(c.tag));
+      if (no) {
+        const to = fallback(c.tag);
+        return !catches.length ? '' : `<div style="color:hsl(var(--foreground))">${titles(catches)}</div>
+          <div>${to ? `${catches.length === 1 ? 'gets' : 'get'} ${chip(to)} instead — the nearest tag above it` : `${catches.length === 1 ? 'is' : 'are'} left without a tag, and ${catches.length === 1 ? 'stays' : 'stay'} waiting`}</div>`;
+      }
+      const checked = catches.filter((row) => row.validation), ok = checked.filter((row) => row.validation.ok).length;
+      return `<div style="color:hsl(var(--foreground))">${esc(c.meaning)}</div><div>${esc(c.reason)}</div>
+        ${catches.length ? `<div>Catches ${plural(catches.length, 'conversation', 'conversations')}: ${titles(catches)}</div>` : ''}
+        ${checked.length ? `<div><span class="state ${ok === checked.length ? '' : 'issue'}">${ok === checked.length ? '✓' : '⚠'} detected</span> by the decision model in ${ok} of ${checked.length}</div>` : ''}`;
     };
-    return `<div class="box tree" data-testid="classify-tree-panel"><div class="bar"><b>Tag tree</b><span class="grow"></span><span class="tiny muted">${counts.map(([op, n]) => `${n} ${op}`).join(' · ')}</span>
-      <button class="why" data-act="tree" data-testid="classify-tree-close" aria-label="Close the tag tree">✕</button></div>
-      <div class="node muted"><span style="display:inline-flex">${TAG}</span><i>${esc(value.root)}</i></div>${out.map(node).join('')}
-      <div class="bar" style="justify-content:flex-end;margin-top:8px;padding-top:8px;border-top:1px solid hsl(var(--border))">
-      ${state.treeDone ? '<span class="state">✓ applied</span>' : `<button class="btn lg" data-act="apply-tree" data-testid="classify-tree-apply" ${state.busy ? 'disabled' : ''}>Apply tag changes</button>`}</div></div>`;
+    const node = ([name, depth]) => {
+      const c = by.get(name), color = state.colors.get(name), no = !!c && refused(c), done = !!c && !no && settled(c);
+      const note = !c ? '' : `<div class="note">${c.op === 'added' ? addedNote(c, no) : `${c.op === 'updated' ? `<div class="gone">${esc(c.was)}</div><div style="color:hsl(var(--foreground))">${esc(c.meaning)}</div>` : ''}
+        ${c.op === 'moved' ? `was ${esc(c.was)}` : ''}${c.op === 'removed' && c.merged_into ? `its conversations go to ${esc(leaf(c.merged_into))}` : ''}<div>${esc(c.reason)}</div>`}</div>`;
+      const mark = !c ? '' : no ? '<span class="tiny muted" style="font-weight:500">rejected</span>' : `<span class="tiny" style="font-weight:500;color:${TINT[c.op]}">${c.op}</span>`;
+      const act = !c ? '' : `<span class="grow"></span>${done ? '<span class="state">✓ approved</span>'
+        : no ? '<button class="btn" data-act="undo-tag" data-testid="classify-tag-undo">Undo</button>'
+        : `<button class="btn" data-act="approve-tag" data-testid="classify-tag-approve" title="Write this change to the tag tree now" ${state.busy ? 'disabled' : ''}>Approve</button><button class="btn" data-act="reject-tag" data-testid="classify-tag-reject">Reject</button>`}`;
+      return `<div style="margin-inline-start:${depth * 16}px" data-tag="${esc(name)}" data-testid="classify-tree-row-${esc(name)}"><div class="node"><span style="color:${esc(color ?? 'inherit')};display:inline-flex">${TAG}</span>
+        <span class="${c?.op === 'removed' || (no && c.op === 'added') ? 'gone' : ''}">${esc(leaf(name))}</span>${mark}${act}</div>${note}</div>`;
+    };
+    return `<div class="box tree" data-testid="classify-tree-panel"><div class="bar"><b>Tag tree</b><span class="grow"></span><span class="tiny muted">${counts.map(([op, n]) => `${n} ${op}`).join(' · ')}</span></div>
+      <div class="node muted"><span style="display:inline-flex">${TAG}</span><i>${esc(value.root)}</i></div>${out.map(node).join('')}</div>`;
   }
 
   function draw() {
     if (!value) return;
-    const rows = value.conversations, left = open();
+    kept = new Set([...state.names, ...changes.filter((c) => c.op === 'added' && !refused(c)).map((c) => c.tag)]);
+    now = effective();
+    const rows = now.value.conversations, left = open(), todo = pending();
+    const tab = !changes.length ? 'convs' : state.tab ?? (todo.length ? 'tags' : 'convs');
     const changing = rows.filter((row) => row.action !== 'keep').length, done = rows.filter(applied).length;
-    const marks = counts.filter(([, n]) => n)
-      .map(([op, n]) => `<span class="tiny" style="font-weight:500;color:${TINT[op]}" title="${op}">${MARK[op]}${n}</span>`).join(' ');
-    root.innerHTML = `<div><h1>Classify ${rows.length} conversations</h1>
+    const tabButton = (key, name, n) => `<button class="tab ${tab === key ? 'on' : ''}" role="tab" aria-selected="${tab === key}" data-act="tab" data-tab="${key}" data-testid="classify-tab-${key}">${name} <span class="tiny muted">${n}</span></button>`;
+    const page = app.slot === 'block' ? '<button class="btn lg" data-act="page" data-testid="classify-open-page">Open full page</button>' : '';
+    const error = state.error ? `<p class="err" role="alert" data-testid="classify-error">${esc(state.error)}</p>` : '';
+    const head = `<div><h1>Classify ${rows.length} conversations</h1>
       <p class="muted" style="margin:6px 0 0">A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth.</p></div>
+      ${changes.length ? `<div class="tabs" role="tablist" data-testid="classify-tabs">${tabButton('tags', 'Tag changes', changes.length)}${tabButton('convs', 'Conversations', rows.length)}</div>` : ''}`;
+    if (tab === 'tags') {
+      const no = changes.filter(refused).length, yes = changes.filter((c) => !refused(c) && settled(c)).length;
+      const orphans = rows.filter((row) => now.swapped.has(row.conversation_id) && !row.proposed.length).length, moved = now.swapped.size - orphans;
+      const said = [plural(changes.length, 'tag change', 'tag changes'), ...(yes ? [`${yes} approved`] : []), ...(no ? [`${no} rejected`] : []),
+        ...(!yes && !no ? ['none approved yet'] : []),
+        ...(moved ? [`${plural(moved, 'conversation gets', 'conversations get')} another tag`] : []),
+        ...(orphans ? [`${plural(orphans, 'conversation is', 'conversations are')} left without a tag`] : [])].join(' · ');
+      root.innerHTML = `${head}${treeHtml()}${error}
+        <div class="bar"><span class="small muted" data-testid="classify-tree-summary">${said}</span><span class="grow"></span>
+        ${todo.length ? `<button class="btn lg primary" data-act="approve-all" data-testid="classify-tree-apply" title="Write these changes to the tag tree now, then review the conversations" ${state.busy ? 'disabled' : ''}>${yes || no ? `Approve the other ${todo.length}` : 'Approve all'}</button>` : ''}${page}</div>`;
+      return;
+    }
+    root.innerHTML = `${head}
       ${state.ticked.size ? `<div class="box bar selection" data-testid="classify-selection-bar"><span class="small muted">${state.ticked.size} selected</span>
         <button class="btn" data-act="apply-ticked" data-testid="classify-selection-apply" ${state.busy ? 'disabled' : ''}>Apply</button><span class="grow"></span>
         <button class="why" data-act="clear" title="Clear selection" aria-label="Clear selection">✕</button></div>` : ''}
       <div class="box rows"><table data-testid="classify-table"><thead><tr>
         <th style="width:28px"><input type="checkbox" data-act="tick-all" aria-label="Select all" ${allTicked(left) ? 'checked' : ''}></th>
         <th>Conversation</th><th>Current</th><th>Proposed</th><th></th></tr></thead><tbody>${rows.map(rowHtml).join('')}</tbody></table></div>
-      ${state.error ? `<p class="err" role="alert" data-testid="classify-error">${esc(state.error)}</p>` : ''}
+      ${error}
       <div class="bar"><span class="small muted" data-testid="classify-summary">${rows.length} classified · ${changing} would change · ${done} applied</span><span class="grow"></span>
-        ${value.tree_changes.length ? `<button class="btn lg ${state.tree ? 'on' : ''}" data-act="tree" data-testid="classify-tree-changes">Tag changes ${marks}</button>` : ''}
-        ${left.length ? `<button class="btn lg primary" data-act="apply-all" data-testid="classify-apply-all" title="Apply every row you did not reject, with the tag changes they need" ${state.busy ? 'disabled' : ''}>Apply all</button>` : ''}
-        ${app.slot === 'block' ? '<button class="btn lg" data-act="page" data-testid="classify-open-page">Open full page</button>' : ''}</div>
-      ${state.tree ? treeHtml() : ''}`;
+        ${left.length ? `<button class="btn lg primary" data-act="apply-all" data-testid="classify-apply-all" title="Apply every row you did not reject, with the tag changes they need" ${state.busy ? 'disabled' : ''}>Apply all</button>` : ''}${page}</div>`;
   }
 
-  /** Make rows (ids; none = no row) and, with `tree`, the tag tree changes real. The messages' own updates redraw. */
+  /** Make rows (ids; none = no row) and the tag changes `tree` names (true = all that were not rejected) real,
+   *  from the proposal as the Tag changes tab leaves it. The messages' and the tags' own updates redraw. */
   async function apply(conversations, tree) {
     state.busy = true; state.error = ''; draw();
+    let ok = false;
     try {
-      const done = await sdk.FlowMessage.applyStreamInboxClassification(value, { conversations, tree });
+      const done = await sdk.FlowMessage.applyStreamInboxClassification(now.value, { conversations, tree });
+      for (const tag of Object.keys(done.tree ?? {})) state.approved.add(tag);
       const failed = Object.values(done.failed ?? {});
       if (failed.length) state.error = failed[0];
-      if (tree) state.treeDone = true;
       state.ticked.clear();
+      ok = !failed.length;
     } catch (error) {
       state.error = sdk.errorText(error);
     }
     state.busy = false; draw();
+    return ok;
   }
 
   function onClick(event) {
-    const act = event.target.closest('[data-act]')?.dataset.act;
+    const hit = event.target.closest('[data-act]'), act = hit?.dataset.act;
     if (!act || (event.type === 'change') !== act.startsWith('tick')) return;
-    const id = event.target.closest('[data-row]')?.dataset.row;
+    const id = event.target.closest('[data-row]')?.dataset.row, tag = event.target.closest('[data-tag]')?.dataset.tag;
     const flip = (set, key) => (set.has(key) ? set.delete(key) : set.add(key));
     if (act === 'tick') flip(state.ticked, id);
     else if (act === 'tick-all') { const left = open(); state.ticked = new Set(allTicked(left) ? [] : left.map((row) => row.conversation_id)); }
     else if (act === 'clear') state.ticked.clear();
     else if (act === 'reject') { flip(state.rejected, id); state.ticked.delete(id); }
     else if (act === 'why') state.opened = state.opened === id ? null : id;
-    else if (act === 'tree') state.tree = !state.tree;
+    else if (act === 'tab') state.tab = hit.dataset.tab;
+    else if (act === 'reject-tag' || act === 'undo-tag') { flip(state.rejectedTags, tag); state.ticked.clear(); }
     else if (act === 'page') return app.open('page');
     else if (act === 'apply') return void apply([id], false);
     else if (act === 'apply-ticked') return void apply([...state.ticked], false);
-    else if (act === 'apply-tree') return void apply([], true);
-    // Every row not rejected — the "no tag fits" ones too, so that judgement is kept as ground truth.
-    else if (act === 'apply-all') return void apply(value.conversations.filter((row) => !state.rejected.has(row.conversation_id)).map((row) => row.conversation_id), true);
+    // Approving writes the change to the tag tree right away; no conversation is tagged by it.
+    else if (act === 'approve-tag') return void apply([], [tag]);
+    else if (act === 'approve-all') return void apply([], pending().map((c) => c.tag)).then((ok) => { if (ok) { state.tab = 'convs'; draw(); } });
+    // Every row with a tag that was not rejected, with the tag changes that were not rejected.
+    else if (act === 'apply-all') return void apply(open().map((row) => row.conversation_id), true);
     draw();
   }
 </script>

@@ -45,7 +45,6 @@ import {
   conversationRowMessageIds,
   isProcessFailed,
   isProcessLive,
-  tagIsWithin,
   type AgenticProcess,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
@@ -71,7 +70,7 @@ import { formatTimeAgo } from '@src/components/project-activity-strip/project-ac
 import { updateMessage, bulkUpdateMessages, searchStreamInbox, watchMessageTags } from './stream-inbox-api';
 import { TagFilterButton } from './TagFilterButton';
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { MessageTags, useClassificationSettings } from '@src/components/tags/MessageTags';
+import { MessageTags } from '@src/components/tags/MessageTags';
 import { AppStatusChip } from '@src/components/nano-app/AppStatusChip';
 import { ClassifyDialog, useClassifyRun } from '@src/components/tags/ClassifyTable';
 import {
@@ -89,7 +88,6 @@ import {
 } from './AttachedChannelsBar';
 import { needsPerson } from '@src/components/data-sources/source-attention';
 import {
-  AUTOMATIONS_CHANNEL,
   BUILT_IN_CHANNELS,
   FLOWPAD_CHANNEL,
   channelKeyOf,
@@ -303,10 +301,6 @@ interface ConversationListRowProps {
   /** Reports whether this row will actually render so the parent can decide
    *  whether to show the "No conversations" empty state. */
   onVisibilityChange: (convId: string, visible: boolean) => void;
-  /** The tag tree a message is classified into, and the report of a shown row whose latest message has
-   *  no tag in it yet — the parent's Classify button counts those. */
-  classifyRoot: string;
-  onUnclassifiedChange: (convId: string, unclassified: boolean) => void;
   /** Set while the list is narrowed to some channels: does this message's source pass? */
   channelMatch?: (message: FlowMessage, conversation: Conversation) => boolean;
   /** Set while a header column filter is engaged. */
@@ -371,8 +365,6 @@ export const ConversationListRow = memo(function ConversationListRow({
   onRequestDelete,
   cloudUserId,
   onVisibilityChange,
-  classifyRoot,
-  onUnclassifiedChange,
   channelMatch,
   columnFilter,
   attributionFor,
@@ -589,20 +581,6 @@ export const ConversationListRow = memo(function ConversationListRow({
     onVisibilityChange(convId, !isHidden);
     return () => onVisibilityChange(convId, false);
   }, [convId, isHidden, onVisibilityChange]);
-  // Waiting for a tag: a shown message with none of this tree's tags that nobody has classified yet. An
-  // automation's own conversation never waits, and a message judged "no tag fits" was classified.
-  const unclassified =
-    !isHidden &&
-    !isInvitationRow &&
-    !!latestMessage &&
-    conv.channel !== AUTOMATIONS_CHANNEL &&
-    latestMessage.message_processing?.classification !== 'succeeded' &&
-    !(latestMessage.tags ?? []).some((tag) => tagIsWithin(tag, classifyRoot));
-  useEffect(() => {
-    if (!convId) return;
-    onUnclassifiedChange(convId, unclassified);
-    return () => onUnclassifiedChange(convId, false);
-  }, [convId, unclassified, onUnclassifiedChange]);
 
   if (isHidden) return null;
 
@@ -1054,9 +1032,6 @@ export function StreamInboxView({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // The ticked conversations' classification run, open in its table (`classify=<call id>` in the URL).
   const classifying = useClassifyRun();
-  // The shown conversations still waiting for a tag: the Classify button's count and its default set.
-  const [unclassifiedIds, setUnclassifiedIds] = useState<Set<string>>(new Set());
-  const { root: classifyRoot } = useClassificationSettings();
   const [selDeleteOpen, setSelDeleteOpen] = useState(false);
 
   // Text search over message bodies — server-side, via the `stream-inbox-search`
@@ -1215,16 +1190,13 @@ export function StreamInboxView({
     (convId: string, visible: boolean) => setVisibleIds((prev) => withId(prev, convId, visible)),
     [],
   );
-  const handleRowUnclassified = useCallback(
-    (convId: string, unclassified: boolean) => setUnclassifiedIds((prev) => withId(prev, convId, unclassified)),
-    [],
-  );
 
   const visibleCount = visibleIds.size;
 
   // Unread: backend-owned (StreamInboxManager.unread) — the rail badge's number, so the two always
   // agree. It counts the user's own stream inbox, so an agent's or a source's view does not use it.
-  const { unread: streamInboxUnread } = useStreamInboxManager();
+  // `unclassified` is the backend's too: every conversation of the inbox waiting for a tag, loaded or not.
+  const { unread: streamInboxUnread, unclassified } = useStreamInboxManager();
   const ownStreamInbox = !agentId && !sourceId;
 
   // Refresh = read every channel of this stream inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
@@ -1686,13 +1658,13 @@ export function StreamInboxView({
             <Trans>Contacts</Trans>
           </Button>
           {desktopStreamInbox && <ProjectUploadMessageButton variant="outline" size="default" />}
-          {/* Classify every shown conversation that has no tag yet; drawn only while there is one. */}
-          {desktopStreamInbox && unclassifiedIds.size > 0 && (
+          {/* Classify the newest conversations that wait for a tag (the backend picks them); drawn only while one waits. */}
+          {desktopStreamInbox && unclassified > 0 && (
             <Button
               variant="ghost"
               size="sm"
               className="h-7 text-xs"
-              onClick={() => classifying.start([...unclassifiedIds])}
+              onClick={() => classifying.start()}
               data-testid="stream-inbox-classify-button"
             >
               <Tags className="me-1 h-3.5 w-3.5" />
@@ -1701,7 +1673,7 @@ export function StreamInboxView({
                 className="rounded-full bg-muted px-1.5 text-xs tabular-nums text-muted-foreground"
                 data-testid="stream-inbox-classify-count"
               >
-                {unclassifiedIds.size}
+                {unclassified}
               </span>
             </Button>
           )}
@@ -2074,8 +2046,6 @@ export function StreamInboxView({
               onRequestDelete={handleRowDelete}
               cloudUserId={cloudUserId}
               onVisibilityChange={handleRowVisibility}
-              classifyRoot={classifyRoot}
-              onUnclassifiedChange={handleRowUnclassified}
               channelMatch={channelMatch}
               columnFilter={columnFilterActive ? columnFilter : undefined}
               attributionFor={attributionFor}

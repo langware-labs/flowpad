@@ -48,7 +48,6 @@ describe('ConversationListRow while a newer latest message loads', () => {
       onRequestDelete: vi.fn(),
       cloudUserId: null,
       onVisibilityChange: vi.fn(),
-      onUnclassifiedChange: vi.fn(),
       attributionFor: () => null,
       refSetter: () => {},
     };

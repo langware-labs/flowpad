@@ -28,7 +28,8 @@ export function useClassifyRun() {
   const set = (callId: string | null) => currentDock && navigation.openDock(currentDock.withOption('classify', callId));
   return {
     callId: currentDock?.options?.classify || null,
-    start: (conversations: string[]) => {
+    /** No conversations: the backend takes the newest ones that wait for a tag. */
+    start: (conversations?: string[]) => {
       void FlowMessage.classifyConversations(conversations).then(
         (run) => set(run.call_id),
         (e: unknown) =>

@@ -3,7 +3,7 @@
   "id": "d09fb6e0-92bd-493f-a3ee-0f8616f11399",
   "name": "stream-inbox-classifier",
   "label": "Classify conversations",
-  "description": "One agent reads each given Stream Inbox conversation and proposes its tag; the main agent keeps the tag tree small. Answers one proposal — conversation x tag plus the tag tree changes. Writes nothing.",
+  "description": "One agent reads each given Stream Inbox conversation and proposes its tag; the main agent defines a tag for each conversation no tag fits and checks it with the decision model. Answers one proposal — conversation x tag plus the tag tree changes. Writes nothing.",
   "subkind": "agent",
   "exe_data": {
     "agent": "stream-inbox-classifier",

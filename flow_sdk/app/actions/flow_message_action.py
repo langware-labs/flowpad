@@ -5006,10 +5006,15 @@ async def message_apply_classification(self: FlowMessage) -> ApiResponse:
     return ApiSuccessResponse(data=_tag_state(message))
 
 
+#: How many conversations one Classify click takes: a run's cost and its review message stay readable.
+CLASSIFY_BATCH = 25
+
+
 @action.all(action_name="classify-conversations", types=["flow_message"], methods=["get", "post"])
 async def classify_conversations() -> ApiResponse:
     """POST ``{conversations: [id]}`` starts the shipped ``stream-inbox-classifier`` block on them -- a durable
-    call that outlives the request -- and answers its record. GET ``?call_id=`` reads that record again; its
+    call that outlives the request -- and answers its record. With no ``conversations`` the run takes the newest
+    ``CLASSIFY_BATCH`` conversations that wait for a tag. GET ``?call_id=`` reads that record again; its
     ``result.value`` is the proposed ``stream_inbox.classification`` once the call completed. Nothing is tagged."""
     from flow_sdk.builtin.compute_op import ComputeOp
 
@@ -5035,6 +5040,12 @@ async def classify_conversations() -> ApiResponse:
         return ApiSuccessResponse(data=data)
     body = await info.get_post_data()
     picked = body.get("conversations") if isinstance(body, dict) else None
+    if picked is None:
+        from flow_sdk import stream_inbox
+
+        picked = (await stream_inbox.unclassified())[:CLASSIFY_BATCH]
+        if not picked:
+            return ApiFailResponse(message="No conversation waits for a tag.", status_code=400)
     if not (isinstance(picked, list) and picked and all(isinstance(i, str) and i for i in picked)):
         return ApiFailResponse(message="Expected the conversations to classify", status_code=400)
     # Its own folder on this instance: a run leaves its receipts where it works, never in the server's folder.
@@ -5048,9 +5059,10 @@ async def classify_conversations() -> ApiResponse:
 
 @action.post(action_name="stream-inbox-classification", types=["flow_message"])
 async def submit_stream_inbox_classification() -> ApiResponse:
-    """A classification run hands in its proposal: ``{value, dry?}`` -> ``{fits, errors, ref?}``. The value is
-    held to its schema and to the tag tree as it is now; one that fits is kept and posted as a message unless
-    ``dry`` (the run's own check). Nothing is tagged."""
+    """A classification run hands in its proposal: ``{value, dry?, validate?}`` -> ``{fits, errors, ref?}``. The
+    value is held to its schema and to the tag tree as it is now; one that fits is kept and posted as a message
+    unless ``dry`` (the run's own check). ``validate`` answers ``value`` with every row's ``validation`` (the
+    decision model's own reading) instead, and keeps nothing. Nothing is tagged."""
     from pydantic import ValidationError
 
     from flow_sdk.schema.data_spec.stream_inbox_classification_spec import StreamInboxClassification
@@ -5064,6 +5076,8 @@ async def submit_stream_inbox_classification() -> ApiResponse:
         value = StreamInboxClassification.model_validate({k: v for k, v in body["value"].items() if k != "spec_kind"})
     except ValidationError as exc:
         return ApiSuccessResponse(data={"fits": False, "errors": [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()]})
+    if body.get("validate"):
+        return ApiSuccessResponse(data={"value": (await classification.validate(value)).model_dump(mode="json")})
     errors = await classification.problems(value)
     if errors or body.get("dry"):
         return ApiSuccessResponse(data={"fits": not errors, "errors": errors})
@@ -5073,8 +5087,8 @@ async def submit_stream_inbox_classification() -> ApiResponse:
 @action.post(action_name="apply-stream-inbox-classification", types=["flow_message"])
 async def apply_stream_inbox_classification() -> ApiResponse:
     """A person applies a proposed ``stream_inbox.classification``: ``conversations`` (ids; absent = every
-    row) and, unless ``tree`` is false, the tag tree changes. No automation starts; applied rows are kept
-    as ground truth."""
+    row) and the tag tree changes -- every one unless ``tree`` is false, or only those of the tags ``tree``
+    lists. No automation starts; applied rows are kept as ground truth."""
     from pydantic import ValidationError
 
     from flow_sdk.schema.data_spec.stream_inbox_classification_spec import StreamInboxClassification
@@ -5089,7 +5103,9 @@ async def apply_stream_inbox_classification() -> ApiResponse:
         return ApiFailResponse(message="conversations is a list of conversation ids", status_code=400)
     try:
         value = StreamInboxClassification.model_validate({k: v for k, v in body["value"].items() if k != "spec_kind"})
-        return ApiSuccessResponse(data=await classification.apply(value, conversations=picked, tree=body.get("tree") is not False))
+        tree = body.get("tree")
+        tree = [t for t in tree if isinstance(t, str)] if isinstance(tree, list) else tree is not False
+        return ApiSuccessResponse(data=await classification.apply(value, conversations=picked, tree=tree))
     except (ValidationError, ValueError) as exc:
         return ApiFailResponse(message=str(exc), status_code=400)
 

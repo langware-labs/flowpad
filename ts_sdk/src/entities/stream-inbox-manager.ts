@@ -11,6 +11,8 @@ import { IEntity, EntityMerge } from '../IEntity';
  */
 export interface IStreamInboxManager extends IEntity {
   unread?: number;
+  /** Conversations waiting for a tag; computed by the backend like `unread`. */
+  unclassified?: number;
 }
 
 // `implements IStreamInboxManager` only checks the class; it contributes no members, so every
@@ -22,10 +24,12 @@ export interface StreamInboxManager extends EntityMerge<IStreamInboxManager> {}
 @registerEntity
 export class StreamInboxManager extends APIEntity<StreamInboxManager> implements IStreamInboxManager {
   unread: number = 0;
+  unclassified: number = 0;
   static type: string = 'stream_inbox_manager';
 
   constructor(entity: Partial<IStreamInboxManager> = {}) {
     super(entity);
     this.unread = entity.unread ?? 0;
+    this.unclassified = entity.unclassified ?? 0;
   }
 }

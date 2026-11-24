@@ -58,7 +58,12 @@ async function readInput(path: string | null): Promise<NanoApp['input']> {
 function reportSize(): void {
   let last = -1;
   const say = () => {
-    const height = Math.ceil(document.documentElement.scrollHeight);
+    // The body's own box with its margins, not the document's scroll height: that one never goes below the
+    // frame's current height, so a frame that grew (a taller tab) could not shrink again.
+    const margins = getComputedStyle(document.body);
+    const height = Math.ceil(
+      document.body.getBoundingClientRect().height + (parseFloat(margins.marginTop) || 0) + (parseFloat(margins.marginBottom) || 0),
+    );
     if (height !== last) postToHost({ type: NANO_SIZE_MESSAGE, height: (last = height) });
   };
   new ResizeObserver(say).observe(document.body);

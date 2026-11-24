@@ -8,14 +8,16 @@ against. A person changing a labelled message's tags afterwards is moderation: t
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from flow_sdk.core.log_dataset import KeptDataset, rows, spawn
 from flow_sdk.schema.data_spec.layout import ROWS_DIR
 from flow_sdk.schema.data_spec.stream_inbox_classification_spec import (
     StreamInboxClassification,
     TagTreeChange,
+    TagValidation,
     tags_under,
 )
 from flow_sdk.tags.grammar import tag_is_within
@@ -26,6 +28,8 @@ GROUND_TRUTH = KeptDataset(
     "The ground truth the tag classifier's eval runs on. Kept on this instance, never in a project.",
 )
 _ORDER = {"added": 0, "updated": 1, "moved": 2, "removed": 3}
+#: How many rows ``validate`` asks the decision model about at the same time.
+_VALIDATE_AT_ONCE = 4
 
 
 async def _tag(name: str):
@@ -111,7 +115,58 @@ async def problems(value: StreamInboxClassification) -> list[str]:
             out.append(f"tree change removed {change.tag}: {change.merged_into} is neither in the tree nor made by this value")
     out += [f"{row.title!r}: proposed {tag} is neither in the tree nor added by this value"
             for row in value.conversations for tag in row.proposed if tag not in known | made]
+    out += [f"{row.title!r}: no tag proposed -- every conversation gets a tag (the ontology refactor defines one)"
+            for row in value.conversations if not row.proposed]
     return out
+
+
+def tree_after(definitions: list[dict[str, str]], changes: list[TagTreeChange]) -> list[dict[str, str]]:
+    """``definitions`` (the classifier's options) as ``changes`` would leave them. Nothing is written."""
+    tree = {d["name"]: d["description"] for d in definitions}
+    for change in sorted(changes, key=lambda c: _ORDER[c.op]):
+        if change.op in ("added", "updated"):
+            tree[change.tag] = change.meaning or ""
+        elif change.op == "moved":
+            for name in [n for n in tree if tag_is_within(n, change.was or "")]:
+                tree[change.tag + name[len(change.was or ""):]] = tree.pop(name)
+        else:
+            tree.pop(change.tag, None)
+    return [{"name": name, "description": meaning} for name, meaning in sorted(tree.items())]
+
+
+async def validate(value: StreamInboxClassification) -> StreamInboxClassification:
+    """``value`` with every row's ``validation``: the decision model reads the row's message against the tag
+    tree as the value would leave it, and the row says whether it lands on the proposed tag. A row the
+    decision could not be asked about (no message, no decision service) carries no validation. Writes nothing."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
+    from flow_sdk.stream_inbox.message_subject import message_state  # noqa: PLC0415
+    from flow_sdk.stream_inbox.message_tags import classify, ontology  # noqa: PLC0415
+
+    definitions = tree_after(await ontology(), value.tree_changes)
+
+    async def check(row):
+        message = await FlowMessage.get_by_id(row.message_id) if row.proposed else None
+        if message is None:
+            return row.model_copy(update={"validation": None})
+        answer = await classify(message_state(message), definitions)
+        if answer.exit_code is not ExitCode.OK or not answer.has_value:
+            return row.model_copy(update={"validation": None})
+        detected = getattr(answer.value, "tag", "") or ""
+        return row.model_copy(update={"validation": TagValidation(detected=detected, ok=detected in row.proposed)})
+
+    # The first row alone: a decision call finds its hub endpoint first and remembers it, and rows asked all at
+    # once each repeat that search and use up the hub client's connections (25 cold calls made thousands of
+    # requests and every one of them failed). The rest go a few at a time.
+    rows, gate = list(value.conversations), asyncio.Semaphore(_VALIDATE_AT_ONCE)
+
+    async def gated(row):
+        async with gate:
+            return await check(row)
+
+    checked = [await check(rows[0])] if rows else []
+    checked += await asyncio.gather(*map(gated, rows[1:]))
+    return value.model_copy(update={"conversations": checked})
 
 
 #: The contrast-tested entity palette (``ui/src/lib/color-palette.ts``), spread so consecutive picks look apart.
@@ -154,11 +209,13 @@ async def submit(value: StreamInboxClassification) -> str:
     ref = save_value(value, _values())
     rule = await classifier()
     if rule is not None:
-        changing = sum(row.action != "keep" for row in value.conversations)
+        count = lambda n, one, many: f"{n} {one if n == 1 else many}"  # noqa: E731
+        said = [count(len(value.tree_changes), "tag change", "tag changes")] if value.tree_changes else []
+        said += [count(len(value.conversations), "conversation", "conversations"),
+                 f"{sum(row.action != 'keep' for row in value.conversations)} would change"]
         await post_app_message(
             AutomationRef(trigger_id=str(rule.id), name=rule.name or ""), review_app().read_text(encoding="utf-8"), value,
-            status="needs_review",
-            data={"conversations": len(value.conversations), "changing": changing, "tag_changes": len(value.tree_changes)})
+            status="needs_review", data={"summary": " · ".join(said)})
     return ref
 
 
@@ -212,19 +269,26 @@ def moderated(message) -> None:
     spawn(follow())
 
 
-async def apply(value: StreamInboxClassification, *, conversations: Optional[list[str]] = None, tree: bool = True) -> dict:
-    """Make the proposal real for ``conversations`` (ids; None = every row) and, with ``tree``, every tree
-    change. A row whose tag a tree change adds or moves brings that change with it, tree or not."""
+async def apply(value: StreamInboxClassification, *, conversations: Optional[list[str]] = None,
+                tree: Union[bool, list[str]] = True) -> dict:
+    """Make the proposal real for ``conversations`` (ids; None = every row) and the tree changes ``tree``
+    names: True = every one, a list = the changes of those tags. A row whose tag a tree change adds or moves
+    brings that change with it, whatever ``tree`` says. A row with no proposed tag is not applied."""
     from flow_sdk.stream_inbox.message_tags import _rules, ontology, retag_as_classification  # noqa: PLC0415
 
     picked = [r for r in value.conversations if conversations is None or r.conversation_id in conversations]
     needed = {tag for row in picked for tag in row.proposed}
-    changes = [c for c in value.tree_changes if tree or (c.op in ("added", "moved") and c.tag in needed)]
+    named = set(tree) if isinstance(tree, list) else set()
+    changes = [c for c in value.tree_changes
+               if tree is True or c.tag in named or (c.op in ("added", "moved") and c.tag in needed)]
     rules = await _rules()   # one read for the whole apply: the rule set does not change under it
     done = {c.tag: await _apply_change(c, rules) for c in sorted(changes, key=lambda c: _ORDER[c.op])}
     known = {d["name"] for d in await ontology()}
     applied, failed, truths = [], {}, []
     for row in picked:
+        if not row.proposed:
+            failed[row.conversation_id] = "No tag is proposed for it."
+            continue
         missing = [tag for tag in row.proposed if tag not in known]
         message = None if missing else await retag_as_classification(
             row.message_id, add=row.proposed, rules=rules,
@@ -233,7 +297,7 @@ async def apply(value: StreamInboxClassification, *, conversations: Optional[lis
             failed[row.conversation_id] = f"{', '.join(missing)} is not in the tag tree." if missing else "The message is gone."
             continue
         applied.append(row.conversation_id)
-        truths.append(await _truth_row(message, row.proposed[0] if row.proposed else "", "auto"))
+        truths.append(await _truth_row(message, row.proposed[0], "auto"))
     if truths:
         await GROUND_TRUTH.put_many(truths)
     return {"applied": applied, "failed": failed, "tree": done}

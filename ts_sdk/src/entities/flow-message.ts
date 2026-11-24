@@ -306,6 +306,8 @@ export interface ConversationTagging {
   reason: string;
   /** A new tag the conversation's agent asked for, and the main agent's answer. */
   asked?: { tag: string; meaning: string; answer: 'approved' | 'use_existing'; use?: string | null } | null;
+  /** The decision model's own reading against the tree as the run would leave it; absent = not checked. */
+  validation?: { detected: string; ok: boolean } | null;
 }
 
 /** One change to the tag tree (`stream_inbox.classification.tree_change`); `tag` is the name AFTER it. */
@@ -579,10 +581,11 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     return (await dataManager.callAction<unknown, MessageClassification>(action))!;
   }
 
-  /** Start a classification run on these conversations: one agent each. Durable — it outlives this page. */
-  static async classifyConversations(conversations: string[]): Promise<ClassificationRun> {
+  /** Start a classification run on these conversations: one agent each. With none named, the backend takes
+   *  the newest ones that wait for a tag. Durable — it outlives this page. */
+  static async classifyConversations(conversations?: string[]): Promise<ClassificationRun> {
     const action = new ActionInfo('classify-conversations', FlowMessage.type, null, 'POST');
-    action.bodyParameters = { conversations };
+    action.bodyParameters = conversations ? { conversations } : {};
     return (await dataManager.callAction<unknown, ClassificationRun>(action))!;
   }
 
@@ -593,11 +596,12 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     return (await dataManager.callAction<unknown, ClassificationRun>(action))!;
   }
 
-  /** Make a proposal real: `conversations` (ids; absent = every row) and, unless `tree` is false, the tag
-   *  tree changes. A row brings the tree change its tag needs. No automation starts. */
+  /** Make a proposal real: `conversations` (ids; absent = every row) and the tag tree changes — every one
+   *  unless `tree` is false, or only those of the tags `tree` lists. A row brings the tree change its tag
+   *  needs. No automation starts. */
   static async applyStreamInboxClassification(
     value: StreamInboxClassification,
-    options: { conversations?: string[]; tree?: boolean } = {},
+    options: { conversations?: string[]; tree?: boolean | string[] } = {},
   ): Promise<{ applied: string[]; failed: Record<string, string>; tree: Record<string, 'applied' | 'already'> }> {
     const action = new ActionInfo('apply-stream-inbox-classification', FlowMessage.type, null, 'POST');
     action.bodyParameters = { value, ...options };

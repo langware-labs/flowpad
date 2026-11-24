@@ -30,6 +30,9 @@ class StreamInboxManager(Entity):
     # The final unread count: active conversations whose latest message is
     # unread-received (one per conversation) + pending standalone invitations.
     unread: int = APIField(default=0, ge=0)
+    #: Conversations waiting for a tag: the newest message carries none from the classification tree
+    #: (``stream_inbox.unclassified_ids``). Computed in the same recompute as ``unread``.
+    unclassified: int = APIField(default=0, ge=0)
 
     # api_visible is required: entity UPDATE notifications only reach explicit
     # watchers of api-visible types (resource_tracker gate).

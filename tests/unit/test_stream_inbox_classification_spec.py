@@ -17,8 +17,8 @@ def value(rows=(ROW,), changes=(ADDED,)):
 
 
 def test_a_coherent_value_fits_and_is_reachable_by_kind():
-    parsed = StreamInboxClassification.model_validate(value())
-    assert parsed.conversations[0].asked.answer == "approved"
+    parsed = StreamInboxClassification.model_validate(value(rows=[{**ROW, "validation": {"detected": ROW["proposed"][0], "ok": True}}]))
+    assert parsed.conversations[0].asked.answer == "approved" and parsed.conversations[0].validation.ok
     assert DataSpec.parse("stream_inbox.classification") is StreamInboxClassification
 
 

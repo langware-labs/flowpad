@@ -42,6 +42,14 @@ class TagRequest(DataSpec):
         return self
 
 
+class TagValidation(DataSpec):
+    """The decision model's own reading of a row's message against the tag tree as the run would leave it:
+    the tag it ``detected`` ('' = none), and whether that is the row's proposed tag."""
+
+    detected: str = ""
+    ok: bool
+
+
 class ConversationTagging(DataSpec):
     """One conversation: the tags its latest message had, and the tags proposed for it."""
 
@@ -55,6 +63,7 @@ class ConversationTagging(DataSpec):
     action: Literal["keep", "apply", "change", "remove"]
     reason: str
     asked: Optional[TagRequest] = None
+    validation: Optional[TagValidation] = None
 
     @model_validator(mode="after")
     def _action_says_what_changed(self) -> "ConversationTagging":

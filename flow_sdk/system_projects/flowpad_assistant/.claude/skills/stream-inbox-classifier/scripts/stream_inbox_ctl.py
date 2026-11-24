@@ -10,6 +10,9 @@ Output: one JSON object, ``{"ok": true, ...}`` or ``{"ok": false, "error": ...}`
   tree                                          every tag under the classification root, with its meaning
   check FILE                                    would FILE fit `stream_inbox.classification` and today's tag tree?
                                                 {fits, errors}
+  validate FILE                                 ask the decision model about every row, against the tree as FILE
+                                                would leave it; writes each row's `validation` into FILE
+                                                {checked, not_detected}
   submit FILE                                   hand the value in: {fits, errors, ref} -- `ref` is what a run returns
 """
 
@@ -87,11 +90,27 @@ def cmd_submit(args) -> dict:
     return _hand_in(args.file, dry=False)
 
 
+def cmd_validate(args) -> dict:
+    """Each row's ``validation`` -- the decision model's own reading against the tree as the value would leave
+    it -- written back into the file; the rows it did not land on are printed."""
+    path = Path(args.file)
+    answer = _call("POST", "/graph/flow_message/stream-inbox-classification",
+                   {"value": json.loads(path.read_text(encoding="utf-8")), "validate": True}) or {}
+    if "value" not in answer:
+        return answer   # the value does not fit its schema: {fits: false, errors}
+    path.write_text(json.dumps(answer["value"], ensure_ascii=False, indent=1), encoding="utf-8")
+    rows = [row for row in answer["value"].get("conversations") or [] if row.get("validation")]
+    return {"checked": len(rows), "not_detected": [
+        {"conversation_id": row["conversation_id"], "title": row["title"], "proposed": row["proposed"],
+         "detected": row["validation"]["detected"]} for row in rows if not row["validation"]["ok"]]}
+
+
 VERBS = {
     "conversations": (cmd_conversations, [("--since", {}), ("--until", {})]),
     "conversation": (cmd_conversation, [("id", {}), ("--last", {"type": int, "default": 12})]),
     "tree": (cmd_tree, []),
     "check": (cmd_check, [("file", {})]),
+    "validate": (cmd_validate, [("file", {})]),
     "submit": (cmd_submit, [("file", {})]),
 }
 
