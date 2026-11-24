@@ -68,3 +68,52 @@ def test_too_old_refusal_is_classified_and_marks_required(cache, monkeypatch):
     assert lv.note_session_error(CODEX, json.dumps({"type": "error", "message": AMI_400}))
     assert lv.update_state(CODEX, "0.147.0")[1] == "required"
     assert lv.update_state(CODEX, "0.152.0")[1] == "none"  # a newer install clears it
+
+
+def test_update_command_updates_the_copy_that_runs(tmp_path):
+    """The package manager that owns the running copy updates it; the vendor installer writes its own folder."""
+    from types import SimpleNamespace
+
+    from flow_sdk.core.status.build import _update_command
+
+    spec = SimpleNamespace(latest_version_npm="@openai/codex", install_command="curl install.sh | sh")
+
+    unix = tmp_path / "nvm"  # bin/codex -> ../lib/node_modules/@openai/codex/bin/codex.js
+    target = unix / "lib" / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    (unix / "bin").mkdir()
+    (unix / "bin" / "codex").symlink_to(target)
+    assert _update_command(str(unix / "bin" / "codex"), spec) == (
+        f'npm install -g --prefix "{unix.resolve()}" @openai/codex@latest'
+    )
+
+    win = tmp_path / "npm"  # codex.cmd beside node_modules\@openai\codex
+    (win / "node_modules" / "@openai" / "codex").mkdir(parents=True)
+    (win / "codex.cmd").touch()
+    assert _update_command(str(win / "codex.cmd"), spec) == f'npm install -g --prefix "{win}" @openai/codex@latest'
+
+    standalone = tmp_path / "local" / "bin" / "codex"
+    standalone.parent.mkdir(parents=True)
+    standalone.touch()
+    assert _update_command(str(standalone), spec) == "curl install.sh | sh"
+
+
+async def test_a_run_that_updates_a_cli_refreshes_status_when_its_turn_ends(monkeypatch):
+    import asyncio
+
+    from flow_sdk.core.status import refresh
+
+    swept = []
+
+    async def sweep(kinds=None):
+        swept.append(kinds)
+
+    monkeypatch.setattr(refresh, "refresh_status", sweep)
+    monkeypatch.setattr(refresh, "_CLI_CHANGING_RUNS", {})
+
+    refresh.turn_ended("some-chat")  # an ordinary run costs no sweep
+    refresh.refresh_status_after("update-run", [CODEX])
+    refresh.turn_ended("update-run")
+    await asyncio.gather(*refresh._TASKS)
+    assert swept == [[CODEX]]

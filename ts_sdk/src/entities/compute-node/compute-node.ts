@@ -713,6 +713,16 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
+   * Re-read what is installed on this machine once the run `processId` has ended — a run that
+   * installs or updates a CLI. Returns at once; the status record is pushed when it changed.
+   */
+  async refreshStatusAfter(processId: string): Promise<void> {
+    const action = new ActionInfo('status/refresh', ComputeNode.type, this.id, 'POST');
+    action.bodyParameters = { after_process: processId };
+    await dataManager.callAction<void, unknown>(action);
+  }
+
+  /**
    * Get machine status (processes and network connections) from the compute node.
    * @returns MachineStatus with processes and network info
    */

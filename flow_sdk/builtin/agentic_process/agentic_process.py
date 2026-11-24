@@ -8496,6 +8496,9 @@ class AgenticProcess(Entity):
         transcript tail so it's transport-agnostic and each turn only reindexes
         its own new file-ops. Their entities re-parse + broadcast a
         ``data_op_msg`` (updated_date bump → frontend body re-read)."""
+        from flow_sdk.core.status.refresh import turn_ended  # noqa: PLC0415
+
+        turn_ended(str(self.id))  # a run that updated a CLI: the status record reads its version again
         try:
             touched = self._collect_touched_from_transcript_tail()
             # Only a shell command can delete a file the transcript does not name.

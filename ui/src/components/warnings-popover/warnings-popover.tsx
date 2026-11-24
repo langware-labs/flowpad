@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgenticProcess, isBusy, UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
+import { AgenticProcess, dataContext, isBusy, UserWarning, WARNING_IDS, type WarningColor } from '@sdk';
 import { ProcessRunLine } from '@src/components/agentic-progress/shared/process-run-line';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { mostRecentProcess } from '@src/utils/process-recency';
@@ -205,13 +205,15 @@ const harnessUpdateTarget = (warning: UserWarning) => `${warning.id}/${warning.m
  *  shows its status line and the way into its terminal. */
 async function installHarnessUpdate(warning: UserWarning, failedTitle: string): Promise<void> {
   try {
-    await AgenticProcess.launch({
+    const run = await AgenticProcess.launch({
       scratch: true,
       background: true,
       target: harnessUpdateTarget(warning),
       title: warning.message,
       launchPrompt: `${warning.message}. ${warning.description ?? ''}\nUpgrade it on this machine now, then run its --version and tell me the version that is installed.`,
     });
+    // The warning is drawn from the version the last check read: read it again when the run ends.
+    await dataContext.computeNode?.refreshStatusAfter(run.id);
   } catch (e: unknown) {
     notify.error({
       title: failedTitle,
