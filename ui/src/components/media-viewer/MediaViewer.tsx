@@ -28,24 +28,30 @@ export function MediaViewer({
       </div>
     );
   }
+  const name = (subPath || path).split('/').pop();
   return (
-    <div className="group relative flex h-full w-full items-center justify-center overflow-auto bg-background p-4">
-      {kind === AssetEditor.IMAGE && (
-        <img
-          key={revision}
-          src={url}
-          alt={subPath}
-          className="max-h-full max-w-full object-contain"
-          data-testid="media-viewer-image"
-        />
-      )}
-      {kind === AssetEditor.VIDEO && (
-        <video key={revision} src={url} controls className="max-h-full max-w-full" data-testid="media-viewer-video" />
-      )}
-      {kind === AssetEditor.AUDIO && (
-        <audio key={revision} src={url} controls className="w-full max-w-xl" data-testid="media-viewer-audio" />
-      )}
-      {kind !== AssetEditor.AUDIO && typeId && <MediaPager path={path} typeId={typeId} filePath={subPath} />}
+    <div className="flex h-full w-full flex-col bg-background">
+      <div className="shrink-0 truncate px-4 pt-2 text-center text-sm text-foreground" data-testid="media-viewer-name">
+        {name}
+      </div>
+      <div className="group relative flex min-h-0 w-full flex-1 items-center justify-center overflow-auto p-4">
+        {kind === AssetEditor.IMAGE && (
+          <img
+            key={revision}
+            src={url}
+            alt={subPath}
+            className="max-h-full max-w-full object-contain"
+            data-testid="media-viewer-image"
+          />
+        )}
+        {kind === AssetEditor.VIDEO && (
+          <video key={revision} src={url} controls className="max-h-full max-w-full" data-testid="media-viewer-video" />
+        )}
+        {kind === AssetEditor.AUDIO && (
+          <audio key={revision} src={url} controls className="w-full max-w-xl" data-testid="media-viewer-audio" />
+        )}
+        {kind !== AssetEditor.AUDIO && typeId && <MediaPager path={path} typeId={typeId} filePath={subPath} />}
+      </div>
     </div>
   );
 }

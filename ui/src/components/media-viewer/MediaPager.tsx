@@ -102,12 +102,24 @@ export function MediaPager({ path, typeId, filePath }: MediaPagerProps) {
   return (
     <>
       {prev && (
-        <button type="button" className={`${STEP_BUTTON} left-3`} title={t`Previous`} onClick={() => open(prev.name)}>
+        <button
+          type="button"
+          className={`${STEP_BUTTON} left-3`}
+          title={prev.name}
+          aria-label={t`Previous`}
+          onClick={() => open(prev.name)}
+        >
           <ChevronLeft className="h-6 w-6" strokeWidth={2.75} />
         </button>
       )}
       {next && (
-        <button type="button" className={`${STEP_BUTTON} right-3`} title={t`Next`} onClick={() => open(next.name)}>
+        <button
+          type="button"
+          className={`${STEP_BUTTON} right-3`}
+          title={next.name}
+          aria-label={t`Next`}
+          onClick={() => open(next.name)}
+        >
           <ChevronRight className="h-6 w-6" strokeWidth={2.75} />
         </button>
       )}
