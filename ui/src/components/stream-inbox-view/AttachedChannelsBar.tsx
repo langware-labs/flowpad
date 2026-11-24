@@ -209,7 +209,7 @@ export function AttachedChannelsBar({
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   // The add dialog, and the channel it opens on when an offer was pressed.
-  const [adding, setAdding] = useState<{ initial?: DataDriver } | null>(null);
+  const [adding, setAdding] = useState<{ initial?: ChannelOffer } | null>(null);
   const { deleting, setDeleting, remove, confirm } = useSourceDelete();
   const filtering = selected.size > 0;
   // A source a person must act on is counted in the chip; the marks are the rest.
@@ -332,7 +332,7 @@ export function AttachedChannelsBar({
           key={offer.key}
           offer={offer}
           unavailable={!!offer.spec.provisioned && !builtInOffered}
-          onConnect={() => setAdding({ initial: offer.spec })}
+          onConnect={() => setAdding({ initial: offer })}
         />
       ))}
       <CallControls rows={rows} specFor={specFor} />
@@ -476,7 +476,8 @@ function AddChannelDialog({
   onClose,
 }: {
   owner: TypeId;
-  initial?: DataDriver;
+  /** The channel whose mark was pressed: the dialog opens on it. */
+  initial?: ChannelOffer;
   added?: ReadonlyMap<string, string>;
   onClose: () => void;
 }) {
@@ -485,13 +486,13 @@ function AddChannelDialog({
     () => new Set(messageChannelChoices(specs, owner.type === Agent.type).map((c) => c.key)),
     [specs, owner],
   );
-  const only = useCallback((spec: DataDriver) => offered.has(choiceKey(spec)), [offered]);
+  const onlyChoice = useCallback((choice: ChannelOffer) => offered.has(choice.key), [offered]);
   return (
     <DataSourceDialog
       open
       onOpenChange={(next) => !next && onClose()}
       owner={owner}
-      only={only}
+      onlyChoice={onlyChoice}
       added={added}
       initial={initial}
       variant="channel"
@@ -669,7 +670,11 @@ function ChannelOfferMark({
           data-channel={offer.key}
           data-unavailable={unavailable || undefined}
         >
-          <Glyph className="size-[17px]" />
+          <IconWithBadge
+            Base={Glyph}
+            Badge={offer.badgeName ? lucideByName(offer.badgeName) : null}
+            className="size-[17px]"
+          />
           {!unavailable && (
             <span className={cn(MARK_BADGE, 'grid size-3.5 place-items-center bg-muted-foreground text-background')}>
               <Plus className="size-2.5" strokeWidth={3} />
@@ -711,7 +716,7 @@ export function ConnectChannelPrompt({
   added?: ReadonlyMap<string, string>;
 }) {
   const { t } = useLingui();
-  const [initial, setInitial] = useState<DataDriver | null>(null);
+  const [initial, setInitial] = useState<ChannelOffer | null>(null);
   if (offers.length === 0) return null;
   return (
     <div className="flex flex-col items-center gap-2" data-testid="connect-channel-prompt">
@@ -728,11 +733,15 @@ export function ConnectChannelPrompt({
                 variant="outline"
                 size="sm"
                 disabled={addedTip !== undefined}
-                onClick={() => setInitial(offer.spec)}
+                onClick={() => setInitial(offer)}
                 data-testid="connect-channel"
                 data-channel={offer.key}
               >
-                <Glyph className="me-1.5 size-3.5" />
+                <IconWithBadge
+                  Base={Glyph}
+                  Badge={offer.badgeName ? lucideByName(offer.badgeName) : null}
+                  className="me-1.5 size-3.5"
+                />
                 {t`Connect ${label}`}
               </Button>
             </span>

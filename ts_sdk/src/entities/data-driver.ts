@@ -66,6 +66,19 @@ export interface ConfigSchema {
 /** What a driver's items ARE — the base its source class extends (files, records, messages). */
 export type DataSourceFamily = 'object' | 'record' | 'message';
 
+/** One channel a multi-channel driver offers as a choice of its own (`DriverOfferSpec`): a tile that
+ *  opens the driver's form already set (`preset`) and asking only for `fields`. */
+export interface DriverOffer {
+  key: string;
+  title: string;
+  /** The channel it is: its glyph and badge are the driver's own for that channel. */
+  channel?: string;
+  description?: string;
+  preset?: Record<string, string>;
+  fields?: string[];
+  featured?: boolean;
+}
+
 /** One declared setup stage: its id, what the UI calls it, and the wizard that completes it. */
 export interface SetupStage {
   stage: string;
@@ -105,6 +118,8 @@ export interface IDataDriver extends IEntity {
   icon_name?: string;
   /** Per-CHANNEL glyphs for a multi-channel transport (agent: gmail→Mail, slack→Slack). */
   channel_icon_names?: Record<string, string>;
+  /** Per-channel corner badge on that glyph: how the channel is reached (a browser). */
+  channel_badge_icon_names?: Record<string, string>;
   setup_wiki?: string;
   /** The wizards a source of this driver is set up with, in order (test, then production…). */
   setup_wizards?: SetupStage[];
@@ -182,12 +197,15 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
    */
   icon_name: string = '';
   channel_icon_names: Record<string, string> = {};
+  channel_badge_icon_names: Record<string, string> = {};
   setup_wiki: string = '';
   setup_wizards: SetupStage[] = [];
   group: string = '';
   group_order: number = 0;
   group_icon_name: string = '';
   default_name: string = '';
+  /** Channels of this driver that are tiles of their own in the add picker. */
+  offers: DriverOffer[] = [];
   kind: string = '';
   runtime: string = 'source';
   load_error: string = '';

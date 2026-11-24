@@ -43,3 +43,16 @@ def test_a_choosable_field_has_a_driver_that_can_list_it(path: Path):
         f"{manifest.name} marks {choosable} choosable, but its source class can list none "
         "(neither `choices` nor `choices_for`) — the form would offer a picker that can never fill"
     )
+
+
+def test_an_offer_is_a_choice_of_the_drivers_own_fields():
+    """A driver may offer one of its channels as a tile of its own: the tile fixes some of the
+    driver's config and asks for the rest — only fields the driver declares, each offer once."""
+    config = {"service": {"type": "text"}, "profile": {"type": "text", "choices": True}}
+    offer = {"key": "chat", "title": "Chat", "preset": {"service": "chat"}, "fields": ["profile"], "featured": True}
+    manifest = {"schema": 1, "name": "worker", "kind": "datasource.worker", "config": config}
+    spec = DataDriverSpec.model_validate({**manifest, "offers": [offer]})
+    assert (spec.offers[0].preset, spec.offers[0].fields) == ({"service": "chat"}, ["profile"])
+    for broken in ([offer, offer], [{**offer, "fields": ["nope"]}], [{**offer, "preset": {"nope": "x"}}]):
+        with pytest.raises(ValueError, match="offer"):
+            DataDriverSpec.model_validate({**manifest, "offers": broken})

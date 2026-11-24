@@ -16,8 +16,8 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openTab: vi.fn() } }),
 }));
 vi.mock('@src/components/data-sources/DataSourceDialog', () => ({
-  DataSourceDialog: ({ initial }: { initial?: { name?: string } }) => (
-    <div data-testid="add-dialog" data-initial={initial?.name ?? ''} />
+  DataSourceDialog: ({ initial }: { initial?: { spec?: { name?: string } } }) => (
+    <div data-testid="add-dialog" data-initial={initial?.spec?.name ?? ''} />
   ),
 }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
@@ -217,6 +217,21 @@ describe('channel offers', () => {
       ['Chat', 'Chat', 'Slack', 'flow_chat'],
       ['mailbox', 'Mailbox', 'Mail', 'mailbox'],
     ]);
+  });
+
+  it('offers a channel a driver declares as its own choice, though the driver itself is not featured', () => {
+    const worker = driver('worker', {
+      title: 'Worker',
+      channel_icon_names: { chat: 'Linkedin' },
+      channel_badge_icon_names: { chat: 'Globe' },
+      offers: [
+        { key: 'chat', title: 'Chat by worker', channel: 'chat', preset: { service: 'chat' }, featured: true },
+        { key: 'quiet', title: 'Not featured', preset: { service: 'quiet' } },
+      ],
+    });
+    const offers = channelOffers([...specs, worker], [], false);
+    expect(offers.map((o) => o.key)).toEqual(['Chat', 'worker:chat', 'mailbox']);
+    expect(offers[1]).toMatchObject({ label: 'Chat by worker', iconName: 'Linkedin', badgeName: 'Globe', spec: worker });
   });
 
   it('offers a provisioned channel to an agent only', () => {

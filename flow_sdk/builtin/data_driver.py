@@ -33,6 +33,7 @@ from flow_sdk.schema.data_spec.data_driver_spec import (
     AuthSpec,
     CallStart,
     DataDriverSpec,
+    DriverOfferSpec,
     FieldHints,
     Runtime,
 )
@@ -82,6 +83,7 @@ class DataDriver(DriverRuntime, Entity):
     )
     icon_name: str = APIField(default="")
     channel_icon_names: dict[str, str] = APIField(default_factory=dict)
+    channel_badge_icon_names: dict[str, str] = APIField(default_factory=dict)
     setup_wiki: str = APIField(default="")
     manifest_schema: int = APIField(default=CURRENT_SCHEMA)
     requires: dict[str, str] = APIField(default_factory=dict)
@@ -94,6 +96,7 @@ class DataDriver(DriverRuntime, Entity):
     group_order: int = APIField(default=0)
     group_icon_name: str = APIField(default="")
     default_name: str = APIField(default="")
+    offers: list[DriverOfferSpec] = APIField(default_factory=list)
     reflect: list[str] = APIField(default_factory=list)
     config: dict[str, FieldHints] = APIField(default_factory=dict)
     listed: bool = APIField(default=True)

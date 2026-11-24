@@ -201,7 +201,7 @@ class AgentSource(MessageSource):
         if field != "browser":
             return []
         _, _, kinds = await asyncio.to_thread(machine_view, await resolve_default_worker_type())
-        return [Choice(id=kind["kind"], name=kind["name"], detail=f"{kind['browser']} · {kind['driving']} · {kind['state']}")
+        return [Choice(id=kind["kind"], name=kind["name"], detail=f"{kind['browser']} · {kind['driving']} · {kind['state'].replace('_', ' ')}")
                 for kind in kinds if browser_drivers.usable(kind["state"])]
 
     @classmethod

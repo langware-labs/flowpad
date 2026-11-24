@@ -8,8 +8,22 @@
     "slack": "Slack",
     "linkedin": "Linkedin"
   },
+  "channel_badge_icon_names": {
+    "linkedin": "Globe"
+  },
   "description": "Reads Gmail, Slack or LinkedIn messages by having your Claude Code session fetch them — with the connectors you already authorised there, or through a browser.",
   "kind": "datasource.agent",
+  "offers": [
+    {
+      "key": "linkedin",
+      "title": "LinkedIn",
+      "channel": "linkedin",
+      "description": "Your LinkedIn messages, read and answered in a browser profile that is signed in to LinkedIn.",
+      "preset": {"connector": "linkedin"},
+      "fields": ["browser"],
+      "featured": true
+    }
+  ],
   "config": {
     "connector": {
       "type": "text",

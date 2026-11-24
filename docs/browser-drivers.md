@@ -55,7 +55,9 @@ The session's own browser is `context_data["browser"]`: what its launch asked fo
 ## A channel read through a browser
 
 A message channel with no API (LinkedIn) is a connector of the `agent` data driver
-(`agentic-assets/data_driver/agent/`, `CONNECTOR_PROFILES` row with `browser=True`). The source's
+(`agentic-assets/data_driver/agent/`, `CONNECTOR_PROFILES` row with `browser=True`). To a person it is
+a channel like any other: the driver offers it as a tile of its own in "Add a channel" (`offers` in its
+manifest), whose form asks for the browser alone. The source's
 config names its browser (`browser`: a browser kind, picked in the form from this machine's list, or
 a driver's name); the worker's launch asks for it as the session's own (`context_data["browser"]`),
 so the project default never replaces it.

@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { DataSource, DataDriver, Project, QueryRequest, TypeId } from '@sdk';
+import type { DriverOffer } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { sourceIconName } from './source-icon';
 
@@ -103,16 +104,31 @@ export interface SourceChoice {
   label: string;
   /** The group's own glyph for a group, else the driver's. */
   iconName: string;
+  /** A corner badge on that glyph, when the driver badges this channel. */
+  badgeName?: string;
   /** What picking it opens on: the group's first member stands for the group. */
   spec: DataDriver;
+  /** Set when the choice is one channel a driver offers (`DataDriver.offers`), not the driver itself. */
+  offer?: DriverOffer;
 }
+
+/** The offer a source of `spec` was made from: the one whose every preset value its config holds. */
+export const offerOf = (
+  spec: DataDriver | undefined,
+  config: Record<string, string | undefined>,
+): DriverOffer | undefined =>
+  spec?.offers?.find((o) => {
+    const preset = Object.entries(o.preset ?? {});
+    return preset.length > 0 && preset.every(([key, value]) => (config[key] ?? '') === value);
+  });
 
 export const choiceKey = (s: DataDriver): string => s.group || s.name || '';
 
-/** The choices among `specs`, one per group. The add dialog's tiles and a stream inbox's default
- *  channels are both this list, so a mark and the tile it opens cannot disagree. */
+/** The choices among `specs`, one per group, plus one per channel a driver offers on its own. The add
+ *  dialog's tiles and a stream inbox's default channels are both this list, so a mark and the tile it
+ *  opens cannot disagree. */
 export function sourceChoices(specs: DataDriver[]): SourceChoice[] {
-  return specs
+  const drivers = specs
     .filter((s) => !s.group || groupMembers(specs, s.group)[0]?.name === s.name)
     .map((spec) => ({
       key: choiceKey(spec),
@@ -120,6 +136,17 @@ export function sourceChoices(specs: DataDriver[]): SourceChoice[] {
       iconName: (spec.group && groupIconName(specs, spec.group)) || sourceIconName(spec, null),
       spec,
     }));
+  const offers = specs.flatMap((spec) =>
+    (spec.offers ?? []).map((offer) => ({
+      key: `${spec.name}:${offer.key}`,
+      label: offer.title,
+      iconName: sourceIconName(spec, offer.channel),
+      badgeName: spec.channel_badge_icon_names?.[offer.channel ?? ''],
+      spec,
+      offer,
+    })),
+  );
+  return [...drivers, ...offers];
 }
 
 /** The message channels a person may add — every offered message driver whose group declares `featured`,
@@ -128,7 +155,7 @@ export const messageChannelChoices = (specs: DataDriver[], forAgent: boolean): S
   const offered = offeredSpecs(specs, forAgent).filter(isMessageDriverSpec);
   const featured = new Set(offered.filter((s) => s.featured).map(choiceKey));
   return sourceChoices(offered)
-    .filter((c) => featured.has(c.key))
+    .filter((c) => (c.offer ? c.offer.featured : featured.has(c.key)))
     .sort((a, b) => a.label.localeCompare(b.label));
 };
 
