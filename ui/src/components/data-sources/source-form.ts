@@ -274,6 +274,14 @@ export function setUpByWizard(spec: DataDriver | undefined, editing: boolean): b
   return !editing && !!spec?.setup_wizards?.length;
 }
 
+/** Whether a source of this driver is gated by who writes to it, so its form offers "Open to all": a driver that
+ *  declares an allowed-senders field, or one that answers on its channel. A provisioned account (the agent's
+ *  mailbox) keeps its policy on the hub, so it is not offered here. */
+export function offersOpenToAll(spec: DataDriver | undefined): boolean {
+  if (!spec || spec.provisioned) return false;
+  return !!spec.sends || specFields(spec).some(([key]) => key === 'allowed_senders');
+}
+
 export function validateDraft(draft: SourceDraft, spec?: DataDriver, { config = true } = {}): string[] {
   const problems: string[] = [];
 
