@@ -35,7 +35,7 @@ interface ContactPickerProps {
    *  chip (deduped); like a group, the team itself is never a chip. */
   includeTeams?: boolean;
   /** Offer the agents the user may add to a conversation (default off). Unlike a team, a picked
-   *  agent IS a chip: the hub adds its deployment as one member. */
+   *  agent IS a chip: the hub adds it as one member. */
   includeAgents?: boolean;
 }
 
@@ -295,7 +295,7 @@ export function ContactPicker({
               />
             </div>
           ))}
-          {/* Agents — one click adds the agent's deployment as a member. */}
+          {/* Agents — one click adds the agent as a member. */}
           {visibleAgents.map((agent) => (
             <button
               key={agent.id}

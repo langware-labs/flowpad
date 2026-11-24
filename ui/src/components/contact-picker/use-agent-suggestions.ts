@@ -1,45 +1,29 @@
 import { useEffect, useState } from 'react';
-import { dataManager, Deployment, deploymentParticipant, hubAction, type ConversationParticipant } from '@sdk';
-import { canDo } from '@src/components/items/role';
+import { Agent, agentParticipant as agentAsParticipant, dataManager, hubAction, type ConversationParticipant } from '@sdk';
 
-/** An agent's deployment the person can add to a conversation. */
+/** An agent the person can add to a conversation. */
 export interface AgentSuggestion {
-  /** The deployment's id. */
+  /** The agent's id. */
   id: string;
   name: string;
 }
 
-/** A deployment as the hub lists it with the caller's permissions (`expand=permissions`). */
-export interface HubDeploymentRow {
+/** An agent as the hub lists it with the caller's permissions (`expand=permissions`). */
+export interface HubAgentRow {
   id?: string | null;
   name?: string | null;
-  identity?: string | null;
-  target?: { provider?: string | null } | null;
   expand?: { roles?: string[] | null; allowed_actions?: string[] | null } | null;
 }
 
-/** The hub's name for adding a deployment's agent to a conversation (its policies.json). */
-export const ADD_TO_CONVERSATION = 'use';
-
-/** Who a machine must sign in as for its agent to hold a role in a conversation. */
-const AGENT_IDENTITIES = new Set(['agent', 'deployment']);
-
 /**
- * The agents to offer: the hub deployments whose machine signs in as an agent and on which the hub
- * allows the caller `use` -- an action name in the hub's policies.json, so who may
- * add an agent is decided there, never by a role named here. This computer's own placement has no
- * hub Identity and is never offered; neither is a row read without its permissions.
+ * The agents to offer: the hub agents on which the caller holds a role. The hub decides the rest when the
+ * agent is added (`Agent.handle_conversation_invite`): which of its deployments answers, and whether the
+ * caller may use one -- a refusal comes back as the answer. A row read without its permissions is never offered.
  */
-export function invitableAgents(deployments: HubDeploymentRow[]): AgentSuggestion[] {
-  return deployments
-    .filter(
-      (d): d is HubDeploymentRow & { id: string } =>
-        !!d.id &&
-        d.target?.provider !== 'local' &&
-        AGENT_IDENTITIES.has(d.identity ?? '') &&
-        canDo({ expand: d.expand, getType: () => Deployment.type }, ADD_TO_CONVERSATION) === true,
-    )
-    .map((d) => ({ id: d.id, name: (d.name ?? '').trim() || d.id }));
+export function invitableAgents(agents: HubAgentRow[]): AgentSuggestion[] {
+  return agents
+    .filter((a): a is HubAgentRow & { id: string } => !!a.id && (a.expand?.roles?.length ?? 0) > 0)
+    .map((a) => ({ id: a.id, name: (a.name ?? '').trim() || a.id }));
 }
 
 /** Filter agents by a name query (case-insensitive). Empty → all. */
@@ -49,29 +33,29 @@ export function filterAgents(agents: AgentSuggestion[], query: string): AgentSug
   return agents.filter((a) => a.name.toLowerCase().includes(q));
 }
 
-/** A picked agent as a participant: ONE entry keyed `deployment-<id>`. */
+/** A picked agent as a participant: ONE entry keyed `agent-<id>`. */
 export function agentParticipant(agent: AgentSuggestion): ConversationParticipant {
-  return deploymentParticipant(agent.id, agent.name);
+  return agentAsParticipant(agent.id, agent.name);
 }
 
-/** The caller's deployments on the hub, each with the caller's permissions on it. */
-async function hubDeployments(): Promise<HubDeploymentRow[]> {
-  const action = hubAction('', Deployment.type, null, 'GET');
+/** The caller's agents on the hub, each with the caller's permissions on it. */
+async function hubAgents(): Promise<HubAgentRow[]> {
+  const action = hubAction('', Agent.type, null, 'GET');
   action.queryParameters = { expand: 'permissions' };
-  const rows = await dataManager.callAction<undefined, HubDeploymentRow[]>(action);
+  const rows = await dataManager.callAction<undefined, HubAgentRow[]>(action);
   return Array.isArray(rows) ? rows : [];
 }
 
 /**
- * The agents the person can pick (`invitableAgents`), read from the hub: the desk holds only the
- * deployments it made itself. Nothing is read while `enabled` is false; signed out, the list is empty.
+ * The agents the person can pick (`invitableAgents`), read from the hub. Nothing is read while `enabled`
+ * is false; signed out, the list is empty.
  */
 export function useAgentSuggestions(enabled: boolean): { agents: AgentSuggestion[] } {
   const [agents, setAgents] = useState<AgentSuggestion[]>([]);
   useEffect(() => {
     if (!enabled) return;
     let current = true;
-    void hubDeployments()
+    void hubAgents()
       .catch(() => [])
       .then((rows) => {
         if (current) setAgents(invitableAgents(rows));

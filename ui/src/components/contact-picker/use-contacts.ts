@@ -3,7 +3,7 @@ import {
   ActionInfo,
   ConversationParticipant,
   dataManager,
-  isDeploymentParticipant,
+  isAgentParticipant,
   normalizeEmail,
   QueryRequest,
   User,
@@ -23,10 +23,10 @@ export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *
  * A picked TEAM (`kind: 'team'`, see `use-team-suggestions`) is keyed by its
  * typeid (`team-<id>`) — never by its name, which a person may share. So is a
- * picked agent's deployment (`deployment-<id>`).
+ * picked agent (`agent-<id>`).
  */
 export function participantKey(p: ConversationParticipant): string {
-  if (isTeamParticipant(p) || isDeploymentParticipant(p)) return String(p.typeid).trim().toLowerCase();
+  if (isTeamParticipant(p) || isAgentParticipant(p)) return String(p.typeid).trim().toLowerCase();
   return (p.user_id || p.email || p.name || '').trim().toLowerCase();
 }
 

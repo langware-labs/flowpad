@@ -93,31 +93,31 @@ export interface ConversationParticipant {
   [key: string]: unknown;
 }
 
-/** The roles an agent's deployment gets in a conversation: it reads what is written and may act on it. */
-export const DEPLOYMENT_MEMBER_ROLES = ['reader', 'runner'];
+/** The roles an agent gets in a conversation: it reads what is written and may act on it. */
+export const AGENT_MEMBER_ROLES = ['reader', 'runner'];
 
 /**
- * An agent's deployment as a participant: ONE entry keyed `deployment-<id>`. It has no email and no
- * user id -- the hub adds it as a `principal` and gives the role to the Identity its machine signs in as.
+ * An agent as a participant: ONE entry keyed `agent-<id>`. It has no email and no user id -- the hub adds it
+ * as a `principal`; the agent decides which of its deployments answers the conversation.
  */
-export function deploymentParticipant(deploymentId: string, name: string): ConversationParticipant {
+export function agentParticipant(agentId: string, name: string): ConversationParticipant {
   return {
-    kind: 'deployment',
-    typeid: `deployment-${deploymentId}`,
+    kind: 'agent',
+    typeid: `agent-${agentId}`,
     name,
     user_id: null,
     email: null,
-    roles: [...DEPLOYMENT_MEMBER_ROLES],
+    roles: [...AGENT_MEMBER_ROLES],
   };
 }
 
-export function isDeploymentParticipant(p: ConversationParticipant): boolean {
-  return p.kind === 'deployment' && typeof p.typeid === 'string' && p.typeid.startsWith('deployment-');
+export function isAgentParticipant(p: ConversationParticipant): boolean {
+  return p.kind === 'agent' && typeof p.typeid === 'string' && p.typeid.startsWith('agent-');
 }
 
-/** The deployment a deployment participant stands for, or null for a person. */
-export function deploymentTypeIdOf(p: ConversationParticipant): TypeId | null {
-  return isDeploymentParticipant(p) ? new TypeId('deployment', (p.typeid as string).slice('deployment-'.length)) : null;
+/** The agent an agent participant stands for, or null for a person. */
+export function agentTypeIdOf(p: ConversationParticipant): TypeId | null {
+  return isAgentParticipant(p) ? new TypeId('agent', (p.typeid as string).slice('agent-'.length)) : null;
 }
 
 /** Mirrors ``flow_sdk.builtin.conversation.ConversationKind`` exactly.
