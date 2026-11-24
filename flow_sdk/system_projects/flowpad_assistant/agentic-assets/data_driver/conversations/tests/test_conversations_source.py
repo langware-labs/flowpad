@@ -32,7 +32,6 @@ ConversationsSource = asset_module("conversations").ConversationsSource
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
-DEPLOYMENT = "4f9f1fd1-39b6-5465-9c20-cb4c59b08318"
 CONVERSATION = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 TICKET = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 AGENT = "11111111-1111-4111-8111-111111111111"
@@ -112,8 +111,8 @@ def _row(identities: Optional[list[str]] = None):
         id=f"ds-{uuid.uuid4().hex[:8]}",
         name="Agent conversations",
         provider="conversations",
-        config={"deployment_id": DEPLOYMENT},
-        account_key=f"deployment:{DEPLOYMENT}",
+        config={},
+        account_key="",
         account_identities=list(identities or []),
         status="active",
     )
@@ -145,7 +144,7 @@ async def test_conformance(check):
             ]
         },
     )
-    binding = SourceBinding(config={"deployment_id": DEPLOYMENT})
+    binding = SourceBinding(config={})
     probe = ConversationsSource(binding, hub=fake)
     await check.run(
         Subject(
@@ -160,7 +159,6 @@ class TestTheSource:
     def test_it_is_registered_sends_and_admits_every_member(self):
         driver = DataDriver.loaded("conversations")
         assert driver.sends is True and driver.open_inbound is True
-        assert driver.cls.identity_config_key == "deployment_id", "one source per deployment"
         assert getattr(driver.cls, "answers_once", False) is False, "every turn's text is the reply"
 
     def test_the_manifest_matches_the_source(self):
@@ -220,7 +218,7 @@ class TestAnswering:
         assert out.recorded is True and out.external_id == hub.threads[CONVERSATION][-1]["id"]
 
     async def test_a_reply_to_one_message_goes_to_its_conversation(self, hub):
-        async with ConversationsSource(SourceBinding(config={"deployment_id": DEPLOYMENT}), hub=hub) as source:
+        async with ConversationsSource(SourceBinding(config={}), hub=hub) as source:
             (asked,) = (await source.fetch(None)).items
             sent = await source.reply(asked.origin, MessageData(text="the build is green"))
         assert hub.posts() == [Call("post", "conversation", CONVERSATION, "add_message")]
@@ -229,7 +227,7 @@ class TestAnswering:
 
 class TestTheLoopGuard:
     async def test_the_agent_is_who_the_source_answers_as(self, hub):
-        async with ConversationsSource(SourceBinding(config={"deployment_id": DEPLOYMENT}), hub=hub) as source:
+        async with ConversationsSource(SourceBinding(config={}), hub=hub) as source:
             (me,) = await source.whoami()
         assert me.origin.key == AGENT
 
@@ -255,7 +253,7 @@ class TestAPersonsLogin:
 
     async def test_nothing_is_sent(self):
         fake = _Hub([ROW], {CONVERSATION: [MSG]}, agent="")
-        async with ConversationsSource(SourceBinding(config={"deployment_id": DEPLOYMENT}), hub=fake) as source:
+        async with ConversationsSource(SourceBinding(config={}), hub=fake) as source:
             outgoing, _answered = source.message_for(thread_key=CONVERSATION, to=CONVERSATION, text="hello")
             with pytest.raises(Exception) as caught:
                 await source.send(outgoing)

@@ -900,7 +900,7 @@ async def _agent_placement(deployment_typeid: str):
     with the agent's ``chat``), or None. Its apps and the main agent's chat are endpoints of the same
     deployment; on this machine it RUNS: ``serving``, so the supervisor keeps the agent's loop up.
     """
-    from flow_sdk.builtin.agent_serve import ensure_chat_channel, ensure_conversations_channel  # noqa: PLC0415
+    from flow_sdk.builtin.agent_serve import ensure_chat_channel  # noqa: PLC0415
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     deployment = await Deployment.get_by_id(deployment_typeid.partition("-")[2])
@@ -913,7 +913,6 @@ async def _agent_placement(deployment_typeid: str):
         deployment.serving = True
         await deployment.save()
     await ensure_chat_channel(agent, deployment)
-    await ensure_conversations_channel(agent, deployment)
     return deployment
 
 

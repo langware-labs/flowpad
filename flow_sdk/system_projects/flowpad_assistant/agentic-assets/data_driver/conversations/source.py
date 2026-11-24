@@ -1,7 +1,8 @@
-"""``ConversationsSource`` — the hub conversations an agent's Identity is a member of, as a message source.
+"""``ConversationsSource`` — the hub conversations an agent's Identity was invited to, as a message source.
 
-A person adds an agent's deployment to an ordinary hub conversation; the deployment's machine is
-signed in to the hub as the agent's Identity, so the conversation is one that login can read. The
+The agent's creator adds this source to the agent, as they would Slack or Telegram. A person invites the
+agent to an ordinary hub conversation; the hub grants the Identity the answering deployment's machine
+is signed in as, so the conversation is one that login can read. The
 source is ONE stream over every such conversation: the hub's conversation list says which moved, a
 conversation's messages are the records, a reply is ``add_message``. The deployment's serve loop
 answers it like any other channel.
@@ -14,14 +15,11 @@ another kind of conversation with a source or a writer of its own; they are skip
 
 **Every member may write.** The hub admitted each member of a conversation, so the source admits
 any sender (``open_inbound``); the agent's own messages are told apart by its Identity (``whoami``).
-
-One source per deployment: its config names the deployment that answers it.
 """
 
 from __future__ import annotations
 
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import Rejected
 from flow_sdk.sources.hub_conversations import AppHub, HubConversationSource, PoolEntry, change_token, newest_first
 
@@ -31,18 +29,10 @@ CHANNEL = "conversations"
 DIRECT = "direct"
 
 
-class ConversationsConfig(SourceConfig):
-    """Which deployment's agent login this source reads as."""
-
-    deployment_id: str
-
-
 class ConversationsSource(HubConversationSource):
-    Config = ConversationsConfig
     provider = "conversations"
     origin_kind = CHANNEL
     cursor_prefix = "conversations:"
-    identity_config_key = "deployment_id"
     #: The hub admitted every member of a conversation: an empty allowlist admits each of them.
     open_inbound = True
 
