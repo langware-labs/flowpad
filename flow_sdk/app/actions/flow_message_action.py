@@ -16,7 +16,7 @@ import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 from weakref import WeakValueDictionary
 
 from flow_sdk import stream_inbox
@@ -3392,6 +3392,21 @@ def _clamp_invitation_ts(invitations: list[Pointer], merged: list[Pointer]) -> l
     ]
 
 
+def _reached_here_after(fm: Any, moment: datetime) -> bool:
+    """``fm`` was written or received on this machine after ``moment``.
+
+    The reconcile drops a hub-mirrored message the hub's listing does not name. A reply this
+    machine posted while the listing was in flight (a live session answering its queue during
+    the catch-up) is sent, mirrored, and not in a listing taken before it existed — it was
+    being erased here as "deleted on the hub".
+    """
+    for stamp in (getattr(fm, "created_date", None), getattr(fm, "received_at", None)):
+        when = stamp if isinstance(stamp, datetime) else iso_to_utc(str(stamp)) if stamp else None
+        if when is not None and (when if when.tzinfo else when.replace(tzinfo=UTC)) >= moment:
+            return True
+    return False
+
+
 async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> bool:
     """Bring local message state for a single conversation up to the hub's.
 
@@ -3427,6 +3442,9 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
             async def _list(action: str):
                 return await HubProxy.call("GET", BuiltinEntityType.CONVERSATION, conv_id, action=action, strict=True)
 
+            # The listing answers for the moment it was taken. A message written or received
+            # here after that is not "absent from the hub": the listing simply predates it.
+            listed_at = datetime.now(UTC)
             try:
                 try:
                     children = await _list("messages")
@@ -3542,6 +3560,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
                         or fm.kind == FlowMessageKind.INVITATION
                         or bool(getattr(fm, "is_draft", False))
                         or not fm.remote
+                        or _reached_here_after(fm, listed_at)
                     )
                     if not keep:
                         # remote=True and absent from the hub list ⇒ deleted
