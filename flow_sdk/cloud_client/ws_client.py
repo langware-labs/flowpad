@@ -276,6 +276,15 @@ async def _catch_up_after_reconnect() -> None:
         logger.warning("hub WS reconnect catch-up failed (non-fatal): %s", e)
 
     try:
+        # The messages just pulled include live-session turns sent while this machine was away;
+        # storing them kicked nothing, so the sessions this machine hosts are drained now.
+        from flow_sdk.app.actions.execute_prompt import redrive_hosted_sessions
+
+        await redrive_hosted_sessions()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect session redrive failed (non-fatal): %s", e)
+
+    try:
         from flow_sdk.app.actions.membership_sync import sync_remote_memberships
         from flow_sdk.builtin.user import User
 

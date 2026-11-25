@@ -1376,6 +1376,30 @@ async def _session_messages(session_ids: set) -> dict:
     return grouped
 
 
+async def redrive_hosted_sessions() -> None:
+    """Run the turns that reached this machine without kicking the gate.
+
+    A turn starts only when something kicks the gate. A message the hub announced while
+    this machine was offline arrives later through the conversation catch-up, which stores
+    it and kicks nothing: the session reads idle over a full queue until the guest happens
+    to send one more turn. Called when that catch-up has pulled what was missed. Only
+    drains queues — a turn that is running now holds its conversation's lock and is left
+    alone (releasing an interrupted turn is startup's job, ``recover_interrupted_sessions``).
+    """
+    from flow_sdk.builtin.remote_worker_session import RUNNABLE_STATUSES  # noqa: PLC0415
+
+    me, _ = await _local_me()
+    if not me:
+        return
+    for session in await _sessions_in(RUNNABLE_STATUSES):
+        if not getattr(session, "conversation_id", None) or getattr(session, "host_user_id", None) != me:
+            continue
+        try:
+            await redrive_session_prompts(session)
+        except Exception as e:  # noqa: BLE001 — one bad session must not stop the sweep
+            logger.warning("[session] catch-up redrive failed for %s: %s", session.id, e)
+
+
 async def _release_interrupted_turn(session, msgs: list, someone_typeid: str) -> None:
     """Give back the one prompt whose turn died with the process.
 
