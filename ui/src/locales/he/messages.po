@@ -69,6 +69,10 @@ msgstr " (אתם)"
 msgid " or "
 msgstr " או "
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Custom Setup"
+msgstr "הגדרה מותאמת אישית"
+
 #: src/components/assets/editor/revisions/RevisionDiffModal.tsx
 msgid "— {label} vs current"
 msgstr "— {label} לעומת הנוכחי"

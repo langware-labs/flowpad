@@ -69,6 +69,10 @@ msgstr " (you)"
 msgid " or "
 msgstr " or "
 
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Custom Setup"
+msgstr "Custom Setup"
+
 #: src/components/assets/editor/revisions/RevisionDiffModal.tsx
 msgid "— {label} vs current"
 msgstr "— {label} vs current"

@@ -104,16 +104,27 @@ type LiveMessage = {
   occurred_at?: string | null;
 };
 
-type CardProps = { onActiveChange?: (active: boolean) => void };
+type CardProps = {
+  onActiveChange?: (active: boolean) => void;
+  /** Leave the wizard for the plain agent form; the button shows only when a host passes it. */
+  onCustomSetup?: () => void;
+};
 
 /** The hub home's first-agent card. × closes the wizard by remounting it: nothing carries over. */
-export function FirstAgentCard({ onActiveChange }: CardProps = {}) {
+export function FirstAgentCard({ onActiveChange, onCustomSetup }: CardProps = {}) {
   const [run, setRun] = useState(0);
-  return <FirstAgentWizard key={run} onActiveChange={onActiveChange} onClose={() => setRun((n) => n + 1)} />;
+  return (
+    <FirstAgentWizard
+      key={run}
+      onActiveChange={onActiveChange}
+      onCustomSetup={onCustomSetup}
+      onClose={() => setRun((n) => n + 1)}
+    />
+  );
 }
 
 /** Pick a channel → say what it does → pick how it connects → its own sandbox + connect a channel → talk to it. */
-function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: () => void }) {
+function FirstAgentWizard({ onActiveChange, onCustomSetup, onClose }: CardProps & { onClose: () => void }) {
   const { t } = useLingui();
   const [step, setStep] = useState<Step>('channel');
   useEffect(() => onActiveChange?.(step !== 'channel'), [step, onActiveChange]);
@@ -518,6 +529,13 @@ function FirstAgentWizard({ onActiveChange, onClose }: CardProps & { onClose: ()
               <span className="text-sm font-semibold text-foreground">{CHANNEL_TITLE[c]}</span>
             </button>
           ))}
+        </div>
+      )}
+      {step === 'channel' && onCustomSetup && (
+        <div className="mt-3 flex justify-end">
+          <Button data-testid="first-agent-custom-setup" variant="ghost" size="sm" onClick={onCustomSetup}>
+            <Trans>Custom Setup</Trans>
+          </Button>
         </div>
       )}
 

@@ -237,22 +237,34 @@ export function useQuickCreatePick(explicitProject?: Project | null) {
   // dialog — the generic name+path form would only ask it questions it can't
   // answer. Chosen here, not inside QuickCreateDialog, so the generic form's
   // project fetch + snapshot never run for a type that discards them.
-  const CustomDialog = customDialogFor(activeType, useCloudAuthed());
+  // Custom Setup in a type's own dialog falls back to the generic form for the same pick.
+  const [customSetup, setCustomSetup] = useState(false);
+  const typeDialog = customDialogFor(activeType, useCloudAuthed());
+  const CustomDialog = customSetup ? undefined : typeDialog;
 
   const handleDialogChange = (next: boolean) => {
     setDialogOpen(next);
-    if (!next) setActiveType(null);
+    if (!next) {
+      setActiveType(null);
+      setCustomSetup(false);
+    }
   };
 
   const onPick = (type: string) => {
     setActiveType(type);
+    setCustomSetup(false);
     setDialogOpen(true);
   };
 
   const dialogs = (
     <>
       {CustomDialog ? (
-        <CustomDialog open={dialogOpen} onOpenChange={handleDialogChange} projectId={project?.id ?? null} />
+        <CustomDialog
+          open={dialogOpen}
+          onOpenChange={handleDialogChange}
+          projectId={project?.id ?? null}
+          onCustomSetup={() => setCustomSetup(true)}
+        />
       ) : (
         <QuickCreateDialog open={dialogOpen} onOpenChange={handleDialogChange} type={activeType} project={explicitProject} />
       )}
