@@ -26767,7 +26767,6 @@ msgstr "جاري السحب…"
 #: src/components/assets/ContextFolderGitBadge.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
-#: src/components/status-bar/GitPushButton.tsx
 msgid "Push"
 msgstr "دفع"
 
@@ -26782,8 +26781,17 @@ msgstr "إرسال وإخطار"
 
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Push all"
-msgstr "دفع الكل"
+#~ msgid "Push all"
+#~ msgstr "دفع الكل"
+
+#: src/components/status-bar/GitPushButton.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Push all changes"
+msgstr "دفع كل التغييرات"
+
+#: src/components/status-bar/GitPushButton.tsx
+msgid "Push commits"
+msgstr "دفع الإيداعات"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push to {branch} — optionally tell people about it."

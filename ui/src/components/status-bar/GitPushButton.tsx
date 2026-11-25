@@ -8,16 +8,16 @@ import { useGitStatus } from './GitStatusContext';
 
 /**
  * Push for the current project, shown next to the pending pill. With local
- * commits waiting it is "Push <n>": pushes those commits and commits nothing
+ * commits waiting it is "Push commits <n>": pushes those commits and commits nothing
  * (uncommitted files stay put). With none waiting but files pending it becomes
- * "Push all": commit everything, then push. Hidden while the tree is stuck in a
+ * "Push all changes": commit everything, then push. Hidden while the tree is stuck in a
  * conflict (``GitResolveButton`` stands in) and when there is nothing to push.
  * Reads the shared GitStatusContext and refreshes it after a push so the pill
  * updates too.
  */
 /** Plain push: the commits already made, nothing new committed. */
 const pushCommitsOnly = (git: GitWorkdir) => git.pushCommits();
-/** Push all: commit every pending file, then push. */
+/** Push all changes: commit every pending file, then push. */
 const pushAll = (git: GitWorkdir) => git.push();
 
 export const GitPushButton: React.FC = () => {
@@ -69,12 +69,12 @@ export const GitPushButton: React.FC = () => {
       <GitPushIcon busy={busy} />
       {all ? (
         <span>
-          <Trans>Push all</Trans>
+          <Trans>Push all changes</Trans>
         </span>
       ) : (
         <>
           <span>
-            <Trans>Push</Trans>
+            <Trans>Push commits</Trans>
           </span>
           <span className="tabular-nums" data-testid="git-push-ahead-count">
             {ahead}

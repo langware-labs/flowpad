@@ -1,6 +1,6 @@
 /**
  * `GitPushButton` shows how many commits are waiting to go up. With none waiting
- * and files pending it turns into "Push all" (the pending pill counts those files).
+ * and files pending it turns into "Push all changes" (the pending pill counts those files).
  */
 import '@testing-library/jest-dom/vitest';
 
@@ -48,11 +48,11 @@ describe('GitPushButton commit count', () => {
     expect(screen.queryByTestId('git-push-all-button')).toBeNull();
   });
 
-  it('becomes Push all when only uncommitted changes are pending', () => {
+  it('becomes Push all changes when only uncommitted changes are pending', () => {
     withStatus(2, 0);
     render(<GitPushButton />);
     expect(screen.queryByTestId('git-push-button')).toBeNull();
-    expect(screen.getByTestId('git-push-all-button')).toHaveTextContent('Push all');
+    expect(screen.getByTestId('git-push-all-button')).toHaveTextContent('Push all changes');
   });
 
   it('is hidden when there is nothing to push', () => {
