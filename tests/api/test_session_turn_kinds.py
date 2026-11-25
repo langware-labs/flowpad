@@ -231,3 +231,13 @@ async def test_ending_the_session_stops_the_command_it_is_running(bootstrapped_c
     assert any("[stopped: the live session ended]" in (m.text or "") for m in msgs)
     assert not proof.exists()
     assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.ENDED.value
+
+
+async def test_a_long_output_answers_with_its_end_and_rides_whole_as_a_file(bootstrapped_client, user):
+    conv_id, rws = await _approved(bootstrapped_client, ASKED_ALL)
+
+    msgs = await _run(conv_id, rws.id, "command", "python3 -c \"print('a' * 20000 + 'THE-END')\"")
+
+    [reply] = [m for m in msgs if (m.text or "").startswith("exit 0")]
+    assert reply.text.endswith("THE-END") and len(reply.text) < 9000
+    assert any(a.attachment_type == AttachmentType.FILE and "command-output.txt" in a.data for a in reply.attachment)

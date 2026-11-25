@@ -978,26 +978,24 @@ async def _run_plain_turn(kind: str, text: str, workdir: str, session_id: str) -
         raise _TurnFailed(f"the {kind} is empty — nothing to run")
     if kind == TurnKind.COMMAND.value:
         from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.returned_value_spec import OUTPUT_CAP  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import OUTPUT_CAP, capped  # noqa: PLC0415
 
-        lines: list[str] = []
         stop = _RUNNING_COMMANDS[session_id] = asyncio.Event()
         try:
-            result = await run_shell(
-                text, timeout_seconds=COMMAND_TURN_SECONDS, workdir=Path(workdir), on_output=lines.append, stop=stop
-            )
+            result = await run_shell(text, timeout_seconds=COMMAND_TURN_SECONDS, workdir=Path(workdir), stop=stop)
         finally:
             _RUNNING_COMMANDS.pop(session_id, None)
-        shown = "\n".join(part for part in (result.stdout.rstrip(), result.stderr.rstrip()) if part)
+        whole = "\n".join(part for part in (result.stdout.rstrip(), result.stderr.rstrip()) if part)
+        # The answer keeps the END of a long output, where the error is; all of it rides as a file.
+        shown = capped(whole)
         if result.timed_out:
             shown = f"{shown}\n[stopped after {COMMAND_TURN_SECONDS:.0f}s]".strip()
         elif stop.is_set():
             shown = f"{shown}\n[stopped: the live session ended]".strip()
         code = result.returncode if result.returncode is not None else -1  # never started / killed
         extra: dict = {"turn_kind": kind, "turn_exit_code": code, "message": f"exit {code}\n{shown}".rstrip()}
-        everything = "\n".join(lines)
-        if len(everything) > OUTPUT_CAP:  # the answer keeps the end; the whole output rides as a file
-            extra["files"] = [_Upload("command-output.txt", everything.encode())]
+        if len(whole) > OUTPUT_CAP:
+            extra["files"] = [_Upload("command-output.txt", whole.encode())]
         return shown, extra
     if kind == TurnKind.CONTROL.value:
         from flow_sdk.notifications.tab_script import NoTab, run_script_in_tab  # noqa: PLC0415
