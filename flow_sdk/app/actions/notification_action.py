@@ -1527,6 +1527,13 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
     host_id, host_name, _ = _peer_of(conv, sender_id)
     if not host_id:
+        # A conversation opened a moment ago still lists its other member by email alone; the hub
+        # already knows who that is. Ask it once, here, rather than refuse a request that is valid.
+        from flow_sdk.app.actions.members_action import _refresh_roster  # noqa: PLC0415
+
+        await _refresh_roster(conv)
+        host_id, host_name, _ = _peer_of(conv, sender_id)
+    if not host_id:
         return ApiFailResponse(
             message="a live session runs on the other participant's machine — this conversation has none",
             status_code=400,
