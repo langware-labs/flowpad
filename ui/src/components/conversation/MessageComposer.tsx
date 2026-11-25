@@ -945,7 +945,7 @@ export function MessageComposer({
           )}
           {terminal && offeredKinds && (
             <span
-              className="inline-flex shrink-0 items-center self-center overflow-hidden rounded border border-border text-[10px] font-medium uppercase tracking-wide"
+              className="inline-flex shrink-0 items-center self-center overflow-hidden rounded border border-border font-sans text-[10px] font-medium tracking-wide"
               role="radiogroup"
               data-testid="composer-turn-kind"
             >
@@ -958,7 +958,7 @@ export function MessageComposer({
                   onClick={() => setPickedKind(kind)}
                   data-testid={`composer-turn-kind-${kind}`}
                   className={cn(
-                    'px-1.5 py-px',
+                    'px-1.5 py-px uppercase', // a button resets text-transform, so it is set here
                     i > 0 && 'border-s border-border',
                     kind === turnKind
                       ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
