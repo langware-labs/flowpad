@@ -18,9 +18,10 @@ export interface ApproveLiveSession {
 
 /**
  * The host's Approve, shared by the live-session view and the session card in
- * the conversation. The backend refuses an approval with nowhere to run (409)
- * rather than approving a turn that can only fail, so the place is asked for
- * here, before the call: a project, or "Run (Skip project)" — the instance's temp folder.
+ * the conversation. A chat with no project lets the host choose where it runs,
+ * here, before the call: a project, or "Run (Skip project)" — the instance's
+ * temp folder. The backend never needs the answer: with nothing picked it runs
+ * in the temp folder.
  */
 export function useApproveLiveSession(): ApproveLiveSession {
   const { t } = useLingui();

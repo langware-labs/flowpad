@@ -815,20 +815,10 @@ async def run_session_turn(
     async with guard:
         ap = None
         try:
-            from flow_sdk.builtin.project import Project
-
-            # The session's own project first: in a person-to-person chat (no
-            # project by design) the host picks it at approval.
-            project_id = session.project_id or getattr(conversation, "project_id", None)
-            # The host's "No project" at approval: the instance's temp folder.
-            workdir = session.workdir
-            if not workdir:
-                if not project_id:
-                    raise _TurnFailed("this conversation is not linked to a project on the host")
-                project = await Project.get_one({"id": project_id})
-                workdir = getattr(project, "fs_storage_mount_path", None) if project else None
-                if not workdir:
-                    raise _TurnFailed("the host's project has no folder to run in")
+            # Always a folder, decided again here: a session approved before the
+            # place was checked, or whose project lost its folder since, runs in
+            # the instance's temp folder instead of failing the guest.
+            project_id, workdir = await session.place_to_run(conversation)
 
             # RUNNING has to be durable BEFORE the consume, not after it. The
             # marker below means "this prompt is spoken for"; if the host dies
@@ -862,7 +852,6 @@ async def run_session_turn(
             )
             session.host_process_id = ap.id
             session.collaboration_room_id = session.collaboration_room_id or (room.id if room else None)
-            session.project_id = session.project_id or project_id
             await _set_turn_status(session, RemoteWorkerSessionStatus.RUNNING)
             await session.save()
 
@@ -977,8 +966,8 @@ async def run_session_turn(
             )
         except Exception as e:  # noqa: BLE001
             # A failed prompt is answered by its failure line, even one that failed
-            # before the consume (no project folder): left queued, the next drain
-            # would run it again on top of the guest's Retry — one prompt, two runs.
+            # before the consume: left queued, the next drain would run it again
+            # on top of the guest's Retry — one prompt, two runs.
             if not getattr(fm, "prompt_auto_handled", False):
                 try:
                     await consume_prompt(fm, someone_typeid)

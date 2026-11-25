@@ -37,6 +37,11 @@ collaborator's machine, and it is a session.
    **"No project"** at Approve (`scratch: true`) runs the session in the
    instance's one temp folder, `<instance_dir>/live-session-scratch` (host-only
    `workdir`; protected, so no Project is minted; never machine-wide).
+   **A session always has a folder** (2026-11-25): that temp folder is also the
+   default. `RemoteWorkerSession.place_to_run` decides it at Approve and again at
+   every turn — the session's project, else the conversation's, each only when it
+   has a folder on the host, else the temp folder. Approve is never refused, and
+   no turn fails, for want of a place to run.
 3. **Follow-up prompts never render in the main thread** — only in the session
    view (`/dock/live_session/<id>`).
 4. **Replies never render in the main thread** either, including review drafts.

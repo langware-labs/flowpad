@@ -117,13 +117,20 @@ async def test_prompts_queued_while_pending_all_run_in_order_on_approve(bootstra
     assert len(await RemoteWorkerSession.get_all({"conversation_id": conv_id})) == 1
 
 
-async def test_a_prompt_that_fails_before_running_is_not_left_queued(bootstrapped_client, user, fake_worker):  # noqa: F811
+async def test_a_prompt_that_fails_before_running_is_not_left_queued(
+    bootstrapped_client, user, fake_worker, monkeypatch  # noqa: F811
+):
     """Its failure line answers it; the guest's Retry is the one re-run. Left
     queued, the next drain would run it again on top of the Retry."""
     conv_id = await make_conversation(bootstrapped_client)
-    rws = await make_session(conv_id, S.IDLE.value, project_id=str(uuid.uuid4()))  # a project that is gone
+    rws = await make_session(conv_id, S.IDLE.value)
     fm = inbound_prompt_fm(conv_id, rws.id, fm_id=str(uuid.uuid4()))
     await fm.save(notify=False)
+
+    async def breaks(self, conversation=None):  # the first step of a turn, before the consume
+        raise RuntimeError("the disk is gone")
+
+    monkeypatch.setattr(RemoteWorkerSession, "place_to_run", breaks)
 
     await ep.process_inbound_prompt(fm.id, conv_id)
 

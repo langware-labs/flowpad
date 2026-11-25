@@ -158,11 +158,10 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
   }
 
   /** Host approves a PENDING session (this session only); queued prompts
-   *  re-drive server-side. `projectId` is
-   *  where the session runs — required when neither the session nor its
-   *  conversation has a project (a person-to-person chat has none by design);
-   *  without it the host refuses (409) and the session stays pending.
-   *  `scratch` is the host's "No project": the instance's one temp folder. */
+   *  re-drive server-side. `projectId` is the project the host picked to run
+   *  in; `scratch` is the host's "No project": the instance's one temp folder.
+   *  With neither, the backend runs it in the session's or the conversation's
+   *  project when that has a folder on this machine, else in the temp folder. */
   public approve(projectId?: string, options: { scratch?: boolean } = {}): Promise<void> {
     const body: Record<string, unknown> = {};
     if (options.scratch) body.scratch = true;
