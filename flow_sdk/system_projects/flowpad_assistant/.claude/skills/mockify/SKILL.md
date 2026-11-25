@@ -11,7 +11,8 @@ description: 'Turns a product idea into a clickable HTML mock of the user journe
   the user asks for a sketch). Use for "mock this flow", "show me the UX", "make a clickable mock", or a
   design discussion that needs screens before code; also when mock feedback arrives or a mock is approved. `mockify plan` / `mockify implement`:
   build the approved mock from its build list, each item proven against its screen. `mockify test`: define a regression
-  test on the current UI as a manual_regression .md. NOT for a working
+  test on the current UI as a manual_regression .md. `mockify guide`: a click-through guide of the app as it is, for
+  someone to follow ("show them how to do it", "send them the steps"), sent as one file. NOT for a working
   app (web-app-builder), a one-page report or chart (html-builder), or slides (decker).'
 ---
 
@@ -466,6 +467,24 @@ The `.md.ts` is written afterwards the usual way (`ui/tests/manual_regression/ru
   ```
   An existing file needs `--replace` (it keeps the id). Show the file, list `steps_without_expect`, and stop: the mock stays in the mock project (no Save to
   repo), the `.md` is the scenario from now on, and nothing is committed unless asked.
+
+## `mockify guide` — a journey someone follows, not one someone reviews
+
+"Show them how to do it": the same tree, captures and build, read by the person who will DO the steps. Set
+`guide: true` on the mock row and write, per screen, **`do`** — the instruction, in the reader's language and words
+("Press the Claude row"). Nothing else changes: `tree.py` refuses a guide screen with no `do`, and one that carries
+`changes` or `decisions` (a guide shows the product as it is).
+
+- **The page opens with the guide bar** (`assets/journey-bar.md`, "Guide mode"): the screen's `do` as its title and
+  as a callout beside the control that goes on (`data-next`). The last screen has no Next, so its `do` says what
+  happens next outside the screen.
+- **A step that may not apply** gets `skip` — the question that says when ("Already signed in?"); the bar offers
+  "… Skip to n", the next step without one.
+- **One file, no Flowpad behind it.** A guide reads no row and saves nothing, so `index.html` is sent as it is
+  (`flow conversation send … --file`); every file under the mock folder is inlined by the build.
+- Capture in the reader's language, and replace your dev instance's names with theirs IN the capture script
+  (never by hand in the built page). Say in the reply which names are look-alikes.
+- The reader does not approve or comment: there is no build list for a guide, and no Save to repo.
 
 ## The mock project is a temp folder
 

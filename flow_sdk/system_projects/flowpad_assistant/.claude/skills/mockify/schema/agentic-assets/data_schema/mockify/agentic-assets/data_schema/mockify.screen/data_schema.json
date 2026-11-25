@@ -60,6 +60,14 @@
     "url": {
       "shape": "?string",
       "description": "Test mode: the app route the test navigates to on this screen (the path after {APP_URL}); required on the first step."
+    },
+    "do": {
+      "shape": "?string",
+      "description": "Guide only: the instruction the reader follows on this screen, in their language and their words (\"Press the Claude row\"). The guide bar's title and the callout beside the control."
+    },
+    "skip": {
+      "shape": "?string",
+      "description": "Guide only: this step does not always apply -- the question that says when it does not (\"Already signed in?\"). The guide bar then offers to skip to the next step without one."
     }
   }
 }

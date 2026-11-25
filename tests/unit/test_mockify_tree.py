@@ -62,3 +62,14 @@ def test_a_legacy_journey_becomes_the_same_tree():
     assert tree.validate(legacy) == []
     assert [(n["id"], n["num"], n["tag"]) for n in tree.compile_tree(legacy)["screens"]] == [
         ("home", "1", "existing"), ("form", "2", "new"), ("denied", "2a", "existing"), ("done", "3", "existing")]
+
+
+def test_a_guide_needs_an_instruction_on_every_screen_and_shows_no_changes():
+    row = {"guide": True, "tree": {"root": "a", "screens": [
+        _screen("a", _go("go", "b"), do="Press Go"),
+        _screen("b", changes=[{"id": "c1", "title": "x"}]),
+    ]}}
+    problems = tree.validate(row)
+    assert any(p.startswith("b: a guide screen needs `do`") for p in problems), problems
+    assert any(p.startswith("b: a guide shows the product as it is") for p in problems), problems
+    assert not [p for p in problems if p.startswith("a:")]

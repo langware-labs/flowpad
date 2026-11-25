@@ -128,3 +128,17 @@ today element `[data-change="<id>"]` and its suggested version `<template data-c
   line: `Mock "<slug>" is approved: … build_list.py make, then mockify plan (SKILL.md "Approve")`.
 - An approved mock shows `· ✓ approved` in the bar. Saving a comment or a change verdict on it puts the row back
   to `in_review` and removes `approved_at`; the feedback panel says so before the save.
+
+## Guide mode (`MOCKIFY.guide`)
+
+`build_mock.py` sets `MOCKIFY.guide` from the row's `guide`. The page is then a guide someone follows:
+
+**⋮⋮ · ‹ Back · Next › · <the screen's `do` / n of N> · <skip> · ☰ steps · –**
+
+- The title is the screen's `do`; the reviewer's controls, the EXISTING / NEW tags and the persona chip are not drawn.
+- The control that goes on still glows, and a callout — the step number and `do` — sits beside it: on the side
+  with room, or just above a control as wide as the screen.
+- A screen with `skip` shows "<skip> Skip to n": the next screen that has none.
+- The last screen has no Next.
+- The bar never imports the SDK: no row, no feedback, no Execute. It is not pinned by its left edge, because its
+  width changes with every instruction.

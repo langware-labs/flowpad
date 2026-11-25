@@ -124,6 +124,11 @@ def _walk(tree: dict, mock: dict, problems: list) -> list:
             problems.append(f"{sid}: names no persona -- the mock has several, so every screen says whose it is")
         if s.get("tag") == "new" and s.get("changes"):
             problems.append(f"{sid}: a new screen carries no `changes` -- everything on it is new")
+        if mock.get("guide"):   # read by someone who follows it, not by a reviewer
+            if not str(s.get("do") or "").strip():
+                problems.append(f"{sid}: a guide screen needs `do` -- the instruction its reader follows")
+            if s.get("changes") or s.get("decisions"):
+                problems.append(f"{sid}: a guide shows the product as it is -- no changes, no decisions")
         seen_actions, mains = set(), 0
         for a in s.get("actions") or []:
             aid, where = a.get("id"), f"{sid}.{a.get('id')}"

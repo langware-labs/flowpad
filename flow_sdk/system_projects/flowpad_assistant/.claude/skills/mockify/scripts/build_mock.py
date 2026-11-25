@@ -19,6 +19,8 @@ each runs once on its own section. `need(selector)` returns the element or throw
 on that screen instead of a silently unchanged one.
 
 Writes <mock-dir>/index.html and, once, <mock-dir>/webapp.json (serve with `flow app serve`).
+A row with `guide: true` builds a guide: the same page, opened with the guide bar (MOCKIFY.guide) — it reads
+no Flowpad data, so the one file can be sent as it is.
 """
 
 import argparse
@@ -261,7 +263,7 @@ def main() -> None:
     config = json.dumps({"key": a.key, "project": a.project, "tree": compiled,
                          "schemas": str(pathlib.Path(a.mock_dir).resolve().parents[1] / "data_schema"),
                          "personas": row.get("personas") or [], "persona": row.get("persona") or "",
-                         "device": row.get("device") or "desktop"}, ensure_ascii=False).replace("</", "<\\/")
+                         "device": row.get("device") or "desktop", "guide": bool(row.get("guide"))}, ensure_ascii=False).replace("</", "<\\/")
 
     page_css = css + "\n" + "\n".join(styles)
     if any(d in DEVICES for d in devices.values()):
