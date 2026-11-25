@@ -2,7 +2,8 @@ import { GitBranch, Loader2, Plus } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
 import { capabilityManager, CapabilityKinds, gitOriginRepoFullName, gitOriginWebUrl } from '@sdk';
-import type { CapabilityAccess, TypeId } from '@sdk';
+import type { CapabilityAccess, Project, TypeId } from '@sdk';
+import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { openExternal } from '@src/lib/open-external';
 import { useUiActionRequest } from '@src/navigation/ui-actions';
@@ -17,8 +18,8 @@ export interface GitCheck {
 
 interface ProjectGitChipProps {
   projectTypeId: TypeId;
-  /** Called with the check results when the user asks to add git. */
-  onChecked?: (checks: GitCheck[]) => void;
+  /** The project whose folder gets git: the checks dialog's "Add git" target. */
+  project?: Project | null;
 }
 
 /**
@@ -33,10 +34,11 @@ interface ProjectGitChipProps {
  * and now returns it even when the tree is dirty or unpushed, so a real repo is
  * still named rather than being offered an "Add git" button it doesn't need.
  */
-export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps) {
+export function ProjectGitChip({ projectTypeId, project }: ProjectGitChipProps) {
   const { t } = useLingui();
   const preflight = useGitSharePreflight(projectTypeId, true);
   const [checking, setChecking] = useState(false);
+  const [checks, setChecks] = useState<GitCheck[] | null>(null);
 
   // Nothing to name yet. This button reports where git stands; the dialog it
   // feeds owns the remedy for each answer.
@@ -50,13 +52,11 @@ export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps
       // summary is the backend's own cached snapshot, seeded into the client at
       // bootstrap — so this is local, and returns in a frame.
       const summary = await capabilityManager.getSummary();
-      const byKind = new Map<string, CapabilityAccess>(
-        (summary?.capabilities ?? []).map((c) => [c.kind, c]),
-      );
+      const byKind = new Map<string, CapabilityAccess>((summary?.capabilities ?? []).map((c) => [c.kind, c]));
       const gh = byKind.get(CapabilityKinds.GitHubGh);
       const github = byKind.get(CapabilityKinds.GitHub);
 
-      onChecked?.([
+      setChecks([
         {
           // No probe exists for the git binary itself — the nearest signal is
           // the gh CLI capability, which reports installed+authenticated
@@ -136,26 +136,35 @@ export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps
     );
   }
 
-
   return (
-    <button
-      type="button"
-      onClick={() => void runChecks()}
-      disabled={checking}
-      aria-label={t`Add Git`}
-      title={t`Add Git (optional — linking to the cloud doesn't need it)`}
-      data-testid="project-git-add"
-      className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-    >
-      {checking ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-      ) : (
-        <Plus className="h-3.5 w-3.5" aria-hidden />
+    <>
+      <button
+        type="button"
+        onClick={() => void runChecks()}
+        disabled={checking}
+        aria-label={t`Add Git`}
+        title={t`Add Git (optional — linking to the cloud doesn't need it)`}
+        data-testid="project-git-add"
+        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+      >
+        {checking ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        ) : (
+          <Plus className="h-3.5 w-3.5" aria-hidden />
+        )}
+        <GitBranch className="h-3.5 w-3.5" aria-hidden />
+        <span>
+          <Trans>Add Git</Trans>
+        </span>
+      </button>
+      {checks && (
+        <ProjectGitChecksDialog
+          open
+          onOpenChange={(next) => !next && setChecks(null)}
+          checks={checks}
+          project={project}
+        />
       )}
-      <GitBranch className="h-3.5 w-3.5" aria-hidden />
-      <span>
-        <Trans>Add Git</Trans>
-      </span>
-    </button>
+    </>
   );
 }

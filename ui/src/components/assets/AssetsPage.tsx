@@ -1,4 +1,3 @@
-import { t } from '@lingui/core/macro';
 import { i18n } from '@lingui/core';
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
@@ -11,6 +10,8 @@ import {
   WIKI_FRAGMENT_PARAM,
 } from '@src/navigation/asset-doc-types';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
+import { ProjectGitChip } from '@src/components/project-home/ProjectGitChip';
+import { ProjectHomeMenu } from '@src/components/project-home/ProjectHomeMenu';
 import { ProjectNameTitle } from '@src/components/project-home/ProjectNameTitle';
 import { ShareContextFolderButton } from '@src/components/assets/ShareContextFolderButton';
 import { useDependencyForRel } from '@src/hooks/use-dependency-for-rel';
@@ -23,9 +24,8 @@ import { assetTargetLookup, opensThroughLookup } from '@src/navigation/record-ty
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, RecordType, TypeId, VFSPath } from '@sdk';
 import type { Project } from '@sdk';
-import { confirmProjectDelete } from '@src/components/assets/confirm-project-delete';
 import apiClient from '@sdk/client';
-import { BookOpen, ChevronRight, PackageSearch, Trash2, X } from 'lucide-react';
+import { BookOpen, ChevronRight, PackageSearch, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Breadcrumb,
@@ -286,7 +286,7 @@ export function AssetsPage() {
   // the explicit project scope on an assets page, else the context project.
   // Drives the Project mode + its tooltip name.
   const scopeProjectId = urlProjectId ?? urlScopeProjectId ?? currentProjectId;
-  // The scoped project entity. Drives the "Delete project" header action (which
+  // The scoped project entity. Drives the header's project menu (which
   // gates itself on `isProjectView`) and the folder Share — the latter also runs
   // in the assets dock, so this resolves for any scoped project, not just a
   // project page.
@@ -295,15 +295,6 @@ export function AssetsPage() {
     [scopeProjectId],
   );
   const { data: projectEntity } = useEntity<Project>(projectTypeId);
-  const handleDeleteProject = useCallback(() => {
-    const proj = projectEntity;
-    if (!proj) return;
-    const name = proj.displayName ?? 'this project';
-    confirmProjectDelete(proj, () => {
-      notify.success({ title: t`Project deleted`, message: name });
-      navigation.closeDock();
-    });
-  }, [projectEntity, navigation]);
   // Non-scope filter state (query / tags / per-type filters / folder path).
   // The `scope` field is vestigial here — `effectiveFilter` always derives it
   // from `urlScope`, keeping scope URL-authoritative.
@@ -547,7 +538,7 @@ export function AssetsPage() {
           navigation bar now (the crumb's details popover carries the path and
           the reveal actions), and rendering them here too put the same identity
           on screen twice, ~60px apart. What remains below is the browser's own
-          chrome — the Assets label, the folder share, the project delete —
+          chrome — the Assets label, the folder share, the project menu —
           which the bar has no equivalent for. */}
       {!isEditorMode && (
         <div className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3" data-testid="assets-page-header">
@@ -569,6 +560,9 @@ export function AssetsPage() {
                 )}
               </div>
             </div>
+            {isProjectHomeMode && projectEntity && projectTypeId && (
+              <ProjectGitChip projectTypeId={projectTypeId} project={projectEntity} />
+            )}
           </div>
           <div className="ms-auto flex items-center gap-2">
             {/* Share the folder this pane is browsing. Only an fs pointer has a
@@ -578,18 +572,7 @@ export function AssetsPage() {
             {isFsMode && containingFolder && (
               <ShareContextFolderButton folder={containingFolder} project={projectEntity} />
             )}
-            {isProjectView && projectEntity && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-9 shrink-0 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={handleDeleteProject}
-                data-testid="project-delete"
-              >
-                <Trash2 className="h-4 w-4" />
-                <Trans>Delete project</Trans>
-              </Button>
-            )}
+            {isProjectView && projectEntity && <ProjectHomeMenu project={projectEntity} />}
           </div>
         </div>
       )}

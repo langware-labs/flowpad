@@ -5,6 +5,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuPortal,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -18,7 +19,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { type Project, vfsToOsPath, type Workspace, workspaceDisplayName, workspaceForPath } from '@sdk';
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
-import { Cloud, LayoutGrid, Loader2, Menu, Wrench } from 'lucide-react';
+import { Cloud, LayoutGrid, Loader2, Menu, Trash2, Wrench } from 'lucide-react';
+import { confirmProjectDelete } from '@src/components/assets/confirm-project-delete';
 import { useProjectSetupLeft } from '@sdk/react/hooks/use-project-readiness';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -29,7 +31,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * The Project Home burger menu. **Project setup** opens the project's setup page (every step, its state,
  * Edit / Run / Rerun), with a "N left" chip while setup is owed. **Switch workspace**: move this
  * project into another workspace (`Project.switchWorkspace`). The backend closes
- * everything open in the project and moves its folder, so the dialog warns first.
+ * everything open in the project and moves its folder, so the dialog warns first. **Delete project**
+ * asks first (`confirmProjectDelete`), then closes the project's tab.
  *
  * The menu is non-modal: the item opens a dialog, and a dialog opened from a modal
  * DropdownMenu leaves `body{pointer-events:none}` behind on close (219aa5e39).
@@ -75,6 +78,14 @@ export function ProjectHomeMenu({ project }: { project: Project }) {
     }
   }
 
+  function handleDelete() {
+    const name = project.displayName ?? t`this project`;
+    confirmProjectDelete(project, () => {
+      notify.success({ title: t`Project deleted`, message: name });
+      navigation.closeDock();
+    });
+  }
+
   return (
     <>
       <DropdownMenu modal={false}>
@@ -89,7 +100,7 @@ export function ProjectHomeMenu({ project }: { project: Project }) {
             <Menu className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuItem
             data-testid="project-home-deployments"
             onSelect={() => navigation.openDock(DockPointer.forProjectDeployments(String(project.id)))}
@@ -125,6 +136,15 @@ export function ProjectHomeMenu({ project }: { project: Project }) {
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            data-testid="project-delete"
+            className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+            onSelect={handleDelete}
+          >
+            <Trash2 className="me-2 h-4 w-4" />
+            <Trans>Delete project</Trans>
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
