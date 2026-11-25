@@ -79,7 +79,7 @@ async def test_approve_keeps_what_the_host_left_ticked(bootstrapped_client, user
 
 @pytest.mark.parametrize(
     ("asked", "ticked"),
-    [(ASKED_ALL, []), (["prompt"], ["prompt", "command"]), (ASKED_ALL, ["format-the-disk"])],
+    [(ASKED_ALL, []), (["prompt"], ["prompt", "command"]), (ASKED_ALL, ["prompt", "format-the-disk"])],
 )
 async def test_approve_refuses_nothing_ticked_and_more_than_was_asked(bootstrapped_client, user, asked, ticked):
     conv_id = await make_conversation(bootstrapped_client)

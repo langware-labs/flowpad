@@ -632,8 +632,10 @@ class RemoteWorkerSession(Entity):
         if body.get("remember"):
             return ApiFailResponse(message="approve covers this session only; nothing can be remembered", status_code=400)
         if "turn_kinds" in body and body["turn_kinds"] is not None:
-            ticked = clean_turn_kinds(body["turn_kinds"])
-            if not ticked or any(k not in self.askable_turn_kinds for k in ticked):
+            named = body["turn_kinds"] if isinstance(body["turn_kinds"], list) else [None]
+            ticked = clean_turn_kinds(named)
+            # Every NAMED kind must be one that was asked for: an unknown one is refused, not dropped.
+            if not ticked or any(k not in self.askable_turn_kinds for k in named):
                 return ApiFailResponse(
                     message="turn_kinds must be one or more of what was asked for: " + ", ".join(self.askable_turn_kinds),
                     status_code=400,
