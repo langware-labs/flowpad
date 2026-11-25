@@ -271,6 +271,22 @@ async def test_a_hub_project_already_here_or_without_an_origin_is_not_offered(pr
 
 
 @pytest.mark.asyncio
+async def test_a_shared_project_removed_from_this_computer_is_not_offered_again(project_list_hub):
+    """Removing the file-less row left the hub's project in the list, so the next sweep
+    found no row here and mirrored it back: the removed project reappeared as new."""
+    from flow_sdk.builtin.project import Project
+
+    pid = str(uuid4())
+    project_list_hub.append(_hub_project(pid))
+    assert len(await _new_cloud_projects()) == 1
+
+    await Project.delete_by_id(pid)
+
+    assert await _new_cloud_projects() == []
+    assert await Project.get_one({"id": pid}) is None, "the sweep did not mirror it back"
+
+
+@pytest.mark.asyncio
 async def test_signed_out_asks_the_hub_nothing(project_list_hub, monkeypatch):
     from flow_sdk.cli.auth import hub_login
 

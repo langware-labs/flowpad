@@ -194,6 +194,9 @@ def _workspace_root() -> Path:
 #: A row on a temp ROOT is not a real work folder, so it is no one's parent project.
 _TEMP_ROOTS = frozenset(canonical_posix_path(p) for p in (tempfile.gettempdir(), "/tmp", "/var/tmp"))
 
+#: Device-state key (``project_device_state``): the user removed this never-set-up shared project here.
+_REMOVED_HERE = "removed_here"
+
 
 class NestedProjectError(ValueError):
     """A project was about to be created inside another project's folder, or around one."""
@@ -2738,15 +2741,29 @@ class Project(SetupSkippable, Entity):
     # (and startup seeding would write its namespace back into the removed folder).
     # Both hooks: the HTTP delete goes through delete_by_id, never the instance delete().
     async def delete(self):
+        self._remember_removed_here()
         result = await super().delete()
         invalidate_projects_cache()
         return result
 
     @classmethod
     async def delete_by_id(cls, eid: str):
+        row = await cls.get_one({"id": str(eid)})
+        if row is not None:
+            row._remember_removed_here()
         result = await super().delete_by_id(eid)
         invalidate_projects_cache()
         return result
+
+    def _remember_removed_here(self) -> None:
+        """The user removed a shared project they never set up: this computer remembers it, or the
+        sign-in sweep (``new_from_hub``) finds no row and offers it again. Not when the hub's own
+        delete or a sign-out drops the row (``mirror_delete``) — nobody chose that."""
+        from flow_sdk.core.entity.entity_model import _MIRROR_DELETE  # noqa: PLC0415
+        from flow_sdk.project_device_state import update_project_device_state  # noqa: PLC0415
+
+        if self.remote and not self.fs_storage_mount_path and not _MIRROR_DELETE.get():
+            update_project_device_state(str(self.id), **{_REMOVED_HERE: True})
 
     def _visible(self) -> bool:
         """A real work folder: neither hidden (see ``hidden``) nor a row on the temp dir."""
@@ -2944,12 +2961,14 @@ class Project(SetupSkippable, Entity):
         file-less rows, each with its set-up link. A project shared while the
         recipient had no FlowPad (or was signed out) reaches no push and no deep
         link; this is the sweep that finds it after sign-in. A project already
-        held here — set up, skipped, or created on this machine — is not new.
+        held here — set up, skipped, or created on this machine — is not new, and
+        neither is one the user removed from this computer (``_remember_removed_here``).
         Empty when the hub can't be asked."""
         from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
         from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+        from flow_sdk.project_device_state import read_project_device_state  # noqa: PLC0415
 
         if not hub_auth_available():
             return []
@@ -2958,6 +2977,8 @@ class Project(SetupSkippable, Entity):
             project_id = str(row.get("id") or "")
             if not project_id or await cls.get_one({"id": project_id}) is not None:
                 continue
+            if read_project_device_state(project_id).get(_REMOVED_HERE):
+                continue  # removed from this computer: a link or a new share brings it back, never the sweep
             try:
                 project = await materialize_remote_membership_entity(cls, row, someone_typeid)
             except DuplicateProjectNameError as e:
