@@ -69,10 +69,6 @@ msgstr " (you)"
 msgid " or "
 msgstr " or "
 
-#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Setup from scratch →"
-msgstr "Setup from scratch →"
-
 #: src/components/assets/editor/revisions/RevisionDiffModal.tsx
 msgid "— {label} vs current"
 msgstr "— {label} vs current"
@@ -30802,6 +30798,10 @@ msgstr "Setup failed"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Setup finished — everything is installed."
 msgstr "Setup finished — everything is installed."
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Setup from scratch →"
+msgstr "Setup from scratch →"
 
 #: src/components/assets/editor/revisions/RevisionsPanel.tsx
 #: src/components/share-to-conversation/GitShareGateDialog.tsx

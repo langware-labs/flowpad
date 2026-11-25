@@ -69,10 +69,6 @@ msgstr " (אתם)"
 msgid " or "
 msgstr " או "
 
-#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Setup from scratch →"
-msgstr "הגדרה מאפס ←"
-
 #: src/components/assets/editor/revisions/RevisionDiffModal.tsx
 msgid "— {label} vs current"
 msgstr "— {label} לעומת הנוכחי"
@@ -30802,6 +30798,10 @@ msgstr "ההגדרה נכשלה"
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Setup finished — everything is installed."
 msgstr "ההגדרה הסתיימה — הכול מותקן."
+
+#: src/pages/hub-home/first-agent/FirstAgentCard.tsx
+msgid "Setup from scratch →"
+msgstr "הגדרה מאפס ←"
 
 #: src/components/assets/editor/revisions/RevisionsPanel.tsx
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
