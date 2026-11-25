@@ -9,7 +9,6 @@ import {
   MailOpen,
   MailPlus,
   RefreshCw,
-  Search,
   SquarePen,
   Star,
   Tags,
@@ -67,7 +66,13 @@ import {
 import { useDebounced } from '@src/hooks/useDebounced';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
-import { updateMessage, bulkUpdateMessages, searchStreamInbox, watchMessageTags } from './stream-inbox-api';
+import {
+  updateMessage,
+  bulkUpdateMessages,
+  searchStreamInbox,
+  watchMessageTags,
+  type StreamInboxSearch,
+} from './stream-inbox-api';
 import { TagFilterButton } from './TagFilterButton';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { MessageTags } from '@src/components/tags/MessageTags';
@@ -93,7 +98,6 @@ import {
   channelKeyOf,
   channelsOwnerFor,
   type ConversationScope,
-  conversationsByIdsRequest,
   conversationsPageRequest,
   STREAM_INBOX_PAGE_SIZE,
   type StreamInboxViewMode,
@@ -191,10 +195,11 @@ function readStoredChannels(key: string | null): string[] {
 }
 
 // ── Column filters ──────────────────────────────────────────────────────────
-// One filter per row column, typed into the header line above that column:
-// From narrows on the sender names, Subject on the subject + preview text,
-// Date on the conversation's last activity. URL-owned (`?from=&subject=&date=`), like the search.
-const NO_COLUMN_FILTER: StreamInboxColumns = { from: '', subject: '', date: 'any' };
+// The header line above the rows: From, Subject, Message and Date. URL-owned (`?from=&subject=&q=&date=`).
+// On the desktop the three texts SEARCH the whole stream inbox (`stream-inbox-search`); the date narrows
+// the rows listed. The hub page has no search: From and Subject narrow the page it shows (sender names,
+// subject + preview) and there is no Message box.
+const NO_COLUMN_FILTER: StreamInboxColumns = { from: '', subject: '', q: '', date: 'any' };
 
 /** `ids` with `id` in or out; the same set when nothing changes, so a row's report costs no render. */
 function withId(ids: Set<string>, id: string, on: boolean): Set<string> {
@@ -206,7 +211,7 @@ function withId(ids: Set<string>, id: string, on: boolean): Set<string> {
 }
 
 function sameColumns(a: StreamInboxColumns, b: StreamInboxColumns): boolean {
-  return a.from === b.from && a.subject === b.subject && a.date === b.date;
+  return a.from === b.from && a.subject === b.subject && a.q === b.q && a.date === b.date;
 }
 
 /** A box whose value the dock URL owns: it types into a local draft and commits after a pause, so
@@ -229,7 +234,7 @@ function useUrlDraft<T>(
 }
 
 function isColumnFilterActive(f: StreamInboxColumns): boolean {
-  return f.from.trim() !== '' || f.subject.trim() !== '' || f.date !== 'any';
+  return f.from.trim() !== '' || f.subject.trim() !== '' || f.q.trim() !== '' || f.date !== 'any';
 }
 
 function windowStart(date: StreamInboxDateWindow): number | null {
@@ -948,12 +953,18 @@ export function StreamInboxView({
   // The list filters on the URL's value; the boxes hold the draft.
   const urlColumns = currentDock?.streamInboxColumns ?? NO_COLUMN_FILTER;
   const columnFilter = useMemo<StreamInboxColumns>(
-    () => ({ from: urlColumns.from, subject: urlColumns.subject, date: urlColumns.date }),
-    [urlColumns.from, urlColumns.subject, urlColumns.date],
+    () => ({ from: urlColumns.from, subject: urlColumns.subject, q: urlColumns.q, date: urlColumns.date }),
+    [urlColumns.from, urlColumns.subject, urlColumns.q, urlColumns.date],
   );
   const [columnInput, setColumnInput] = useUrlDraft(
     columnFilter,
-    (next) => currentDock && navigation.openDock(currentDock.withStreamInboxColumns(next)),
+    (next) => {
+      if (!currentDock) return;
+      const dock = currentDock.withStreamInboxColumns(next);
+      // On the desktop the texts search: a new text is a new list, from its first page.
+      const searched = desktopStreamInbox && !sameColumns({ ...next, date: columnFilter.date }, columnFilter);
+      navigation.openDock(searched ? dock.withPageBefore(null) : dock);
+    },
     sameColumns,
   );
   const [fromWidth, setFromWidth] = useState(readFromWidth);
@@ -1034,32 +1045,31 @@ export function StreamInboxView({
   const classifying = useClassifyRun();
   const [selDeleteOpen, setSelDeleteOpen] = useState(false);
 
-  // Text search over message bodies — server-side, via the `stream-inbox-search`
-  // action rather than a `$LIKE` entity query: under the reference model a
-  // channel message's body lives on its SourceItem (the FlowMessage row stores
-  // `text: ""`), so the backend searches BOTH residences and hands back
-  // conversation ids. The URL commit debounces typing; the previous result is held
-  // while the next request is in flight so the list doesn't blank.
-  // URL-owned (`?q=`).
-  const searchQuery = currentDock?.streamInboxSearch ?? '';
-  const [searchInput, setSearchInput] = useUrlDraft(
-    searchQuery,
-    (next) => currentDock && navigation.openDock(currentDock.withStreamInboxFilters({ search: next })),
+  // The whole-inbox search — server-side (`stream-inbox-search`), which hands back conversation ids:
+  // From, Subject and Message, each '' when not asked, and the ticked tags. The texts are the URL's,
+  // debounced on their way there; the previous result is held while the next request is in flight so
+  // the list doesn't blank. The hub page has no search: its texts narrow the rows instead (`rowFilter`).
+  const search = useMemo<StreamInboxSearch>(
+    () =>
+      desktopStreamInbox
+        ? { from: columnFilter.from.trim(), subject: columnFilter.subject.trim(), q: columnFilter.q.trim() }
+        : { from: '', subject: '', q: '' },
+    [desktopStreamInbox, columnFilter.from, columnFilter.subject, columnFilter.q],
   );
-  const needle = searchQuery.trim();
   const tagFilterKey = currentDock?.options?.tags ?? '';
   const tagFilters = useMemo(() => tagFilterKey.split(',').filter(Boolean), [tagFilterKey]);
-  const searchActive = needle !== '' || tagFilters.length > 0;
-  const [matchIds, setMatchIds] = useState<Set<string>>(new Set());
+  const searchActive = Object.values(search).some(Boolean) || tagFilters.length > 0;
+  const [hitIds, setHitIds] = useState<string[]>([]);
   useEffect(() => {
     if (!searchActive) return;
-    // `needle` is the URL's, already debounced on its way there.
     let stale = false;
     let request = 0;
     const refresh = () => {
       const sequence = ++request;
-      void searchStreamInbox(needle, agentId, tagFilters).then((ids) => {
-        if (!stale && request === sequence) setMatchIds(ids);
+      void searchStreamInbox(search, agentId, tagFilters).then((ids) => {
+        if (stale || request !== sequence) return;
+        // The same hits keep the same list, so a refresh that changed nothing re-asks for no page.
+        setHitIds((cur) => (cur.join() === ids.join() ? cur : ids));
       }).catch((e) => { if (!stale) console.error('[StreamInboxView] search failed', e); });
     };
     refresh();
@@ -1068,13 +1078,18 @@ export function StreamInboxView({
       stale = true;
       unwatch?.();
     };
-  }, [agentId, needle, searchActive, tagFilters]);
+  }, [agentId, search, searchActive, tagFilters]);
+  // What a row still checks itself: the date everywhere, From and Subject where they are not searched.
+  const rowFilter = useMemo<StreamInboxColumns>(
+    () => (desktopStreamInbox ? { ...NO_COLUMN_FILTER, date: columnFilter.date } : columnFilter),
+    [desktopStreamInbox, columnFilter],
+  );
 
   // Scoped by the backend: the query names the owner, so an agent's stream inbox and the
   // user's never load each other's rows. Owned-by strings, not TypeId instances, key the memo:
   // `channelsOwner` is rebuilt whenever its inputs change identity, and a fresh request re-subscribes.
   // One PAGE, not the whole stream inbox: the view's latest N (`before` null = now, live) or the N older
-  // than the dock URL's `before`. A body search lists its hits instead.
+  // than the dock URL's `before`. A search lists a page of its hits instead.
   const pageBefore = currentDock?.pageBefore ?? null;
   // Starred conversations: the favorites, read ONCE for the list — each row is handed its answer, and
   // the Starred view pages through exactly these ids.
@@ -1111,12 +1126,15 @@ export function StreamInboxView({
     return { owner: channelsOwner, sourceIds: pickedSources, channels: pickedChannels };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's and the picks' string forms
   }, [ownerKey, sourceId, pickedKey]);
+  // The ids the list pages through instead of the view's rows: a search's hits — every view, archived
+  // included — or the starred ones.
+  const among = searchActive ? hitIds : viewMode === 'starred' ? starredIds : undefined;
   const request = useMemo(() => {
     if (!scope) return null;
-    if (searchActive) return conversationsByIdsRequest(scope, [...matchIds]);
-    if (viewMode === 'starred' && !starredIds.length) return null;
-    return conversationsPageRequest(scope, viewMode, pageBefore, starredIds);
-  }, [scope, searchActive, matchIds, viewMode, pageBefore, starredIds]);
+    // Nothing starred: nothing to ask for. A search with no hit still asks, and lists none.
+    if (!searchActive && viewMode === 'starred' && !starredIds.length) return null;
+    return conversationsPageRequest(scope, viewMode, pageBefore, among);
+  }, [scope, searchActive, viewMode, pageBefore, among, starredIds]);
   const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'stream-inbox:idle' }), []);
   const {
     data: conversations = [],
@@ -1602,7 +1620,7 @@ export function StreamInboxView({
   );
   const leadingMarks = (
     <>
-      <TagFilterButton tags={tagFilters} matches={matchIds.size} />
+      <TagFilterButton tags={tagFilters} matches={hitIds.length} />
       {invitesChip}
     </>
   );
@@ -1778,36 +1796,6 @@ export function StreamInboxView({
                   </>
                 )}
               </div>
-              {/* Text search — filters the list below to conversations whose
-                  messages contain the query, spanning archived rows. */}
-              {desktopStreamInbox && (
-                <div className="relative ms-2 flex items-center max-md:ms-0 max-md:w-full">
-                  <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
-                  <input
-                    type="text"
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    placeholder={t`Search messages`}
-                    className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring max-md:h-9 max-md:w-full"
-                    data-testid="stream-inbox-search-input"
-                    aria-label={t`Search messages`}
-                  />
-                  {needle !== '' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchInput('');
-                        if (currentDock) navigation.openDock(currentDock.withStreamInboxFilters({ search: '' }));
-                      }}
-                      className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                      aria-label={t`Clear search`}
-                      data-testid="stream-inbox-search-clear"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-              )}
             </div>
             {/* RIGHT — actions for the current view */}
             <div className="flex flex-1 items-center justify-end gap-1" data-testid="stream-inbox-action-bar">
@@ -1874,9 +1862,9 @@ export function StreamInboxView({
         className="flex-1 overflow-y-auto"
         style={{ [FROM_WIDTH_VAR]: `${fromWidth}px` } as CSSProperties}
       >
-        {/* The header line: select-all, then one filter per row column (From over
-            the sender, Subject over the subject line, Date over the time), then the
-            owner's attached channels on the right. Rendered even with no
+        {/* The header line: select-all, then From over the sender, Subject and Message
+            over the subject line, Date over the time, then the owner's attached channels
+            on the right. Rendered even with no
             conversations — the channels are how one gets some, and a filter that
             matched nothing must stay on screen to be cleared. The cells share the
             row's px-3 / gap-3 / w-44 so each filter sits over its column. */}
@@ -1929,6 +1917,17 @@ export function StreamInboxView({
               className={`${columnInputClass} min-w-0 flex-1`}
               data-testid="stream-inbox-filter-subject"
             />
+            {desktopStreamInbox && (
+              <input
+                type="text"
+                value={columnInput.q}
+                onChange={(e) => setColumn('q', e.target.value)}
+                placeholder={t`Message`}
+                aria-label={t`Search messages`}
+                className={`${columnInputClass} min-w-0 flex-1`}
+                data-testid="stream-inbox-search-input"
+              />
+            )}
             <select
               value={columnInput.date}
               onChange={(e) => setColumn('date', e.target.value as StreamInboxDateWindow)}
@@ -2047,7 +2046,7 @@ export function StreamInboxView({
               cloudUserId={cloudUserId}
               onVisibilityChange={handleRowVisibility}
               channelMatch={channelMatch}
-              columnFilter={columnFilterActive ? columnFilter : undefined}
+              columnFilter={isColumnFilterActive(rowFilter) ? rowFilter : undefined}
               attributionFor={attributionFor}
               refSetter={setRowRef}
               agentId={agentId}
@@ -2056,7 +2055,14 @@ export function StreamInboxView({
             />
             );
           })}
-        {!initialLoading && !searchActive && scope && <StreamInboxPager scope={scope} view={viewMode} rows={sorted} starredIds={starredIds} />}
+        {!initialLoading && scope && (
+          <StreamInboxPager
+            scope={scope}
+            view={viewMode}
+            rows={sorted}
+            among={among}
+          />
+        )}
       </div>
 
       {!agentId && <NewConversationDialog open={showNewConversation} onClose={() => setShowNewConversation(false)} />}

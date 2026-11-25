@@ -2360,15 +2360,82 @@ async def handle_stream_inbox_update(fm_id: str, patch: dict, someone_typeid: st
     return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
 
 
+def _any_like(*pairs: tuple[str, str]):
+    """The match for rows where ANY ``(field, text)`` pair holds — the field contains the text."""
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
+
+    return ExpressionNode(
+        op=QueryOp.OR,
+        operands=[ExpressionNode(op=QueryOp.LIKE, operands=[field, f"%{text}%"]) for field, text in pairs],
+    )
+
+
+async def _find(entity, match, **options) -> list:
+    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+    return await entity.get_all(QueryFilter(match=match), **options)
+
+
+def _conversation_ids(messages) -> set[str]:
+    # An unsent draft is not a message to find.
+    return {str(m.conversation_id) for m in messages if m.conversation_id and not m.is_draft}
+
+
+async def _conversations_matching(needle: str, *fields: str) -> set[str]:
+    found = await _find(Conversation, _any_like(*((field, needle) for field in fields)))
+    return {str(c.id) for c in found if c.id}
+
+
+async def _conversations_from(needle: str) -> set[str]:
+    """Conversations a matching person wrote in — by name, or by the address ``sender_id`` carries
+    (``email:a@b.c``) — or is in without having written: a member, or whom it is addressed to."""
+    messages, with_them = await asyncio.gather(
+        _find(FlowMessage, _any_like(("sender_name", needle), ("sender_id", needle)), hydrate=False),
+        _conversations_matching(needle, "members", "address"),
+    )
+    return _conversation_ids(messages) | with_them
+
+
+async def _messages_saying(needle: str, tagged=None) -> list:
+    """Messages whose body matches, narrowed in the query to ``tagged`` when given. Two lanes, because
+    bodies live in two places under the reference model: a channel message's text is on its SourceItem
+    (the FlowMessage row is a blank reference), a hub-native message's is on the row. Reference rows
+    can't false-match the second lane — their stored ``text`` is ``""``."""
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
+
+    def narrowed(match):
+        return ExpressionNode(op=QueryOp.AND, operands=[match, tagged]) if tagged else match
+
+    items, native = await asyncio.gather(
+        _find(SourceItem, _any_like(("body", needle), ("name", needle))),
+        _find(FlowMessage, narrowed(_any_like(("text", needle))), hydrate=False),
+    )
+    if not items:
+        return native
+    of_items = ExpressionNode(op=QueryOp.IN, operands=["source_item_id", [str(i.id) for i in items]])
+    return [*native, *await _find(FlowMessage, narrowed(of_items), hydrate=False)]
+
+
+async def _conversations_saying(needle: str, tags: list[str]) -> set[str]:
+    """Conversations with a message whose body matches ``needle`` (when given) and that carries one of
+    ``tags`` (when given). A tag is a message's, so the two are asked of the same message."""
+    from flow_sdk.server.search_filters import apply_any_tag_filter  # noqa: PLC0415
+
+    # LIKE is only a candidate filter (a legal underscore is a LIKE wildcard), so
+    # apply_any_tag_filter remains the exact canonical matcher.
+    tagged = _any_like(*(("tags", text) for tag in tags for text in (f'"{tag}"', f'"{tag}.'))) if tags else None
+    messages = await (_messages_saying(needle, tagged) if needle else _find(FlowMessage, tagged, hydrate=False))
+    return _conversation_ids(apply_any_tag_filter(messages, tags))
+
+
 @action.post(action_name="stream-inbox-search", types=None)
 async def stream_inbox_search() -> ApiResponse:
-    """Full-stream-inbox search → conversation ids; optional q and any-of tags.
+    """Full-stream-inbox search → conversation ids.
 
-    Two lanes because bodies live in two places under the reference model:
-    a channel message's text is on its SourceItem (the FlowMessage row is a
-    blank reference), a hub-native message's is on the row. Reference rows
-    can't false-match the second query — their stored ``text`` is ``""``.
-    Substring (`$LIKE`) on both lanes, matching the search this replaces.
+    One optional text per column of the list — ``from`` (who wrote or is in it, by name or address),
+    ``subject`` (the title), ``q`` (a message body) — and any-of ``tags``. A conversation is a hit when
+    it matches every one given; none given matches nothing. Substring (`$LIKE`) throughout.
     """
     try:
         request_info = get_current_request_info()
@@ -2376,68 +2443,18 @@ async def stream_inbox_search() -> ApiResponse:
             return ApiFailResponse(message="No request info")
         body = await request_info.get_post_data() or {}
         scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
-        needle = str(body.get("q") or "").strip()
-        from flow_sdk.server.search_filters import apply_any_tag_filter, wanted_tags
+        sender, subject, needle = (str(body.get(key) or "").strip() for key in ("from", "subject", "q"))
+        from flow_sdk.server.search_filters import wanted_tags
 
         selected_tags = wanted_tags(body.get("tags"))
-        if not needle and not selected_tags:
+        lanes = [
+            *([_conversations_from(sender)] if sender else []),
+            *([_conversations_matching(subject, "title")] if subject else []),
+            *([_conversations_saying(needle, selected_tags)] if needle or selected_tags else []),
+        ]
+        if not lanes:
             return ApiSuccessResponse(data={"conversation_ids": []})
-        like = f"%{needle}%"
-
-        import asyncio  # noqa: PLC0415
-
-        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-
-        # Narrow in the query before the shared hierarchy predicate. LIKE is
-        # only a candidate filter (a legal underscore is a LIKE wildcard), so
-        # apply_any_tag_filter remains the exact canonical matcher.
-        tag_match = ExpressionNode(op=QueryOp.OR, operands=[
-            ExpressionNode(op=QueryOp.LIKE, operands=["tags", pattern])
-            for tag in selected_tags for pattern in (f'%"{tag}"%', f'%"{tag}.%')
-        ]) if selected_tags else None
-
-        def filtered(match):
-            return QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[match, tag_match]) if tag_match else match)
-
-        if not needle:
-            messages = apply_any_tag_filter(await FlowMessage.get_all(QueryFilter(match=tag_match), hydrate=False), selected_tags)
-            ids = {str(m.conversation_id) for m in messages if m.conversation_id}
-            if scope is not None:
-                ids &= scope.conversation_ids
-            return ApiSuccessResponse(data={"conversation_ids": sorted(ids)})
-
-        # The two lanes are independent — run them together.
-        items, native = await asyncio.gather(
-            SourceItem.get_all(
-                QueryFilter(
-                    match=ExpressionNode(
-                        op=QueryOp.OR,
-                        operands=[
-                            ExpressionNode(op=QueryOp.LIKE, operands=["body", like]),
-                            ExpressionNode(op=QueryOp.LIKE, operands=["name", like]),
-                        ],
-                    )
-                )
-            ),
-            FlowMessage.get_all(
-                filtered(ExpressionNode(op=QueryOp.LIKE, operands=["text", like])),
-                hydrate=False,
-            ),
-        )
-        native = [m for m in native if not m.is_draft]  # an unsent draft is not a message to find
-        conversation_ids: set[str] = {str(m.conversation_id) for m in apply_any_tag_filter(native, selected_tags) if m.conversation_id}
-        if items:
-            refs = await FlowMessage.get_all(
-                filtered(
-                    ExpressionNode(
-                        op=QueryOp.IN,
-                        operands=["source_item_id", [str(i.id) for i in items]],
-                    )
-                ),
-                hydrate=False,
-            )
-            conversation_ids |= {str(m.conversation_id) for m in apply_any_tag_filter(refs, selected_tags) if m.conversation_id}
+        conversation_ids = set.intersection(*await asyncio.gather(*lanes))
         if scope is not None:
             conversation_ids &= scope.conversation_ids
         return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})

@@ -64,19 +64,33 @@ export async function bulkUpdateMessages(
   return result ?? { updated: 0 };
 }
 
+/** What a whole-inbox search asks for: one text per column of the list, each '' when not asked. */
+export interface StreamInboxSearch {
+  /** Who wrote in the conversation or is in it, by name or address. */
+  from: string;
+  /** The conversation's title. */
+  subject: string;
+  /** A message's body. */
+  q: string;
+}
+
 /**
- * Full stream-inbox body search → conversation ids, server-side (`stream-inbox-search`).
+ * Whole stream-inbox search → the ids of the conversations matching every text given, server-side
+ * (`stream-inbox-search`).
  *
- * Not a `$LIKE` entity query: under the reference model a channel message's
- * body lives on its SourceItem — the FlowMessage row stores `text: ""` — so a
- * client-side match over FlowMessage.text would go blind to every ingested
- * message. The action searches both residences and returns the union.
+ * Not a `$LIKE` entity query: a sender is on the messages, not on the conversation, and under the
+ * reference model a channel message's body lives on its SourceItem — the FlowMessage row stores
+ * `text: ""` — so a match over the rows here would go blind to every ingested message.
  */
-export async function searchStreamInbox(q: string, agentId?: string, tags: string[] = []): Promise<Set<string>> {
+export async function searchStreamInbox(
+  search: StreamInboxSearch,
+  agentId?: string,
+  tags: string[] = [],
+): Promise<string[]> {
   const action = new ActionInfo('stream-inbox-search', null, null, 'POST');
-  action.bodyParameters = { q, ...(tags.length ? { tags } : {}), ...(agentId ? { agent_id: agentId } : {}) };
-  const result = await dataManager.callAction<{ q: string }, { conversation_ids?: string[] }>(action);
-  return new Set(result?.conversation_ids ?? []);
+  action.bodyParameters = { ...search, ...(tags.length ? { tags } : {}), ...(agentId ? { agent_id: agentId } : {}) };
+  const result = await dataManager.callAction<StreamInboxSearch, { conversation_ids?: string[] }>(action);
+  return result?.conversation_ids ?? [];
 }
 
 /** Re-evaluate a server-owned tag filter when its source rows change, without polling. */

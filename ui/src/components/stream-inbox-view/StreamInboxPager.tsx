@@ -34,12 +34,12 @@ export function StreamInboxPager({
   scope,
   view,
   rows,
-  starredIds,
+  among,
 }: {
   scope: ConversationScope;
   view: StreamInboxViewMode;
-  /** The starred view's conversation ids — what that view pages through. */
-  starredIds?: readonly string[];
+  /** The conversation ids the list pages through instead of the view's rows: the starred ones, or a search's hits. */
+  among?: readonly string[];
   /** The page shown, newest first. */
   rows: Conversation[];
 }) {
@@ -49,8 +49,8 @@ export function StreamInboxPager({
   const oldest = isoOf(rows[rows.length - 1]?.recency);
 
   const newerRequest = useMemo(
-    () => (before && newest ? newerBoundaryRequest(scope, view, newest, starredIds) : null),
-    [before, newest, scope, view, starredIds],
+    () => (before && newest ? newerBoundaryRequest(scope, view, newest, among) : null),
+    [before, newest, scope, view, among],
   );
   const { data: above = [], hasMore: moreAbove = false } = useEntitiesQuery<Conversation>(newerRequest ?? idle, {
     enabled: newerRequest !== null,
@@ -60,8 +60,8 @@ export function StreamInboxPager({
 
   // An older page the store cannot fill asks the sources, once per page: one page each, older than
   // what is shown (or than the page's bound when nothing is). What arrives joins this live page.
-  // Archived and Starred page the rows held here; the sources are never asked for more of them.
-  const storeOnly = view === 'archived' || view === 'starred';
+  // Archived, Starred and a search's hits page the rows held here; the sources are never asked for more of them.
+  const storeOnly = view === 'archived' || !!among;
   const short = !!before && rows.length < STREAM_INBOX_PAGE_SIZE && !storeOnly;
   const askBefore = oldest ?? before;
   // Asking the sources for more is the desktop's (its channels); the hub page pages its own rows.

@@ -263,9 +263,10 @@ export type StreamInboxViewMode = (typeof STREAM_INBOX_VIEWS)[number];
 export const STREAM_INBOX_SEARCH_PARAM = 'q';
 /** The stream inbox's picked channel marks — the same `channel` key `forAgentStreamInbox` writes. */
 export const STREAM_INBOX_CHANNEL_PARAM = 'channel';
-/** The stream inbox's header-line column filters: sender text, subject text, date window. They narrow
- *  the page already shown, so — unlike view / search / channel — changing one keeps `before`. Pairs with
- *  `streamInboxColumns` / `withStreamInboxColumns()`. */
+/** The stream inbox's header line: sender text, subject text, message text (`q`, the search) and date
+ *  window. Setting them keeps `before`; the view, which knows whether a text searches the whole stream
+ *  inbox or narrows the page shown, goes back to now itself. Pairs with `streamInboxColumns` /
+ *  `withStreamInboxColumns()`. */
 export const STREAM_INBOX_FROM_PARAM = 'from';
 export const STREAM_INBOX_SUBJECT_PARAM = 'subject';
 export const STREAM_INBOX_DATE_PARAM = 'date';
@@ -273,6 +274,8 @@ export type StreamInboxDateWindow = 'any' | 'today' | '7d' | '30d';
 export interface StreamInboxColumns {
   from: string;
   subject: string;
+  /** The message text — the same `q` as `streamInboxSearch`. */
+  q: string;
   date: StreamInboxDateWindow;
 }
 
@@ -794,14 +797,16 @@ export class DockPointer implements IDockPointer {
     return {
       from: this.options?.[STREAM_INBOX_FROM_PARAM] ?? '',
       subject: this.options?.[STREAM_INBOX_SUBJECT_PARAM] ?? '',
+      q: this.streamInboxSearch,
       date: date === 'today' || date === '7d' || date === '30d' ? date : 'any',
     };
   }
 
-  /** Clone with these column filters ('' / 'any' clear one). They narrow the page shown, so the page stays. */
+  /** Clone with these column filters ('' / 'any' clear one). The page stays. */
   withStreamInboxColumns(f: StreamInboxColumns): DockPointer {
     return this.withOption(STREAM_INBOX_FROM_PARAM, f.from || null)
       .withOption(STREAM_INBOX_SUBJECT_PARAM, f.subject || null)
+      .withOption(STREAM_INBOX_SEARCH_PARAM, f.q || null)
       .withOption(STREAM_INBOX_DATE_PARAM, f.date === 'any' ? null : f.date);
   }
 
