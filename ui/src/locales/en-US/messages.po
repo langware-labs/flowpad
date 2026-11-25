@@ -70,8 +70,8 @@ msgid " or "
 msgstr " or "
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Custom Setup"
-msgstr "Custom Setup"
+msgid "Setup from scratch →"
+msgstr "Setup from scratch →"
 
 #: src/components/assets/editor/revisions/RevisionDiffModal.tsx
 msgid "— {label} vs current"

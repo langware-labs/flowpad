@@ -70,8 +70,8 @@ msgid " or "
 msgstr " או "
 
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
-msgid "Custom Setup"
-msgstr "הגדרה מותאמת אישית"
+msgid "Setup from scratch →"
+msgstr "הגדרה מאפס ←"
 
 #: src/components/assets/editor/revisions/RevisionDiffModal.tsx
 msgid "— {label} vs current"

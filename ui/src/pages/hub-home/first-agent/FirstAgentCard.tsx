@@ -534,7 +534,7 @@ function FirstAgentWizard({ onActiveChange, onCustomSetup, onClose }: CardProps 
       {step === 'channel' && onCustomSetup && (
         <div className="mt-3 flex justify-end">
           <Button data-testid="first-agent-custom-setup" variant="ghost" size="sm" onClick={onCustomSetup}>
-            <Trans>Custom Setup</Trans>
+            <Trans>Setup from scratch →</Trans>
           </Button>
         </div>
       )}
