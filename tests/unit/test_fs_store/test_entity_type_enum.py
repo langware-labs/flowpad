@@ -227,6 +227,7 @@ EXPECTED = {
     "AGENT_MAILBOX": "agent_mailbox",
     "WEBHOOK": "webhook",
     "ISSUE": "issue",
+    "MONITOR": "monitor",
     "RCA": "rca",
     "QA_PHASE": "qa_phase",
     "QA_TEST_FILE": "qa_test_file",

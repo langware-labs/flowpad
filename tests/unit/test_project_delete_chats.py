@@ -54,13 +54,24 @@ async def test_delete_stops_a_headless_writer_before_removing_history(tmp_path):
         await worker.close_session()
 
 
-async def test_delete_clears_child_rows_search_and_disk_only_records(tmp_path):
+async def test_delete_clears_child_rows_search_and_disk_only_records(tmp_path, monkeypatch):
     """Children come from one DB query; their search rows go with them, and a record
     that exists only on disk is swept after the delete answers."""
     from flow_sdk.db import get_db_driver
     from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
     from flow_sdk.fs_store.record_paths import shadow_dir_for
 
+    from flow_sdk.request_context import detached
+
+    # Keep the sweep task itself: looking it up by name races its finishing first.
+    sweeps = {}
+    spawn = detached.create_detached_task
+
+    def keep(coro, *, name=None):
+        sweeps[name] = spawn(coro, name=name)
+        return sweeps[name]
+
+    monkeypatch.setattr(detached, "create_detached_task", keep)
     project = await Project(name=str(tmp_path / f"project-{tmp_path.name}")).save()
     from flow_sdk.builtin.bookmark import Bookmark
 
@@ -86,6 +97,5 @@ async def test_delete_clears_child_rows_search_and_disk_only_records(tmp_path):
     assert result["deleted_children"] >= 1
     assert await Bookmark.get_by_id(chat.id) is None
     assert await search_rows() == 0
-    sweep = next(t for t in asyncio.all_tasks() if t.get_name() == f"project-orphans-{project.id}")
-    assert await sweep == 1
+    assert await sweeps[f"project-orphans-{project.id}"] == 1
     assert not orphan.exists()

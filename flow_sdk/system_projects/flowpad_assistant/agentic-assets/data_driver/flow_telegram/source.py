@@ -23,6 +23,8 @@ class FlowTelegramSource(FlowChannel):
     title = "Telegram"
     #: As on Telegram itself: a reply quotes the message it answers in the chat.
     quotes = True
+    #: Flowpad's bot keeps one reaction on a message: the next one (received after seen) replaces it.
+    reactions_per_actor = 1
     noun = "Telegram account"
 
     def sender_of(self, value: Any) -> str:

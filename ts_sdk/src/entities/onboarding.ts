@@ -73,7 +73,11 @@ export const Onboarding = {
 
   /** A sandbox of the agent's project with the agent as its main agent; answers once it is up and serving it. */
   deploy(projectId: string, agentId: string): Promise<DeployedAgent> {
-    return call('deploy', 'project', projectId, 'POST', { provider: 'e2b', main_agent_id: `agent-${agentId}` });
+    return call('deploy', 'project', projectId, 'POST', {
+      provider: 'e2b',
+      main_agent_id: `agent-${agentId}`,
+      identity: 'deployment',
+    });
   },
 
   /** Remove a deployment and shut its sandbox down (the wizard was left before the agent went live). */
