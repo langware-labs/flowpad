@@ -27,6 +27,7 @@ export const TERMINAL_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.INACTIVE,
   WorkerStatus.IDLE,
   WorkerStatus.PENDING_USER,
+  WorkerStatus.BACKGROUND_WORK,
   // ERROR and API_TIMEOUT belong here for exactly the reason the others do, and
   // their absence is what put a red "Error" under a live pulse. A turn that
   // failed while LOGGED OUT leaves ``stop_reason: stop_sequence`` as the last

@@ -259,7 +259,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     if (!activeProcess) return;
     return activeProcess.on('state_change', (change: { field?: string; newValue?: string }) => {
       if (change?.field !== 'workerStatus') return;
-      if (change.newValue === 'pending_user' || change.newValue === 'complete') {
+      if (change.newValue === 'pending_user' || change.newValue === 'complete' || change.newValue === 'background_work') {
         const { refresh, gate } = advanceDisplayRefreshGate(refreshGateRef.current, streamItemsRef.current);
         refreshGateRef.current = gate;
         if (refresh) setRefreshStamp((s) => s + 1);

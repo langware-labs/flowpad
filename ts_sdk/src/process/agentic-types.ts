@@ -140,6 +140,13 @@ export enum WorkerStatus {
    * queue-drain superset admits it).
    */
   PENDING_USER = 'pending_user',
+  /**
+   * The turn ended, but work it launched (a background command, a subagent) is
+   * still running and will wake the worker when it ends. Reported by the worker
+   * itself, not read from the transcript. In NO helper set: the turn is over
+   * (``isWorkerTurnOver``), the session is not done (``isWorkerTerminal`` false).
+   */
+  BACKGROUND_WORK = 'background_work',
   /** Active — user message received; Claude hasn't responded yet. */
   WORKING      = 'working',
   /** Active — assistant generating. */
@@ -197,6 +204,11 @@ export function isWorkerRunning(status: WorkerStatus | null | undefined): boolea
 /** True when the worker turn has ended and cannot be resumed in place. */
 export function isWorkerTerminal(status: WorkerStatus | null | undefined): boolean {
   return status != null && WORKER_TERMINAL_STATUSES.has(status);
+}
+
+/** True when the worker's TURN has ended: terminal, or ended with background work still running. */
+export function isWorkerTurnOver(status: WorkerStatus | null | undefined): boolean {
+  return isWorkerTerminal(status) || status === WorkerStatus.BACKGROUND_WORK;
 }
 
 /**

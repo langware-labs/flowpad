@@ -117,7 +117,10 @@ _RESPONSE_EVENTS = frozenset({HookEventType.USER_PROMPT_SUBMIT, HookEventType.SE
 #: that block on the user (``USER_INPUT_TOOLS``): Claude may hold such a call out
 #: of its transcript until it is answered, so the hook is how Flowpad learns a
 #: question is waiting (``AgenticProcess.on_hook``).
-_PROCESS_EVENTS = PROCESS_EVENTS | {HookEventType.PRE_TOOL_USE}
+#: ``Stop`` carries the worker's own list of background work still running
+#: (``background_tasks``), which is how a turn that ended is told from a session
+#: that is done (``AgenticProcess._note_background_tasks``).
+_PROCESS_EVENTS = PROCESS_EVENTS | {HookEventType.PRE_TOOL_USE, HookEventType.STOP}
 _PRE_TOOL_USE_MATCHER = "|".join(sorted(USER_INPUT_TOOLS))
 
 #: Hooks added to every process-hook plugin, beside its configured events. Local

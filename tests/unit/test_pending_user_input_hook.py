@@ -58,7 +58,7 @@ def _transcript(path, *, answered: bool):
 @pytest.mark.usefixtures("no_side_effects")
 async def test_question_hook_reads_as_waiting_for_user_until_answered(tmp_path):
     process = AgenticProcess(id=mint_uuid(), worker_type="claude_code", status="running", pty_mode=True)
-    process.enable_pending_question_hook()
+    process.enable_worker_report_hooks()
     assert "PreToolUse" in process.process_hook_events
     transcript = _transcript(tmp_path / "s.jsonl", answered=False)
 
@@ -93,7 +93,7 @@ async def test_other_tools_are_not_questions(tmp_path):
 async def test_answered_question_stays_answered_after_the_session_keeps_working(tmp_path):
     """The answer scrolls far up the transcript as work goes on; the worker is still working."""
     process = AgenticProcess(id=mint_uuid(), worker_type="claude_code", status="running", pty_mode=True)
-    process.enable_pending_question_hook()
+    process.enable_worker_report_hooks()
     transcript = _transcript(tmp_path / "s.jsonl", answered=False)
     work = json.dumps({"type": "assistant", "message": {"content": "x" * 1000}}, separators=(",", ":")) + "\n"
 

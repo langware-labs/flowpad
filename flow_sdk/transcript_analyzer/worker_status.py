@@ -61,6 +61,12 @@ class WorkerStatus(StrEnum):
     # to ``ready``.)
     PENDING_USER = "pending_user"
 
+    # The turn ended, but work it launched (a background command, a subagent) is
+    # still running and will wake the worker when it ends. Not from the transcript:
+    # the worker reports its own list (see ``AgenticProcess.fetch_worker_status``).
+    # In no helper set — the turn is over (not busy), the session is not done.
+    BACKGROUND_WORK = "background_work"
+
     # Active — transcript-derivable
     WORKING = "working"  # input received, Claude is producing a reply (pre-first-token lull through streaming)
     THINKING = "thinking"  # assistant streaming / generating text
@@ -174,6 +180,11 @@ def is_idle(status: WorkerStatus) -> bool:
 def is_terminal(status: WorkerStatus) -> bool:
     """True when the session has ended and cannot be resumed."""
     return status in _TERMINAL_STATUSES
+
+
+def is_turn_over(status: "WorkerStatus | None") -> bool:
+    """True when the worker's TURN has ended: terminal, or ended with background work still running."""
+    return status is not None and (status in _TERMINAL_STATUSES or status is WorkerStatus.BACKGROUND_WORK)
 
 
 # ---------------------------------------------------------------------------

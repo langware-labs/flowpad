@@ -28,11 +28,12 @@ never re-derives status (the one exception, `useDerivedWorkerStatus`, was remove
 
 `WorkerStatus` (`flow_sdk/builtin/worker_status.py`) is the **union of the raw,
 granular states the worker vendors can evidence in their transcripts**, in worker
-lingo. 14 values:
+lingo. 15 values:
 
 ```
 initializing  idle  complete  error  interrupted  inactive  pending_user
-working  thinking  tool_call  tool_running  api_error  api_timeout  unknown
+background_work  working  thinking  tool_call  tool_running  api_error
+api_timeout  unknown
 ```
 
 - Derived on every serialize from the vendor transcript tail: `_tail_status`
@@ -45,6 +46,19 @@ working  thinking  tool_call  tool_running  api_error  api_timeout  unknown
   transcript-consistency reconciliation (`_post_tool_idle_complete → complete`).
   It does NOT synthesize `pending_user`/`inactive`/`initializing` — those are
   returned by `_tail_status` directly when the transcript actually shows them.
+
+- **`background_work` — the turn ended, the session is not done.** A turn that
+  launched a background command or a subagent ends normally, so the transcript
+  tail reads `complete` while that work is still running. The worker says so
+  itself: Claude's `Stop` hook carries `background_tasks`, its own list of what
+  is still running, at every turn end (`AgenticProcess._note_background_tasks`).
+  While that list is not empty, `fetch_worker_status` returns `background_work`
+  in place of `complete`. Each piece of work wakes the worker when it ends, and
+  that turn's `Stop` reports the shorter list, so the status reaches `complete`
+  by itself. The list is stamped with the worker that reported it and is
+  ignored after a restart. The turn IS over: `busy` is false, the session takes
+  input, and `is_turn_over` / `isWorkerTurnOver` (terminal or `background_work`)
+  is what a turn waiter keys on. It is in no helper set.
 
 WorkerStatus is used for the fine-grained activity indicator (Thinking / Using
 tool / …). It is **never** used to gate input or the pty-mode switch — that is the

@@ -56,7 +56,7 @@ import {
   isProcessRunning,
   isReadyForInput,
   isWorkerRunning,
-  isWorkerTerminal,
+  isWorkerTurnOver,
   type WorkerType,
 } from './agentic-types';
 import {
@@ -1915,7 +1915,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       this._turnOutcome === 'complete' ||
       this._turnOutcome === 'error' ||
       this.status === ProcessStatus.FAILED ||
-      isWorkerTerminal(this.workerStatus)
+      isWorkerTurnOver(this.workerStatus)
     );
   }
 
@@ -3896,7 +3896,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       this._turnOutcome !== 'complete' &&
       this._turnOutcome !== 'error' &&
       (wasBusy || workerStatusChanged) &&
-      isWorkerTerminal(this.workerStatus)
+      isWorkerTurnOver(this.workerStatus)
     ) {
       const error = this.completionError();
       if (error) this._handleError(error);

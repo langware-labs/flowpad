@@ -87,8 +87,8 @@ async def test_set_and_remove_hook_are_idempotent(no_save, worker_type, event):
     [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
 )
 async def test_process_hooks_reject_every_other_event_before_mutation(no_save, worker_type, event):
-    if worker_type is WorkerType.CLAUDE_CODE and event is HookEventType.PRE_TOOL_USE:
-        pytest.skip("Claude's process hooks carry PreToolUse (the pending-question hook)")
+    if worker_type is WorkerType.CLAUDE_CODE and event in (HookEventType.PRE_TOOL_USE, HookEventType.STOP):
+        pytest.skip("Claude's process hooks carry PreToolUse (a waiting question) and Stop (background work)")
     process = AgenticProcess(id=mint_uuid(), worker_type=worker_type)
 
     # An unsupported (harness, scope, event) cell raises NotImplementedError at

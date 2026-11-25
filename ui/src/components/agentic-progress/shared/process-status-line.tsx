@@ -1,7 +1,7 @@
 import {
   getWorkerMode,
   isReadyForInput,
-  isWorkerTerminal,
+  isWorkerTurnOver,
   ProcessStatus,
   type StatusBearingProcess,
   WorkerMode,
@@ -96,7 +96,7 @@ export function ProcessStatusLine({
   // out of isWorkerTerminal on purpose — that set drives is_ready_for_input —
   // but for display it's a settled state, so it must promote the same way or
   // the row keeps spinning "Running" for the 5-min post-completion window.
-  const workerDone = worker !== undefined && (isWorkerTerminal(worker) || worker === WorkerStatus.PENDING_USER);
+  const workerDone = worker !== undefined && (isWorkerTurnOver(worker) || worker === WorkerStatus.PENDING_USER);
 
   // Promote the worker config to the main slot when the run is over even if the
   // lifecycle hasn't transitioned to STOPPED yet. No subscript in that case.
@@ -135,7 +135,10 @@ export function ProcessStatusLine({
   //                                             to WORKING immediately)
   //     That next turn finishes              → enabled
   const workerTurnDone =
-    worker === WorkerStatus.COMPLETE || worker === WorkerStatus.INTERRUPTED || worker === WorkerStatus.PENDING_USER;
+    worker === WorkerStatus.COMPLETE ||
+    worker === WorkerStatus.INTERRUPTED ||
+    worker === WorkerStatus.PENDING_USER ||
+    worker === WorkerStatus.BACKGROUND_WORK;
   // INACTIVE is a finished/aged turn (PENDING_USER that aged past the 5-min
   // window, or a stale session). Its worker status was derived from a transcript
   // that still lives locally, and ``session_id`` is the resumable handle — so
