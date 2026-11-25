@@ -1376,23 +1376,25 @@ async def _session_messages(session_ids: set) -> dict:
     return grouped
 
 
-async def redrive_hosted_sessions() -> None:
-    """Run the turns that reached this machine without kicking the gate.
+async def redrive_hosted_sessions(conversation_id: str) -> None:
+    """Run the turns of ``conversation_id`` that reached this machine without kicking the gate.
 
     A turn starts only when something kicks the gate. A message the hub announced while
-    this machine was offline arrives later through the conversation catch-up, which stores
-    it and kicks nothing: the session reads idle over a full queue until the guest happens
-    to send one more turn. Called when that catch-up has pulled what was missed. Only
+    this machine was offline arrives later through the conversation's message fetch, which
+    stores it and kicks nothing: the session reads idle over a full queue until the guest
+    happens to send one more turn. Called when that fetch has pulled the conversation. Only
     drains queues — a turn that is running now holds its conversation's lock and is left
     alone (releasing an interrupted turn is startup's job, ``recover_interrupted_sessions``).
     """
-    from flow_sdk.builtin.remote_worker_session import RUNNABLE_STATUSES  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import RUNNABLE_STATUSES, RemoteWorkerSession  # noqa: PLC0415
 
-    me, _ = await _local_me()
-    if not me:
+    hosted = await RemoteWorkerSession.get_all({"conversation_id": conversation_id}) or []
+    hosted = [s for s in hosted if s.status in RUNNABLE_STATUSES]
+    if not hosted:
         return
-    for session in await _sessions_in(RUNNABLE_STATUSES):
-        if not getattr(session, "conversation_id", None) or getattr(session, "host_user_id", None) != me:
+    me, _ = await _local_me()
+    for session in hosted:
+        if not me or getattr(session, "host_user_id", None) != me:
             continue
         try:
             await redrive_session_prompts(session)

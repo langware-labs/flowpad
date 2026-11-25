@@ -3593,6 +3593,12 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
                 synced,
                 len(child_list),
             )
+            # What was just pulled may include live-session turns sent while this machine was
+            # away. Storing them kicked nothing, and only NOW are they all here: draining
+            # earlier ran them newest first, the order they are materialized in.
+            from flow_sdk.app.actions.execute_prompt import redrive_hosted_sessions  # noqa: PLC0415
+
+            asyncio.create_task(redrive_hosted_sessions(conv_id))
             return True
         except Exception as e:  # noqa: BLE001
             logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)

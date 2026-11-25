@@ -250,7 +250,7 @@ async def test_turns_that_arrived_while_the_host_was_away_run_once_it_catches_up
     for n in (1, 2):
         await _turn(conv_id, rws.id, "command", f"echo missed-{n}").save(notify=False)  # stored, gate not kicked
 
-    await ep.redrive_hosted_sessions()
+    await ep.redrive_hosted_sessions(conv_id)
 
     got = [m.text for m in await FlowMessage.get_all({"conversation_id": conv_id}) if (m.text or "").startswith("exit ")]
     assert sorted(got) == ["exit 0\nmissed-1", "exit 0\nmissed-2"]
