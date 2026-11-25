@@ -126,12 +126,12 @@ export function StreamInboxTags() {
     onSuccess: (answer) =>
       setRuns((all) => [...all.filter((r) => r.message === messageId).slice(-1), { message: messageId!, answer }]),
   });
-  // `run=1` is a one-shot from a Classify button: it starts the run and leaves the URL, so a reload asks nothing.
-  // It leaves by REPLACING its history entry: a pushed one keeps `run=1` behind it, and Back would run it again.
+  // `run=1` is a one-shot from a Classify button: it starts the run and leaves the URL by replacing its history
+  // entry, so neither a reload nor Back runs it again.
   useEffect(() => {
     if (options.run !== '1' || !message || !currentDock) return;
     run.mutate();
-    navigation.openDock(currentDock.withOption('run', null), undefined, { replace: true });
+    navigation.replaceDock(currentDock.withOption('run', null));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per `run=1`, not per render
   }, [options.run, message?.id]);
   const mine = runs.filter((r) => r.message === messageId);
@@ -527,7 +527,7 @@ export function StreamInboxTags() {
                   onClick={() => run.mutate()}
                   data-testid="stream-inbox-tag-try-run"
                 >
-                  {run.isPending ? <Loader2 className="size-3 animate-spin" /> : '▶'}{' '}
+                  {run.isPending ? <Loader2 className="animate-spin" /> : '▶'}{' '}
                   {result ? <Trans>Rerun</Trans> : <Trans>Run</Trans>}
                 </Button>
                 {run.isPending && (
