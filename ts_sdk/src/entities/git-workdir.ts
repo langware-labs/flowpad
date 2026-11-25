@@ -300,6 +300,11 @@ export class GitWorkdir {
     return this._post<GitRestoreResult>('discard-file', { file, status });
   }
 
+  /** Undo every pending change: tracked files back to the last commit, untracked ones deleted. */
+  async discardAll(): Promise<GitRestoreResult> {
+    return this._post<GitRestoreResult>('discard-all');
+  }
+
   /** Stage just this file (`git add -- <file>`). */
   async stageFile(file: string): Promise<GitRestoreResult> {
     return this._post<GitRestoreResult>('stage-file', { file });

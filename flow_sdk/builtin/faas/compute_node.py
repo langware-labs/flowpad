@@ -2255,6 +2255,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             POST /git-ops/init          body { workdir } → git init + Flowpad config (idempotent)
             POST /git-ops/restore-file  { workdir, file, hash } → checkout file at revision
             POST /git-ops/discard-file  { workdir, file, status } → undo a file's pending change
+            POST /git-ops/discard-all   { workdir } → undo every pending change
             POST /git-ops/stage-file    { workdir, file } → stage just this file
             POST /git-ops/unstage-file  { workdir, file } → unstage just this file
         """

@@ -1196,6 +1196,30 @@ class GitRepo:
             return GitRestoreResult(ok=False, message=done.stderr.strip() or "Discard failed")
         return GitRestoreResult(ok=True, message=f"{verb} {file_path}")
 
+    async def discard_all(self) -> GitRestoreResult:
+        """Undo every pending change under ``work_dir``: back to the last commit.
+
+        Tracked files go back to HEAD in the index and the working tree, then
+        untracked files and folders are deleted. Ignored files stay. Scoped to
+        ``work_dir`` (pathspec ``.``), so a project that is a subfolder of a
+        larger repository never touches its siblings. Refused while the tree is
+        stuck in a conflict: that is a sync to finish or abort, not edits to drop.
+        """
+        stuck = await self._conflict_state()
+        if stuck.open:
+            return GitRestoreResult(ok=False, message=self._still_open(stuck))
+        if await self.has_commit():
+            reverted = await self._git("restore", "--staged", "--worktree", "--", ".")
+        else:
+            # No commit yet: nothing to go back to, so only take everything out of the index.
+            reverted = await self._git("rm", "-r", "--cached", "--quiet", "--ignore-unmatch", "--", ".")
+        if not reverted.ok:
+            return GitRestoreResult(ok=False, message=_said(reverted) or "Discard failed")
+        cleaned = await self._git("clean", "-fd", "--", ".")
+        if not cleaned.ok:
+            return GitRestoreResult(ok=False, message=_said(cleaned) or "Discard failed")
+        return GitRestoreResult(ok=True, message="Discarded all changes")
+
     async def stage_file(self, file_path: str) -> GitRestoreResult:
         """Stage just this file (``git add -- <file>``)."""
         staged = await self._git("add", "--", file_path)
@@ -1660,6 +1684,7 @@ class GitRepo:
             pull  (POST)        → pull()                 → GitPullResult {ok, kind, branch, message, conflicted}
             init  (POST)        → init()                 → {ok, message}  (idempotent)
             discard-file (POST) → discard_file()         → {ok, message}  (requires ?file=&status=)
+            discard-all  (POST) → discard_all()          → {ok, message}  (every pending change)
             stage-file   (POST) → stage_file()           → {ok, message}  (requires ?file=)
             unstage-file (POST) → unstage_file()         → {ok, message}  (requires ?file=)
         """
@@ -1792,6 +1817,10 @@ class GitRepo:
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/commit-all requires POST", status_code=405)
             return ApiSuccessResponse(data=(await self.commit()).model_dump(by_alias=True))
+        if sub == "discard-all":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/discard-all requires POST", status_code=405)
+            return ApiSuccessResponse(data=(await self.discard_all()).model_dump(by_alias=True))
         if sub in post_file_ops:
             if method.upper() != "POST":
                 return ApiFailResponse(message=f"git-ops/{sub} requires POST", status_code=405)
