@@ -1,6 +1,7 @@
 import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { TypeId } from '../models/TypeId';
 import { ChannelTransport, type IChannelSpec } from '../models/ChannelSpec';
 import { DockPointerData } from '../models/DockPointer';
 import { ConnectionManager, DataOp } from '../websocket';
@@ -90,6 +91,33 @@ export interface ConversationParticipant {
    *  keys (`status`, `invitation_id`, …) pass through untouched. Without it
    *  Conversation fails its own `APIEntity<Conversation>` constraint. */
   [key: string]: unknown;
+}
+
+/** The roles an agent gets in a conversation: it reads what is written and may act on it. */
+export const AGENT_MEMBER_ROLES = ['reader', 'runner'];
+
+/**
+ * An agent as a participant: ONE entry keyed `agent-<id>`. It has no email and no user id -- the hub adds it
+ * as a `principal`; the agent decides which of its deployments answers the conversation.
+ */
+export function agentParticipant(agentId: string, name: string): ConversationParticipant {
+  return {
+    kind: 'agent',
+    typeid: `agent-${agentId}`,
+    name,
+    user_id: null,
+    email: null,
+    roles: [...AGENT_MEMBER_ROLES],
+  };
+}
+
+export function isAgentParticipant(p: ConversationParticipant): boolean {
+  return p.kind === 'agent' && typeof p.typeid === 'string' && p.typeid.startsWith('agent-');
+}
+
+/** The agent an agent participant stands for, or null for a person. */
+export function agentTypeIdOf(p: ConversationParticipant): TypeId | null {
+  return isAgentParticipant(p) ? new TypeId('agent', (p.typeid as string).slice('agent-'.length)) : null;
 }
 
 /** Mirrors ``flow_sdk.builtin.conversation.ConversationKind`` exactly.

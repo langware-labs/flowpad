@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "name": "conversations",
+  "title": "Flowpad Conversations",
+  "icon_name": "MessagesSquare",
+  "description": "The Flowpad conversations the agent is invited to. Add it to an agent to have the agent answer them as itself; it reads them only on a machine signed in as that agent.",
+  "kind": "datasource.hub.conversations",
+  "reflect": [
+    "record"
+  ]
+}

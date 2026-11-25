@@ -107,6 +107,8 @@ export interface QuickCreateDescriptor {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     projectId?: string | null;
+    /** Skip this dialog for the generic form: the host swaps it out while the dialog stays open. */
+    onCustomSetup?: () => void;
   }>;
   /** `Dialog` is answered by the hub: signed out, the generic form is used instead. */
   dialogNeedsCloud?: boolean;
