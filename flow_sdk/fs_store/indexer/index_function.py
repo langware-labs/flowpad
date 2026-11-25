@@ -1000,7 +1000,12 @@ class FSIndexer:
                     # ``existing_db_ids`` is the pre-loaded id set per type;
                     # empty means it couldn't be enumerated → sentinel-only.
                     row_present = not existing_db_ids or ref_id in existing_db_ids.get(str(ref.record_type), ())
-                    fresh = bool(ref_id) and not opts.force and not probe.index_required and row_present
+                    fresh = (
+                        bool(ref_id)
+                        and not opts.force
+                        and row_present
+                        and (not probe.index_required or probe.restamp_if_reinstalled())
+                    )
                 except Exception as e:
                     logging.warning(
                         "[FSIndexer] identity probe failed for %s (%s): %r",
