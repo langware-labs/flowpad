@@ -214,3 +214,20 @@ async def test_a_script_is_answered_at_once_when_its_tab_closes(monkeypatch):
     answer = await tab_script.run_script_in_tab("await new Promise(() => {})")
 
     assert answer == {"ok": False, "error": "the Flowpad tab closed before the script answered"}
+
+
+async def test_ending_the_session_stops_the_command_it_is_running(bootstrapped_client, user, tmp_path):
+    import asyncio
+
+    conv_id, rws = await _approved(bootstrapped_client, ASKED_ALL)
+    proof = tmp_path / "finished"
+    running = asyncio.create_task(_run(conv_id, rws.id, "command", f"sleep 20; touch {proof}"))
+    while rws.id not in ep._RUNNING_COMMANDS:  # the command is up (the test's 30s cap bounds this)
+        await asyncio.sleep(0.02)
+
+    await (await RemoteWorkerSession.get_one({"id": rws.id})).end("ended", announce=False)
+    msgs = await running
+
+    assert any("[stopped: the live session ended]" in (m.text or "") for m in msgs)
+    assert not proof.exists()
+    assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.ENDED.value

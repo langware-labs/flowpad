@@ -842,7 +842,7 @@ async def run_session_turn(
 
             if kind != TurnKind.PROMPT.value:
                 # No worker and no LLM: the text runs as it was sent, and its result is the answer.
-                reply, reply_extra = await _run_plain_turn(kind, _turn_text(fm), workdir)
+                reply, reply_extra = await _run_plain_turn(kind, _turn_text(fm), workdir, session.id)
                 return await _answer_turn(
                     session, fm, conversation, reply, someone_typeid, workdir=workdir, reply_extra=reply_extra
                 )
@@ -934,6 +934,18 @@ async def run_session_turn(
 COMMAND_TURN_SECONDS = 600.0
 
 
+# Session id -> the stop signal of the command it is running now (a session runs one turn at
+# a time). Ending the session sets it: the host's machine stops working for a session that is over.
+_RUNNING_COMMANDS: dict[str, asyncio.Event] = {}
+
+
+def stop_running_command(session_id: str) -> None:
+    """End the command this session is running, if any — its whole process group."""
+    stop = _RUNNING_COMMANDS.get(session_id)
+    if stop is not None:
+        stop.set()
+
+
 def _turn_text(fm: "FlowMessage") -> str:
     """The text a command or script turn runs: its inline PROMPT attachment, as sent."""
     from flow_sdk.builtin.flow_message import PROMPT_FILE_VFS_PREFIX, AttachmentType  # noqa: PLC0415
@@ -954,7 +966,7 @@ class _Upload:
         return self._content
 
 
-async def _run_plain_turn(kind: str, text: str, workdir: str) -> tuple[str, dict]:
+async def _run_plain_turn(kind: str, text: str, workdir: str, session_id: str) -> tuple[str, dict]:
     """Run a command or a script turn. Answers ``(result text, what rides the reply)``.
 
     A command that exits non-zero, or a script that throws, is an ANSWER — the guest asked
@@ -969,10 +981,18 @@ async def _run_plain_turn(kind: str, text: str, workdir: str) -> tuple[str, dict
         from flow_sdk.schema.data_spec.returned_value_spec import OUTPUT_CAP  # noqa: PLC0415
 
         lines: list[str] = []
-        result = await run_shell(text, timeout_seconds=COMMAND_TURN_SECONDS, workdir=Path(workdir), on_output=lines.append)
+        stop = _RUNNING_COMMANDS[session_id] = asyncio.Event()
+        try:
+            result = await run_shell(
+                text, timeout_seconds=COMMAND_TURN_SECONDS, workdir=Path(workdir), on_output=lines.append, stop=stop
+            )
+        finally:
+            _RUNNING_COMMANDS.pop(session_id, None)
         shown = "\n".join(part for part in (result.stdout.rstrip(), result.stderr.rstrip()) if part)
         if result.timed_out:
             shown = f"{shown}\n[stopped after {COMMAND_TURN_SECONDS:.0f}s]".strip()
+        elif stop.is_set():
+            shown = f"{shown}\n[stopped: the live session ended]".strip()
         code = result.returncode if result.returncode is not None else -1  # never started / killed
         extra: dict = {"turn_kind": kind, "turn_exit_code": code, "message": f"exit {code}\n{shown}".rstrip()}
         everything = "\n".join(lines)

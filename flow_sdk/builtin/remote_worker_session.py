@@ -375,6 +375,7 @@ class RemoteWorkerSession(Entity):
             # is the one state the host takes from a guest's snapshot.
             if data.get("status") == RemoteWorkerSessionStatus.ENDED and local.status != RemoteWorkerSessionStatus.ENDED:
                 local.mark_activity(RemoteWorkerSessionStatus.ENDED)
+                local._stop_running_command()  # the guest left: nothing keeps running for it
             # host_user_id/host_name included: a first carrier packed before the
             # guest's roster resolved the peer stamps host_user_id=None, and the
             # host row materialized from it could otherwise never acquire its own
@@ -506,6 +507,7 @@ class RemoteWorkerSession(Entity):
         if not already_ended:
             self.mark_activity(RemoteWorkerSessionStatus.ENDED)
             await self.save()
+        self._stop_running_command()
         await self._stop_host_worker()
         if announce and not already_ended:
             await self._emit_event(event, text=text, someone_typeid=someone_typeid)
@@ -515,6 +517,12 @@ class RemoteWorkerSession(Entity):
         the ``expired`` line — it is the guest's indication and carries the
         ENDED snapshot — so a guest-side close stays silent rather than doubling it."""
         await self.end("expired", announce=local_is_host, someone_typeid=someone_typeid)
+
+    def _stop_running_command(self) -> None:
+        """A command still running for this session is ended with it (a no-op when there is none)."""
+        from flow_sdk.app.actions.execute_prompt import stop_running_command  # noqa: PLC0415
+
+        stop_running_command(self.id)
 
     async def _stop_host_worker(self) -> None:
         """Best-effort: stop the host-side worker so queued/future remote prompts
