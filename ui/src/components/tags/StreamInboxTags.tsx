@@ -127,10 +127,11 @@ export function StreamInboxTags() {
       setRuns((all) => [...all.filter((r) => r.message === messageId).slice(-1), { message: messageId!, answer }]),
   });
   // `run=1` is a one-shot from a Classify button: it starts the run and leaves the URL, so a reload asks nothing.
+  // It leaves by REPLACING its history entry: a pushed one keeps `run=1` behind it, and Back would run it again.
   useEffect(() => {
-    if (options.run !== '1' || !message) return;
+    if (options.run !== '1' || !message || !currentDock) return;
     run.mutate();
-    open({ run: null });
+    navigation.openDock(currentDock.withOption('run', null), undefined, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per `run=1`, not per render
   }, [options.run, message?.id]);
   const mine = runs.filter((r) => r.message === messageId);
