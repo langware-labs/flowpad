@@ -673,7 +673,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           <span
             aria-hidden
             data-testid="tab-color-underline"
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px]"
             style={{ background: tint.fold }}
           />
         )}
