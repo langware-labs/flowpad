@@ -74,7 +74,8 @@
 <template data-slot="block"><div class="app" data-testid="classification-review"></div></template>
 <main data-slot="page"><div class="app" data-testid="classification-review"></div></main>
 <script type="module">
-  import * as sdk from '/sdk/flowpad-sdk.js';
+  // Served by Flowpad there is no `api` and this is `/sdk/…`; as a file in a browser, its opener names the backend.
+  const sdk = await import((new URLSearchParams(location.search).get('api') ?? '') + '/sdk/flowpad-sdk.js');
 
   const app = await sdk.nano.start();
   const root = document.querySelector(app.slot === 'block' ? '[data-slot-mounted="block"] .app' : '[data-slot="page"] .app');
@@ -97,8 +98,12 @@
 
   // What the page knows beyond the proposal: each message's tags as they are NOW (live), the tag tree (names,
   // meanings, colours), and what the person decided here: rejected rows and rejected tag changes.
-  const state = { tags: new Map(), colors: new Map(), meanings: new Map(), names: [], loaded: false, ticked: new Set(), rejected: new Set(),
-    rejectedTags: new Set(), approved: new Set(), tab: null, opened: null, busy: false, error: '' };
+  // What was rejected is kept on the message (`app.save`), so a reload and the other slot show the same review.
+  const state = { tags: new Map(), colors: new Map(), meanings: new Map(), names: [], loaded: false, ticked: new Set(),
+    rejected: new Set(app.saved?.rejected ?? []), rejectedTags: new Set(app.saved?.rejectedTags ?? []),
+    approved: new Set(), tab: null, opened: null, busy: false, error: '' };
+  const keep = () => app.save({ rejected: [...state.rejected], rejectedTags: [...state.rejectedTags] })
+    .catch((error) => { state.error = sdk.errorText(error); draw(); });
 
   let queued = false;   // a redraw is already on its way (`schedule`)
   let kept = new Set();   // the tags a rejected tag's rows may fall back to: in the tree, or still added (per draw)
@@ -319,10 +324,10 @@
     if (act === 'tick') flip(state.ticked, id);
     else if (act === 'tick-all') { const left = open(); state.ticked = new Set(allTicked(left) ? [] : left.map((row) => row.conversation_id)); }
     else if (act === 'clear') state.ticked.clear();
-    else if (act === 'reject') { flip(state.rejected, id); state.ticked.delete(id); }
+    else if (act === 'reject') { flip(state.rejected, id); state.ticked.delete(id); void keep(); }
     else if (act === 'why') state.opened = state.opened === id ? null : id;
     else if (act === 'tab') state.tab = hit.dataset.tab;
-    else if (act === 'reject-tag' || act === 'undo-tag') { flip(state.rejectedTags, tag); state.ticked.clear(); }
+    else if (act === 'reject-tag' || act === 'undo-tag') { flip(state.rejectedTags, tag); state.ticked.clear(); void keep(); }
     else if (act === 'page') return app.open('page');
     else if (act === 'apply') return void apply([id], false);
     else if (act === 'apply-ticked') return void apply([...state.ticked], false);

@@ -595,9 +595,10 @@ export function FlowMessageBubble({
     dataContext.caps.localFiles ? (attachmentItems.find((i) => match(i.filename) && !!i.localPath)?.localPath ?? null) : null;
   const cardPath = localFile((name) => name === CARD_FILE);
   // An app message (`fm.app`, set only for a message posted on this machine) is its nano-app's block slot
-  // (NanoAppFrame), opened on the value beside it; its text — the app's header as text — stays the fallback.
+  // (NanoAppFrame), opened with the message's own state key; its text — the app's header as text — stays the fallback.
   const appPath = fm.app ? localFile((name) => name === APP_FILE) : null;
-  const appInputPath = appPath ? localFile((name) => name.endsWith('.value.json') && name !== CARD_FILE) : null;
+  // The value the app opens on, for the ⋮ menu's "Open the value" only: the app itself reads it through its key.
+  const appValuePath = appPath ? localFile((name) => name.endsWith('.value.json') && name !== CARD_FILE) : null;
   const message: ConversationMessage = {
     role,
     content:
@@ -877,7 +878,7 @@ export function FlowMessageBubble({
       {itSend && itSend.rows.length > 0 && <ItSendTable send={itSend} conversationId={fm.conversation_id ?? ''} />}
       {diagnosisCard && <DiagnosisCard conversationId={fm.conversation_id ?? ''} isMine={isCurrentUser} />}
       {cardPath && <MessageValueCard localPath={cardPath} fallback={fm.text ?? ''} />}
-      {appPath && <NanoAppFrame path={appPath} input={appInputPath ?? undefined} title={fm.text ?? undefined} />}
+      {appPath && fm.id && <NanoAppFrame path={appPath} messageId={fm.id} title={fm.text ?? undefined} />}
       {fm.kind === FlowMessageKind.AUTOMATION_RESULT && !appPath && (
         <AutomationMessageActions conversationId={fm.conversation_id ?? ''} entities={entities} />
       )}
@@ -902,8 +903,8 @@ export function FlowMessageBubble({
   const appMenuItems: MessageMenuExtra[] | undefined = appPath
     ? [
         ...(canForward ? [{ key: 'forward', label: t`Forward`, icon: Forward, onSelect: () => setForwardOpen(true) }] : []),
-        ...(appInputPath
-          ? [{ key: 'value', label: t`Open the value`, icon: Braces, onSelect: () => navigation.openDock(dockPointerForLocalFile(appInputPath)) }]
+        ...(appValuePath
+          ? [{ key: 'value', label: t`Open the value`, icon: Braces, onSelect: () => navigation.openDock(dockPointerForLocalFile(appValuePath)) }]
           : []),
         ...(appRule
           ? [{ key: 'automation', label: t`Open the automation`, icon: Zap, onSelect: () => navigation.openDock(DockPointer.forAutomations({ trigger: appRule.id })) }]

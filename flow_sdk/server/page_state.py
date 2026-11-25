@@ -7,7 +7,9 @@ an agent, the app shell after the user said Allow) mints one and hands it over; 
 cannot, so what it points at has no key and the app asks the user first.
 
 This is NOT the cookie gate. The gate keeps unauthorized users off the machine; this keeps a link
-from making the user's own app run something. It is enforced only on a local install (no hub
+from making the user's own app run something. The two meet in one place: a page this backend does not
+serve (a nano-app opened as a file) cannot send the gate's cookie, so the local gate admits a request
+that presents a key held here (``local_cookiegate_middleware.py``). It is enforced only on a local install (no hub
 assignment) and follows the gate's off switch, so dev runs and the test suite are untouched.
 
 Held in memory and mirrored to ``<instance_dir>/page_states.json`` so open tabs survive a restart. A
@@ -106,6 +108,15 @@ def app_key() -> str:
     return held or mint(PageState(grant="app", title="Flowpad"))
 
 
+def may_mint(conn: HTTPConnection, *, app_shell: bool = False) -> bool:
+    """Whether this caller may open a page with a key of its own: a caller on this machine (the CLI, an
+    agent) -- and, with ``app_shell``, the app's own window. A page's key never mints."""
+    from flow_sdk.instance_settings import cookie_gate  # noqa: PLC0415
+
+    held = state_of(conn)
+    return not enforced() or cookie_gate.verify_machine(conn) or (app_shell and held is not None and held.grant == "app")
+
+
 def lookup(key: Optional[str]) -> Optional[PageState]:
     if not key or not KEY_PATTERN.match(key):
         return None
@@ -145,4 +156,4 @@ def state_of(conn: HTTPConnection) -> Optional[PageState]:
     return (conn.scope.get("state") or {}).get("page_state")
 
 
-__all__ = ["HEADER", "KEY_PATTERN", "QUERY", "app_key", "enforced", "key_of", "lookup", "mint", "presented_key", "state_of"]
+__all__ = ["HEADER", "KEY_PATTERN", "QUERY", "app_key", "enforced", "key_of", "lookup", "may_mint", "mint", "presented_key", "state_of"]

@@ -5074,6 +5074,46 @@ async def classify_conversations() -> ApiResponse:
     return ApiSuccessResponse(data=record.model_dump(mode="json"))
 
 
+@action.post(action_name="app-key", types=["flow_message"])
+async def app_key(self: FlowMessage) -> ApiResponse:
+    """The state key this app message's nano-app is opened with: it names the message, so the app reads what
+    it was opened on through the key (``app-data``). The same message answers the same key. For the app shell
+    and callers on this machine -- a page's own key opens no other page."""
+    from flow_sdk.builtin.flow_message import app_state_key
+    from flow_sdk.server import page_state
+
+    info = get_current_request_info()
+    if info is None or not page_state.may_mint(info.request, app_shell=True):
+        return ApiFailResponse(message="Only Flowpad on this computer may open a message's app.", status_code=403)
+    if self.app is None:
+        return ApiFailResponse(message="This message carries no app.", status_code=400)
+    return ApiSuccessResponse(data={"key": app_state_key(str(self.typeid))})
+
+
+@action.all(action_name="app-data", types=["flow_message"], methods=["get", "post"])
+async def app_data() -> ApiResponse:
+    """What a nano-app opens on, for the message its STATE KEY names -- never an id the page chooses. GET
+    answers ``{input, saved}`` (both None for a key that names no message); POST ``{saved}`` keeps the app's
+    own JSON for its next visit."""
+    from flow_sdk.schema.data_spec.nano_app_spec import NanoAppData
+    from flow_sdk.server import page_state
+
+    info = get_current_request_info()
+    if info is None:
+        return ApiFailResponse(message="No request context available", status_code=400)
+    # Looked up here, not read off the middleware: a server that does not demand keys still knows them.
+    state = page_state.lookup(page_state.presented_key(info.request))
+    named = state.context.get("message") if state is not None else None
+    message = await FlowMessage.get_one({"id": TypeId(named).id}) if named else None
+    if info.request.method.upper() == "GET":
+        return ApiSuccessResponse(data=(message.app_data() if message is not None else NanoAppData()).model_dump(mode="json"))
+    body = await info.get_post_data()
+    if message is None or not isinstance(body, dict) or "saved" not in body:
+        return ApiFailResponse(message="Expected {saved}, from a page opened on a message's app", status_code=400)
+    message.save_app_data(body["saved"])
+    return ApiSuccessResponse(data={"saved": body["saved"]})
+
+
 @action.post(action_name="stream-inbox-classification", types=["flow_message"])
 async def submit_stream_inbox_classification() -> ApiResponse:
     """A classification run hands in its proposal: ``{value, dry?, validate?}`` -> ``{fits, errors, ref?}``. The

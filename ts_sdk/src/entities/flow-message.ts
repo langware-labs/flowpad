@@ -608,6 +608,27 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     return (await dataManager.callAction(action))!;
   }
 
+  /** The state key an app message's nano-app is opened with: it names the message, so the app reads what it
+   *  was opened on through the key. Only the app shell may ask; the same message answers the same key. */
+  static async appKey(id: string): Promise<string> {
+    const action = new ActionInfo('app-key', FlowMessage.type, id, 'POST');
+    action.bodyParameters = {};
+    return (await dataManager.callAction<unknown, { key: string }>(action))!.key;
+  }
+
+  /** For a nano-app: what the message its state key names carries for it — `input` (a `{spec_kind, …}`
+   *  value) and `saved` (what the app kept). Both null when the key names no message. */
+  static async appData(): Promise<{ input: Record<string, unknown> | null; saved: unknown }> {
+    return (await dataManager.callAction(new ActionInfo('app-data', FlowMessage.type, null, 'GET')))!;
+  }
+
+  /** For a nano-app: keep `saved` (plain JSON) on the message its state key names. */
+  static async saveAppData(saved: unknown): Promise<void> {
+    const action = new ActionInfo('app-data', FlowMessage.type, null, 'POST');
+    action.bodyParameters = { saved };
+    await dataManager.callAction(action);
+  }
+
   /** The ground truth so far: each labelled message's confirmed tag ('' = no tag fits) and its dataset. */
   static async classificationTruth(): Promise<{ dataset_id: string | null; tags: Record<string, string> }> {
     const action = new ActionInfo('classification-truth', FlowMessage.type, null, 'GET');

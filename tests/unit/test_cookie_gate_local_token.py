@@ -32,7 +32,8 @@ def _app() -> Starlette:
     async def ok(_request):
         return PlainTextResponse("ok")
 
-    app = Starlette(routes=[Route("/", ok), Route("/api/v1/graph/shell", ok, methods=["GET", "POST"])])
+    app = Starlette(routes=[Route("/", ok), Route("/api/v1/graph/shell", ok, methods=["GET", "POST"]),
+                            Route("/sdk/flowpad-sdk.js", ok, methods=["GET", "POST"])])
     app.add_middleware(gate.CookieGateMiddleware)
     return app
 
@@ -123,3 +124,23 @@ def test_hub_arming_after_startup_is_enforced_on_the_next_request(local_gate):
     with patch.object(cookie_gate, "get_cookie_gate", return_value=HUB_SECRET):
         assert client.get("/", headers=_header(token)).status_code == 403
         assert client.get("/", headers=_header(HUB_SECRET)).status_code == 200
+
+
+def test_a_page_this_backend_does_not_serve_passes_on_its_state_key_and_reads_the_sdk(local_gate, tmp_path):
+    """A nano-app opened as a ``file://`` is cross-site, so the browser sends it no cookie: the key its opener
+    minted is what it presents, and the SDK it loads is public."""
+    from flow_sdk.schema.data_spec.page_state_spec import PageState
+    from flow_sdk.server import page_state
+
+    page_state.reset_for_tests()
+    with patch.object(page_state, "_path", return_value=tmp_path / "page_states.json"):
+        key = page_state.mint(PageState(context={"message": "flow_message-1"}))
+        client = TestClient(_app(), base_url=LOCAL)
+
+        assert client.get("/sdk/flowpad-sdk.js").status_code == 200
+        assert client.post("/sdk/flowpad-sdk.js").status_code == 403, "reading the SDK is all that is open"
+        assert client.post("/api/v1/graph/shell", headers={page_state.HEADER: key}).status_code == 200
+        assert client.get(f"/api/v1/graph/shell?state={key}").status_code == 200
+        assert client.post("/api/v1/graph/shell", headers={page_state.HEADER: "k" * 32}).status_code == 403
+        assert client.post("/api/v1/graph/shell").status_code == 403
+    page_state.reset_for_tests()

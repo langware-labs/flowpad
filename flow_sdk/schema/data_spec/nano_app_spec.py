@@ -11,6 +11,10 @@ nothing to index). It reaches Flowpad only through the browser SDK (``sdk.nano.s
 
 Three slots, one file: ``header`` (one line of text, filled here by ``render_header`` -- never a frame),
 ``block`` (inside a message or a section) and ``page`` (a tab; the default, and what a bare browser shows).
+
+An opener hands the app one thing, its state key (``flow_sdk/server/page_state.py``): the key names the
+message that carries the app, and the value it opens on (``<input kind>.value.json`` on that message) is read
+through it -- ``FlowMessage.app_data``.
 """
 
 from __future__ import annotations
@@ -43,6 +47,15 @@ class NanoAppSpec(DataSpec):
     input: Optional[str] = None
     #: The slots the file declares (``data-slot``); ``page`` is always one.
     slots: list[NanoSlot] = ["page"]
+
+
+class NanoAppData(DataSpec):
+    """What a nano-app is handed through its state key: the value it opens on and what it kept."""
+
+    #: The value of the kind the manifest names, as ``{spec_kind, ...}``; None when its carrier holds none.
+    input: Optional[dict[str, Any]] = None
+    #: Plain JSON the app saved on an earlier visit (``app.save``); the app owns its shape.
+    saved: Any = None
 
 
 class _Reader(HTMLParser):

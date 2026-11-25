@@ -71,8 +71,7 @@ import { localHtmlRef, OpenInBrowserButton } from '@src/lib/open-in-browser';
  */
 export const PREVIEW_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads';
 
-/** `input`: the value file a nano-app's page opens on (`?input=`, read by `sdk.nano.start()`). */
-export function HtmlPreview({ path, stateKey, input }: { path: string; stateKey?: string; input?: string }) {
+export function HtmlPreview({ path, stateKey }: { path: string; stateKey?: string }) {
   const { computeNode, flowId } = useAgentContext();
   const fs = useFS(computeNode?.typeId);
 
@@ -85,7 +84,7 @@ export function HtmlPreview({ path, stateKey, input }: { path: string; stateKey?
   // `__FLOWPAD_PROCESS_ID__`, so the page's SDK can reach that process
   // (`setDisplayContext`, `enqueue`). The id, not the loaded process: it is in
   // the URL from the first render, so the frame loads once, already bound.
-  const query = new URLSearchParams({ ...(flowId ? { process: flowId } : {}), ...(input ? { input } : {}) }).toString();
+  const query = new URLSearchParams(flowId ? { process: flowId } : {}).toString();
   // The key this page was opened with rides the same address: the server answers a page's calls only for it.
   const src = computeNode?.typeId && fs ? withStateKey(`${fs.getServeUrl(path)}${query && `?${query}`}`, stateKey) : null;
   const frameRef = useRef<PersistentIframeHandle>(null);

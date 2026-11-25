@@ -331,7 +331,7 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
     const path = machinePathOf(ptr.value);
     return (
       <PageAllowGate title={fileNameOf(path)}>
-        {({ stateKey }) => <HtmlPreview path={path} stateKey={stateKey} input={currentDock?.options?.input || undefined} />}
+        {({ stateKey }) => <HtmlPreview path={path} stateKey={stateKey} />}
       </PageAllowGate>
     );
   }

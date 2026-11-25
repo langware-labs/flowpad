@@ -195,7 +195,8 @@ session id is one machine's, so no `trigger.json` can say it.
   Daily usage summary, and a real run that failed (`post_failure`, once per streak of the same error).
 - **A result a person acts on is an app message.** `post_app_message` posts a nano-app (`app.html`, see
   `docs/glossary.md`) and the value it opens on. The conversation draws the app's `block` slot in the bubble
-  (`NanoAppFrame`), so the work is reviewed and done there; the Stream Inbox row shows the message's
+  (`NanoAppFrame`), so the work is reviewed and done there (the app is handed the message's state
+  key and reads its value, and what the person rejected, through it — so the same file opens in a browser too); the Stream Inbox row shows the message's
   `app.status` and `app.header` (the app's header slot, rendered once as text). Forward, the value and the
   rule that posted it are in the message's ⋮ menu. The message classifier's proposal is the first one
   (`classification-review.html`, posted by `classification.submit`): a long run never holds a window open —

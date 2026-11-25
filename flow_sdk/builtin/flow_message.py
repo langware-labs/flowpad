@@ -39,6 +39,7 @@ from flow_sdk.tags.envelope import parse_target
 ProgressCallback = Callable[[int, int], Awaitable[None]]
 
 if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.nano_app_spec import NanoAppData
     from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 
 logger = logging.getLogger(__name__)
@@ -499,6 +500,8 @@ CARD_FILE = "card.value.json"
 #: The nano-app an app message carries: the conversation draws its ``block`` slot in place of the text, opened
 #: on the ``<kind>.value.json`` beside it (``FlowMessage.app``).
 APP_FILE = "app.html"
+#: What a message's app keeps between visits (``sdk.nano``'s ``app.save``): plain JSON the app owns.
+APP_SAVED_FILE = "app.saved.json"
 
 
 def carrier_attachment(fm: "FlowMessage") -> "Attachment | None":
@@ -663,6 +666,32 @@ class Attachment(BaseModel):
         if self.attachment_type == AttachmentType.FILE:
             return True
         return self.attachment_type == AttachmentType.PROMPT and str(self.data or "").startswith(PROMPT_FILE_VFS_PREFIX)
+
+
+def app_message_at(path: str) -> Optional[str]:
+    """The typeid (``flow_message-<id>``) of the app message whose ``app.html`` the machine path ``path`` is,
+    or None. What lets whoever shows that file name the message in the page's state key."""
+    if Path(path).name != APP_FILE:
+        return None
+    from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+    from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
+
+    shown = Path(path).resolve()
+    try:
+        typeid = TypeId(type="flow_message", id=shown.relative_to(data_dir_for("flow_message", "x").parent.resolve()).parts[0])
+    except (ValueError, IndexError):   # not under a message's folder
+        return None
+    own = _local_file(get_entity_embedded_storage(typeid), f"{FILE_VFS_PREFIX}{APP_FILE}")
+    return str(typeid) if own and Path(own).resolve() == shown else None
+
+
+def app_state_key(message: str) -> str:
+    """The state key a message's nano-app is opened with: it names the message (typeid), so the app reads
+    what it was opened on through it. One message, one key -- whoever opens it."""
+    from flow_sdk.schema.data_spec.page_state_spec import PageState  # noqa: PLC0415
+    from flow_sdk.server import page_state  # noqa: PLC0415
+
+    return page_state.mint(PageState(context={"message": message}, title=APP_FILE))
 
 
 def _local_file(storage, data: str) -> Optional[str]:
@@ -1375,10 +1404,24 @@ class FlowMessage(Entity):
         return self._value_file(f"{kind}.value.json")
 
     def _value_file(self, name: str) -> Optional[dict]:
-        from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
-
-        path = _local_file(get_entity_embedded_storage(self.typeid), f"{FILE_VFS_PREFIX}{name}")
+        path = _local_file(self._embedded_storage(), f"{FILE_VFS_PREFIX}{name}")
         return json.loads(Path(path).read_text(encoding="utf-8")) if path else None
+
+    def app_data(self) -> "NanoAppData":
+        """What this message's nano-app opens on, read through its state key: the value of the kind its
+        manifest names, and what the app kept (``save_app_data``)."""
+        from flow_sdk.schema.data_spec.nano_app_spec import NanoAppData, read_nano_app  # noqa: PLC0415
+
+        page = _local_file(self._embedded_storage(), f"{FILE_VFS_PREFIX}{APP_FILE}")
+        app = read_nano_app(Path(page).read_text(encoding="utf-8")) if page else None
+        return NanoAppData(input=self.attached_value(app.input) if app and app.input else None, saved=self._value_file(APP_SAVED_FILE))
+
+    def save_app_data(self, saved: Any) -> None:
+        """Keep ``saved`` (plain JSON) beside this message's app, for its next visit in any slot."""
+        from flow_sdk.capsules.atomic import atomic_write  # noqa: PLC0415
+
+        path = self._embedded_storage().get_storage_path(f"{FILE_VFS_PREFIX}{APP_SAVED_FILE}")
+        atomic_write(Path(path), json.dumps(saved).encode("utf-8"))
 
     def file_names(self) -> list[str]:
         """The names of the files uploaded onto this message (``FILE_VFS_PREFIX`` stripped)."""
