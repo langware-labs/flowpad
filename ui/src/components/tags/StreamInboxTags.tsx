@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Plus, Tag as TagIcon, Tags, Zap } from 'lucide-react';
+import { ChevronDown, Loader2, Plus, Tag as TagIcon, Tags, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataManager, FlowMessage, QueryFilter, QueryRequest, Tag, TypeId } from '@sdk';
@@ -527,8 +527,18 @@ export function StreamInboxTags() {
                   onClick={() => run.mutate()}
                   data-testid="stream-inbox-tag-try-run"
                 >
-                  ▶ {result ? <Trans>Rerun</Trans> : <Trans>Run</Trans>}
+                  {run.isPending ? <Loader2 className="size-3 animate-spin" /> : '▶'}{' '}
+                  {result ? <Trans>Rerun</Trans> : <Trans>Run</Trans>}
                 </Button>
+                {run.isPending && (
+                  <span
+                    role="status"
+                    className="text-xs text-muted-foreground"
+                    data-testid="stream-inbox-tag-try-running"
+                  >
+                    <Trans>Classifying…</Trans>
+                  </span>
+                )}
               </div>
               {run.isError && (
                 <p role="alert" className="mt-2 text-xs text-destructive">
