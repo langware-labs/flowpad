@@ -94,6 +94,8 @@ VALID: dict[str, dict] = {
         "reflect": ["record"],
         "manifest_schema": 1,
         "permissions": {},
+        # an offer may only name config fields the driver declares, and the filler declares none
+        "offers": [],
     },
     # a poll interval below 60s is refused
     # the file carries an owner only when it is an agent (a user owner is a fact of one machine)

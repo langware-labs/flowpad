@@ -6,10 +6,9 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { Agent, DataDriver, DataSource, Project, TypeId, User } from '@sdk';
+import { Agent, DataDriver, DataSource, Project, TypeId, User, dataContext } from '@sdk';
 
-const hoisted = vi.hoisted(() => ({ specs: [] as unknown[], project: null as unknown, hub: false }));
-vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => hoisted.hub }));
+const hoisted = vi.hoisted(() => ({ specs: [] as unknown[], project: null as unknown }));
 vi.mock('@src/components/data-sources/use-source-specs', async (original) => ({
   ...(await original<typeof import('@src/components/data-sources/use-source-specs')>()),
   useSourceSpecs: () => ({
@@ -41,7 +40,6 @@ const ME = new TypeId(User.type, ID);
 
 afterEach(() => {
   cleanup();
-  hoisted.hub = false;
   vi.restoreAllMocks();
 });
 
@@ -99,7 +97,7 @@ it.each([
   ["an agent's source: it goes with its agent", { owner: new TypeId(Agent.type, ID) }, false],
   ['the hub: there is no project folder to save into', {}, true],
 ] as const)('does not ask for %s', async (_why, options, hub) => {
-  hoisted.hub = hub;
+  vi.spyOn(dataContext, 'caps', 'get').mockReturnValue({ localFiles: !hub } as never);
   const save = addForm('feed', options);
   expect(screen.queryByTestId('ds-scope')).toBeNull();
   add();

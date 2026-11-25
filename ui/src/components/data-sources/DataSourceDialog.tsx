@@ -9,7 +9,7 @@
  * which the form does set — through the field that owns it.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Agent, DataSource, type SourceStatus } from '@sdk';
+import { Agent, DataSource, dataContext, type SourceStatus } from '@sdk';
 import type { TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -25,7 +25,6 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Switch } from '@src/components/ui/switch';
 import { ScopeBar } from '@src/components/ui/scope-bar';
-import { isHubOnly } from '@src/navigation/hub-runtime';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Textarea } from '@src/components/ui/textarea';
 import { SetupWizardPanel } from '@src/components/setup-wizard/SetupWizardDialog';
@@ -206,7 +205,7 @@ export function DataSourceDialog({
   // The wizard asks for this driver's config — the form asks only for a name, then hands over.
   const byWizard = setUpByWizard(spec, !!editing);
   // Asked only where there is a choice to make: a new source of a person, on a machine that has project folders.
-  const asksPlace = !editing && !ownerAgentId && !isHubOnly();
+  const asksPlace = !editing && !ownerAgentId && dataContext.caps.localFiles;
   // A message channel is the person's own; any other data source is the project's.
   const place =
     asksPlace && project?.typeId ? (placePick ?? (isMessageDriverSpec(spec) ? 'user' : 'project')) : 'user';
