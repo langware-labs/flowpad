@@ -1,8 +1,10 @@
 """Hub conversations as a message source: what every driver that reads them shares.
 
 A hub conversation's messages are the records, a reply is ``add_message``. A driver says which
-conversations are its own (``_read_pool``: a desk's tickets, the conversations a login is a member of)
-and what happens before it answers one; the cursor, the paging, the record and the send are here.
+conversations are its own (``_read_pool``: a desk's tickets, the conversations an agent's router lists),
+where their messages are read and answered when not on the conversation itself (``_read_messages``,
+``_add_message``) and what happens before it answers one; the cursor, the paging, the record and the
+send are here.
 
 **Both writers, one row.** A conversation's messages also reach this machine through the hub
 mirror, so every record carries the hub's own ids (``hub_conversation_id`` / ``hub_message_id``):
@@ -53,21 +55,26 @@ class HubTransport(Protocol):
     """The Flowpad hub, as whoever holds the login reaches it. Raises the contract's errors."""
 
     async def get(
-        self, entity_type: str, entity_id: str, action: str, *, params: Optional[Mapping[str, Any]] = None
+        self,
+        entity_type: str,
+        entity_id: str,
+        action: str,
+        *,
+        params: Optional[Mapping[str, Any]] = None,
+        sub_path: Optional[str] = None,
     ) -> Any: ...
 
-    async def post(self, entity_type: str, payload: dict, entity_id: str, action: str) -> Any: ...
-
-    async def walk(self, entity_type: str) -> list[dict]:
-        """Every row of a hub list the login can read; raises when the list did not come back whole."""
-        ...
+    async def post(
+        self, entity_type: str, payload: dict, entity_id: str, action: str, *, sub_path: Optional[str] = None
+    ) -> Any: ...
 
     def me(self) -> str:
         """The signed-in hub principal's id, or ``""`` when signed out."""
         ...
 
-    def agent(self) -> str:
-        """The signed-in agent Identity's id, or ``""`` when signed out or signed in as a person."""
+    async def agent(self) -> str:
+        """The id of the Agent the signed-in Identity acts as, or ``""`` when signed out, signed in as a
+        person, or that agent is not known here."""
         ...
 
 
@@ -82,6 +89,36 @@ def try_read_agent_login() -> Optional[str]:
     return str(principal.get("id") or "") or None
 
 
+async def try_resolve_login_agent() -> Optional[str]:
+    """The id of the Agent this machine's Identity acts as, read as the hub's ``Identity.agent_typeid`` reads it:
+    the Identity's subject when that is an agent, else the ``main_agent_id`` of the Deployment that is -- this
+    box's own copy of the hub's row, adopted at the same id. ``None`` when signed out, signed in as a person, or
+    that Deployment is not on this machine. Never raises."""
+    try:
+        from flow_sdk.cli.app_config import get_principal  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+        if try_read_agent_login() is None:
+            return None
+        raw = str((get_principal() or {}).get("subject_typeid") or "")
+        subject = TypeId(raw) if raw else None
+        if subject is None:
+            return None
+        if subject.type == "agent":
+            return subject.id or None
+        if subject.type != "deployment" or not subject.id:
+            return None
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+        deployment = await Deployment.get_by_id(subject.id)
+        main = str(getattr(deployment, "main_agent_id", "") or "")
+        if not main:
+            return None
+        return TypeId(main).id or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class AppHub:
     """The ``HubTransport`` of this machine: the shared client's bearer, refresh and local-privacy
     gate, with its failures in the contract's words a person can act on."""
@@ -89,33 +126,33 @@ class AppHub:
     #: What a refusal names: the thing the login was refused.
     what: ClassVar[str] = "conversation"
 
-    async def get(self, entity_type: str, entity_id: str, action: str, *, params: Optional[Mapping[str, Any]] = None):
+    async def get(
+        self,
+        entity_type: str,
+        entity_id: str,
+        action: str,
+        *,
+        params: Optional[Mapping[str, Any]] = None,
+        sub_path: Optional[str] = None,
+    ):
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
         try:
-            return await HubProxy.call("GET", entity_type, entity_id, action, params=params)
+            return await HubProxy.call("GET", entity_type, entity_id, action, sub_path, params=params)
         except HubError as exc:
             raise hub_refusal(exc, signed_in=bool(self.me()), what=self.what) from exc
 
-    async def post(self, entity_type: str, payload: dict, entity_id: str, action: str):
+    async def post(
+        self, entity_type: str, payload: dict, entity_id: str, action: str, *, sub_path: Optional[str] = None
+    ):
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
 
         try:
-            return await HubProxy.call("POST", entity_type, entity_id, action, payload=payload)
+            return await HubProxy.call("POST", entity_type, entity_id, action, sub_path, payload=payload)
         except HubError as exc:
             raise hub_refusal(exc, signed_in=bool(self.me()), what=self.what) from exc
-
-    async def walk(self, entity_type: str) -> list[dict]:
-        from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
-
-        walked = await HubProxy.walk(entity_type)
-        if walked.complete:
-            return walked.rows
-        if walked.error is None:
-            raise SourceUnavailable(f"the hub's {entity_type} list did not come back whole")
-        raise hub_refusal(walked.error, signed_in=bool(self.me()), what=self.what) from walked.error
 
     def me(self) -> str:
         """Who is signed in to the hub (a person, or the agent's Identity on its box), or "" when signed out."""
@@ -126,12 +163,9 @@ class AppHub:
         except Exception:  # noqa: BLE001
             return ""
 
-    def agent(self) -> str:
-        """The agent Identity signed in to the hub on this machine, or "" when signed out or a person is."""
-        try:
-            return try_read_agent_login() or ""
-        except Exception:  # noqa: BLE001
-            return ""
+    async def agent(self) -> str:
+        """The Agent the Identity signed in on this machine acts as, or "" (``try_resolve_login_agent``)."""
+        return await try_resolve_login_agent() or ""
 
 
 def hub_refusal(exc: Exception, *, signed_in: bool, what: str = "conversation") -> SourceError:
@@ -259,6 +293,18 @@ class HubConversationSource(MessageSource):
     async def prepare_answer(self, conversation: str) -> None:
         """What precedes a post to ``conversation``; nothing by default."""
 
+    async def _read_messages(self, conversation: str) -> list[dict]:
+        """Every message of ``conversation``, as the hub answers them: the conversation's own list by default."""
+        return rows_of(await self.hub.get("conversation", conversation, "messages"))
+
+    async def _add_message(self, conversation: str, text: str) -> dict:
+        """Post ``text`` to ``conversation`` and answer the hub's record of it: the conversation's own
+        ``add_message`` by default."""
+        body = await self.hub.post(
+            "conversation", {"text": text, "conversation_id": conversation}, conversation, "add_message"
+        )
+        return body if isinstance(body, dict) else {}
+
     def signed_in_as(self) -> str:
         """The hub principal this source reads and answers as, or ``""``."""
         return self.hub.me()
@@ -309,7 +355,9 @@ class HubConversationSource(MessageSource):
             only = self._conversation_of(query.conversation) if query.conversation is not None else None
             return await self._read_older(query.before, limit, only)
         state = _PoolCursor.decode(cursor, self.cursor_prefix, self.label)
-        only = self._conversation_of(query.conversation) if query is not None and query.conversation is not None else None
+        only = (
+            self._conversation_of(query.conversation) if query is not None and query.conversation is not None else None
+        )
         since = query.since if query is not None else None
         pool = await self._read_pool()
         live = {entry.conversation for entry in pool}
@@ -329,10 +377,12 @@ class HubConversationSource(MessageSource):
                 more = True
                 break
             if since is not None and (_parse_time(entry.updated_at) or since) < since:
-                state.marks[conversation] = _ReadMark(stamp=entry.stamp)  # quiet since before the window: nothing to read
+                state.marks[conversation] = _ReadMark(
+                    stamp=entry.stamp
+                )  # quiet since before the window: nothing to read
                 continue
             mark = mark or _ReadMark()
-            children = rows_of(await self.hub.get("conversation", conversation, "messages"))
+            children = await self._read_messages(conversation)
             fresh = [
                 fm
                 for fm in sorted(children, key=_stamp_of)
@@ -373,7 +423,7 @@ class HubConversationSource(MessageSource):
             active = _parse_time(entry.updated_at)
             if len(held) >= limit and active is not None and active < held[0].sent:
                 break
-            for fm in rows_of(await self.hub.get("conversation", entry.conversation, "messages")):
+            for fm in await self._read_messages(entry.conversation):
                 sent = _parse_time(fm.get("created_date"))
                 if str(fm.get("id") or "").strip() and sent is not None and sent < before:
                     arrival -= 1
@@ -440,15 +490,13 @@ class HubConversationSource(MessageSource):
 
     async def _post_answer(self, conversation: str, text: str, answered: Optional[CloudOrigin]) -> MessageItem:
         await self.prepare_answer(conversation)
-        body = await self.hub.post(
-            "conversation", {"text": text, "conversation_id": conversation}, conversation, "add_message"
-        )
-        message_id = str((body or {}).get("id") or "")
+        body = await self._add_message(conversation, text)
+        message_id = str(body.get("id") or "")
         if not message_id:
             raise OutcomeUnknown("the hub accepted the reply but returned no id for it")
         # Built by the poll's own `_item_of`, so the send-time copy IS the record the next poll reads —
         # hub ids included; without them the projection mints a twin of this reply.
-        sent = {"text": text, "sender_id": self.signed_in_as(), **(body or {}), "id": message_id}
+        sent = {"text": text, "sender_id": self.signed_in_as(), **body, "id": message_id}
         item = self._item_of(conversation, sent)
         update = {"in_reply_to": answered, "sent_at": item.data.sent_at or datetime.now(timezone.utc)}
         return MessageItem(origin=item.origin, data=item.data.model_copy(update=update))
@@ -543,7 +591,9 @@ class _PoolCursor:
 
     def encode(self, prefix: str) -> str:
         tickets = {c: [m.stamp, m.high_water, m.boundary_ids] for c, m in sorted(self.marks.items())}
-        return prefix + json.dumps({"watermark": self.watermark, "tickets": tickets}, sort_keys=True, separators=(",", ":"))
+        return prefix + json.dumps(
+            {"watermark": self.watermark, "tickets": tickets}, sort_keys=True, separators=(",", ":")
+        )
 
 
 def rows_of(payload: object) -> list[dict]:
@@ -576,4 +626,5 @@ __all__ = [
     "newest_first",
     "rows_of",
     "try_read_agent_login",
+    "try_resolve_login_agent",
 ]

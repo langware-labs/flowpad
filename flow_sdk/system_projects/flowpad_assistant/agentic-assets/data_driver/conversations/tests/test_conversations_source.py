@@ -1,16 +1,18 @@
-"""The ``conversations`` data source: the hub conversations an agent's Identity is a member of in,
-its answers out.
+"""The ``conversations`` data source: the hub conversations an agent was invited to in, its answers out.
 
 Offline by construction — the hub is a transport the source is handed, so these hand it a fake
 one. The traps: every record carries the hub's OWN ids (or the projection mints a twin beside the
-row the hub bridge mirrored); only a plain conversation is read (a ticket belongs to the help-desk
-source); the agent's own message is its own; and a person's login reads nothing at all.
+row the hub bridge mirrored); every read and answer goes through the AGENT's ``conversation_router``
+(the machine's Identity holds no role on a conversation); only a plain conversation is read (a ticket
+belongs to the help-desk source); the agent's own message is its own; and a person's login reads
+nothing at all.
 """
 
 from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NamedTuple, Optional
@@ -20,18 +22,22 @@ import pytest
 from flow_sdk.builtin.agent_serve import is_own_outgoing
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.cloud_client.hub_proxy import HubProxy
+from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.errors import NotFound, Rejected
+from flow_sdk.sources.errors import AccessDenied, NotFound, Rejected
+from flow_sdk.sources.hub_conversations import try_resolve_login_agent
 from flow_sdk.sources.testing import Subject, checks_for
 from flow_sdk.sources.values.items import MessageData
 
 ConversationsSource = asset_module("conversations").ConversationsSource
 REJECTED = asset_module("conversations").REJECTED
+ROUTER = asset_module("conversations").ROUTER
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -63,10 +69,12 @@ class Call(NamedTuple):
     entity_type: str
     entity_id: str
     action: str
+    sub_path: str
 
 
 class _Hub:
-    """A hub that lists the conversations it holds, answers each one's messages and records every call."""
+    """A hub whose agent's ``conversation_router`` lists the conversations it holds, answers each one's messages
+    and takes an answer as the agent; every call is recorded. The router answers only its own agent."""
 
     def __init__(self, rows=None, threads=None, *, agent: str = AGENT):
         self.rows = list(rows or [])
@@ -74,39 +82,54 @@ class _Hub:
         self.signed_in_agent = agent
         self.calls: list[Call] = []
 
-    async def walk(self, entity_type):
-        self.calls.append(Call("walk", entity_type, "", ""))
-        return list(self.rows)
+    def _route(self, entity_type: str, entity_id: str, action: str) -> None:
+        if (entity_type, action) != ("agent", ROUTER):
+            raise AccessDenied(f"the machine holds no role on {entity_type}/{entity_id}/{action}")
+        if not entity_id or entity_id != self.signed_in_agent:
+            raise AccessDenied("not this machine's agent")
 
-    async def get(self, entity_type, entity_id, action, *, params=None):
-        self.calls.append(Call("get", entity_type, entity_id, action))
-        return self.threads.get(entity_id, [])
+    async def get(self, entity_type, entity_id, action, *, params=None, sub_path=None):
+        self.calls.append(Call("get", entity_type, entity_id, action, sub_path or ""))
+        self._route(entity_type, entity_id, action)
+        if not sub_path:
+            return list(self.rows)
+        conversation, _, leaf = sub_path.partition("/")
+        assert leaf == "messages", f"test setup failure: unexpected router read {sub_path!r}"
+        return self.threads.get(conversation, [])
 
-    async def post(self, entity_type, payload, entity_id, action):
-        self.calls.append(Call("post", entity_type, entity_id, action))
-        if entity_id not in self.threads:
+    async def post(self, entity_type, payload, entity_id, action, *, sub_path=None):
+        self.calls.append(Call("post", entity_type, entity_id, action, sub_path or ""))
+        self._route(entity_type, entity_id, action)
+        conversation, _, leaf = (sub_path or "").partition("/")
+        assert leaf == "add_message", f"test setup failure: unexpected router post {sub_path!r}"
+        if conversation not in self.threads or payload.get("conversation_id") != conversation:
             raise NotFound("no such conversation")
         sent = {
             "id": str(uuid.uuid4()),
             "text": payload["text"],
-            "sender_id": self.signed_in_agent,
+            "sender_id": self.signed_in_agent,  # the router posts as the agent, not the machine's Identity
             "created_date": "2026-09-06T11:00:00+00:00",
             "updated_date": "2026-09-06T11:00:00+00:00",
         }
-        self.threads[entity_id].append(sent)
+        self.threads[conversation].append(sent)
         return sent
 
     def me(self) -> str:
         return self.signed_in_agent or PERSON
 
-    def agent(self) -> str:
+    async def agent(self) -> str:
         return self.signed_in_agent
 
     def reads(self) -> list[str]:
-        return [c.entity_id for c in self.calls if c.action == "messages"]
+        return [c.sub_path.removesuffix("/messages") for c in self.calls if c.sub_path.endswith("/messages")]
 
     def posts(self) -> list[Call]:
         return [c for c in self.calls if c.verb == "post"]
+
+
+def _answer(conversation: str) -> Call:
+    """The router post that answers ``conversation`` as the agent."""
+    return Call("post", "agent", AGENT, ROUTER, f"{conversation}/add_message")
 
 
 def _row(identities: Optional[list[str]] = None):
@@ -212,20 +235,37 @@ class TestReading:
         result = await _serve(monkeypatch, fake).traverse(_row(), position())
         assert result.items == [] and fake.reads() == []
 
+    async def test_the_list_and_the_messages_are_read_through_the_agents_router(self, monkeypatch, hub):
+        await _serve(monkeypatch, hub).traverse(_row(), position())
+        assert hub.calls == [
+            Call("get", "agent", AGENT, ROUTER, ""),
+            Call("get", "agent", AGENT, ROUTER, f"{CONVERSATION}/messages"),
+        ], "the machine's Identity holds no role on a conversation: only the agent's router reaches it"
+
+    async def test_an_older_page_of_one_conversation_is_read_through_the_router(self, hub):
+        async with ConversationsSource(SourceBinding(config={}), hub=hub) as source:
+            before = datetime(2026, 9, 7, tzinfo=timezone.utc)
+            page = await source.fetch(
+                None, narrow={"conversation": source.conversation_origin(CONVERSATION), "before": before}
+            )
+        assert [i.data.hub_message_id for i in page.items] == [MSG["id"]]
+        assert hub.calls == [Call("get", "agent", AGENT, ROUTER, f"{CONVERSATION}/messages")]
+
 
 class TestAnswering:
     async def test_a_reply_is_posted_to_the_conversation_without_a_pickup(self, monkeypatch, hub):
         driver = _serve(monkeypatch, hub)
         out = await driver.send(_row(), thread_key=CONVERSATION, to=CONVERSATION, text="the build is green")
-        assert hub.posts() == [Call("post", "conversation", CONVERSATION, "add_message")]
+        assert hub.posts() == [_answer(CONVERSATION)]
         assert out.recorded is True and out.external_id == hub.threads[CONVERSATION][-1]["id"]
 
-    async def test_a_reply_to_one_message_goes_to_its_conversation(self, hub):
+    async def test_a_reply_to_one_message_goes_to_its_conversation_as_the_agent(self, hub):
         async with ConversationsSource(SourceBinding(config={}), hub=hub) as source:
             (asked,) = (await source.fetch(None)).items
             sent = await source.reply(asked.origin, MessageData(text="the build is green"))
-        assert hub.posts() == [Call("post", "conversation", CONVERSATION, "add_message")]
+        assert hub.posts() == [_answer(CONVERSATION)]
         assert sent.data.hub_conversation_id == CONVERSATION and sent.data.in_reply_to == asked.origin
+        assert sent.data.sender is not None and sent.data.sender.origin.key == AGENT, "the router posts as the agent"
 
 
 class TestTheLoopGuard:
@@ -264,9 +304,59 @@ class TestAPersonsLogin:
         assert "agent" in str(caught.value) and fake.calls == []
 
 
+class TestTheAgentItAnswersAs:
+    """The agent id the router is addressed by: the subject of the Identity this machine is signed in as when that
+    is an agent, else the main agent of the Deployment that is (the box's adopted copy of the hub's row)."""
+
+    DEPLOYMENT = "33333333-3333-4333-8333-333333333333"
+
+    @staticmethod
+    def _signed_in_as(monkeypatch: pytest.MonkeyPatch, principal: Optional[dict]) -> None:
+        monkeypatch.setattr("flow_sdk.cli.app_config.get_principal", lambda: principal)
+
+    @staticmethod
+    def _deployment_here(monkeypatch: pytest.MonkeyPatch, rows: dict[str, SimpleNamespace]) -> None:
+        async def get_by_id(_cls, deployment_id: str) -> Optional[SimpleNamespace]:
+            return rows.get(deployment_id)
+
+        monkeypatch.setattr(Deployment, "get_by_id", classmethod(get_by_id))
+
+    @staticmethod
+    def _identity(subject_typeid: str) -> dict:
+        return {"id": PERSON, "type": "identity", "typeid": f"identity-{PERSON}", "subject_typeid": subject_typeid}
+
+    async def test_a_deployment_identity_answers_as_the_deployments_main_agent(self, monkeypatch):
+        self._signed_in_as(monkeypatch, self._identity(f"deployment-{self.DEPLOYMENT}"))
+        self._deployment_here(monkeypatch, {self.DEPLOYMENT: SimpleNamespace(main_agent_id=f"agent-{AGENT}")})
+        assert await try_resolve_login_agent() == AGENT
+
+    async def test_an_agent_identity_answers_as_its_agent(self, monkeypatch):
+        self._signed_in_as(monkeypatch, self._identity(f"agent-{AGENT}"))
+        self._deployment_here(monkeypatch, {})
+        assert await try_resolve_login_agent() == AGENT
+
+    @pytest.mark.parametrize(
+        "principal",
+        [
+            None,
+            {"id": PERSON, "type": "user", "typeid": f"user-{PERSON}"},
+            {"id": PERSON, "type": "identity", "typeid": f"identity-{PERSON}"},
+        ],
+        ids=["signed-out", "a-person", "no-subject"],
+    )
+    async def test_no_agent_identity_answers_as_none(self, monkeypatch, principal):
+        self._signed_in_as(monkeypatch, principal)
+        assert await try_resolve_login_agent() is None
+
+    async def test_a_deployment_not_on_this_machine_answers_as_none(self, monkeypatch):
+        self._signed_in_as(monkeypatch, self._identity(f"deployment-{self.DEPLOYMENT}"))
+        self._deployment_here(monkeypatch, {})
+        assert await try_resolve_login_agent() is None
+
+
 class TestRecoveryOnSignIn:
     """As the help desk's: a source parked because its login could not read answers again once this machine reads
-    the conversation list as an agent (``ensure_sources``, run on sign-in and start). A box signs in afresh on every
+    the agent's conversation router (``ensure_sources``, run on sign-in and start). A box signs in afresh on every
     resume, so a source parked once must not stay parked."""
 
     @staticmethod
@@ -278,12 +368,20 @@ class TestRecoveryOnSignIn:
         return source
 
     @staticmethod
-    def _sign_in_as(monkeypatch: pytest.MonkeyPatch, agent: Optional[str], *, walk_complete: bool = True) -> None:
-        async def walk(_entity_type: str) -> SimpleNamespace:
-            return SimpleNamespace(rows=[ROW], complete=walk_complete)
+    def _sign_in_as(monkeypatch: pytest.MonkeyPatch, agent: Optional[str], *, router_answers: bool = True) -> None:
+        async def call(
+            method: str, entity_type: str, entity_id: str, action: str, *_a: object, **_k: object
+        ) -> list[dict]:
+            assert (method, entity_type, entity_id, action) == ("GET", "agent", agent, ROUTER)
+            if not router_answers:
+                raise HubError(401, "Forbidden access")
+            return [ROW]
 
-        monkeypatch.setattr(HubProxy, "walk", walk)
-        monkeypatch.setattr(asset_module("conversations"), "try_read_agent_login", lambda: agent)
+        async def resolve() -> Optional[str]:
+            return agent
+
+        monkeypatch.setattr(HubProxy, "call", staticmethod(call))
+        monkeypatch.setattr(asset_module("conversations"), "try_resolve_login_agent", resolve)
 
     @staticmethod
     async def _health_of(source: DataSource) -> Optional[str]:
@@ -312,9 +410,9 @@ class TestRecoveryOnSignIn:
 
         assert await self._health_of(source) == SourceHealth.CONFIG_ERROR.value
 
-    async def test_an_unfinished_walk_leaves_it_parked(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_a_refused_router_read_leaves_it_parked(self, monkeypatch: pytest.MonkeyPatch):
         source = await self._park_source(REJECTED)
-        self._sign_in_as(monkeypatch, AGENT, walk_complete=False)
+        self._sign_in_as(monkeypatch, AGENT, router_answers=False)
 
         await ConversationsSource.ensure_sources()
 
