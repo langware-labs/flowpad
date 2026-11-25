@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LifeBuoy, Plus } from 'lucide-react';
+import { Bot, LifeBuoy, Plus } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
-import { Agent, myHelpDesks, staffedHelpDesks, type User } from '@sdk';
+import { myHelpDesks, staffedHelpDesks, type User } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { ContactDialog } from '@src/components/conversation/ContactDialog';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -47,7 +46,6 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
   const { groups } = useContactsGroups(open);
   // The agents this person may add to a conversation: read only while their tab shows.
   const { agents } = useAgentSuggestions(open && tab === 'agents');
-  const AgentIcon = iconForType(Agent.type);
   const { cloudUser } = useAuth();
   const [creatingDesk, setCreatingDesk] = useState(false);
   const [desks, setDesks] = useState<DeskRow[]>([]);
@@ -155,7 +153,7 @@ export function ContactsDialog({ open, onOpenChange, excludeUserId }: ContactsDi
                   className="flex items-center gap-2 px-3 py-2 text-sm"
                   data-testid={`contacts-agent-row-${agent.id}`}
                 >
-                  <AgentIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <Bot className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="flex-1 truncate">{agent.name}</span>
                 </div>
               ))}

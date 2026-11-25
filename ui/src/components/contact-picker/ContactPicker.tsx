@@ -1,11 +1,11 @@
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { ContactDialog } from '@src/components/conversation/ContactDialog';
 import { useOrgRoute } from '@src/components/organization/tabs/org-route';
-import { Agent, ContactsGroup, ConversationParticipant, normalizeEmail, Team, User } from '@sdk';
+import { ContactsGroup, ConversationParticipant, normalizeEmail, Team, User } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Input } from '@src/components/ui/input';
 import { Separator } from '@src/components/ui/separator';
-import { UsersRound, X, type LucideIcon } from 'lucide-react';
+import { Bot, UsersRound, X, type LucideIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { EMAIL_RE, filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
 import { filterGroups, mergeGroupMembers, useContactsGroups } from './use-contacts-groups';
@@ -76,7 +76,6 @@ export function ContactPicker({
   const { teams } = useMessageableTeams(enabled && includeTeams, excludeUserId);
   const TeamIcon = iconForType(Team.type);
   const { agents } = useAgentSuggestions(enabled && includeAgents);
-  const AgentIcon = iconForType(Agent.type);
 
   const filteredContacts = useMemo(() => filterContacts(contacts, filterText), [contacts, filterText]);
   const filteredGroups = useMemo(
@@ -306,7 +305,7 @@ export function ContactPicker({
               data-testid={`contact-agent-option-${agent.id}`}
             >
               <span className="flex min-w-0 items-center gap-1.5">
-                <AgentIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <Bot className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                 <span className="truncate">{agent.name}</span>
               </span>
               <span className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground">
