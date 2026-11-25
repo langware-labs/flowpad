@@ -3702,6 +3702,7 @@ msgstr "وكيل"
 #: src/components/assets/editor/doc-comments/useDocCommentsLayer.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/home-tiles/HomeTiles.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/tags/ClassifyTable.tsx
@@ -11544,6 +11545,7 @@ msgstr "العرض الشامل للنشر"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/app-profile/AppEditor.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
+#: src/components/home-tiles/HomeTiles.tsx
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 #: src/components/project-deployments/ProjectDeploymentsPage.tsx
 #: src/components/project-home/ProjectHomeMenu.tsx
@@ -18270,6 +18272,7 @@ msgstr "Linux DEB — Ubuntu وDebian وLinux Mint"
 msgid "Linux RPM — Fedora, RHEL, Rocky Linux"
 msgstr "Linux RPM — Fedora وRHEL وRocky Linux"
 
+#: src/components/home-tiles/HomeTiles.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "قائمة"
@@ -23888,6 +23891,10 @@ msgstr "فتح في بيئة العمل"
 #: src/pages/entry/entry-shell.tsx
 msgid "Open in your browser"
 msgstr "افتحوا في المتصفح"
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "Open issues"
+msgstr ""
 
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Open issues that stop something from working"
@@ -33135,6 +33142,7 @@ msgid "Tab failed to open"
 msgstr "فشل فتح التبويب"
 
 #: src/components/assets/editor/chart/chartControls.tsx
+#: src/components/home-tiles/HomeTiles.tsx
 msgid "Table"
 msgstr "جدول"
 
@@ -37078,6 +37086,7 @@ msgstr "Vibe فقط"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/home-tiles/HomeTiles.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/notifications/ingest.ts

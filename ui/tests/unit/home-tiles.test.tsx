@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -141,6 +141,104 @@ describe('home icon pages', () => {
   it('shows no arrows when every icon fits on one page', () => {
     render(<HomeTiles home={state(null)} />);
     expect(screen.queryByTestId('home-agents-pager')).toBeNull();
+  });
+
+  it('keeps a short last page as tall as a full one, and pads nothing when one page holds them all', async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 30 }, (_, i) => ({ ...used, key: `agent-many-${i}`, label: `Agent ${i}` }));
+    const { unmount } = render(<HomeTiles home={{ ...state(null), agents: many }} />);
+    expect(screen.queryAllByTestId('home-agents-filler')).toHaveLength(0);
+    await user.click(screen.getByTestId('home-agents-next'));
+    expect(screen.getAllByTestId('project-agent-tile')).toHaveLength(5);
+    expect(screen.getAllByTestId('home-agents-filler')).toHaveLength(20);
+    unmount();
+
+    render(<HomeTiles home={state(null)} />);
+    expect(screen.queryAllByTestId('home-agents-filler')).toHaveLength(0);
+  });
+});
+
+describe('home agents table', () => {
+  /** 30 agents, Agent 00 … Agent 29; every third one has open issues, every fifth one a second deployment. */
+  const many = Array.from({ length: 30 }, (_, i) => ({
+    ...own,
+    key: `agent-many-${i}`,
+    label: `Agent ${String(i).padStart(2, '0')}`,
+    issueCount: i % 3 === 0 ? i : 0,
+    deployments: i % 5 === 0 ? [deployment(D1, 'Team desk'), deployment(S1, 'Europe')] : [],
+  }));
+  const names = () => screen.getAllByTestId('home-agents-row').map((row) => row.querySelector('.truncate')?.textContent);
+  const toTable = (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(within(screen.getByTestId('home-agents-view')).getByRole('radio', { name: 'Table' }));
+
+  it('opens on List; Table shows the same agents as rows that select on a click and open on a double click', async () => {
+    const user = userEvent.setup();
+    const home = state(null);
+    render(<HomeTiles home={home} />);
+    const view = screen.getByTestId('home-agents-view');
+    expect(within(view).getByRole('radio', { name: 'List' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByTestId('home-agents-table')).toBeNull();
+
+    await toTable(user);
+    const [pirate, desk] = screen.getAllByTestId('home-agents-row');
+    expect(pirate).toHaveTextContent('Pirate');
+    expect(within(pirate).getByTestId('home-agents-deployments')).toHaveTextContent('1');
+    expect(within(pirate).getByTestId('home-agents-issues')).toHaveTextContent('2');
+    expect(within(desk).queryByTestId('home-agents-issues')).toBeNull();
+    expect(screen.queryAllByTestId('project-agent-tile')).toHaveLength(0);
+
+    await user.click(desk);
+    expect(home.select).toHaveBeenCalledWith(used.key);
+    await user.dblClick(pirate);
+    expect(home.open).toHaveBeenCalledWith(own);
+
+    await user.click(within(screen.getByTestId('home-agents-view')).getByRole('radio', { name: 'List' }));
+    expect(screen.getAllByTestId('project-agent-tile')).toHaveLength(2);
+  });
+
+  it('keeps the page when switching between List and Table', async () => {
+    const user = userEvent.setup();
+    render(<HomeTiles home={{ ...state(null), agents: many }} />);
+    await user.click(screen.getByTestId('home-agents-next'));
+    await toTable(user);
+    expect(screen.getByTestId('home-agents-pager')).toHaveTextContent('26–30 of 30');
+    expect(screen.getAllByTestId('home-agents-row')).toHaveLength(5);
+    expect(screen.getAllByTestId('home-agents-filler')).toHaveLength(20);
+  });
+
+  it('sorts on every column, a count most first, and starts over on page one', async () => {
+    const user = userEvent.setup();
+    render(<HomeTiles home={{ ...state(null), agents: many }} />);
+    await toTable(user);
+    expect(screen.getByTestId('home-agents-sort-agent').closest('th')).toHaveAttribute('aria-sort', 'ascending');
+    await user.click(screen.getByTestId('home-agents-next'));
+
+    await user.click(screen.getByTestId('home-agents-sort-issues'));
+    expect(screen.getByTestId('home-agents-sort-issues').closest('th')).toHaveAttribute('aria-sort', 'descending');
+    expect(screen.getByTestId('home-agents-pager')).toHaveTextContent('1–25 of 30');
+    expect(names().slice(0, 3)).toEqual(['Agent 27', 'Agent 24', 'Agent 21']);
+
+    await user.click(screen.getByTestId('home-agents-sort-issues'));
+    expect(screen.getByTestId('home-agents-sort-issues').closest('th')).toHaveAttribute('aria-sort', 'ascending');
+    await user.click(screen.getByTestId('home-agents-sort-deployments'));
+    expect(names().slice(0, 2)).toEqual(['Agent 00', 'Agent 05']);
+  });
+
+  it('narrows with Quick search, keeps the height of a full page, and says when nothing matches', async () => {
+    const user = userEvent.setup();
+    render(<HomeTiles home={{ ...state(null), agents: many }} />);
+    await toTable(user);
+    // Every word must appear somewhere, as in the hub's agent list: "agent 1" also finds Agent 01 and Agent 21.
+    await user.type(screen.getByTestId('home-agents-search'), 'agent 1');
+    expect(names()).toEqual(['Agent 01', ...Array.from({ length: 10 }, (_, i) => `Agent 1${i}`), 'Agent 21']);
+    expect(screen.queryByTestId('home-agents-pager')).toBeNull();
+    expect(screen.getAllByTestId('home-agents-filler')).toHaveLength(13);
+
+    await user.clear(screen.getByTestId('home-agents-search'));
+    await user.type(screen.getByTestId('home-agents-search'), 'nobody');
+    expect(screen.queryAllByTestId('home-agents-row')).toHaveLength(0);
+    expect(screen.getByTestId('home-agents-table')).toHaveTextContent('No matches for “nobody”.');
+    expect(screen.getAllByTestId('home-agents-filler')).toHaveLength(24);
   });
 });
 

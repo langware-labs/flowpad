@@ -81,34 +81,43 @@ export function StatChip({
   );
 }
 
-/** One axis: a label and a track of options, each with its count; the selected one is raised. */
+/**
+ * One axis: a label and a track of options, each with its count; the selected one is raised.
+ * Without `count` it is a plain switch (the home's List / Table): no bubbles, and `label` may be left out
+ * when `ariaLabel` names the group instead.
+ */
 export function AxisToggle({
   label,
+  ariaLabel,
   options,
   value,
   count,
   isLoading,
   onSelect,
+  className,
   testId,
 }: {
-  label: ReactNode;
+  label?: ReactNode;
+  ariaLabel?: string;
   options: AxisOption[];
   value?: string;
-  count: (key: string) => number;
+  count?: (key: string) => number;
   isLoading?: boolean;
   onSelect: (key: string) => void;
+  className?: string;
   testId: string;
 }) {
   return (
-    <div className="inline-flex shrink-0 items-center gap-2" data-testid={testId}>
-      <span className="text-xs text-foreground/55">{label}</span>
+    <div className={cn('inline-flex shrink-0 items-center gap-2', className)} data-testid={testId}>
+      {label && <span className="text-xs text-foreground/55">{label}</span>}
       <div
         role="radiogroup"
+        aria-label={ariaLabel}
         className="inline-flex h-8 items-center gap-0.5 rounded-lg bg-foreground/[0.05] p-0.5 ring-1 ring-inset ring-foreground/15"
       >
         {options.map((option) => {
           const selected = option.key === value;
-          const n = count(option.key);
+          const n = count?.(option.key) ?? 0;
           return (
             <button
               key={option.key}
@@ -117,7 +126,8 @@ export function AxisToggle({
               aria-checked={selected}
               onClick={() => onSelect(option.key)}
               className={cn(
-                'inline-flex h-7 max-w-48 items-center gap-1.5 rounded-md pe-1 ps-2.5 text-[13px] transition-colors',
+                'inline-flex h-7 max-w-48 items-center gap-1.5 rounded-md ps-2.5 text-[13px] transition-colors',
+                count ? 'pe-1' : 'pe-2.5',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 selected
                   ? 'bg-foreground/[0.16] font-semibold text-foreground shadow-sm ring-1 ring-foreground/25'
@@ -131,7 +141,7 @@ export function AxisToggle({
                 />
               )}
               <span className="truncate">{option.label}</span>
-              <CountBubble value={n} tone={option.tone ?? 'neutral'} isLoading={isLoading} />
+              {count && <CountBubble value={n} tone={option.tone ?? 'neutral'} isLoading={isLoading} />}
             </button>
           );
         })}

@@ -7,12 +7,17 @@ import {
   buildAgentTiles,
   buildAppTiles,
   buildHubAgentTiles,
+  BY_NAME,
   deploymentCount,
+  nextSort,
   pageOf,
   resolveSelection,
+  sortTiles,
   standsForItself,
   tileIsLocal,
+  tileSearchText,
   TILES_PAGE_SIZE,
+  type HomeTile,
 } from '@src/components/home-tiles/home-tiles-model';
 import type { ProjectApp } from '@src/components/top-nav-bar/use-project-apps';
 import { describe, expect, it } from 'vitest';
@@ -154,5 +159,41 @@ describe('deployment pages', () => {
     const items = Array.from({ length: 48 }, (_, i) => i);
     expect(pageOf(items, 0, TILES_PAGE_SIZE)).toMatchObject({ first: 1, pages: 2, page: 0 });
     expect(pageOf(items, 1, TILES_PAGE_SIZE).rows).toEqual(items.slice(25));
+  });
+});
+
+describe('the agents table', () => {
+  const row = (label: string, deployments: number, issueCount: number, more: Partial<HomeTile> = {}): HomeTile => ({
+    key: `agent-${label}`,
+    kind: 'agent',
+    label,
+    own: true,
+    deployments: Array.from({ length: deployments }, (_, i) => deployment(`${label}-${i}`, label)),
+    issueCount,
+    deploymentIssues: new Map(),
+    ...more,
+  });
+  const rows = [row('beta', 1, 0), row('Alpha', 0, 2), row('gamma', 3, 2), row('delta', 0, 0)];
+  const labels = (tiles: HomeTile[]) => tiles.map((tile) => tile.label);
+
+  it('opens sorted by name, A first, without regard to case', () => {
+    expect(labels(sortTiles(rows, BY_NAME))).toEqual(['Alpha', 'beta', 'delta', 'gamma']);
+  });
+
+  it('sorts a count most first, keeping name order among equal counts, and flips on a second click', () => {
+    const byIssues = nextSort(BY_NAME, 'issues');
+    expect(byIssues).toEqual({ key: 'issues', descending: true });
+    expect(labels(sortTiles(rows, byIssues))).toEqual(['Alpha', 'gamma', 'beta', 'delta']);
+    expect(labels(sortTiles(rows, nextSort(byIssues, 'issues')))).toEqual(['beta', 'delta', 'Alpha', 'gamma']);
+    expect(labels(sortTiles(rows, nextSort(BY_NAME, 'deployments')))).toEqual(['gamma', 'beta', 'Alpha', 'delta']);
+    expect(nextSort(byIssues, 'agent')).toEqual(BY_NAME);
+  });
+
+  it('searches the names, the description and where it is deployed, lower-cased', () => {
+    const described = row('Helper', 0, 0, {
+      agent: { name: 'helper-bot', description: 'Answers Billing questions' } as unknown as Agent,
+      deployments: [{ ...deployment('h1', 'Helper'), target: { provider: 'e2b' } } as unknown as Deployment],
+    });
+    expect(tileSearchText(described)).toBe('helper helper-bot answers billing questions e2b');
   });
 });
