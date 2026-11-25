@@ -34,6 +34,7 @@ from flow_sdk.builtin.user import User
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.schema.data_spec.message_app_spec import MessageAppSpec
     from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.cloud_client.hub_proxy import HubProxy
@@ -976,6 +977,7 @@ async def handle_add_message(
     pending_send: bool = False,
     origin_process: Optional[str] = None,
     draft: Optional["FlowMessage"] = None,
+    app: Optional["MessageAppSpec"] = None,
 ) -> ApiResponse:
     """Append a message to a Conversation — the single message-send handler.
 
@@ -991,6 +993,9 @@ async def handle_add_message(
     conversation.jsonl outbox until ``Conversation.deliver_pending_messages``
     pushes it, from ``share()`` or from the hub-session transition in
     ``flow_sdk.stream_inbox.catchup`` (see that module's docstring).
+
+    ``app``: the message is an app message (``post_app_message``): the row is written with its ``app``. A
+    server-side argument, never read from the body.
 
     ``draft``: send THIS row instead of building one (``handle_send_draft``). Its files, assets and
     session carrier are already on it; the body restates its text, quote and thread, so the send
@@ -1036,8 +1041,10 @@ async def handle_add_message(
     # policy) rides the start marker on the carrier attachment. A prompt WITH a
     # session id is a follow-up turn.
     from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        ALL_TURN_KINDS,
         RemoteWorkerSession,
         RemoteWorkerSessionStatus,
+        TurnKind,
         can_transition,
     )
     from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
@@ -1048,6 +1055,16 @@ async def handle_add_message(
     reply_policy = _reply_policy_of(body)
     if reply_policy is None:
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
+    # A command or a script is sent only into a session whose host approved that kind,
+    # and the check is HERE, on the sender: a host that predates turn kinds reports none
+    # and would hand the text to its worker as a prompt.
+    turn_kind = str(body.get("turn_kind") or TurnKind.PROMPT.value)
+    if turn_kind != TurnKind.PROMPT.value:
+        if turn_kind not in ALL_TURN_KINDS or not remote_worker_session_id:
+            return ApiFailResponse(message="a command or a script runs in a live session — name it", status_code=400)
+        held = await RemoteWorkerSession.resolve_state(remote_worker_session_id)
+        if held is None or not held.allows(turn_kind):  # nothing is approved before Approve
+            return ApiFailResponse(message=f"this live session is not approved to run a {turn_kind}", status_code=409)
     if is_prompt_send and not remote_worker_session_id:
         me = (await User.current_sender_participant(None)).get("user_id") or None
         open_session = await RemoteWorkerSession.open_for_conversation(conversation_id, me)
@@ -1216,6 +1233,8 @@ async def handle_add_message(
             reply_to_id=reply_to_id,
             thread_root_id=thread_root_id,
         )
+    if app is not None:
+        reply_fm.app = app
     if private:
         from flow_sdk.schema.data_spec.message_draft_spec import MessageDraftOptions  # noqa: PLC0415
 
@@ -1354,13 +1373,20 @@ async def handle_add_message(
             a.attachment_type == AttachmentType.TYPE_ID and a.data == session_att_data
             for a in (reply_fm.attachment or [])
         ):
-            marker = None
+            import json as _json  # noqa: PLC0415
+
+            from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY, SESSION_TURN_MARKER_KEY  # noqa: PLC0415
+
+            carried: dict = {}
             if start_settings is not None:
-                import json as _json  # noqa: PLC0415
-
-                from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
-
-                marker = _json.dumps({SESSION_START_MARKER_KEY: start_settings.model_dump(exclude_none=True)})
+                carried[SESSION_START_MARKER_KEY] = start_settings.model_dump(exclude_none=True)
+            if turn_kind != TurnKind.PROMPT.value:
+                # On the turn: what to run. On its answer: what ran, and a command's exit code.
+                carried[SESSION_TURN_MARKER_KEY] = {
+                    "kind": turn_kind,
+                    **({"exit_code": body["turn_exit_code"]} if body.get("turn_exit_code") is not None else {}),
+                }
+            marker = _json.dumps(carried) if carried else None
             reply_fm.attachment = [
                 *(reply_fm.attachment or []),
                 Attachment(attachment_type=AttachmentType.TYPE_ID, data=session_att_data, prompt_preview=marker),
@@ -1479,8 +1505,10 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
     from flow_sdk.app.actions.execute_prompt import _peer_of, emit_session_event  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
     from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        ALL_TURN_KINDS,
         RemoteWorkerSession,
         RemoteWorkerSessionStatus,
+        clean_turn_kinds,
     )
     from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
 
@@ -1499,11 +1527,22 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
         return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
     host_id, host_name, _ = _peer_of(conv, sender_id)
     if not host_id:
+        # A conversation opened a moment ago still lists its other member by email alone; the hub
+        # already knows who that is. Ask it once, here, rather than refuse a request that is valid.
+        from flow_sdk.app.actions.members_action import _refresh_roster  # noqa: PLC0415
+
+        await _refresh_roster(conv)
+        host_id, host_name, _ = _peer_of(conv, sender_id)
+    if not host_id:
         return ApiFailResponse(
             message="a live session runs on the other participant's machine — this conversation has none",
             status_code=400,
         )
 
+    # What the guest asks to run. Absent = every kind: the host ticks what it allows.
+    asked = clean_turn_kinds(body["turn_kinds"]) if body.get("turn_kinds") is not None else list(ALL_TURN_KINDS)
+    if not asked:
+        return ApiFailResponse(message="turn_kinds must name one or more of: " + ", ".join(ALL_TURN_KINDS), status_code=400)
     session = RemoteWorkerSession(
         conversation_id=conv.id,
         guest_user_id=sender_id,
@@ -1511,6 +1550,7 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
         host_user_id=host_id,
         host_name=host_name,
         reply_policy=reply_policy,
+        requested_turn_kinds=asked,
         status=RemoteWorkerSessionStatus.PENDING,
     )
     session.mark_activity()
@@ -1525,7 +1565,11 @@ async def _start_live_session_locked(conversation_id: str, body: dict, someone_t
         someone_typeid,
         # Read on BOTH sides (the guest's session view shows it too): no "your".
         text=f"{sender_name or 'Your collaborator'} asks {host_name or 'the host'} for a live session",
-        marker_extra={SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy).model_dump(exclude_none=True)},
+        marker_extra={
+            SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy, turn_kinds=asked).model_dump(
+                exclude_none=True
+            )
+        },
     )
     return ApiSuccessResponse(data=session.model_dump(mode="json"))
 

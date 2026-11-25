@@ -216,15 +216,17 @@ def browser_ask(browser: str) -> dict[str, str]:
 
 
 async def require_browser(proc: Any, wanted: str) -> None:
-    """Refuse a run whose session got another browser than the source names (a person's pick for
-    the project, or a worker the driver does not support): that browser is another account. The
-    process is neither saved nor started yet, so refusing leaves nothing behind."""
+    """Refuse a run whose session got another browser than the source names (a worker the driver
+    does not support): that browser is another account. The source's browser is the session's own,
+    so the project default never replaces it. The process is neither saved nor started yet, so
+    refusing leaves nothing behind."""
     if not wanted:
         return
     from flow_sdk.builtin.agentic_process.browser_choice import resolve_for  # noqa: PLC0415
+    from flow_sdk.core import browser_drivers  # noqa: PLC0415
 
     got = await resolve_for(proc)
-    if got.kind != wanted:
+    if got.kind != browser_drivers.driver_of(wanted):
         raise SourceError.config("wrong_browser", f"this source reads through the {wanted!r} browser, but the session got {got.kind!r} ({got.source})")
 
 

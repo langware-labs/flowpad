@@ -128,6 +128,15 @@ def test_mac_launch_goes_through_open_with_new_instance(mac, launched):
     ]
 
 
+def test_a_profile_window_opens_only_for_a_folder_that_exists(mac, home, launched):
+    """A browser asked for a profile it does not have creates one, so a missing folder is refused."""
+    (home / "Library/Application Support/Google/Chrome/Profile 2").mkdir(exist_ok=True)
+    bp.open_profile("chrome", "Profile 2")
+    with pytest.raises(bp.BrowserProfileError, match="no profile"):
+        bp.open_profile("chrome", "Profile 9")
+    assert launched == [["open", "-na", str(mac / "Applications/Google Chrome.app"), "--args", "--profile-directory=Profile 2"]]
+
+
 # ── Windows ──────────────────────────────────────────────────────────────────
 
 
@@ -268,7 +277,8 @@ def test_route_lists_and_opens(mac, launched, monkeypatch):
     body = client.get("/api/v1/browser-profiles").json()
     assert body["status"] == "SUCCESS"
     assert [b["id"] for b in body["data"]["browsers"]] == ["chrome", "firefox"]
-    assert body["data"]["browsers"][0]["profiles"][1] == {"id": "Profile 2", "name": "Work", "email": "me@work.test"}
+    work = body["data"]["browsers"][0]["profiles"][1]
+    assert {k: work[k] for k in ("id", "name", "email")} == {"id": "Profile 2", "name": "Work", "email": "me@work.test"}
 
     ok = client.post("/api/v1/browser-profiles/open", json={"browser": "chrome", "profile": "Default", "url": "https://a.test"})
     assert ok.json()["data"] == {"opened": True}

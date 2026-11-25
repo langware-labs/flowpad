@@ -2,7 +2,8 @@
 
 A page that runs in Flowpad (a shown HTML file, a mock, an MCP UI, a served app) presents a state
 key on every call it makes to the local server; the key names this value. ``context`` is what the
-page was opened about, as named typed ids (``{"process": "agentic_process-<id>"}``). ``grant`` is ``app`` for the app's own shell (the only
+page was opened about, as named typed ids: ``process`` (the session it was shown beside,
+``agentic_process-<id>``) and ``message`` (the app message a nano-app was opened on, ``flow_message-<id>``). ``grant`` is ``app`` for the app's own shell (the only
 holder that may mint more keys) and ``page`` for everything it opens.
 
 The value is immutable: a different context is a different key. Live data a page reports about

@@ -18,7 +18,7 @@ import { useEntity } from './entity-hooks/useEntity';
  *  3. Refetch on WS reconnect — DataManager re-registers watches on `on_open`,
  *     but updates missed while disconnected are not replayed.
  */
-export function useStreamInboxManager(): { unread: number } {
+export function useStreamInboxManager(): { unread: number; unclassified: number } {
   const [uuid, setUuid] = useState<string | null>(null);
 
   const { data, refetch } = useEntity<StreamInboxManager>(uuid ? new TypeId(StreamInboxManager.type, uuid) : null, { watch: true });
@@ -58,7 +58,8 @@ export function useStreamInboxManager(): { unread: number } {
     };
   }, []);
 
-  return { unread: (data as StreamInboxManager | null)?.unread ?? 0 };
+  const manager = data as StreamInboxManager | null;
+  return { unread: manager?.unread ?? 0, unclassified: manager?.unclassified ?? 0 };
 }
 
 /**

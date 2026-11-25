@@ -161,6 +161,25 @@ class CallStart(StrEnum):
     DIAL = "dial"
 
 
+class DriverOfferSpec(DataSpec):
+    """One channel a multi-channel driver offers as a choice of its own: a tile in the add picker
+    that opens the driver's form already set (``preset``) and asking only for ``fields``."""
+
+    #: Unique within the driver; the tile's key is ``<driver>:<key>``.
+    key: str = Field(min_length=1)
+    #: What the tile is called, and the name a new source starts with.
+    title: str = Field(min_length=1)
+    #: The channel it is: its glyph and badge are the driver's own for that channel.
+    channel: str = ""
+    description: str = ""
+    #: Config values the choice fixes; the form does not show them.
+    preset: dict[str, str] = Field(default_factory=dict)
+    #: The config fields the form asks for, each required; the driver's other fields stay hidden.
+    fields: list[str] = Field(default_factory=list)
+    #: Offered among the message channels (an empty stream inbox, "Add a channel"), as ``featured`` is.
+    featured: bool = False
+
+
 class DataDriverSpec(DataSpec):
     """``data_driver.json`` — the shape, with every authoring rule as a validator."""
 
@@ -189,6 +208,8 @@ class DataDriverSpec(DataSpec):
     #: this map on the transport's spec — so a channel's icon stays an asset
     #: fact, never a frontend map.
     channel_icon_names: dict[str, str] = Field(default_factory=dict)
+    #: Per-channel corner badge on that glyph, saying HOW the channel is reached (a browser).
+    channel_badge_icon_names: dict[str, str] = Field(default_factory=dict)
     #: Wiki page explaining the setup step a provider cannot do for you. Only
     #: meaningful for a source whose class is `Verifiable`.
     setup_wiki: str = ""
@@ -243,6 +264,18 @@ class DataDriverSpec(DataSpec):
     #: The name a new source of this driver starts with ("Flow WhatsApp agent"): what it IS to the person, which
     #: the group ("WhatsApp") is not. Blank: the driver's title. Always editable.
     default_name: str = ""
+    #: Channels of this driver that are choices of their own in the picker (``DriverOfferSpec``).
+    offers: list[DriverOfferSpec] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _offers_name_real_fields(self) -> "DataDriverSpec":
+        keys = [offer.key for offer in self.offers]
+        if len(keys) != len(set(keys)):
+            raise ValueError(f"offers must have unique keys, got {keys}")
+        for offer in self.offers:
+            if unknown := sorted({*offer.preset, *offer.fields} - set(self.config)):
+                raise ValueError(f"offer {offer.key!r} names config fields the driver does not declare: {unknown}")
+        return self
 
     @field_validator("setup_wizards")
     @classmethod

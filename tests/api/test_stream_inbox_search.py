@@ -11,14 +11,15 @@ import uuid
 
 import pytest
 
+from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.source_item import SourceItem
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
-async def _search(client, needle: str) -> list[str]:
-    response = await client.post("/api/v1/graph/stream-inbox-search", json={"q": needle})
+async def _search(client, needle: str = "", **boxes: str) -> list[str]:
+    response = await client.post("/api/v1/graph/stream-inbox-search", json={"q": needle, **boxes})
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "SUCCESS", body
@@ -61,6 +62,27 @@ async def test_search_hits_channel_bodies_and_native_text(bootstrapped_client):
     both = await _search(bootstrapped_client, marker)
     assert set(both) == {conv_channel, conv_native}
     assert await _search(bootstrapped_client, f"{marker}-nothing") == []
+
+
+@pytest.mark.asyncio
+async def test_from_and_subject_search_every_conversation_and_narrow_each_other(bootstrapped_client):
+    marker = uuid.uuid4().hex[:12]
+    by_name, by_address, member_only = (str(uuid.uuid4()) for _ in range(3))
+    await Conversation(id=by_name, title=f"Invoice {marker}").save(notify=False)
+    await Conversation(id=by_address, title=f"Roadmap {marker}").save(notify=False)
+    # In the conversation without having written in it.
+    await Conversation(id=member_only, title="Kickoff", members=[{"name": f"Dana {marker}"}]).save(notify=False)
+    await FlowMessage(
+        id=str(uuid.uuid4()), conversation_id=by_name, text="", sender_name=f"Dana {marker}", sender_id="email:d@x.io"
+    ).save(notify=False)
+    await FlowMessage(
+        id=str(uuid.uuid4()), conversation_id=by_address, text="", sender_name="Sam", sender_id=f"email:sam@{marker}.io"
+    ).save(notify=False)
+
+    assert set(await _search(bootstrapped_client, **{"from": f"dana {marker}"})) == {by_name, member_only}
+    assert await _search(bootstrapped_client, **{"from": f"@{marker}.io"}) == [by_address]
+    assert set(await _search(bootstrapped_client, subject=marker)) == {by_name, by_address}
+    assert await _search(bootstrapped_client, subject=marker, **{"from": f"dana {marker}"}) == [by_name]
 
 
 @pytest.mark.asyncio

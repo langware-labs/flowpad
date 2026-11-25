@@ -6,7 +6,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { AgenticProcess, dataContext } from '@sdk';
+import { AgenticProcess, ContextEntitiesEnum, dataContext } from '@sdk';
 import { WarningsPopover } from '@src/components/warnings-popover/warnings-popover';
 
 vi.mock('@sdk/react/hooks/useLazyAsset', () => {
@@ -49,7 +49,13 @@ afterEach(() => {
 });
 
 it('Install starts a background session that carries the update, and the card shows its run', async () => {
-  const launch = vi.spyOn(AgenticProcess, 'launch').mockResolvedValue({} as AgenticProcess);
+  const launch = vi.spyOn(AgenticProcess, 'launch').mockResolvedValue({ id: 'run-1' } as AgenticProcess);
+  // The card is drawn from the version the last check read, so the install asks for a re-check at its end.
+  const refreshStatusAfter = vi.fn(() => Promise.resolve());
+  const computeNode = { refreshStatusAfter } as never;
+  vi.spyOn(dataContext, 'getContextEntity').mockImplementation((key) =>
+    key === ContextEntitiesEnum.CurrentComputeNodeTypeId ? computeNode : null,
+  );
   const user = userEvent.setup();
   const view = render(<WarningsPopover />);
 
@@ -63,6 +69,7 @@ it('Install starts a background session that carries the update, and the card sh
   expect(opts.launchPrompt).toContain('Codex 0.154.0 → 0.169.0 available');
   expect(opts.launchPrompt).toContain('brew upgrade codex');
   expect(opts.background).toBe(true);
+  await waitFor(() => expect(refreshStatusAfter).toHaveBeenCalledWith('run-1'));
 
   // The popover stays, and no run line is drawn before there is a run.
   expect(screen.getByTestId('warnings-popover-warning-action')).toBeTruthy();

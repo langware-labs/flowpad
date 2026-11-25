@@ -3,7 +3,9 @@ import { useCallback } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Conversation, type Task } from '@sdk';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { buildConversationStatusPrompt } from './prompt-building';
+import { useAuth } from '@sdk/react/hooks';
+import { useLiveSessionNote } from '@src/hooks/useConversationSessions';
+import { buildConversationStatusPrompt, withLiveSessionNote } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { ContextWorkerToolbar } from '@src/components/workers/ContextWorkerToolbar';
@@ -40,7 +42,10 @@ export function ConversationHeaderSession({
   const { ensureMapped, dialogProps } = useProjectMappingGate(task ?? undefined, conversation ?? undefined);
   // Only called by a launch, which needs a conversation — so it has one here.
   const buildStatusPrompt = useCallback(() => buildConversationStatusPrompt(conversation!.typeId), [conversation]);
-  const buildPrompt = buildPromptOverride ?? buildStatusPrompt;
+  // Whatever the surface asks the worker to start on, it is told about the user's open live session.
+  const liveSessionNote = useLiveSessionNote(conversation?.id, useAuth().cloudUser?.id);
+  const basePrompt = buildPromptOverride ?? buildStatusPrompt;
+  const buildPrompt = useCallback(() => withLiveSessionNote(basePrompt(), liveSessionNote), [basePrompt, liveSessionNote]);
   const { conversationProcess, starting, launch, open } = useConversationSession({
     conversation,
     ensureMapped,

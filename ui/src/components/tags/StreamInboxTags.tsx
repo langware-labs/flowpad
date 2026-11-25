@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Plus, Tag as TagIcon, Tags, Zap } from 'lucide-react';
+import { ChevronDown, Loader2, Plus, Tag as TagIcon, Tags, Zap } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataManager, FlowMessage, QueryFilter, QueryRequest, Tag, TypeId } from '@sdk';
@@ -126,11 +126,12 @@ export function StreamInboxTags() {
     onSuccess: (answer) =>
       setRuns((all) => [...all.filter((r) => r.message === messageId).slice(-1), { message: messageId!, answer }]),
   });
-  // `run=1` is a one-shot from a Classify button: it starts the run and leaves the URL, so a reload asks nothing.
+  // `run=1` is a one-shot from a Classify button: it starts the run and leaves the URL by replacing its history
+  // entry, so neither a reload nor Back runs it again.
   useEffect(() => {
-    if (options.run !== '1' || !message) return;
+    if (options.run !== '1' || !message || !currentDock) return;
     run.mutate();
-    open({ run: null });
+    navigation.replaceDock(currentDock.withOption('run', null));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per `run=1`, not per render
   }, [options.run, message?.id]);
   const mine = runs.filter((r) => r.message === messageId);
@@ -526,8 +527,18 @@ export function StreamInboxTags() {
                   onClick={() => run.mutate()}
                   data-testid="stream-inbox-tag-try-run"
                 >
-                  ▶ {result ? <Trans>Rerun</Trans> : <Trans>Run</Trans>}
+                  {run.isPending ? <Loader2 className="animate-spin" /> : '▶'}{' '}
+                  {result ? <Trans>Rerun</Trans> : <Trans>Run</Trans>}
                 </Button>
+                {run.isPending && (
+                  <span
+                    role="status"
+                    className="text-xs text-muted-foreground"
+                    data-testid="stream-inbox-tag-try-running"
+                  >
+                    <Trans>Classifying…</Trans>
+                  </span>
+                )}
               </div>
               {run.isError && (
                 <p role="alert" className="mt-2 text-xs text-destructive">

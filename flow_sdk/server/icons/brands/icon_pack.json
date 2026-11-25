@@ -241,6 +241,25 @@
         "AgentMail"
       ],
       "source": "lucide `mail` (ISC)"
+    },
+    {
+      "kind": "1password",
+      "asset": "1password.svg",
+      "color": "#0572EC",
+      "aliases": [
+        "onepassword",
+        "1Password"
+      ],
+      "source": "simple-icons `1password` (CC0)"
+    },
+    {
+      "kind": "google-secret-manager",
+      "asset": "google-secret-manager.svg",
+      "color": "#4285F4",
+      "aliases": [
+        "GoogleSecretManager"
+      ],
+      "source": "Google Cloud product icon (Secret Manager)"
     }
   ]
 }

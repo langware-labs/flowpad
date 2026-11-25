@@ -27,6 +27,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { openExternal } from '@src/lib/open-external';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -430,6 +431,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   const [mode, setMode] = useState<GitMode>('standard');
   // Row currently awaiting destructive confirmation, keyed by `${path}::${key}`.
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
+  const [confirmingDiscardAll, setConfirmingDiscardAll] = useState(false);
   // Path of a row whose op is in flight, and a per-path inline error message.
   const [busyPath, setBusyPath] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ path: string; message: string } | null>(null);
@@ -824,6 +826,20 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                     </TooltipContent>
                   </Tooltip>
                 )}
+                {!data?.error && !revision && (data?.files?.length ?? 0) > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfirmingDiscardAll(true)}
+                    disabled={busyPath === ALL_FILES}
+                    className="h-6 gap-1 px-1.5 text-[10px]"
+                    title={t`Discard all changes: back to the last commit`}
+                    data-testid="git-panel-discard-all"
+                  >
+                    <Undo2 className="h-3.5 w-3.5" />
+                    <Trans>Discard all</Trans>
+                  </Button>
+                )}
                 {!data?.error && (
                   <Button
                     variant="ghost"
@@ -835,7 +851,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                     data-testid="git-panel-push"
                   >
                     <GitPushIcon busy={pushing} />
-                    <Trans>Push</Trans>
+                    <Trans>Push all changes</Trans>
                   </Button>
                 )}
                 <Button
@@ -995,6 +1011,17 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
               onClose={() => openReview(revision)}
             />
           )}
+          <ConfirmDialog
+            open={confirmingDiscardAll}
+            onOpenChange={setConfirmingDiscardAll}
+            title={t`Discard all changes?`}
+            description={t`Every pending change in this folder is dropped (files: ${data?.files?.length ?? 0}). Changed and removed files go back to the last commit, and new files are deleted from disk. This cannot be undone.`}
+            confirmLabel={t`Discard all changes`}
+            cancelLabel={t`Cancel`}
+            variant="destructive"
+            onConfirm={() => void runOp(ALL_FILES, () => git.discardAll())}
+            testId="git-panel-discard-all-dialog"
+          />
         </div>
       </TooltipProvider>
     </ReviewLaunchedContext.Provider>

@@ -247,6 +247,11 @@ def hub_llm_endpoint_invoke_url() -> str | None:
 #: instance name -> (fetched_at, endpoints)
 _list_cache: dict[str, tuple[float, list["LLMEndpoint"]]] = {}
 
+#: Endpoint typeids of budgets the hub refused a turn on: each funds nothing until the hub reports money
+#: left on its chain (``hub_endpoint_binding.recheck_budgets_used``). Whether a budget has money is the
+#: hub's answer, given at invoke time, so this is learnt from a refused turn and never guessed.
+BUDGETS_USED: set[str] = set()
+
 
 def invalidate_endpoint_listing() -> None:
     """Drop the readable endpoint cache; read visibility never revokes a binding."""

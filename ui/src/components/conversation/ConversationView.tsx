@@ -36,6 +36,12 @@ import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator
 import { SealedNoteLine, SealedValuesPanel } from './SealedValuesPanel';
 
 const HUB_ONLY_KINDS = new Set(['sealed_value', 'sealed_ack', 'sealed_pending', 'sealed_request']);
+/** A message the feed draws as a line (or not at all), never as a bubble. */
+const isLineKind = (kind: unknown) =>
+  kind === FlowMessageKind.SESSION_EVENT ||
+  kind === FlowMessageKind.TICKET_EVENT ||
+  kind === FlowMessageKind.SEALED_NOTE ||
+  HUB_ONLY_KINDS.has(String(kind));
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
@@ -92,7 +98,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { ConversationLiveActivity } from './ConversationLiveActivity';
 import { mostRecentProcess } from '@src/utils/process-recency';
-import { sessionRole, useConversationSessions } from '@src/hooks/useConversationSessions';
+import { sessionRole, useConversationSessions, useLiveSessionNote } from '@src/hooks/useConversationSessions';
 import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
 import {
@@ -116,7 +122,7 @@ import { useRetryFailedPrompt } from './useRetryFailedPrompt';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
 import type { WorkerType } from './conversation-session-constants';
-import { buildConversationStatusPrompt, buildMessageStartPrompt } from './prompt-building';
+import { buildConversationStatusPrompt, buildMessageStartPrompt, withLiveSessionNote } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
 import { useIsMobile } from '@src/hooks/use-mobile';
 
@@ -464,7 +470,12 @@ export function ConversationView({
   // instant any session in the thread exists (live or in-flight).
   // A message's ⋮ menu starts a worker on THAT message — the header's launch
   // lifecycle, one instance for the whole feed, with a message-pinned prompt.
-  const buildStatusPrompt = useCallback(() => buildConversationStatusPrompt(conversationTypeId), [conversationTypeId]);
+  // A worker opened here is told when the user has a live session open on the other machine.
+  const liveSessionNote = useLiveSessionNote(conversationId, useAuth().cloudUser?.id);
+  const buildStatusPrompt = useCallback(
+    () => withLiveSessionNote(buildConversationStatusPrompt(conversationTypeId), liveSessionNote),
+    [conversationTypeId, liveSessionNote],
+  );
   const { launch: launchWorker } = useConversationSession({
     conversation: conversation ?? null,
     ensureMapped,
@@ -476,10 +487,14 @@ export function ConversationView({
     (messageId: string, worker: WorkerType) =>
       launchWorker(
         worker,
-        () => buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId)),
+        () =>
+          withLiveSessionNote(
+            buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId)),
+            liveSessionNote,
+          ),
         messageId,
       ),
-    [launchWorker, conversationTypeId],
+    [launchWorker, conversationTypeId, liveSessionNote],
   );
 
   const { runImplementPlan, openPlanSession } = useImplementPlan({
@@ -782,6 +797,22 @@ export function ConversationView({
     return keys;
   }, [groupedItems, messagesById]);
 
+  // The feed's last message bubble keeps its Reply / Forward row; earlier ones show theirs on hover.
+  const latestBubbleKey = useMemo(() => {
+    for (let i = groupedItems.length - 1; i >= 0; i--) {
+      const item = groupedItems[i];
+      const row =
+        item.kind === ConversationItemKind.THREAD_GROUP
+          ? item.head
+          : item.kind === ConversationItemKind.SESSION_ANCHOR
+            ? item.anchor
+            : item;
+      if (row.kind !== ConversationItemKind.POINTER) continue;
+      if (!isLineKind(messagesById.get(row.messageId)?.kind)) return row.key;
+    }
+    return null;
+  }, [groupedItems, messagesById]);
+
   // Each live session's messages, in feed order: its card offers Retry on a failed prompt
   // (nothing answered it since) and names the prompt the host is working on.
   const messagesBySession = useMemo(() => {
@@ -915,6 +946,7 @@ export function ConversationView({
           deleteForEveryone={conversation?.remote === true}
           selfIds={selfIds}
           isHelpdesk={isHelpdeskConversation}
+          conversationTitle={conversation?.title}
           diagnosisCard={id === diagnosisCardId}
           viewerCloudUserId={cloudUserId}
           attachmentProjectId={attachmentProjectId}
@@ -937,6 +969,7 @@ export function ConversationView({
           formAnswers={formAnswersFor(id)}
           callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
           continuation={continuation}
+          latest={item.key === latestBubbleKey}
         />
       );
     }
@@ -1448,7 +1481,9 @@ export function ConversationView({
                     promptCount={item.promptCount}
                     replyCount={item.replyCount}
                     onOpen={() => openLiveSession(item.sessionId)}
-                    onApprove={role === 'host' && session ? () => approveSession(session) : undefined}
+                    onApprove={
+                      role === 'host' && session ? (turnKinds) => approveSession(session, { turnKinds }) : undefined
+                    }
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
                     onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
                     lastPromptFailed={!!turns?.failed}

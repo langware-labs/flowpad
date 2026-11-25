@@ -78,6 +78,9 @@ _METADATA_JSON = "metadata.json"
 # The trailing ``<pathdigest>`` makes freshness location-aware so a relocated
 # source (same bytes, new path) re-indexes and re-anchors its ``asset_ref``.
 _HASH_GLOB = "*.hash"
+#: Beside the sentinel, for an asset shipped in the install: ``<content digest>.content``.
+_CONTENT_SUFFIX = ".content"
+_INDEX_MARK_SUFFIXES = (".hash", _CONTENT_SUFFIX)
 
 # Instance attribute names that don't belong in serialized meta (system state).
 _SYSTEM_ATTRS: frozenset[str] = frozenset({"type", "id", "_asset_ref"})
@@ -165,6 +168,42 @@ def _get_default_records_root() -> Path:
     from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
 
     return get_default_records_root()
+
+
+def _shipped_content_token(path: str) -> str | None:
+    """Content digest of an asset shipped inside the running install, else None.
+
+    Installing a wheel stamps every shipped file with the install time, so the
+    mtime token calls all of them changed after each upgrade or redeploy and the
+    startup index would re-parse the whole system project. The bytes (names +
+    contents of the file, or of everything under the folder) say whether the
+    asset really changed — see ``FSRecord.restamp_if_reinstalled``.
+    """
+    import hashlib
+
+    from flow_sdk.config import flowpad_assistant_canonical_root  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
+
+    root = flowpad_assistant_canonical_root()
+    if not root or not is_path_under(path, root):
+        return None
+    target = Path(path)
+    h = hashlib.blake2b(digest_size=8)
+    try:
+        if target.is_dir():
+            from flow_sdk.fs_store.indexer.walk import gitignore_walk  # noqa: PLC0415
+
+            files = [f for _dir, _subdirs, found in gitignore_walk(target, gitignore=False) for f in found]
+        else:
+            files = [target]
+        for f in files:
+            h.update(f.relative_to(target).as_posix().encode() + b"\0")
+            with f.open("rb") as fh:
+                while chunk := fh.read(1 << 20):
+                    h.update(chunk)
+    except OSError:
+        return None
+    return h.hexdigest()
 
 
 def _digest(raw: str) -> str:
@@ -657,6 +696,28 @@ class FSRecord(Generic[M]):
             return None
         return _dt.fromtimestamp(ts, tz=_tz.utc).isoformat()
 
+    def restamp_if_reinstalled(self) -> bool:
+        """For a record whose mtime token moved: True when it is a shipped asset
+        whose bytes did not (a reinstall), after re-stamping the sentinel with
+        the new token — same index time, same recorded path — so the next probe
+        is a stat again. The indexer asks this before re-parsing; reading
+        ``index_required`` never writes."""
+        sentinel = self._hash_file()
+        if sentinel is None or self._asset_ref is None:
+            return False
+        parts = sentinel.stem.split("_")
+        current = self.record_hash
+        if len(parts) < 2 or parts[1] == current:
+            return False  # not an mtime move (never indexed, or the path moved)
+        token = _shipped_content_token(self._asset_ref.path)
+        try:
+            if token is None or not (sentinel.parent / f"{token}{_CONTENT_SUFFIX}").exists():
+                return False
+            sentinel.rename(sentinel.with_name("_".join([parts[0], current, *parts[2:]]) + ".hash"))
+        except OSError:
+            return False
+        return not self.index_required
+
     def _path_digest(self) -> str:
         """Digest of the current asset path (the 3rd sentinel segment). Empty
         when the record has no asset."""
@@ -733,14 +794,18 @@ class FSRecord(Generic[M]):
         # 3-part sentinel: ``<epoch>_<contenthash>_<pathdigest>`` so freshness
         # is location-aware (see ``index_required``).
         (folder / f"{int(time.time())}_{self.record_hash}_{self._path_digest()}.hash").touch()
+        token = _shipped_content_token(self._asset_ref.path)
+        if token is not None:
+            (folder / f"{token}{_CONTENT_SUFFIX}").touch()
 
     def clear_hash(self) -> None:
         """Remove the index sentinel so the record reads as never-indexed."""
         if not self.type or self.id is None:
             return
         try:
-            for f in self.shadow_dir.glob(_HASH_GLOB):
-                f.unlink(missing_ok=True)
+            for f in self.shadow_dir.iterdir():
+                if f.name.endswith(_INDEX_MARK_SUFFIXES):
+                    f.unlink(missing_ok=True)
         except OSError:
             pass
 
@@ -764,8 +829,9 @@ class FSRecord(Generic[M]):
         root = _get_default_records_root() / type_name
         if not root.is_dir():
             return
-        for hf in root.glob(f"*/{_HASH_GLOB}"):
-            hf.unlink(missing_ok=True)
+        for suffix in _INDEX_MARK_SUFFIXES:
+            for hf in root.glob(f"*/*{suffix}"):
+                hf.unlink(missing_ok=True)
 
     # ── Search (FTS) — default readers over instance attrs. Type-specific
     # extractors populate these fields directly during parser_fn. ─────────

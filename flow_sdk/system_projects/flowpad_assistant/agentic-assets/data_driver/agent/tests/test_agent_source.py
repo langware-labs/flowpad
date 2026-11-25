@@ -144,14 +144,21 @@ async def test_a_reply_by_message_is_declared_unsupported():
 # ── a connector read through a browser ───────────────────────────────────────
 
 
-async def test_a_browser_connector_names_its_browser_and_parks_without_one(worker):
-    await DataDriver.loaded("agent").traverse(_row(connector="linkedin", browser="chrome_debug"), _view())
-    assert worker.fetches[0]["mailbox"] == "inbox" and worker.fetches[0]["config"]["browser"] == "chrome_debug"
+@pytest.mark.parametrize("connector,mailbox", [("linkedin", "inbox"), ("whatsapp", "chats")])
+async def test_a_browser_connector_names_its_browser_and_parks_without_one(worker, connector, mailbox):
+    await DataDriver.loaded("agent").traverse(_row(connector=connector, browser="chrome_debug"), _view())
+    assert worker.fetches[0]["mailbox"] == mailbox and worker.fetches[0]["config"]["browser"] == "chrome_debug"
     for config in ({}, {"browser": "no-such-browser"}):
         with pytest.raises(Exception) as caught:
-            await DataDriver.loaded("agent").traverse(_row(connector="linkedin", **config), _view())
+            await DataDriver.loaded("agent").traverse(_row(connector=connector, **config), _view())
         assert classify(caught.value)[0] is SourceHealth.CONFIG_ERROR
     assert len(worker.fetches) == 1, "a browser source with no browser never launches a worker"
+
+
+async def test_a_read_only_connector_refuses_a_send_before_any_worker(worker):
+    with pytest.raises(ValueError, match="read only"):
+        await DataDriver.loaded("agent").send(_row(connector="whatsapp", browser="chrome_debug"), thread_key="972541234567", to="", text="hi")
+    assert worker.sends == []
 
 
 def test_a_send_a_person_must_fix_is_reported_as_not_authenticated():

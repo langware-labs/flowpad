@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Callable
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticProcessContextKey
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus, is_terminal
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -28,7 +29,8 @@ _TERMINAL = frozenset({ProcessStatus.STOPPED.value, ProcessStatus.FAILED.value})
 _MAX_ENTRIES = 4096
 
 _entries: dict[str, tuple[tuple[str, ...], Path | None]] = {}
-# A finished process's worker status: no worker is left to append to its transcript, so the tail never changes.
+# A finished process's worker status: no worker is left to append to its transcript, so a final status never
+# changes. A status that is not final yet is not kept: the same tail reads INACTIVE once the file has aged.
 _terminal_status: dict[str, tuple[tuple[str, ...], object]] = {}
 
 
@@ -75,7 +77,8 @@ def terminal_status(process: "AgenticProcess", discover: "Callable[[], object]")
     if entry is not None and entry[0] == key:
         return entry[1]
     value = discover()
-    _store(_terminal_status, str(process.id), key, value)
+    if not isinstance(value, WorkerStatus) or is_terminal(value):
+        _store(_terminal_status, str(process.id), key, value)
     return value
 
 

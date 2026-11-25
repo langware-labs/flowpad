@@ -72,6 +72,7 @@ export const WARNING_IDS = {
   NO_HARNESS: 'no-harness',
   HARNESS_LOGIN: 'harness-login-required',
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
+  SYNCMD_NOT_FOUND: 'syncmd-not-found',
   SNIFFER_ACTIVE: 'sniffer-active',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
   EMPTY_PROJECTS: 'empty-projects',
@@ -359,5 +360,24 @@ export function createSnifferNotFoundWarning(): UserWarning {
     message: 'Sniffer Not Ready',
     description: 'Hook sniffer is enabled but the hook entity was not found. Try reloading.',
     targetView: ViewType.HOOKS,
+  };
+}
+
+/**
+ * The project is a git repository and `syncmd` — the tool that keeps its harness markdown files
+ * equal — is not installed here, or is too old. Informational: nothing is broken, the footer's
+ * MD chip is just not shown.
+ */
+export function createSyncmdNotFoundWarning(status: { version: string; install_hint: string }): UserWarning {
+  return {
+    id: WARNING_IDS.SYNCMD_NOT_FOUND,
+    icon: 'Info',
+    color: 'yellow',
+    message: status.version ? `syncmd ${status.version} is too old` : 'syncmd is not installed',
+    description: `CLAUDE.md, AGENTS.md and skills of this project are not checked for drift. ${
+      status.version ? 'Update' : 'Install'
+    } it: ${status.install_hint}`,
+    targetView: ViewType.CAPABILITIES,
+    diagnosable: false,
   };
 }

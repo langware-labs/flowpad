@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-from flow_sdk.instance_settings import cookie_gate
 from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.schema.data_spec.page_state_spec import PageState
 from flow_sdk.server import page_state
@@ -17,13 +16,9 @@ from flow_sdk.server import page_state
 router = APIRouter()
 
 
-def _may_mint(request: Request) -> bool:
-    return not page_state.enforced() or cookie_gate.verify_machine(request)
-
-
 @router.post("/api/v1/page-state")
 async def mint_page_state(request: Request, body: PageState):
-    if not _may_mint(request):
+    if not page_state.may_mint(request):
         raise HTTPException(status_code=403, detail="Only Flowpad on this computer may open a page with a key of its own.")
     return ApiSuccessResponse(data={"key": page_state.mint(body.model_copy(update={"grant": "page"}))})
 

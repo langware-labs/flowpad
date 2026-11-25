@@ -1,9 +1,10 @@
 /**
  * One endpoint: header (name, kind, provider, enabled, credential) and three
  * tabs — Overview (chain tree + limits remaining + effective filters), Usage,
- * Models. The active tab is the URL's, so switching is a navigation.
+ * Models. The active tab is the URL's, so switching is a navigation. An API endpoint is the same page
+ * (`endpoint-family`): Prices where Models is, and no model sizes.
  */
-import { LLM_MODEL_SIZES, LLMEndpoint, TypeId, type LLMChain, type LLMEndpointKind } from '@sdk';
+import { LLM_MODEL_SIZES, TypeId, type LLMChain, type LLMEndpoint, type LLMEndpointKind } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
@@ -19,10 +20,12 @@ import { consumerRows } from './chain-tree';
 import { LimitsRemaining } from './LimitsRemaining';
 import { CredentialChip, EndpointLink, KindBadge, ProviderBadge } from './LlmEndpointsList';
 import { ModelsList } from './ModelsList';
+import { PricesList } from './PricesList';
 import { UsagePanel } from './UsagePanel';
-import { canConfigure, canRemove, canShare, endpointTypeId, kindFromChain } from './endpoint-catalog';
+import { useEndpointFamily } from './endpoint-family';
+import { canConfigure, canRemove, canShare, endpointIdFromTypeId, kindFromChain } from './endpoint-catalog';
 import { ENDPOINT_INVITE_ROLES } from './share-endpoint';
-import { LLM_ENDPOINT_TABS, openLlmEndpoint, type LlmEndpointTab } from './llm-endpoints-pointer';
+import { openLlmEndpoint, type LlmEndpointTab } from './llm-endpoints-pointer';
 import { useLlmEndpointChain, useLlmEndpointModelConfig } from './use-llm-endpoints';
 
 export interface LlmEndpointDetailProps {
@@ -116,12 +119,12 @@ export function LlmEndpointDetail({
 }: LlmEndpointDetailProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  const family = useEndpointFamily();
   const chain = useLlmEndpointChain(local ? undefined : endpointId);
   const modelConfig = useLlmEndpointModelConfig(local ? undefined : endpointId);
   const resolvedDefault = local ? endpoint?.effective_default_model : modelConfig.data?.effective_default_model;
   // Hop ids are typeids; the pointer is the bare uuid.
-  const entryTypeId = endpointTypeId(endpointId);
-  const entryHop = chain.data?.hops.find((h) => h.id === entryTypeId);
+  const entryHop = chain.data?.hops.find((h) => endpointIdFromTypeId(h.id) === endpointId);
   // NOT `endpoint.kind`: that reads `sources`, which the hub does not serialize, so it answers
   // `root` for every endpoint. The chain report resolves the real graph — see `kindFromChain`.
   // `null` until it arrives, and the badges below render nothing rather than guess.
@@ -134,14 +137,21 @@ export function LlmEndpointDetail({
       ) as unknown as LLMChain['effective_tiers'],
     [endpoint?.tiers, endpointId],
   );
-  const openEndpoint = (id: string) => openLlmEndpoint(navigation, id);
+  const openEndpoint = (id: string) => openLlmEndpoint(navigation, id, undefined, family.id);
   const consumers = useMemo(() => consumerRows(endpointId, all), [endpointId, all]);
   // One TypeId per endpoint: `useMembers` keys its fetch on the object, so a fresh one per render would refetch.
   const membersTypeId = useMemo(
-    () => (endpoint?.id ? new TypeId(LLMEndpoint.type, endpoint.id) : null),
-    [endpoint?.id],
+    () => (endpoint?.id ? new TypeId(family.type, endpoint.id) : null),
+    [endpoint?.id, family.type],
   );
-  const tabLabels: Record<LlmEndpointTab, string> = { overview: t`Overview`, usage: t`Usage`, models: t`Models` };
+  const tabLabels: Record<LlmEndpointTab, string> = {
+    overview: t`Overview`,
+    usage: t`Usage`,
+    models: t`Models`,
+    prices: t`Prices`,
+  };
+  // A tab the family does not have (a pasted `…/models` on an API endpoint) is the overview.
+  const shownTab = family.tabs.includes(tab) ? tab : 'overview';
 
   return (
     <div className="space-y-4" data-testid="llm-endpoint-detail">
@@ -189,9 +199,9 @@ export function LlmEndpointDetail({
       </div>
 
       {!local && (
-        <Tabs value={tab} onValueChange={(v) => onTab(v as LlmEndpointTab)}>
+        <Tabs value={shownTab} onValueChange={(v) => onTab(v as LlmEndpointTab)}>
           <TabsList>
-            {LLM_ENDPOINT_TABS.map((k) => (
+            {family.tabs.map((k) => (
               <TabsTrigger key={k} value={k} data-testid={`llm-tab-${k}`}>
                 {tabLabels[k]}
               </TabsTrigger>
@@ -200,7 +210,7 @@ export function LlmEndpointDetail({
         </Tabs>
       )}
 
-      {(local || tab === 'overview') && (
+      {(local || shownTab === 'overview') && (
         <div className="space-y-6">
           {local ? (
             <section className="space-y-2" data-testid="llm-local-credential">
@@ -277,23 +287,25 @@ export function LlmEndpointDetail({
             )}
           </section>
 
-          <section className="space-y-2">
-            <h3 className="text-sm font-medium">
-              <Trans>Model sizes</Trans>
-            </h3>
-            <p className="text-sm" data-testid="llm-resolved-default">
-              <Trans>Resolved default</Trans>:{' '}
-              {modelConfig.error
-                ? errorMessage(modelConfig.error, t`Model configuration unavailable`)
-                : resolvedDefault === undefined
-                  ? t`Model configuration unavailable`
-                  : (resolvedDefault ?? t`No model available`)}
-            </p>
-            <ModelSizes
-              tiers={local ? ownTiers : chain.data?.effective_tiers}
-              names={Object.fromEntries((chain.data?.hops ?? []).map((h) => [h.id, h.name]))}
-            />
-          </section>
+          {family.llm && (
+            <section className="space-y-2">
+              <h3 className="text-sm font-medium">
+                <Trans>Model sizes</Trans>
+              </h3>
+              <p className="text-sm" data-testid="llm-resolved-default">
+                <Trans>Resolved default</Trans>:{' '}
+                {modelConfig.error
+                  ? errorMessage(modelConfig.error, t`Model configuration unavailable`)
+                  : resolvedDefault === undefined
+                    ? t`Model configuration unavailable`
+                    : (resolvedDefault ?? t`No model available`)}
+              </p>
+              <ModelSizes
+                tiers={local ? ownTiers : chain.data?.effective_tiers}
+                names={Object.fromEntries((chain.data?.hops ?? []).map((h) => [h.id, h.name]))}
+              />
+            </section>
+          )}
 
           <section className="space-y-2">
             <h3 className="text-sm font-medium">{local ? <Trans>Limits</Trans> : <Trans>Limits remaining</Trans>}</h3>
@@ -329,8 +341,9 @@ export function LlmEndpointDetail({
         </div>
       )}
 
-      {!local && tab === 'usage' && <UsagePanel endpointId={endpointId} endpoint={endpoint} all={all} />}
-      {!local && tab === 'models' && <ModelsList endpointId={endpointId} all={all} />}
+      {!local && shownTab === 'usage' && <UsagePanel endpointId={endpointId} endpoint={endpoint} all={all} />}
+      {!local && shownTab === 'models' && <ModelsList endpointId={endpointId} all={all} />}
+      {!local && shownTab === 'prices' && <PricesList endpointId={endpointId} />}
     </div>
   );
 }

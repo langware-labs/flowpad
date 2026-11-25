@@ -20,3 +20,6 @@ class SessionStartSettings(DataSpec, frozen=True):
     # 1 = a prompt request (the host ends the session after one answered
     # prompt); None = a live session, no limit.
     prompt_limit: Optional[int] = None
+    # The kinds of turn the guest asks to run (``TurnKind`` values). None = prompts
+    # only, which is also what a peer that predates the field sends.
+    turn_kinds: Optional[list[str]] = None

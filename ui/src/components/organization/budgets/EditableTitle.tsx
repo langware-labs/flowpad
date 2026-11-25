@@ -16,7 +16,7 @@
  * organization itself, so the button is hidden exactly when the request would have been refused.
  * A failed attempt still surfaces as an error toast; this only stops offering a dead control.
  */
-import { Loader2, Trash2 } from 'lucide-react';
+import { Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
@@ -36,6 +36,8 @@ export interface EditableTitleProps {
    *  A raw uuid on the row is noise to the person reading it, but the id is what support and
    *  every `flow`/API call ask for, so it is one click away and no glance away. */
   copyId?: string;
+  /** Show a pencil beside the name, for a title that does not otherwise read as editable. */
+  editIcon?: boolean;
   headingClassName: string;
   testIdPrefix: string;
 }
@@ -50,6 +52,7 @@ export function EditableTitle({
   deleting,
   manage,
   copyId,
+  editIcon,
   headingClassName,
   testIdPrefix,
 }: EditableTitleProps) {
@@ -94,12 +97,13 @@ export function EditableTitle({
       ) : (
         <button
           type="button"
-          className={`truncate rounded px-1 py-0.5 text-left hover:bg-muted ${headingClassName}`}
+          className={`flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted ${headingClassName}`}
           title={name}
           data-testid={`${testIdPrefix}-name`}
           onClick={rename.startEditing}
         >
-          {name}
+          <span className="truncate">{name}</span>
+          {editIcon && <Pencil className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />}
         </button>
       )}
       {copy}

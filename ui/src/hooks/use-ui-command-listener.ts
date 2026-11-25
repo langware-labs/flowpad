@@ -26,6 +26,8 @@ import { closeAskModal, openAskModal, useAskModalStore } from '@src/components/a
 import { openWizardPopup } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { deliverClaimedQuestion } from '@src/components/ask/ask-claims';
 
+import { runTabScript } from './run-tab-script';
+
 /** The subset of the Electron preload bridge this hook uses. */
 interface NotifyBridge {
   /**
@@ -197,6 +199,14 @@ export function useUiCommandListener(): void {
       // only if this tab still shows THAT question — a newer one stays open.
       if (msg.kind === 'close_ask_modal') {
         if (msg.pointer && useAskModalStore.getState().payload === msg.pointer) closeAskModal();
+        return;
+      }
+      // `run_script`: a live session's "Flowpad control" turn. The one command that is answered:
+      // the backend waits for `ui_command_result` with this request id.
+      if (msg.kind === 'run_script') {
+        void runTabScript(String(msg.code ?? '')).then((answer) =>
+          cm.send(JSON.stringify({ message_type: 'ui_command_result', request_id: msg.request_id, ...answer })),
+        );
         return;
       }
       // Forward-compat: log unknown kinds but don't crash.

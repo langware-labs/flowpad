@@ -1,6 +1,7 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { BrowserDriverInfo, BrowserDriverState, BrowserStatus, SessionBrowser } from '@sdk';
+import type { BrowserDriverInfo, BrowserKindInfo, BrowserKindState, BrowserStatus, SessionBrowser } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { SegmentedControl } from '@src/components/ui/segmented-control';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useProjectLocation } from '@src/hooks/use-project-location';
 import { ProfileLabel } from '@src/components/links/BrowserProfileItems';
@@ -8,7 +9,10 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { Check } from 'lucide-react';
+import { formatDay } from '@src/utils/format-time-ago';
+import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
+import { useInlineRename } from '@src/components/browseable-tree/use-inline-rename';
+import { Check, EyeOff, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 /** The driver in use. */
@@ -36,7 +40,7 @@ export function chipState(s: BrowserStatus, now: number): ChipState {
 }
 
 /** A driver a session of this worker can pick right now. */
-export function usable(d: BrowserDriverInfo): boolean {
+export function usable(d: { state: BrowserKindState }): boolean {
   return d.state !== 'unsupported' && d.state !== 'not_installed';
 }
 
@@ -81,14 +85,18 @@ export function Row({
   disabled,
   action,
   onSelect,
+  editing,
   testId,
-  profile,
+  below,
 }: {
-  profile?: React.ReactNode;
+  /** A second line under the name, for what does not fit beside it. */
+  below?: React.ReactNode;
+  /** Shown in place of the row's button while its name is being edited. */
+  editing?: React.ReactNode;
   icon: React.ReactNode;
   name: React.ReactNode;
   note: React.ReactNode;
-  tone: 'ok' | 'warn' | 'muted';
+  tone: Tone;
   selected?: boolean;
   disabled?: boolean;
   action?: React.ReactNode;
@@ -99,43 +107,53 @@ export function Row({
     <div
       data-testid={testId}
       data-selected={selected || undefined}
-      className={cn('flex items-center gap-2 border-t px-3 py-1.5 text-xs', selected && 'bg-accent')}
+      className={cn(
+        'flex items-center gap-2 border-t px-3 py-1.5 text-xs',
+        selected && 'bg-accent',
+        // A failing browser: a tinted row with a red edge; its words stay readable.
+        tone === 'error' && 'border-s-2 border-s-red-500 bg-red-500/10',
+      )}
     >
+      {editing}
       <button
         type="button"
         disabled={disabled}
         onClick={onSelect}
-        className={cn('flex min-w-0 flex-1 items-center gap-1.5 whitespace-nowrap text-start', disabled && 'opacity-55')}
+        className={cn('flex min-w-0 flex-1 flex-col text-start', disabled && 'opacity-55', editing && 'hidden')}
       >
-        {icon}
-        <span className="font-semibold">{name}</span>
-        <span
-          className={cn(
-            'truncate text-[11px]',
-            tone === 'ok' && 'text-green-600 dark:text-green-400',
-            tone === 'warn' && 'text-amber-600 dark:text-amber-400',
-            tone === 'muted' && 'text-muted-foreground',
-          )}
-        >
-          · {note}
+        <span className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+          <span className="shrink-0">{icon}</span>
+          <span className="font-semibold">{name}</span>
+          <span
+            className={cn(
+              'truncate text-[11px]',
+              tone === 'ok' && 'text-green-600 dark:text-green-400',
+              tone === 'warn' && 'text-amber-600 dark:text-amber-400',
+              tone === 'muted' && 'text-muted-foreground',
+            )}
+          >
+            · {note}
+          </span>
         </span>
+        {below && (
+          <span className="truncate ps-5 text-[11px] text-muted-foreground" data-testid={`${testId}-below`}>
+            {below}
+          </span>
+        )}
       </button>
-      {profile && (
-        <span className="shrink-0 text-[11px] text-muted-foreground" data-testid={`${testId}-profile`}>
-          {profile}
-        </span>
-      )}
       {action}
       {selected && <Check className="h-3.5 w-3.5 text-primary" />}
     </div>
   );
 }
 
-type Tone = 'ok' | 'warn' | 'muted';
+type Tone = 'ok' | 'warn' | 'muted' | 'error';
 
 /** The backend's state word as a menu shows it. The word is decided once, on the backend. */
-function StateNote({ state }: { state: BrowserDriverState }) {
+function StateNote({ state, error }: { state: BrowserKindState; error?: string }) {
   switch (state) {
+    case 'error':
+      return <>{error}</>;
     case 'running':
       return <Trans>running</Trans>;
     case 'ready':
@@ -151,7 +169,8 @@ function StateNote({ state }: { state: BrowserDriverState }) {
   }
 }
 
-const TONE: Record<BrowserDriverState, Tone> = {
+const TONE: Record<BrowserKindState, Tone> = {
+  error: 'error',
   running: 'ok',
   ready: 'ok',
   connected: 'ok',
@@ -161,6 +180,7 @@ const TONE: Record<BrowserDriverState, Tone> = {
 };
 
 export const smallBtn = 'rounded px-2 py-0.5 text-[11px] border hover:bg-accent';
+const iconBtn = 'shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground';
 const primaryBtn = 'rounded px-2 py-0.5 text-[11px] bg-primary text-primary-foreground';
 
 /** Which profile a driver runs on: Flowpad's own (a managed window), or the one the worker's
@@ -175,6 +195,125 @@ function useProfileNote(status: BrowserStatus | null) {
     ) : (
       <Trans>Profile not found</Trans>
     );
+}
+
+/** What a kind's row says beside its name: how it is driven, and when its profile was last used
+ *  and created. */
+function KindNote({ kind }: { kind: BrowserKindInfo }) {
+  const used = formatDay(kind.last_used);
+  const created = formatDay(kind.created);
+  return (
+    <span className="flex gap-1.5 whitespace-nowrap">
+      <span>
+        {kind.browser} · {kind.driving}
+      </span>
+      {used && (
+        <span data-testid={`browser-row-${kind.kind}-used`}>
+          <Trans>used {used}</Trans>
+        </span>
+      )}
+      {created && (
+        <span data-testid={`browser-row-${kind.kind}-created`}>
+          <Trans>created {created}</Trans>
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** One browser kind's row: a driver's window, or one of the machine's browser profiles. Its name
+ *  is the person's to edit; the kind it names never changes. */
+function KindRow({
+  kind,
+  selected,
+  onSelect,
+  onRename,
+  onHide,
+  onOpen,
+  onRefresh,
+}: {
+  kind: BrowserKindInfo;
+  selected: boolean;
+  onSelect: () => void;
+  onRename: (name: string) => Promise<void>;
+  /** Take it off the list (true) or put it back; the browser itself is untouched. */
+  onHide: (hidden: boolean) => void;
+  onOpen: () => void;
+  onRefresh: () => void;
+}) {
+  const { t } = useLingui();
+  const rename = useInlineRename(kind.name, onRename);
+  const Glyph = lucideByName(kind.icon);
+  const testId = `browser-row-${kind.kind}`;
+  // A hidden browser, listed under "All": it can only be shown again.
+  const show = (
+    <button type="button" className={smallBtn} data-testid={`${testId}-show`} onClick={() => onHide(false)}>
+      <Trans>Show</Trans>
+    </button>
+  );
+  return (
+    <Row
+      testId={testId}
+      icon={<Glyph className="h-3.5 w-3.5" />}
+      name={kind.name}
+      note={kind.hidden ? <Trans>hidden</Trans> : <StateNote state={kind.state} error={kind.error} />}
+      tone={kind.hidden ? 'muted' : TONE[kind.state]}
+      below={<KindNote kind={kind} />}
+      selected={selected}
+      disabled={!usable(kind) || kind.hidden}
+      onSelect={onSelect}
+      editing={
+        rename.editing && (
+          <InlineRenameInput
+            rename={rename}
+            ariaLabel={t`Browser name`}
+            testId={`${testId}-name-input`}
+            className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 font-semibold"
+          />
+        )
+      }
+      action={
+        kind.hidden ? show : <>
+          {!rename.editing && (
+            <button
+              type="button"
+              aria-label={t`Rename ${kind.name}`}
+              title={t`Rename`}
+              data-testid={`${testId}-rename`}
+              className={iconBtn}
+              onClick={rename.startEditing}
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          )}
+          {!rename.editing && !selected && (
+            <button
+              type="button"
+              aria-label={t`Hide ${kind.name}`}
+              title={t`Hide`}
+              data-testid={`${testId}-hide`}
+              className={iconBtn}
+              onClick={() => onHide(true)}
+            >
+              <EyeOff className="h-3 w-3" />
+            </button>
+          )}
+          <button type="button" className={smallBtn} data-testid={`${testId}-open`} onClick={onOpen}>
+            <Trans>Open</Trans>
+          </button>
+          {kind.state === 'not_installed' && kind.install_url ? (
+            <a className={smallBtn} href={kind.install_url} target="_blank" rel="noreferrer">
+              <Trans>Install</Trans>
+            </a>
+          ) : kind.state === 'not_connected' ? (
+            <button type="button" className={primaryBtn} onClick={onRefresh}>
+              <Trans>Reconnect</Trans>
+            </button>
+          ) : null}
+        </>
+      }
+    />
+  );
 }
 
 /** Add browser: every browser this Flowpad ships, what it needs for this session's worker, and
@@ -264,18 +403,22 @@ function AddBrowserDialog({
  *  choice for this project on this computer; a session picks it up at its next launch. */
 export function BrowserChip() {
   const { t } = useLingui();
-  const { project, status, refresh } = useBrowserStatus();
+  const { project, processId, status, refresh } = useBrowserStatus();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  const profileNote = useProfileNote(status);
+  // "All" also lists the browsers the person hid, so one can be shown again.
+  const [list, setList] = useState<'active' | 'all'>('active');
   if (!project || !status) return null;
 
   const state = chipState(status, Date.now());
   const inUse = effectiveDriver(status);
-  const choose = async (browser: SessionBrowser) => {
-    await project.setBrowser(browser);
+  // A session's own browser, or the project's default ("" gives the choice back one level up).
+  const pick = async (browser: SessionBrowser, session: boolean) => {
+    await (session && processId ? project.selectBrowser(processId, browser) : project.setBrowser(browser));
     await refresh();
   };
+  // In a session a row is that session's own choice; elsewhere it is the project's default.
+  const choose = (browser: SessionBrowser) => pick(browser, true);
   const label = inUse?.title ?? status.effective;
   const Icon = lucideByName(inUse?.icon);
   const asked = status.drivers.find((d) => d.name === status.requested);
@@ -288,34 +431,6 @@ export function BrowserChip() {
         : status.source === 'project'
           ? t`Recommended by this project`
           : t`Default`;
-  const row = (d: BrowserDriverInfo) => {
-    const Glyph = lucideByName(d.icon);
-    return (
-      <Row
-        key={d.name}
-        testId={`browser-row-${d.name}`}
-        icon={<Glyph className="h-3.5 w-3.5" />}
-        name={d.title}
-        note={<StateNote state={d.state} />}
-        tone={TONE[d.state]}
-        profile={usable(d) ? profileNote(d) : undefined}
-        selected={d.name === status.effective}
-        disabled={!usable(d)}
-        onSelect={() => void choose(d.name)}
-        action={
-          d.state === 'not_installed' && d.install_url ? (
-            <a className={smallBtn} href={d.install_url} target="_blank" rel="noreferrer">
-              <Trans>Install</Trans>
-            </a>
-          ) : d.state === 'not_connected' ? (
-            <button type="button" className={primaryBtn} onClick={() => void refresh()}>
-              <Trans>Reconnect</Trans>
-            </button>
-          ) : null
-        }
-      />
-    );
-  };
   // Where a dropped browser can fall back to: the first other one this worker can use.
   const fallback = status.drivers.find((d) => d.name !== status.effective && usable(d));
 
@@ -348,16 +463,40 @@ export function BrowserChip() {
             </span>
           </button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-96 p-0" data-testid="browser-picker">
-          <div className="flex items-baseline justify-between gap-2 px-3 py-2 text-xs">
+        <PopoverContent align="end" className="w-[30rem] max-w-[95vw] p-0" data-testid="browser-picker">
+          <div className="flex items-center gap-2 px-3 py-2 text-xs">
             <span className="font-semibold">
               <Trans>Browser</Trans>
             </span>
+            <SegmentedControl
+              options={[
+                ['active', t`Active`],
+                ['all', t`All`],
+              ]}
+              value={list}
+              onChange={setList}
+              testId="browser-list"
+            />
+            <span className="flex-1" />
             <span className="text-[11px] text-muted-foreground" data-testid="browser-source" data-source={status.source}>
               {why}
             </span>
           </div>
-          {status.drivers.map(row)}
+          {(status.kinds ?? []).filter((k) => list === 'all' || !k.hidden).map((k) => (
+            <KindRow
+              key={k.kind}
+              kind={k}
+              selected={k.kind === status.effective_kind}
+              onSelect={() => void choose(k.kind)}
+              onRename={async (name) => {
+                await project.renameBrowser(k.kind, name);
+                await refresh();
+              }}
+              onHide={(hidden) => void project.hideBrowser(k.kind, hidden).then(refresh)}
+              onOpen={() => void project.openBrowser(k.kind).then(refresh)}
+              onRefresh={() => void refresh()}
+            />
+          ))}
           {state === 'dropped' && fallback && (
             <div className="flex gap-1.5 border-t px-3 py-1.5" data-testid="browser-dropped">
               <button type="button" className={smallBtn} onClick={() => void choose(fallback.name)}>
@@ -365,11 +504,31 @@ export function BrowserChip() {
               </button>
             </div>
           )}
+          {processId && status.source === 'session' && (
+            <button
+              type="button"
+              data-testid="browser-unselect"
+              onClick={() => void pick('', true)}
+              className="flex w-full border-t px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+            >
+              <Trans>Use the project default in this session</Trans>
+            </button>
+          )}
+          {processId && status.effective_kind && status.pick !== status.effective_kind && (
+            <button
+              type="button"
+              data-testid="browser-make-default"
+              onClick={() => void pick(status.effective_kind, false)}
+              className="flex w-full border-t px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
+            >
+              <Trans>Make this the project default</Trans>
+            </button>
+          )}
           {status.pick && (
             <button
               type="button"
               data-testid="browser-unpick"
-              onClick={() => void choose('')}
+              onClick={() => void pick('', false)}
               className="flex w-full border-t px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent"
             >
               <Trans>Use the project's choice</Trans>

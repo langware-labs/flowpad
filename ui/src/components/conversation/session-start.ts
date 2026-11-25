@@ -18,13 +18,17 @@ export function buildSessionStartExtras({
   text,
   files,
   sessionId,
+  turnKind,
 }: {
   text: string;
   files: File[];
   sessionId: string | null;
+  /** What the host runs the text as; a prompt when absent. */
+  turnKind?: string;
 }): SendReplyExtras {
   const extras: SendReplyExtras = { promptText: text };
   if (files.length > 0) extras.promptFiles = files;
   if (sessionId) extras.remoteWorkerSessionId = sessionId;
+  if (sessionId && turnKind && turnKind !== 'prompt') extras.turnKind = turnKind;
   return extras;
 }

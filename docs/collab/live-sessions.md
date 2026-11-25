@@ -37,6 +37,11 @@ collaborator's machine, and it is a session.
    **"No project"** at Approve (`scratch: true`) runs the session in the
    instance's one temp folder, `<instance_dir>/live-session-scratch` (host-only
    `workdir`; protected, so no Project is minted; never machine-wide).
+   **A session always has a folder** (2026-11-25): that temp folder is also the
+   default. `RemoteWorkerSession.place_to_run` decides it at Approve and again at
+   every turn — the session's project, else the conversation's, each only when it
+   has a folder on the host, else the temp folder. Approve is never refused, and
+   no turn fails, for want of a place to run.
 3. **Follow-up prompts never render in the main thread** — only in the session
    view (`/dock/live_session/<id>`).
 4. **Replies never render in the main thread** either, including review drafts.
@@ -52,6 +57,31 @@ collaborator's machine, and it is a session.
    the machine open to the next. A prompt request is never joined
    (`open_for_conversation` returns live sessions only); the live-session button
    opens `prompt_limit = None` — no limit, unchanged.
+
+6. **A session runs the kinds of turn its host approved** (2026-11-25). A turn is a
+   `TurnKind`: `prompt` (the host's worker answers — it spends the host's LLM tokens),
+   `command` (a shell command in the session's folder) or `control` (a script in the
+   host's open Flowpad tab, with the SDK). The last two need no LLM on the host, which is
+   what makes a machine with no tokens diagnosable. The guest asks for kinds
+   (`requested_turn_kinds`, all three by default), the request line shows a tick per
+   kind, and Approve keeps what stays ticked (`turn_kinds`) for that session only. A
+   prompt request is always its one prompt.
+   - **On the wire:** the text to run is the turn's inline PROMPT attachment; its kind is
+     `{"turn": {"kind": "command"}}` on the session carrier, beside `session_start` and
+     the snapshot. Absent = a prompt. No hub change.
+   - **Refused twice:** the host fails a turn whose kind is not approved, and the SENDER
+     refuses to send one the host did not report. A host that predates the field reports
+     none, so it is never handed a command to run as a prompt.
+   - **Answers:** a command answers `exit <n>` and its output (`run_shell`; killed with its
+     process group after `COMMAND_TURN_SECONDS`); a script answers `returned` + its JSON
+     value, or `threw` + the error (`notifications/tab_script.py`: `run_script` out,
+     `ui_command_result` back). A non-zero exit or a throw is an answer, not a failed
+     session. No tab open fails the turn.
+   - **Never replayed:** a command or script interrupted by a host restart is reported
+     once; only a prompt is given back to the queue.
+   - **CLI:** `flow conversation live-session <conv> [--kinds prompt,command]`,
+     `flow conversation send <conv> "<text>" --session <id> --command "<shell>" | --script "<js>"`.
+     The assistant's `live-session-helper` skill is the guide for an agent on the guest side.
 
 Session settings live on the session, proposed on the first prompt and editable
 in the session view: `reply_policy` = `auto` (default) | `review`. Consent is
@@ -70,6 +100,8 @@ contact's prompts ran on a host 2 s after arrival with no click).
 | `approved_at`, `approved_via` | host | `manual` — the host clicked Approve (the only way) |
 | `prompt_limit` | guest proposes via the start marker; host fill-only | `1` = prompt request; `None` = live session (no limit) |
 | `prompts_used` | host authoritative | answered turns; a failed turn does not count |
+| `requested_turn_kinds` | guest proposes via the start marker; host fill-only | the kinds the guest asked to run; None = prompts only |
+| `turn_kinds` | host, at Approve | the kinds this session may run; never taken from a guest's snapshot |
 | `host_process_id`, `project_id` | host, never shipped | host-local, excluded from `SNAPSHOT_FIELDS` |
 
 **Wire contract (hub-optional, unchanged):** session state rides the

@@ -51,6 +51,7 @@ import { PageAllowGate } from '@src/components/page-allow/PageAllowGate';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
 import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { DocxViewer } from '@src/components/docx-viewer/DocxViewer';
+import { IcsViewer } from '@src/components/ics-viewer/IcsViewer';
 import { ArchivePreview } from '@src/components/archive-preview/ArchivePreview';
 import { ValueViewer } from '@src/components/value-viewer/ValueViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
@@ -357,6 +358,9 @@ function AssetEditorRouterInner({ pointer, fragment, hubReflect = false, wikiLin
   }
   if (ptr.editor === AssetEditor.DOCX) {
     return <DocxViewer path={ptr.value} />;
+  }
+  if (ptr.editor === AssetEditor.ICS) {
+    return <IcsViewer path={ptr.value} />;
   }
   if (ptr.editor === AssetEditor.ARCHIVE) {
     // A .zip is browsed as its extracted folder (a temp copy), never as text.

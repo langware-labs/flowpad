@@ -28,6 +28,9 @@ export interface SendReplyExtras {
    *  auto-appends the authoritative `remote_worker_session-<id>` TYPE_ID
    *  carrier attachment (the hub drops unknown header fields). */
   remoteWorkerSessionId?: string;
+  /** What the host runs the prompt text as: a prompt (absent), a `command` or a `control` script.
+   *  Only a kind the session's host approved is accepted. */
+  turnKind?: string;
   /** Session settings, honored only on the prompt that OPENS a session
    *  (a prompt send without `remoteWorkerSessionId`). */
   replyPolicy?: 'auto' | 'review';
@@ -111,6 +114,7 @@ export async function sendReply(
     }
     if (extras?.remoteWorkerSessionId) {
       form.append('remote_worker_session_id', extras.remoteWorkerSessionId);
+      if (extras.turnKind) form.append('turn_kind', extras.turnKind);
     }
     if (extras?.replyPolicy) form.append('reply_policy', extras.replyPolicy);
     if (extras?.replyToId) form.append('reply_to_id', extras.replyToId);
@@ -128,6 +132,7 @@ export async function sendReply(
     if (sharedCtxEntities.length > 0) body.shared_context_entities = sharedCtxEntities;
     if (extras?.shareConfig) body.share_config = serializeShareConfig(extras.shareConfig);
     if (extras?.remoteWorkerSessionId) body.remote_worker_session_id = extras.remoteWorkerSessionId;
+    if (extras?.remoteWorkerSessionId && extras.turnKind) body.turn_kind = extras.turnKind;
     if (extras?.replyPolicy) body.reply_policy = extras.replyPolicy;
     if (extras?.replyToId) body.reply_to_id = extras.replyToId;
     if (extras?.threadRootId) body.thread_root_id = extras.threadRootId;

@@ -7,12 +7,38 @@ import logging
 import os
 import platform
 import sys
+from typing import Optional
 
 from flow_sdk.builtin.faas.system_profile_types import SystemProfile
 from flow_sdk import config as flow_config
 from flow_sdk.flowpad_types.machine_status import ExecutionEnvironmentStatus, MachineStatus
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+
+def _app_launcher(path: str, backend: str) -> Optional[str]:
+    """For an app message's ``app.html``: a one-line page that sends the browser to
+    ``file://<path>?state=<key>&api=<backend>``; None for any other path.
+
+    A page, not the address itself: the OS drops the query of a ``file://`` address it is asked to open
+    (macOS ``open``, Windows ``startfile``), and the query is the app's key. A browser navigating from one
+    file to another keeps it. One file per instance, rewritten on each open, readable by this user only.
+    """
+    import html  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+    from urllib.parse import urlencode  # noqa: PLC0415
+
+    from flow_sdk.builtin.flow_message import app_message_at, app_state_key  # noqa: PLC0415
+    from flow_sdk.capsules.atomic import atomic_write  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    message = app_message_at(path)
+    if message is None:
+        return None
+    target = f"{Path(path).as_uri()}?{urlencode({'state': app_state_key(message), 'api': backend.rstrip('/')})}"
+    launcher = get_instance_settings().instance_dir / "open_in_browser.html"
+    atomic_write(launcher, f'<!doctype html><meta http-equiv="refresh" content="0;url={html.escape(target)}">'.encode())
+    return str(launcher)
 
 
 class DesktopActionsMixin:
@@ -131,12 +157,15 @@ class DesktopActionsMixin:
                     # opening the parent directory is the consistent fallback.
                     subprocess.Popen(["xdg-open", os.path.dirname(resolved_path)])
             else:
+                # An app message's page opens in the browser as the file itself, handed what every opener
+                # hands it: its state key, and -- since no backend serves a file -- where the backend is.
+                opened = _app_launcher(resolved_path, str(request_info.request.base_url)) or resolved_path
                 if system == "Darwin":
-                    subprocess.Popen(["open", resolved_path])
+                    subprocess.Popen(["open", opened])
                 elif system == "Windows":
-                    os.startfile(resolved_path)  # type: ignore
+                    os.startfile(opened)  # type: ignore
                 else:
-                    subprocess.Popen(["xdg-open", resolved_path])
+                    subprocess.Popen(["xdg-open", opened])
 
             return ApiSuccessResponse(data={"opened": resolved_path, "selected": select})
 

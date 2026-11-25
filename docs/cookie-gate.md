@@ -59,8 +59,8 @@ cookie cannot veto a valid header or query:
 | `X-Cookie-Gate` header | machine callers |
 | `?cookie-gate=` query | a browser's first, cookie-less contact |
 
-**No path is exempt**, in either gate, `/health/status` included. Every legitimate caller can present
-a credential.
+**No path is exempt** in the sandbox gate, `/health/status` included, and one is in the local gate: the
+browser SDK under `/sdk/` (below). Every other legitimate caller can present a credential.
 
 **The local gate also passes, without the token:**
 
@@ -70,6 +70,12 @@ a credential.
   the cookie. The Host check stops a DNS-rebound name from being handed it.
 - A **CORS preflight** (`OPTIONS` with `Origin` and `Access-Control-Request-Method`): browsers never
   attach cookies to one and no route runs; the request it clears is gated.
+- A request that presents a **state key this backend holds** (`X-Flowpad-State`, or `?state=`; HTTP and
+  WebSocket). A page the backend does not serve — a nano-app opened as a `file://` in a browser — is
+  cross-site to it, so the browser withholds the `SameSite=Lax` cookie from everything that page asks for;
+  the key its opener minted (`flow_sdk/server/page_state.py`) is what it has. An unknown key is refused.
+- A read (`GET`/`HEAD`) under **`/sdk/`**: the browser SDK that page loads. Public code, and its own chunks
+  and stylesheet carry no key.
 
 **The sandbox gate** takes two credentials, by three transports:
 

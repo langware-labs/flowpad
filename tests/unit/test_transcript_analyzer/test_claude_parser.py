@@ -258,6 +258,28 @@ def test_each_rate_limit_signal_is_sufficient(error_fields):
     assert entries[0].reason == "rate_limited"
 
 
+@pytest.mark.parametrize(
+    "limit, reason",
+    [("cost_usd_total", "budget_used"), ("tokens_per_day", "budget_used"), ("requests_per_minute", "rate_limited")],
+)
+def test_a_spent_hub_budget_is_told_apart_from_a_busy_minute(limit, reason):
+    """The hub refuses both with a 429 and the same sentence; only a cost or token window is a spent budget."""
+    text = f"API Error: Request rejected (429) · limit '{limit}' exceeded on endpoint dana default (llm_endpoint-1)"
+    entries = ClaudeParser().feed(
+        {
+            "type": "assistant",
+            "error": "rate_limit",
+            "isApiErrorMessage": True,
+            "apiErrorStatus": 429,
+            "message": {"content": [{"type": "text", "text": text}]},
+        },
+        0,
+    )
+
+    assert entries[0].reason == reason
+    assert entries[0].to_flow_data()[0].attributes["reason"] == reason
+
+
 def test_meta_kind_propagation(claude_jsonl):
     t = AgentTranscriptFile("claude", claude_jsonl)
     metas = [e for e in t.entries if isinstance(e, MetaEntry)]

@@ -35,16 +35,18 @@ REFUSALS = {
     "key_rejected": "key_rejected",
     "cli_crashed": "cli_crashed",
     "budget_not_ready": "budget_not_ready",
+    "budget_used": "budget_used",
     "pinned_elsewhere": "pinned_source_unavailable",
 }
 src = lambda code: LLMSource(endpoint_typeid=f"llm_endpoint-{code}", reason="r", reason_code=code)  # noqa: E731
 
 
 def test_contract_tables():
-    assert len(CODE_TABLE) == 13 and CODE_TABLE["budget_not_ready"] == (
+    assert len(CODE_TABLE) == 14 and CODE_TABLE["budget_not_ready"] == (
         "transient_error",
         "wait",
     )  # the contract's table
+    assert CODE_TABLE["budget_used"] == ("config_error", "upgrade")  # a spent budget needs a person, never a relaunch
     for code, (health, fix) in CODE_TABLE.items():
         wire = LaunchError.of(LaunchErrorCode(code)).wire(
             "blocked", evidence="x" * 3000, facts={"folder": "/p", "provider": ""}
@@ -60,6 +62,7 @@ def test_contract_tables():
         (["not_installed", "no_key"], False, "not_installed"),
         (["signed_out", "key_rejected"], False, "key_rejected"),
         (["signed_out"], True, "budget_not_ready"),
+        (["signed_out", "budget_used"], False, "budget_used"),
     ):
         exc = llm_source.LLMSourceError("claude", [src(c) for c in sources])
         exc.budget_not_ready = flag

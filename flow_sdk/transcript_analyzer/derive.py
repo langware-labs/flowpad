@@ -44,6 +44,7 @@ _FLOW_VERBS = frozenset(
         "artifact",
         "asset",
         "auth",
+        "browser",
         "compat",
         "dep",
         "connect",

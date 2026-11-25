@@ -16,8 +16,7 @@ import {
   type LLMEndpointLimits,
   type LLMModelSize,
 } from '../entities/llm-endpoint';
-
-const TYPE = 'llm_endpoint';
+import { APIEndpoint, type APIEndpointMeter } from '../entities/api-endpoint';
 
 export interface LLMCredentialSetResult {
   ok: true;
@@ -36,7 +35,7 @@ export interface LLMEndpointTestResult {
   ok: boolean;
   /** The status the call came back with; 0 never happens — the hub always names one. */
   status: number;
-  /** The model the probe asked for ('' when it never got that far). */
+  /** The model the probe asked for ('' when it never got that far, and always for an API endpoint). */
   model: string;
   latency_ms: number;
   /** Why it failed, in the provider's (or the hub's) own words; '' on success. */
@@ -94,6 +93,10 @@ export interface LLMChainHop {
   limits: LLMEndpointLimits;
   remaining: Record<string, LLMChainRemaining>;
   effective_filters: LLMEndpointFilters;
+  /** API endpoint root only: what it serves (`image.generate`), the vendor host, what a call costs. */
+  kinds?: string[];
+  host?: string;
+  meter?: APIEndpointMeter;
 }
 
 export interface LLMChain {
@@ -115,11 +118,14 @@ export interface LLMChainTier {
 }
 
 export type LLMUsageGranularity = 'hour' | 'day';
-export type LLMUsageBy = 'child' | 'model';
+/** `caller` is an API endpoint's second breakdown, where an LLM endpoint has `model`. */
+export type LLMUsageBy = 'child' | 'model' | 'caller';
 
 export interface LLMUsageCounters {
   requests: number;
   fallbacks: number;
+  /** Calls the endpoint refused (a filter, a spent budget, a rate limit). */
+  refusals?: number;
   errors: number;
   input_tokens: number;
   output_tokens: number;
@@ -194,11 +200,18 @@ export interface LLMAllowanceHistoryRow {
 
 export { hubAction };
 
-function action(name: string, id: string, method: HttpMethod, subpath?: string): ActionInfo {
-  return hubAction(name, TYPE, id, method, subpath);
-}
-
+/**
+ * The hub's endpoint actions for ONE endpoint type. An LLM endpoint and an API endpoint answer the
+ * same actions in the same shapes (`chain`, `usage`, `allocate`, `credential`, `rename`, `history`,
+ * `test`), so one class serves both; `models`, `model-config` and `provider-sizes` exist on LLM only.
+ */
 export class LlmEndpointsService {
+  constructor(readonly type: string = LLMEndpoint.type) {}
+
+  private action(name: string, id: string, method: HttpMethod, subpath?: string): ActionInfo {
+    return hubAction(name, this.type, id, method, subpath);
+  }
+
   /**
    * Endpoints the caller may USE without holding a role edge — the hub's `catalog`
    * (entities stamped `authenticated_roles`, e.g. the seeded global root). They come
@@ -207,26 +220,26 @@ export class LlmEndpointsService {
    */
   async listShared(): Promise<LLMEndpoint[]> {
     const rows = await dataManager.callAction<undefined, Array<Record<string, unknown>>>(
-      hubAction('catalog', TYPE, null, 'GET'),
+      hubAction('catalog', this.type, null, 'GET'),
     );
     return (rows ?? []).map((row) => new LLMEndpoint(row as never));
   }
 
   setCredential(id: string, key: string): Promise<LLMCredentialSetResult> {
-    const info = action('credential', id, 'POST');
+    const info = this.action('credential', id, 'POST');
     info.bodyParameters = { key };
     return dataManager.callAction<undefined, LLMCredentialSetResult>(info);
   }
 
   /** Test the stored key, or — when `key` is given — that key WITHOUT storing it. */
   testCredential(id: string, key?: string): Promise<LLMCredentialTestResult> {
-    const info = action('credential', id, 'POST', 'test');
+    const info = this.action('credential', id, 'POST', 'test');
     info.bodyParameters = key ? { key } : {};
     return dataManager.callAction<undefined, LLMCredentialTestResult>(info);
   }
 
   deleteCredential(id: string): Promise<{ ok: true }> {
-    return dataManager.callAction<undefined, { ok: true }>(action('credential', id, 'DELETE'));
+    return dataManager.callAction<undefined, { ok: true }>(this.action('credential', id, 'DELETE'));
   }
 
   /**
@@ -238,13 +251,13 @@ export class LlmEndpointsService {
    * A refused or failed call is a VERDICT, not a thrown error: it resolves with `ok: false`.
    */
   testEndpoint(id: string, model?: string): Promise<LLMEndpointTestResult> {
-    const info = action('test', id, 'POST');
+    const info = this.action('test', id, 'POST');
     info.bodyParameters = model ? { model } : {};
     return dataManager.callAction<undefined, LLMEndpointTestResult>(info);
   }
 
   listModels(id: string): Promise<LLMEndpointModel[]> {
-    return dataManager.callAction<undefined, LLMEndpointModel[]>(action('models', id, 'GET'));
+    return dataManager.callAction<undefined, LLMEndpointModel[]>(this.action('models', id, 'GET'));
   }
 
   /**
@@ -253,15 +266,15 @@ export class LlmEndpointsService {
    * rather than keeping a copy.
    */
   listProviderSizes(id: string): Promise<LLMProviderSizes[]> {
-    return dataManager.callAction<undefined, LLMProviderSizes[]>(action('provider-sizes', id, 'GET'));
+    return dataManager.callAction<undefined, LLMProviderSizes[]>(this.action('provider-sizes', id, 'GET'));
   }
 
   getChain(id: string): Promise<LLMChain> {
-    return dataManager.callAction<undefined, LLMChain>(action('chain', id, 'GET'));
+    return dataManager.callAction<undefined, LLMChain>(this.action('chain', id, 'GET'));
   }
 
   getModelConfig(id: string): Promise<LLMModelConfig> {
-    return dataManager.callAction<undefined, LLMModelConfig>(action('model-config', id, 'GET'));
+    return dataManager.callAction<undefined, LLMModelConfig>(this.action('model-config', id, 'GET'));
   }
 
   /**
@@ -276,7 +289,7 @@ export class LlmEndpointsService {
    * allocation and the grant land in one authorized call. It needs an account that already
    * exists; inviting an address that does not is `inviteMember` on the allocation afterwards.
    */
-  allocate(
+  async allocate(
     parentId: string,
     body: {
       name: string;
@@ -286,14 +299,16 @@ export class LlmEndpointsService {
       default_model?: string | null;
     },
   ): Promise<LLMEndpoint> {
-    const info = action('allocate', parentId, 'POST');
+    const info = this.action('allocate', parentId, 'POST');
     info.bodyParameters = { ...body };
-    return dataManager.callAction<undefined, LLMEndpoint>(info);
+    const made = await dataManager.callAction<undefined, LLMEndpoint | { allocation: LLMEndpoint }>(info);
+    // An API endpoint answers `{allocation, key?}`; an LLM endpoint answers the allocation itself.
+    return made && 'allocation' in made ? made.allocation : (made as LLMEndpoint);
   }
 
   /** Change only the endpoint's name (the hub's `rename`): open to the budget's holder, who may not `update`. */
   rename(id: string, name: string): Promise<LLMEndpoint> {
-    const info = action('rename', id, 'POST');
+    const info = this.action('rename', id, 'POST');
     info.bodyParameters = { name };
     return dataManager.callAction<undefined, LLMEndpoint>(info);
   }
@@ -307,13 +322,13 @@ export class LlmEndpointsService {
    * name who was given what, and by whom.
    */
   getHistory(id: string, limit?: number): Promise<LLMAllowanceHistoryRow[]> {
-    const info = action('history', id, 'GET');
+    const info = this.action('history', id, 'GET');
     if (limit) info.queryParameters = { limit };
     return dataManager.callAction<undefined, LLMAllowanceHistoryRow[]>(info);
   }
 
   getUsage(id: string, query: LLMUsageQuery): Promise<LLMUsageReport> {
-    const info = action('usage', id, 'GET');
+    const info = this.action('usage', id, 'GET');
     info.queryParameters = {
       from: query.from,
       to: query.to,
@@ -325,3 +340,5 @@ export class LlmEndpointsService {
 }
 
 export const llmEndpointsService = new LlmEndpointsService();
+/** The same actions on the hub's `api_endpoint` (pictures, video, any cloud API). */
+export const apiEndpointsService = new LlmEndpointsService(APIEndpoint.type);

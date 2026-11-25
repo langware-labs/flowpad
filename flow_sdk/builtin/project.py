@@ -194,6 +194,9 @@ def _workspace_root() -> Path:
 #: A row on a temp ROOT is not a real work folder, so it is no one's parent project.
 _TEMP_ROOTS = frozenset(canonical_posix_path(p) for p in (tempfile.gettempdir(), "/tmp", "/var/tmp"))
 
+#: Device-state key (``project_device_state``): the user removed this never-set-up shared project here.
+_REMOVED_HERE = "removed_here"
+
 
 class NestedProjectError(ValueError):
     """A project was about to be created inside another project's folder, or around one."""
@@ -435,7 +438,8 @@ def _sharer_name(members: list) -> Optional[str]:
 class Project(SetupSkippable, Entity):
     @classmethod
     async def get_last_active(cls, workspace_id: str | None = None) -> Optional["Project"]:
-        """The most recently opened visible project; hydrate only the winner."""
+        """The most recently opened project the user works in (not hidden, not ``scratch``); hydrate only the
+        candidates down to the winner."""
         from flow_sdk.config import is_hidden_project, path_in_workspace
 
         for row in await cls._db.get_entity_locations(cls.get_type(), active_only=True):
@@ -443,7 +447,7 @@ class Project(SetupSkippable, Entity):
                 continue
             if not is_hidden_project(row.fs_storage_mount_path or "", row.system):
                 project = await cls.get_by_id(row.id)
-                if project is not None:
+                if project is not None and not project.scratch:
                     return project
         return None
 
@@ -457,6 +461,13 @@ class Project(SetupSkippable, Entity):
     #: (``SetupSkipSpec``, ``core/setup/skip_mark``). PRIVATE: a dependency has no row of its own here — the
     #: project's flow.json declares it — so the project carries its mark.
     setup_skipped: dict[str, SetupSkipSpec] = APIField(default_factory=dict, sharing=Sharing.PRIVATE)
+    #: Stored, never read off the path: a test project lives under the temp dir too. Not ``hidden``, which would
+    #: also stop its namespace loading at startup (``ensure_project_namespace``).
+    scratch: bool = APIField(
+        default=False,
+        description="True for a tool's own working folder (a mockify mock project), left out of the user's project list",
+        sharing=Sharing.PRIVATE,
+    )
     artifacts: List[str] = APIField(
         default_factory=list,
         description="List of artifact IDs belonging to this project",
@@ -779,8 +790,8 @@ class Project(SetupSkippable, Entity):
 
     @action.post(action_name="set-browser")
     async def set_browser_action(self, browser: str = "agent") -> "ApiResponse":
-        """`POST /project/<id>/set-browser {browser}` — the person's own browser for this project
-        on THIS computer (a browser driver's name; "" goes back to what the project recommends).
+        """`POST /project/<id>/set-browser {browser}` — the project default on THIS computer (a
+        browser kind or a driver's name; "" goes back to what the project recommends).
         Saved on this instance, never in ``project_manifest.json``; a session reads it at its
         next launch."""
         from flow_sdk.builtin.agentic_process import browser_choice  # noqa: PLC0415
@@ -814,19 +825,16 @@ class Project(SetupSkippable, Entity):
         from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
 
         worker_type = process.worker_type if process is not None else await resolve_default_worker_type()
-        options = browser_choice.worker_options(worker_type)
-
         worker = browser_choice.worker_key(worker_type)
-        has_switch = browser_choice.has_switch(worker_type)
         pick = browser_choice.browser_pick(self.id)
         launch = (
             await browser_choice.resolve_for(process, setting)
             if process is not None
-            else browser_choice.decide(pick=pick, override=None, legacy_chrome=False,
-                                       project_browser=setting, worker=worker, has_switch=has_switch)
+            else browser_choice.decide(pick=pick, override=None, legacy_chrome=False, project_browser=setting,
+                                       worker=worker, has_switch=browser_choice.has_switch(worker_type))
         )
 
-        def _probe() -> tuple[dict, dict | None, list[dict]]:
+        def _probe() -> tuple[dict | None, dict, list[dict], list[dict]]:
             last_use = None
             if process is not None:
                 from flow_sdk.builtin.agentic_process.transcript_cache import transcript_path  # noqa: PLC0415
@@ -836,46 +844,104 @@ class Project(SetupSkippable, Entity):
                 paths = [transcript_path(process), *process._record_dir().glob("*transcript*.jsonl")]
                 uses = [u for u in (browser_choice.last_browser_use(p, unnamed=launch.kind) for p in paths) if u]
                 last_use = max(uses, key=lambda u: u["at"] or "") if uses else None
-            # Extension facts only for a worker that has one.
-            extension: dict = {"installed": False, "device": ""}
-            if options.EXTENSION_ID:
-                from flow_sdk.core.browser_profiles import scan_extension  # noqa: PLC0415
+            view = browser_choice.machine_view(worker_type, in_use=launch.kind, chosen=launch.chosen, last_use=last_use)
+            return (last_use, *view)
 
-                scan = scan_extension(options.EXTENSION_ID)
-                extension = {
-                    **browser_choice.extension_hint(),
-                    "profiles": [{**p.profile.model_dump(), "browser": p.browser, "installed": p.installed} for p in scan.profiles],
-                    "profiles_denied": scan.denied,
-                }
-            drivers = []
-            for spec in browser_drivers.list_drivers():
-                setup = browser_drivers.worker_setup(spec.name, worker)
-                drivers.append({
-                    **spec.model_dump(mode="json"),
-                    # One word a menu shows, read here so no client re-derives it.
-                    "state": browser_drivers.state_of(
-                        spec.name, worker, has_switch=has_switch, extension_installed=bool(extension.get("installed")),
-                        in_use=spec.name == launch.kind, last_use=last_use),
-                    "setup": setup.setup if setup is not None else "",
-                    "config": browser_drivers.read_config(spec.name),
-                })
-            return extension, last_use, drivers
-
-        extension, last_use, drivers = await asyncio.to_thread(_probe)
+        last_use, extension, drivers, kinds = await asyncio.to_thread(_probe)
+        # The one kind in use: the profile that was chosen, else the driver's first usable one.
+        # A hidden kind is never the one fallen back to; one chosen by name still stands.
+        mine = [k for k in kinds if k["driver"] == launch.kind and browser_drivers.usable(k["state"])]
+        shown = [k for k in mine if not k["hidden"]] or mine
+        effective_kind = next((k["kind"] for k in mine if k["kind"] == launch.chosen), shown[0]["kind"] if shown else "")
         return ApiSuccessResponse(
             data={
                 "setting": setting,
                 "pick": pick,
                 "effective": launch.kind,
+                "effective_kind": effective_kind,
                 "source": launch.source,
                 # What was asked for but this worker cannot use; "" when the choice stood.
                 "requested": launch.requested,
                 "worker": worker,
                 "drivers": drivers,
+                # One per browser profile: what the menu lists and `flow browser list` prints.
+                "kinds": kinds,
                 "extension": extension,
                 "last_use": last_use,
             }
         )
+
+    @action.post(action_name="select-browser")
+    async def select_browser_action(self, process_id: str = "", browser: str = "") -> "ApiResponse":
+        """`POST /project/<id>/select-browser {process_id, browser}` — the browser of ONE session: a
+        browser kind or a driver's name; "" gives the choice back to the project. The session
+        reads it at its next launch. Selecting a kind ends a failure reported on it."""
+        from flow_sdk.builtin.agentic_process import browser_choice  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+
+        process = await AgenticProcess.get_by_id(process_id) if process_id else None
+        if process is None:
+            return ApiFailResponse(message=f"no session {process_id!r}", status_code=404)
+        try:
+            chosen = browser_choice.known_browser(browser)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        if browser_choice.keep_choice(process, chosen):
+            await process.save()
+        if chosen:
+            await asyncio.to_thread(browser_drivers.report_error, chosen, "")
+        return ApiSuccessResponse(data={"browser": chosen, "applies": "next launch"})
+
+    @action.post(action_name="browser-error")
+    async def browser_error_action(self, kind: str = "", message: str = "") -> "ApiResponse":
+        """`POST /project/<id>/browser-error {kind, message}` — a session's report that a browser
+        kind is failing, shown on its row on this computer; an empty message clears it."""
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+
+        if not browser_drivers.driver_of(kind):
+            return ApiFailResponse(message=f"{kind!r} is not a browser kind", status_code=400)
+        await asyncio.to_thread(browser_drivers.report_error, kind, message)
+        return ApiSuccessResponse(data={"kind": kind, "error": message.strip()})
+
+    @action.post(action_name="browser-open")
+    async def browser_open_action(self, kind: str = "") -> "ApiResponse":
+        """`POST /project/<id>/browser-open {kind}` — bring that browser's window up on this
+        computer. Refused on a machine nobody is looking at."""
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+        from flow_sdk.core.agent_browser import AgentBrowserError  # noqa: PLC0415
+        from flow_sdk.core.browser_profiles import BrowserProfileError  # noqa: PLC0415
+        from flow_sdk.instance_settings.runtime import get_assigned_runtime  # noqa: PLC0415
+
+        if runtime := get_assigned_runtime():
+            return ApiFailResponse(message=f"this backend runs as {runtime}, not on your machine", status_code=403)
+        try:
+            await asyncio.to_thread(browser_drivers.open_kind, kind)
+        except (AgentBrowserError, BrowserProfileError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"kind": kind, "opened": True})
+
+    @action.post(action_name="browser-name")
+    async def browser_name_action(self, kind: str = "", name: str = "") -> "ApiResponse":
+        """`POST /project/<id>/browser-name {kind, name}` — what a person calls a browser kind on
+        this computer; "" goes back to its profile's name. The kind itself never changes."""
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+
+        if not browser_drivers.driver_of(kind):
+            return ApiFailResponse(message=f"{kind!r} is not a browser kind", status_code=400)
+        await asyncio.to_thread(browser_drivers.rename_kind, kind, name)
+        return ApiSuccessResponse(data={"kind": kind, "name": name.strip()})
+
+    @action.post(action_name="browser-hidden")
+    async def browser_hidden_action(self, kind: str = "", hidden: bool = True) -> "ApiResponse":
+        """`POST /project/<id>/browser-hidden {kind, hidden}` — take a browser kind off this
+        computer's list, or put it back. Flowpad stops offering it; nothing is uninstalled."""
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+
+        if not browser_drivers.driver_of(kind):
+            return ApiFailResponse(message=f"{kind!r} is not a browser kind", status_code=400)
+        await asyncio.to_thread(browser_drivers.hide_kind, kind, hidden)
+        return ApiSuccessResponse(data={"kind": kind, "hidden": hidden})
 
     async def _reindex_manifest(self) -> None:
         """Re-index ``project_manifest.json`` after a field write. The row is the
@@ -2688,15 +2754,29 @@ class Project(SetupSkippable, Entity):
     # (and startup seeding would write its namespace back into the removed folder).
     # Both hooks: the HTTP delete goes through delete_by_id, never the instance delete().
     async def delete(self):
+        self._remember_removed_here()
         result = await super().delete()
         invalidate_projects_cache()
         return result
 
     @classmethod
     async def delete_by_id(cls, eid: str):
+        row = await cls.get_one({"id": str(eid)})
+        if row is not None:
+            row._remember_removed_here()
         result = await super().delete_by_id(eid)
         invalidate_projects_cache()
         return result
+
+    def _remember_removed_here(self) -> None:
+        """The user removed a shared project they never set up: this computer remembers it, or the
+        sign-in sweep (``new_from_hub``) finds no row and offers it again. Not when the hub's own
+        delete or a sign-out drops the row (``mirror_delete``) — nobody chose that."""
+        from flow_sdk.core.entity.entity_model import _MIRROR_DELETE  # noqa: PLC0415
+        from flow_sdk.project_device_state import update_project_device_state  # noqa: PLC0415
+
+        if self.remote and not self.fs_storage_mount_path and not _MIRROR_DELETE.get():
+            update_project_device_state(str(self.id), **{_REMOVED_HERE: True})
 
     def _visible(self) -> bool:
         """A real work folder: neither hidden (see ``hidden``) nor a row on the temp dir."""
@@ -2894,12 +2974,14 @@ class Project(SetupSkippable, Entity):
         file-less rows, each with its set-up link. A project shared while the
         recipient had no FlowPad (or was signed out) reaches no push and no deep
         link; this is the sweep that finds it after sign-in. A project already
-        held here — set up, skipped, or created on this machine — is not new.
+        held here — set up, skipped, or created on this machine — is not new, and
+        neither is one the user removed from this computer (``_remember_removed_here``).
         Empty when the hub can't be asked."""
         from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
         from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
         from flow_sdk.cloud_client.hub_proxy import HubProxy  # noqa: PLC0415
         from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+        from flow_sdk.project_device_state import read_project_device_state  # noqa: PLC0415
 
         if not hub_auth_available():
             return []
@@ -2908,6 +2990,8 @@ class Project(SetupSkippable, Entity):
             project_id = str(row.get("id") or "")
             if not project_id or await cls.get_one({"id": project_id}) is not None:
                 continue
+            if read_project_device_state(project_id).get(_REMOVED_HERE):
+                continue  # removed from this computer: a link or a new share brings it back, never the sweep
             try:
                 project = await materialize_remote_membership_entity(cls, row, someone_typeid)
             except DuplicateProjectNameError as e:

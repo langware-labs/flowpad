@@ -194,6 +194,7 @@ EXPECTED_WORKER_VALUES = {
     "api_error",
     "api_timeout",
     "pending_user",
+    "background_work",
     "unknown",
 }
 

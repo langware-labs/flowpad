@@ -22,6 +22,7 @@ this module had just written itself.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _SPECS
@@ -151,6 +152,8 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
     keys = stored_keys()  # only providers with a key stored here: the views also offer keyless placeholders
 
     bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
+    if refresh:
+        await recheck_budgets_used()
     # Listings report readable budgets. A hub-pushed Runner binding remains usable even
     # when absent from those lists; the hub authorizes each invocation independently.
     available = await fetch_hub_llm_endpoints(cached_only=not refresh)
@@ -564,6 +567,25 @@ async def chain_hub_llm_endpoint(endpoint_ref: str) -> dict:
     # both shapes are real (see ``fetch_hub_llm_endpoints._rows``), so unwrap defensively.
     data = body.get("data") if isinstance(body, dict) and "data" in body else body
     return data if isinstance(data, dict) else {}
+
+
+async def recheck_budgets_used() -> None:
+    """Ask the hub about each budget a turn was refused on, and forget the ones with money left again
+    (a raised cap, an upgrade, a new day). One chain read per spent budget; one the hub cannot answer
+    for stays spent."""
+    from flow_sdk.instance_settings.llm_endpoint import BUDGETS_USED  # noqa: PLC0415
+
+    typeids = list(BUDGETS_USED)
+    chains = await asyncio.gather(*(chain_hub_llm_endpoint(t) for t in typeids), return_exceptions=True)
+    for typeid, chain in zip(typeids, chains):
+        if isinstance(chain, HubEndpointBindError):
+            continue
+        if isinstance(chain, BaseException):
+            raise chain
+        windows = [w for hop in chain.get("hops") or [] for key, w in (hop.get("remaining") or {}).items()
+                   if key.startswith(("cost_usd", "tokens"))]
+        if not any(w.get("remaining", 1) <= 0 for w in windows):
+            BUDGETS_USED.discard(typeid)
 
 
 async def llm_binding(payload: dict) -> dict:

@@ -96,6 +96,6 @@ async def host_approves(session_id: str, *, within: float) -> None:
     assert session is not None and session.status == RemoteWorkerSessionStatus.PENDING.value, (
         f"session {session_id[:8]} never reached the host as pending: {session and session.status}"
     )
-    session.project_id = await session.run_project_id()
+    await session.place_to_run()
     assert await session.approve(via=ApprovedVia.MANUAL)
     await redrive_session_prompts(session)

@@ -1,17 +1,74 @@
 import { useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Loader2 } from 'lucide-react';
+import { KeyRound, Loader2 } from 'lucide-react';
 import { credentialsService, type SecretManagerInfo, type SecretVault } from '@sdk';
+import { flowIconComponent } from '@sdk/react/FlowIcon';
+import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
+import { StepCrumbs } from '@src/components/ui/stepped-dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { describeApiError } from '@src/lib/error-message';
-import { cn } from '@src/lib/utils';
+
+/** The manager's own mark (`icon` in its secret_manager.json), a key when it names none. */
+function managerIcon(m: SecretManagerInfo) {
+  return m.icon ? flowIconComponent(m.icon) : KeyRound;
+}
+
+function managerLabel(m: SecretManagerInfo) {
+  return m.title || m.name;
+}
+
+/** The chosen manager's opening card: its mark, its name, what it is. */
+function ManagerIntro({ manager }: { manager: SecretManagerInfo }) {
+  const Icon = managerIcon(manager);
+  return (
+    <div className="flex items-start gap-3 rounded-md border bg-muted/30 p-3" data-testid="secret-manager-intro">
+      <Icon className="h-10 w-10 shrink-0" />
+      <div className="min-w-0">
+        <div className="font-medium">{managerLabel(manager)}</div>
+        {manager.description && <p className="text-xs text-muted-foreground">{manager.description}</p>}
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  optional,
+  value,
+  onChange,
+  autoFocus,
+  testId,
+}: {
+  label: string;
+  optional?: boolean;
+  value: string;
+  onChange: (value: string) => void;
+  autoFocus?: boolean;
+  testId: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-xs font-medium">
+      <span>
+        {label}
+        {optional && (
+          <span className="ms-1 font-normal text-muted-foreground">
+            <Trans>(optional)</Trans>
+          </span>
+        )}
+      </span>
+      <Input value={value} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} data-testid={testId} />
+    </label>
+  );
+}
 
 /**
  * Add a vault to the project — a named group of secrets in one secret manager
  * (`secret_vaults` in project_manifest.json, docs/secret_share.md) — then publish this computer's
- * values of `credential` into it. Steps: manager (from the installed managers) → vault name →
- * that manager's own config fields → `credentialsService.addVault` → publish. Only a place is saved, never a value.
+ * values of `credential` into it. Two steps in place, like adding a connection: a tile per installed
+ * manager, then that manager's own screen (its mark, what it is, vault name and its config fields) →
+ * `credentialsService.addVault` → publish. Only a place is saved, never a value.
  */
 export function SecretVaultPicker({
   projectId,
@@ -40,11 +97,7 @@ export function SecretVaultPicker({
     let live = true;
     credentialsService
       .listManagers()
-      .then((list) => {
-        if (!live) return;
-        setManagers(list);
-        setManager((m) => m || list[0]?.name || '');
-      })
+      .then((list) => live && setManagers(list))
       .catch((err) => live && (setManagers([]), setError(describeApiError(err, t`Could not list the secret managers.`).message)));
     return () => {
       live = false;
@@ -53,7 +106,7 @@ export function SecretVaultPicker({
 
   const chosen = managers?.find((m) => m.name === manager);
   const fields = chosen?.config_fields ?? [];
-  const ready = !!chosen && (!!onSave || !!vault.trim()) && fields.every((f) => !f.required || (config[f.name] ?? '').trim());
+  const ready = (!!onSave || !!vault.trim()) && fields.every((f) => !f.required || (config[f.name] ?? '').trim());
 
   const save = async () => {
     if (!chosen) return;
@@ -83,55 +136,67 @@ export function SecretVaultPicker({
 
   return (
     <div className="flex flex-col gap-4 text-sm" data-testid="secret-vault-picker">
-      <div>
-        <h2 className="text-lg font-semibold">
-          <Trans>Secret manager</Trans>
+      <div className="flex flex-col gap-1.5">
+        <h2>
+          <StepCrumbs
+            crumbs={
+              chosen
+                ? [{ label: t`Secret manager`, onClick: busy ? undefined : () => setManager('') }, { label: managerLabel(chosen) }]
+                : [{ label: t`Secret manager` }]
+            }
+          />
         </h2>
-        <p className="text-muted-foreground">
-          <Trans>A vault where this project's shared values live. Teammates fetch from it; values never go into Git or a message.</Trans>
-        </p>
+        {!chosen && (
+          <p className="text-muted-foreground">
+            <Trans>A vault where this project's shared values live. Teammates fetch from it; values never go into Git or a message.</Trans>
+          </p>
+        )}
       </div>
       {managers === null ? (
         <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <div className="flex flex-col gap-2" role="radiogroup">
+      ) : !chosen ? (
+        <TileSection title={<Trans>Keep the values in</Trans>}>
           {managers.map((m) => (
-            <button
-              key={m.name}
-              type="button"
-              onClick={() => setManager(m.name)}
-              className={cn('w-full rounded-md border px-3 py-2 text-start', manager === m.name && 'border-primary')}
-              data-testid={`secret-manager-option-${m.name}`}
-              aria-pressed={manager === m.name}
-            >
-              <div className="text-sm font-medium">{m.title || m.name}</div>
-              {m.description && <div className="text-xs text-muted-foreground">{m.description}</div>}
-            </button>
+            <Tooltip key={m.name} delayDuration={TILE_TIP_DELAY}>
+              <TooltipTrigger asChild>
+                <DesktopTile
+                  Icon={managerIcon(m)}
+                  label={managerLabel(m)}
+                  data-testid={`secret-manager-option-${m.name}`}
+                  onClick={() => {
+                    setManager(m.name);
+                    setConfig({});
+                    setError(null);
+                  }}
+                />
+              </TooltipTrigger>
+              {/* The tile clips a long name; the tip carries it whole, with what the manager is. */}
+              <TooltipContent side="bottom" className="max-w-xs">
+                <div className="font-medium">{managerLabel(m)}</div>
+                {m.description && <div>{m.description}</div>}
+              </TooltipContent>
+            </Tooltip>
           ))}
-        </div>
-      )}
-      {chosen && (
-        <div className="grid grid-cols-2 gap-2">
-          {!onSave && (
-            <Input
-              value={vault}
-              onChange={(e) => setVault(e.target.value)}
-              placeholder={t`Vault name`}
-              aria-label={t`Vault name`}
-              data-testid="secret-vault-name"
-            />
-          )}
-          {fields.map((f) => (
-            <Input
-              key={f.name}
-              value={config[f.name] ?? ''}
-              onChange={(e) => setConfig((c) => ({ ...c, [f.name]: e.target.value }))}
-              placeholder={f.required ? f.label : t`${f.label} (optional)`}
-              aria-label={f.label}
-              data-testid={`secret-vault-field-${f.name}`}
-            />
-          ))}
-        </div>
+        </TileSection>
+      ) : (
+        <>
+          <ManagerIntro manager={chosen} />
+          <div className="flex flex-col gap-3">
+            {!onSave && (
+              <Field label={t`Vault name`} value={vault} onChange={setVault} autoFocus testId="secret-vault-name" />
+            )}
+            {fields.map((f) => (
+              <Field
+                key={f.name}
+                label={f.label}
+                optional={!f.required}
+                value={config[f.name] ?? ''}
+                onChange={(v) => setConfig((c) => ({ ...c, [f.name]: v }))}
+                testId={`secret-vault-field-${f.name}`}
+              />
+            ))}
+          </div>
+        </>
       )}
       {credential && (
         <p className="text-xs text-muted-foreground">
@@ -147,9 +212,11 @@ export function SecretVaultPicker({
         <Button variant="outline" onClick={onCancel} disabled={busy}>
           <Trans>Cancel</Trans>
         </Button>
-        <Button onClick={() => void save()} disabled={busy || !ready} data-testid="secret-vault-save">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trans>Save</Trans>}
-        </Button>
+        {chosen && (
+          <Button onClick={() => void save()} disabled={busy || !ready} data-testid="secret-vault-save">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trans>Save</Trans>}
+          </Button>
+        )}
       </div>
     </div>
   );

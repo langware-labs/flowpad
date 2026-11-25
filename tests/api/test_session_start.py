@@ -72,7 +72,9 @@ async def test_the_button_opens_a_pending_session_and_asks_the_host(bootstrapped
     assert line.remote_worker_session_id == session.id
     marker = _marker(line)
     assert marker[LIVE_SESSION_EVENT_MARKER_KEY] == "requested"
-    assert marker[SESSION_START_MARKER_KEY] == {"reply_policy": "auto"}  # notifies the host like an opening prompt
+    # Notifies the host like an opening prompt, and asks for every kind of turn by default.
+    assert marker[SESSION_START_MARKER_KEY] == {"reply_policy": "auto", "turn_kinds": ["prompt", "command", "control"]}
+    assert marker["snapshot"]["requested_turn_kinds"] == ["prompt", "command", "control"]
     assert marker["snapshot"]["status"] == S.PENDING.value  # the host's mirror materializes from it
 
 
@@ -83,6 +85,25 @@ async def test_the_button_on_an_open_session_opens_that_one(bootstrapped_client,
     assert again["id"] == first["id"]
     lines = [m for m in await FlowMessage.get_all({"conversation_id": conv_id}) if m.kind == "session_event"]
     assert len(lines) == 1  # no second request
+
+
+async def test_a_member_known_by_email_alone_is_asked_of_the_hub_before_refusing(bootstrapped_client, user, monkeypatch):
+    """A conversation opened a moment ago: its other member is an invited email until the roster syncs."""
+    from flow_sdk.app.actions import members_action
+
+    conv_id = await _two_person_conversation(bootstrapped_client)
+    conv = await Conversation.get_one({"id": conv_id})
+    known = list(conv.members)
+    conv.members = [m for m in known if m.get("user_id") != "host-remote"] + [{"email": "bob@example.com"}]
+    await conv.save()
+
+    async def the_hub_knows(entity):
+        entity.members = known
+        return known
+
+    monkeypatch.setattr(members_action, "_refresh_roster", the_hub_knows)
+    data = await _start(bootstrapped_client, conv_id)
+    assert data["host_user_id"] == "host-remote"
 
 
 async def test_a_conversation_with_no_one_else_cannot_host_a_session(bootstrapped_client, user):

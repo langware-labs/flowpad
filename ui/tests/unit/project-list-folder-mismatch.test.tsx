@@ -3,6 +3,9 @@
  * row. A rename changes the name, never the folder (the path keys sessions, records
  * and discovery), so the backend publishes `folder_name_mismatch` and the list only
  * reads it — no second copy of the comparison here.
+ *
+ * A tool's own working folder (`scratch`: a mockify mock project) has open tabs like
+ * any project, but it is not one the user works in — the menu leaves its row out.
  */
 import { ProjectListPopoverContent, useProjectListMenu } from '@src/components/terminal/project-list-menu';
 import type { TabProjectBucket } from '@src/tabs/use-tab-manager';
@@ -24,7 +27,7 @@ vi.mock('@src/tabs/use-tab-manager', () => ({
   useTabProjectBuckets: () => ({ buckets, globalTabCount: 0, closeGlobal: vi.fn() }),
 }));
 
-function bucket(projectId: string, name: string, folderNameMismatch: string | null): TabProjectBucket {
+function bucket(projectId: string, name: string, folderNameMismatch: string | null, scratch = false): TabProjectBucket {
   return {
     projectId,
     project: {
@@ -32,6 +35,7 @@ function bucket(projectId: string, name: string, folderNameMismatch: string | nu
       displayName: name,
       system: false,
       folderNameMismatch,
+      scratch,
     } as unknown as TabProjectBucket['project'],
     state: 'live',
     tabCount: 1,
@@ -50,5 +54,14 @@ describe('project row folder-mismatch chip', () => {
     expect(chip.textContent).toBe('sales');
     expect(chip.getAttribute('title')).toContain('sales');
     expect(screen.queryByTestId('project-folder-mismatch-p2')).toBeNull();
+  });
+
+  it('leaves a scratch project out of the list', () => {
+    buckets = [bucket('p1', 'bridge', null), bucket('p2', 'mocks · bridge', null, true)];
+    const { result } = renderHook(() => useProjectListMenu({ currentProjectId: 'p1' }));
+    render(<ProjectListPopoverContent menu={result.current} />);
+
+    expect(screen.queryByText('bridge')).not.toBeNull();
+    expect(screen.queryByText('mocks · bridge')).toBeNull();
   });
 });

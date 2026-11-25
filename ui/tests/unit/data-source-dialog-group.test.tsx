@@ -185,3 +185,31 @@ it('edits public access while preserving the restricted sender list', async () =
   expect(source.allowed_senders).toEqual(['15550001111']);
   expect(source.config).not.toHaveProperty('open_to_all');
 });
+
+/** A channel a multi-channel driver offers as its own choice: a tile like any other, whose form is the
+ *  driver's own, already set to that channel and asking only for what the channel needs. */
+describe("a driver's offered channel", () => {
+  const field = (label: string, extra = {}) => ({ type: FieldType.TEXT, label, ...extra });
+
+  it('is its own tile: the form is preset, named for the channel, and asks only for its fields', () => {
+    hoisted.specs = [
+      spec({
+        name: 'worker',
+        title: 'Worker transport',
+        config: { service: field('Service'), mailbox: field('Mailbox'), profile: field('Browser') },
+        offers: [{ key: 'chat', title: 'Chat', preset: { service: 'chat' }, fields: ['profile'] }],
+      } as never),
+    ];
+    open();
+    fireEvent.click(screen.getByTestId('provider-worker:chat'));
+
+    expect(screen.getByLabelText(/Data source name/)).toHaveValue('Chat');
+    expect(screen.getByLabelText(/Browser/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Service/)).toBeNull();
+    expect(screen.queryByLabelText(/Mailbox/)).toBeNull();
+
+    // What the tile asks for is required, though the driver's own form does not require it.
+    fireEvent.click(screen.getByRole('button', { name: /^(Add|Connect)/ }));
+    expect(screen.getByText('Browser is required.')).toBeInTheDocument();
+  });
+});

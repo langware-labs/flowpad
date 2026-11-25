@@ -115,3 +115,33 @@ export function buildMessageStartPrompt(conversationTypeId: TypeId, messageTypeI
     'Then say in a few lines what the message asks for and what you need to act on it.'
   );
 }
+
+/** The live session the launching user is the GUEST of in this conversation, for the launch prompt. */
+export interface LiveSessionNote {
+  hostName: string;
+  sessionId: string;
+  /** The kinds of turn the host approved; null while the session still awaits approval. */
+  approvedKinds: readonly string[] | null;
+}
+
+const TURN_KIND_WORDS: Record<string, string> = { prompt: 'prompts', command: 'commands', control: 'Flowpad control' };
+
+/**
+ * A launch prompt, plus one line when the user has a live session open on the other person's
+ * machine: the worker is told it exists, what it may run there, and which skill covers it.
+ */
+export function withLiveSessionNote(prompt: string, note: LiveSessionNote | null | undefined): string {
+  if (!note) return prompt;
+  const id = note.sessionId.slice(0, 8);
+  if (!note.approvedKinds) {
+    return (
+      `${prompt}\n\nNote: a live session with ${note.hostName} is awaiting approval (session ${id}). ` +
+      'Use the `live-session-helper` skill once it is approved.'
+    );
+  }
+  const kinds = note.approvedKinds.map((k) => TURN_KIND_WORDS[k] ?? k).join(', ');
+  return (
+    `${prompt}\n\nNote: a live session with ${note.hostName} is active (session ${id}, approved: ${kinds}). ` +
+    'Use the `live-session-helper` skill to work through it.'
+  );
+}

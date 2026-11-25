@@ -1,41 +1,24 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
-import { ChartBar, Check, GitCompareArrows, Loader2, Tag as TagIcon, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery } from '@tanstack/react-query';
-import { Conversation, FlowMessage, tagIsWithin, TypeId } from '@sdk';
-import type {
-  ClassificationRun,
-  ConversationTagging,
-  StreamInboxClassification,
-  TagTreeChange,
-} from '@sdk/entities/flow-message';
+import { Conversation, FlowMessage, TypeId } from '@sdk';
+import type { ClassificationRun } from '@sdk/entities/flow-message';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { SourceChip, useChannelAttribution } from '@src/components/conversation/channel-attribution';
+import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { AUTOMATIONS_CHANNEL } from '@src/components/stream-inbox-view/channel-owner';
 import { Button } from '@src/components/ui/button';
-import { Checkbox } from '@src/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
-import { unusedPaletteColors } from '@src/lib/color-palette';
 import { cn } from '@src/lib/utils';
-import { MessageTags, treeRows, useTagColors, useTagDefinitions } from './MessageTags';
-import { TagOffIcon } from './TagOffIcon';
-import { TagChip } from './tag-chip';
 
 /** How often a run still at work is read again. */
 const READ_EVERY_MS = 2000;
-const OPS = ['added', 'updated', 'moved', 'removed'] as const;
-const countOf = (changes: TagTreeChange[], op: TagTreeChange['op']) =>
-  changes.filter((change) => change.op === op).length;
-const CHANGE_COLOR: Record<TagTreeChange['op'], string> = {
-  added: 'hsl(142 70% 45%)',
-  updated: 'hsl(var(--primary))',
-  moved: 'hsl(38 92% 50%)',
-  removed: 'hsl(var(--destructive))',
-};
-const CHANGE_MARK: Record<TagTreeChange['op'], string> = { added: '+', updated: '~', moved: '→', removed: '−' };
 
 /** A classification run lives in the URL (`classify=<call id>`): started here, reopened by a reload, closed
  *  by dropping the option. The run itself is durable — closing the table does not stop it. */
@@ -45,7 +28,8 @@ export function useClassifyRun() {
   const set = (callId: string | null) => currentDock && navigation.openDock(currentDock.withOption('classify', callId));
   return {
     callId: currentDock?.options?.classify || null,
-    start: (conversations: string[]) => {
+    /** No conversations: the backend takes the newest ones that wait for a tag. */
+    start: (conversations?: string[]) => {
       void FlowMessage.classifyConversations(conversations).then(
         (run) => set(run.call_id),
         (e: unknown) =>
@@ -60,31 +44,15 @@ export function useClassifyRun() {
   };
 }
 
-/** A new tag that came with no colour gets one from the contrast-tested palette, one the tree does not use
- *  yet; a tag already applied keeps the colour it was given. What is applied is the colour the table showed. */
-function withColors(
-  value: StreamInboxClassification,
-  tree: Map<string, string | null | undefined>,
-): StreamInboxClassification {
-  const free = unusedPaletteColors(tree.values());
-  let next = 0;
-  return {
-    ...value,
-    tree_changes: value.tree_changes.map((change) =>
-      change.op === 'added' && !change.color
-        ? { ...change, color: tree.get(change.tag) || free[next++ % free.length] }
-        : change,
-    ),
-  };
-}
-
-const same = (a: string[], b: string[]) => a.length === b.length && a.every((tag) => b.includes(tag));
-
-/** One agent per conversation proposes its tag; the main agent keeps the tag tree small. Nothing is tagged
- *  until a person applies a row, a selection, or all of it — and applying starts no automation. */
+/**
+ * A classification run in progress. Nobody waits here: the run posts its proposal as the classifier automation's
+ * message, where it is reviewed and applied (the review nano-app), so this window only says so and can be closed.
+ * The run's one line and, behind Details, the conversations being read are for someone who chooses to watch;
+ * the window closes itself when the message has been posted.
+ */
 export function ClassifyDialog({ callId, onClose }: { callId: string; onClose: () => void }) {
   const { t } = useLingui();
-  const treeColors = useTagColors();
+  const { attributionFor } = useChannelAttribution();
   const { data: run, error: readError } = useQuery<ClassificationRun>({
     queryKey: ['tags', 'classification-run', callId],
     queryFn: () => FlowMessage.classificationRun(callId),
@@ -93,247 +61,102 @@ export function ClassifyDialog({ callId, onClose }: { callId: string; onClose: (
     refetchInterval: ({ state }) =>
       state.status !== 'error' && (!state.data || state.data.state === 'running') ? READ_EVERY_MS : false,
   });
-  const proposal = run?.state === 'completed' && run.result?.exit_code === 0 ? (run.result.value ?? null) : null;
-  const value = useMemo(() => (proposal ? withColors(proposal, treeColors) : null), [proposal, treeColors]);
-  // The chips' colours: the tree's, and a new tag's as it will be once applied.
-  const colors = useMemo(
-    () =>
-      new Map([
-        ...treeColors,
-        ...(value?.tree_changes ?? []).filter((c) => c.color).map((c) => [c.tag, c.color] as const),
-      ]),
-    [treeColors, value],
-  );
+  const [details, setDetails] = useState(false);
+  // The Automations chip as a Stream Inbox row wears it: the channel's name, the automation type's own icon.
+  const channel = attributionFor({ kind: AUTOMATIONS_CHANNEL, namespace: '', key: '', url: null });
+  const automations = channel && { ...channel, icon: iconForType('trigger') };
   const asked = (run?.input as { conversations?: string[] } | null | undefined)?.conversations ?? [];
-  const [ticked, setTicked] = useState<Set<string>>(new Set());
-  const [rejected, setRejected] = useState<Set<string>>(new Set());
-  const [opened, setOpened] = useState<string | null>(null);
-  const [tree, setTree] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  /** conversation id -> the proposal is on the message (each row reads its message and reports it). */
-  const [applied, setApplied] = useState<Record<string, boolean>>({});
-  const [treeDone, setTreeDone] = useState(false);
-  const rows = value?.conversations ?? [];
-  const open = rows.filter((row) => !rejected.has(row.conversation_id) && applied[row.conversation_id] === false);
-  const toggle = (set: Set<string>, id: string) => {
-    const next = new Set(set);
-    if (!next.delete(id)) next.add(id);
-    return next;
-  };
-
-  const apply = async (conversations: string[] | undefined, withTree: boolean) => {
-    if (!value) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const done = await FlowMessage.applyStreamInboxClassification(value, { conversations, tree: withTree });
-      const failed = Object.values(done.failed);
-      if (failed.length) setError(failed[0]);
-      if (withTree) setTreeDone(true);
-      setTicked(new Set());
-    } catch (e) {
-      setError(errorMessage(e, t`Could not apply`));
-    }
-    setBusy(false);
-  };
-
+  const handedIn = run?.state === 'completed' && run.result?.exit_code === 0 && !!run.result.value;
+  // The proposal is in the automation's conversation now: there is nothing left to say here.
+  useEffect(() => {
+    if (handedIn) onClose();
+  }, [handedIn]); // eslint-disable-line react-hooks/exhaustive-deps
   const failure =
-    readError || (run && run.state !== 'running' && !value)
+    readError || (run && run.state !== 'running' && !handedIn)
       ? errorMessage(readError, run?.error || run?.result?.detail || t`The classification did not finish.`)
       : null;
-  const changing = rows.filter((row) => row.action !== 'keep').length;
-  const done = rows.filter((row) => applied[row.conversation_id]).length;
-  const allTicked = open.length > 0 && open.every((row) => ticked.has(row.conversation_id));
+  const started = run?.created_at ? formatTimeAgo(run.created_at) : '';
 
   return (
     <Dialog open onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="max-w-5xl" data-testid="classify-dialog">
         <DialogHeader>
           <DialogTitle>
-            <Trans>Classify {value ? rows.length : asked.length} conversations</Trans>
+            <Trans>Classify {asked.length} conversations</Trans>
           </DialogTitle>
-          <DialogDescription>
-            {value ? (
+          <DialogDescription asChild>
+            <div className="text-sm text-muted-foreground" data-testid="classify-notice">
               <Trans>
-                A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth.
+                Classification is in progress. An{' '}
+                <SourceChip attribution={automations} className="mx-0.5" />{' '}
+                message will be sent once it is done. You can close this window.
               </Trans>
-            ) : (
-              <Trans>
-                One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval.
-              </Trans>
-            )}
+            </div>
           </DialogDescription>
         </DialogHeader>
-        {ticked.size > 0 && (
+        <div className="rounded-md border border-border">
           <div
-            className="flex items-center gap-1 rounded-md border border-border px-2 py-1"
-            data-testid="classify-selection-bar"
+            className={cn('flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground', details && 'border-b border-border')}
+            data-testid="classify-run-line"
           >
-            <span className="me-1 text-xs text-muted-foreground">
-              <Trans>{ticked.size} selected</Trans>
+            {!failure && <Loader2 className="size-3 animate-spin" />}
+            <span className="font-medium text-foreground">{run?.block ?? 'stream-inbox-classifier'}</span>
+            <span>
+              {failure ? <Trans>Stopped</Trans> : <Trans>Running</Trans>} · <Trans>{asked.length} conversations</Trans>
+              {started && (
+                <>
+                  {' · '}
+                  <Trans>started {started}</Trans>
+                </>
+              )}
             </span>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="h-7 text-xs"
-              disabled={busy}
-              onClick={() => void apply([...ticked], false)}
-              data-testid="classify-selection-apply"
+              className={cn('ms-auto h-6', details && 'bg-accent')}
+              onClick={() => setDetails(!details)}
+              data-testid="classify-details"
             >
-              <Check className="me-1 h-3.5 w-3.5" />
-              <Trans>Apply</Trans>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ms-auto h-7 w-7"
-              title={t`Clear selection`}
-              onClick={() => setTicked(new Set())}
-            >
-              <X className="h-3.5 w-3.5" />
+              <Trans>Details</Trans>
             </Button>
           </div>
-        )}
-        <div className="max-h-[60vh] overflow-auto rounded-md border border-border">
-          <Table data-testid="classify-table">
-            <TableHeader>
-              <TableRow className="text-xs hover:bg-transparent">
-                <TableHead className="h-9 w-7 ps-3">
-                  {value && (
-                    <Checkbox
-                      checked={allTicked ? true : ticked.size > 0 ? 'indeterminate' : false}
-                      onCheckedChange={() =>
-                        setTicked(allTicked ? new Set() : new Set(open.map((row) => row.conversation_id)))
-                      }
-                      aria-label={t`Select all`}
-                      className="h-3.5 w-3.5 border-muted-foreground"
-                    />
-                  )}
-                </TableHead>
-                <TableHead className="h-9 px-3">
-                  <Trans>Conversation</Trans>
-                </TableHead>
-                <TableHead className="h-9 px-3">
-                  <Trans>Current</Trans>
-                </TableHead>
-                <TableHead className="h-9 px-3">
-                  <Trans>Proposed</Trans>
-                </TableHead>
-                <TableHead className="h-9" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {value
-                ? rows.map((row) => (
-                    <ProposedRow
-                      key={row.conversation_id}
-                      row={row}
-                      root={value.root}
-                      colors={colors}
-                      added={value.tree_changes.some((c) => c.op === 'added' && row.proposed.includes(c.tag))}
-                      ticked={ticked.has(row.conversation_id)}
-                      rejected={rejected.has(row.conversation_id)}
-                      opened={opened === row.conversation_id}
-                      busy={busy}
-                      onApplied={(on) =>
-                        setApplied((all) =>
-                          all[row.conversation_id] === on ? all : { ...all, [row.conversation_id]: on },
-                        )
-                      }
-                      onTick={() => setTicked(toggle(ticked, row.conversation_id))}
-                      onReject={() => {
-                        setRejected(toggle(rejected, row.conversation_id));
-                        setTicked((all) => new Set([...all].filter((id) => id !== row.conversation_id)));
-                      }}
-                      onApply={() => void apply([row.conversation_id], false)}
-                      onWhy={() => setOpened(opened === row.conversation_id ? null : row.conversation_id)}
-                    />
-                  ))
-                : asked.map((id) => <WaitingRow key={id} id={id} failed={!!failure} />)}
-            </TableBody>
-          </Table>
+          {details && (
+            <div className="max-h-[60vh] overflow-auto">
+              <Table data-testid="classify-table">
+                <TableHeader>
+                  <TableRow className="text-xs hover:bg-transparent">
+                    <TableHead className="h-9 px-3">
+                      <Trans>Conversation</Trans>
+                    </TableHead>
+                    <TableHead className="h-9 px-3">
+                      <Trans>Current</Trans>
+                    </TableHead>
+                    <TableHead className="h-9 px-3">
+                      <Trans>Proposed</Trans>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {asked.map((id) => (
+                    <WaitingRow key={id} id={id} failed={!!failure} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </div>
-        {(error || failure) && (
+        {failure && (
           <p role="alert" className="text-xs text-destructive" data-testid="classify-error">
-            {error || failure}
+            {failure}
           </p>
         )}
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground" data-testid="classify-summary">
-            {value ? (
-              <Trans>
-                {rows.length} classified · {changing} would change · {done} applied
-              </Trans>
-            ) : failure ? null : (
-              <Trans>Agents are reading — closing keeps it running</Trans>
-            )}
+            {!failure && <Trans>Agents are reading — closing keeps it running</Trans>}
           </span>
-          <div className="flex items-center gap-2">
-            {value && value.tree_changes.length > 0 && (
-              <Popover open={tree} onOpenChange={setTree}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={cn('gap-1.5', tree && 'bg-accent')}
-                    data-testid="classify-tree-changes"
-                  >
-                    <GitCompareArrows className="size-3.5" />
-                    <Trans>Tag changes</Trans>
-                    {OPS.map((op) => {
-                      const count = countOf(value.tree_changes, op);
-                      return count ? (
-                        <span
-                          key={op}
-                          className="text-[11px] font-medium"
-                          style={{ color: CHANGE_COLOR[op] }}
-                          title={op}
-                        >
-                          {CHANGE_MARK[op]}
-                          {count}
-                        </span>
-                      ) : null;
-                    })}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  side="top"
-                  align="end"
-                  className="max-h-[52vh] w-96 p-3"
-                  data-testid="classify-tree-panel"
-                >
-                  <TreeChanges
-                    value={value}
-                    colors={colors}
-                    done={treeDone}
-                    busy={busy}
-                    onApply={() => void apply([], true)}
-                    onClose={() => setTree(false)}
-                  />
-                </PopoverContent>
-              </Popover>
-            )}
-            {value && open.length > 0 && (
-              <Button
-                size="sm"
-                disabled={busy}
-                title={t`Apply every row you did not reject, with the tag changes they need`}
-                onClick={() =>
-                  void apply(
-                    open.map((row) => row.conversation_id),
-                    true,
-                  )
-                }
-                data-testid="classify-apply-all"
-              >
-                <Trans>Apply all</Trans>
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={onClose} data-testid="classify-close">
-              <Trans>Close</Trans>
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" onClick={onClose} data-testid="classify-close">
+            <Trans>Close</Trans>
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -345,7 +168,6 @@ function WaitingRow({ id, failed }: { id: string; failed: boolean }) {
   const conversation = useEntity<Conversation>(new TypeId(Conversation.type, id)).data;
   return (
     <TableRow data-testid={`classify-row-${id}`}>
-      <TableCell className="w-7 ps-3" />
       <TableCell className="max-w-md px-3">
         <div className="truncate font-semibold">{conversation?.title || '…'}</div>
       </TableCell>
@@ -358,295 +180,6 @@ function WaitingRow({ id, failed }: { id: string; failed: boolean }) {
           </span>
         )}
       </TableCell>
-      <TableCell className="w-16" />
     </TableRow>
-  );
-}
-
-function ProposedRow({
-  row,
-  root,
-  colors,
-  added,
-  ticked,
-  rejected,
-  opened,
-  busy,
-  onApplied,
-  onTick,
-  onReject,
-  onApply,
-  onWhy,
-}: {
-  row: ConversationTagging;
-  root: string;
-  colors: Map<string, string | null | undefined>;
-  added: boolean;
-  ticked: boolean;
-  rejected: boolean;
-  opened: boolean;
-  busy: boolean;
-  onApplied: (applied: boolean) => void;
-  onTick: () => void;
-  onReject: () => void;
-  onApply: () => void;
-  onWhy: () => void;
-}) {
-  const { t } = useLingui();
-  const message = useEntity<FlowMessage>(new TypeId(FlowMessage.type, row.message_id)).data;
-  const current = useMemo(
-    () => (message?.tags ?? []).filter((tag) => tagIsWithin(tag, root) && tag !== root),
-    [message?.tags, root],
-  );
-  // Applied = the message carries the proposal. Read from the message, so a tag a person picks counts too.
-  const applied = !!message && same(current, row.proposed);
-  useEffect(() => onApplied(applied), [applied, !!message]); // eslint-disable-line react-hooks/exhaustive-deps
-  const none = <TagOffIcon className="size-3 text-muted-foreground" aria-label={t`No tags`} />;
-  return (
-    <Fragment>
-      <TableRow className={cn(ticked && 'bg-primary/10')} data-testid={`classify-row-${row.conversation_id}`}>
-        <TableCell className="w-7 ps-3">
-          {!applied && !rejected && (
-            <Checkbox
-              checked={ticked}
-              onCheckedChange={onTick}
-              aria-label={t`Select conversation`}
-              className="h-3.5 w-3.5 border-muted-foreground"
-            />
-          )}
-        </TableCell>
-        <TableCell className="max-w-md px-3">
-          <div className="truncate font-semibold">{row.title}</div>
-        </TableCell>
-        <TableCell className="px-3">
-          <div className="flex items-center" data-testid="classify-row-current">
-            {/* The message's own tag cell: its menu is how a person picks the tag themselves. */}
-            {message ? <MessageTags message={message} compact /> : none}
-          </div>
-        </TableCell>
-        <TableCell className="px-3">
-          <div
-            className={cn('flex items-center gap-1.5 whitespace-nowrap', rejected && 'opacity-60')}
-            data-testid="classify-row-new"
-          >
-            <span className={cn('inline-flex items-center gap-1', rejected && 'line-through')}>
-              {row.proposed.length ? (
-                row.proposed.map((tag) => <TagChip key={tag} name={tag} color={colors.get(tag)} />)
-              ) : (
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  {none}
-                  <Trans>no tag fits</Trans>
-                </span>
-              )}
-            </span>
-            {applied ? (
-              row.action !== 'keep' && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
-                  <Check className="size-3" />
-                  <Trans>applied</Trans>
-                </span>
-              )
-            ) : rejected ? (
-              <span className="text-[11px] font-medium text-muted-foreground">
-                <Trans>rejected</Trans>
-              </span>
-            ) : (
-              <span className="text-[11px] font-medium text-primary">
-                {added ? <Trans>new tag</Trans> : <Trans>changed</Trans>}
-              </span>
-            )}
-            {!applied && !rejected && (
-              <button
-                type="button"
-                disabled={busy}
-                title={t`Make this the conversation's tag. No automation runs.`}
-                onClick={onApply}
-                data-testid="classify-row-apply"
-                className="ms-1 inline-flex h-6 items-center rounded-md border border-border px-2 text-[11px] font-medium hover:bg-accent hover:text-accent-foreground"
-              >
-                <Trans>Apply</Trans>
-              </button>
-            )}
-            {!applied && (
-              <button
-                type="button"
-                title={rejected ? t`Take the proposal back into Apply all` : t`Leave this conversation as it is`}
-                onClick={onReject}
-                data-testid="classify-row-reject"
-                className="inline-flex h-6 items-center rounded-md border border-border px-2 text-[11px] font-medium hover:bg-accent hover:text-accent-foreground"
-              >
-                {rejected ? <Trans>Undo</Trans> : <Trans>Reject</Trans>}
-              </button>
-            )}
-          </div>
-        </TableCell>
-        <TableCell className="w-16 text-end">
-          <button
-            type="button"
-            title={t`How it was decided`}
-            onClick={onWhy}
-            data-testid="classify-row-why"
-            className={cn(
-              'inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] hover:bg-accent hover:text-accent-foreground',
-              opened ? 'bg-accent text-foreground' : 'text-muted-foreground',
-            )}
-          >
-            <ChartBar className="size-3.5" />
-            <Trans>Why</Trans>
-          </button>
-        </TableCell>
-      </TableRow>
-      {opened && (
-        <TableRow className="bg-muted/20 hover:bg-muted/20">
-          <TableCell colSpan={5} className="p-4">
-            <div
-              className="grid grid-cols-[7.5rem_1fr] items-baseline gap-x-4 gap-y-2 text-sm"
-              data-testid="classify-row-trace"
-            >
-              <div className="text-xs text-muted-foreground">
-                <Trans>Agent</Trans>
-              </div>
-              <div>{row.reason}</div>
-              {row.asked && (
-                <>
-                  <div className="text-xs text-muted-foreground">
-                    <Trans>Asked for</Trans>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full border border-dashed border-foreground/60 px-2 text-[11px]"
-                      title={row.asked.tag}
-                    >
-                      <TagIcon className="size-3" />
-                      {row.asked.tag.split('.').at(-1)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">“{row.asked.meaning}”</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    <Trans>Main agent</Trans>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {row.asked.answer === 'approved' ? (
-                      <Trans>Approved as a new tag.</Trans>
-                    ) : (
-                      <>
-                        <Trans>Use</Trans>
-                        <TagChip name={row.asked.use ?? ''} color={colors.get(row.asked.use ?? '')} />
-                        <Trans>instead.</Trans>
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </TableCell>
-        </TableRow>
-      )}
-    </Fragment>
-  );
-}
-
-/** The tag tree as the run would leave it: every changed tag says what happened to it, where it happened. */
-function TreeChanges({
-  value,
-  colors,
-  done,
-  busy,
-  onApply,
-  onClose,
-}: {
-  value: StreamInboxClassification;
-  colors: Map<string, string | null | undefined>;
-  done: boolean;
-  busy: boolean;
-  onApply: () => void;
-  onClose: () => void;
-}) {
-  const { t } = useLingui();
-  const definitions = useTagDefinitions();
-  const byTag = useMemo(() => new Map(value.tree_changes.map((change) => [change.tag, change])), [value.tree_changes]);
-  // The root first, as the tag editor draws it, then the tree as the run would leave it.
-  const rows = useMemo(() => {
-    const movedFrom = new Set(value.tree_changes.filter((c) => c.op === 'moved').map((c) => c.was));
-    const names = definitions.filter((tag) => !tag.deprecated && !movedFrom.has(tag.name)).map((tag) => tag.name ?? '');
-    const under = treeRows([...new Set([...names, ...value.tree_changes.map((c) => c.tag)])], value.root);
-    return [{ name: value.root, depth: 0 }, ...under.map((row) => ({ ...row, depth: row.depth + 1 }))];
-  }, [definitions, value]);
-  const counts = OPS.map((op) => `${countOf(value.tree_changes, op)} ${op}`).join(' · ');
-  return (
-    <>
-      <div className="mb-2 flex items-baseline gap-2">
-        <span className="text-sm font-medium">
-          <Trans>Tag tree</Trans>
-        </span>
-        <span className="ms-auto text-[11px] text-muted-foreground">{counts}</span>
-        <button
-          type="button"
-          aria-label={t`Close the tag tree`}
-          onClick={onClose}
-          data-testid="classify-tree-close"
-          className="self-center rounded p-0.5 text-muted-foreground hover:bg-muted"
-        >
-          <X className="size-3.5" />
-        </button>
-      </div>
-      {rows.map(({ name, depth }) => {
-        const change = byTag.get(name);
-        return (
-          <div
-            key={name}
-            style={{ marginInlineStart: depth * 16 }}
-            data-testid={`classify-tree-row-${name}`}
-            data-change={change?.op}
-          >
-            <div className="flex items-center gap-1.5 px-2 py-1 text-sm">
-              <TagIcon className="size-3.5 shrink-0" style={{ color: colors.get(name) ?? undefined }} />
-              <span
-                className={cn(
-                  'truncate',
-                  change?.op === 'removed' && 'text-muted-foreground line-through',
-                  name === value.root && 'italic text-muted-foreground',
-                )}
-              >
-                {name === value.root ? name : name.split('.').at(-1)}
-              </span>
-              {change && (
-                <span
-                  className="shrink-0 whitespace-nowrap text-[11px] font-medium"
-                  style={{ color: CHANGE_COLOR[change.op] }}
-                >
-                  {change.op}
-                </span>
-              )}
-            </div>
-            {change && (
-              <div className="pb-1 text-[11px] text-muted-foreground" style={{ marginInlineStart: 30 }}>
-                {change.op === 'updated' && <div className="line-through">{change.was}</div>}
-                {(change.op === 'added' || change.op === 'updated') && (
-                  <div className="text-foreground">{change.meaning}</div>
-                )}
-                {change.op === 'moved' && <Trans>was {change.was}</Trans>}
-                {change.op === 'removed' && change.merged_into && (
-                  <Trans>its conversations go to {change.merged_into.split('.').at(-1)}</Trans>
-                )}
-                <div>{change.reason}</div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-      <div className="mt-2 flex justify-end border-t border-border pt-2">
-        {done ? (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
-            <Check className="size-3" />
-            <Trans>applied</Trans>
-          </span>
-        ) : (
-          <Button size="sm" variant="outline" disabled={busy} onClick={onApply} data-testid="classify-tree-apply">
-            <Trans>Apply tag changes</Trans>
-          </Button>
-        )}
-      </div>
-    </>
   );
 }

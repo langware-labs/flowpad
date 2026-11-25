@@ -325,6 +325,10 @@ def with_state_key(target: dict[str, Any], process: Optional["AgenticProcess"]) 
         return target
     path = str(target.get("path") or "")
     context = {"process": f"agentic_process-{process.id}"} if process is not None else {}
+    from flow_sdk.builtin.flow_message import app_message_at  # noqa: PLC0415
+
+    if message := app_message_at(path):   # an app message's own page: its nano-app opens on the message
+        context["message"] = message
     key = page_state.mint(PageState(context=context, title=Path(path).name if path else str(target.get("typeid") or "")))
     return {**target, "state_key": key}
 

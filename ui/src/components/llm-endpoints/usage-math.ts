@@ -52,6 +52,7 @@ export function cohortRange(cohort: TimeCohort, now: Date = new Date()): UsageRa
 export const ZERO_COUNTERS: LLMUsageCounters = {
   requests: 0,
   fallbacks: 0,
+  refusals: 0,
   errors: 0,
   input_tokens: 0,
   output_tokens: 0,
@@ -85,6 +86,7 @@ export interface ChartPoint {
   requests: number;
   errors: number;
   fallbacks: number;
+  refusals: number;
 }
 
 function labelFor(bucketStart: number, granularity: LLMUsageGranularity): string {
@@ -121,6 +123,7 @@ export function toChartPoints(series: readonly LLMUsagePoint[], range: UsageRang
       requests: c.requests,
       errors: c.errors,
       fallbacks: c.fallbacks,
+      refusals: c.refusals ?? 0,
     });
   }
   return out;

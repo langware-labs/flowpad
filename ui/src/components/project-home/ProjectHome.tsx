@@ -1,8 +1,5 @@
 import { t } from '@lingui/core/macro';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
-import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
-import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
-import { ProjectHomeMenu } from '@src/components/project-home/ProjectHomeMenu';
 import { ProjectSetupPage } from '@src/components/project-setup/ProjectSetupPage';
 import { ProjectDeploymentsPage } from '@src/components/project-deployments/ProjectDeploymentsPage';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
@@ -169,7 +166,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
   // Customize cards are project-entity bound — only when the resolved
   // project is the active one (they read/write live Project state).
   const project = dataCtx.project?.id === projectId ? dataCtx.project : null;
-  const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   // "publish this project" (smart navigation): the same popup the publish button opens.
   useUiActionRequest(['publish-dialog'], () => setPublishOpen(true));
@@ -213,7 +209,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Project header: git state on the left, roster + invite on the right.
+      {/* Project header: cloud link and publishing on the left, roster + invite on the right.
           The roster names itself (avatars / "No members" / Invite), so a
           separate "Members" caption was one label too many. */}
       {projectTypeId && (
@@ -231,8 +227,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
               </>
             ) : (
               <>
-                {project && <ProjectHomeMenu project={project} />}
-                <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
                 {project && <ProjectCloudLinkButton project={project} />}
                 {project && <ProjectGitShareToggle project={project} />}
                 <ProjectPublishedButton projectId={projectTypeId.id} />
@@ -251,14 +245,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({
             />
           </div>
         </div>
-      )}
-      {!cloudMode && gitChecks && (
-        <ProjectGitChecksDialog
-          open
-          onOpenChange={(next) => !next && setGitChecks(null)}
-          checks={gitChecks}
-          project={project}
-        />
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full flex-col gap-6 px-4 py-6">

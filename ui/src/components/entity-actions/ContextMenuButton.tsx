@@ -1,5 +1,5 @@
 import { useEffect, useState, type RefObject } from 'react';
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Network, type LucideIcon } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Network, X, type LucideIcon } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GraphContext, TypeId, dataContext, dataManager, type AnyEntity } from '@sdk';
 import type { ContextRelation, ContextVia } from '@sdk/types/context-relation';
@@ -27,8 +27,8 @@ const DIRECTION_ICON: Record<ContextRelation['direction'], LucideIcon> = {
  * The entity's context, one click away: every entity that holds this one in its
  * context or is held by it, as one list — direction, type, name, and when.
  *
- * Read on open through the entity's `context-relations` action; a row only
- * navigates. Nothing here writes context.
+ * Read on open through the entity's `context-relations` action; a row navigates,
+ * and a link held in a shared context (`kind` has `shared`) carries an X that removes it.
  *
  * Two ways to use it. On its own it draws its button and owns its open state. Controlled
  * (`open` + `onOpenChange`), it draws NO button: someone else opens it (the top bar's menu) and
@@ -41,6 +41,11 @@ export interface ContextMenuButtonProps {
   onOpenChange?: (open: boolean) => void;
   /** Controlled mode: the element the list is placed against. */
   anchorRef?: RefObject<HTMLElement | null>;
+}
+
+async function readRows(target: string): Promise<ContextRelation[]> {
+  const entity = await dataManager.getByTypeId<AnyEntity>(new TypeId(target));
+  return entity ? entity.getContextRelations() : [];
 }
 
 /** Whether this runtime shows an entity's context at all. */
@@ -91,9 +96,7 @@ function ContextMenuPopover({
     let stale = false;
     setRows(null);
     setFailed(false);
-    dataManager
-      .getByTypeId<AnyEntity>(new TypeId(target))
-      .then((entity) => (entity ? entity.getContextRelations() : []))
+    readRows(target)
       .then((found) => {
         if (!stale) setRows(found);
       })
@@ -105,6 +108,24 @@ function ContextMenuPopover({
       stale = true;
     };
   }, [open, target]);
+
+  // Take the link out of the shared context of whichever side holds it, then read the list again:
+  // a peer held some other way too (a session's target) stays, without its X.
+  const removeRow = async (row: ContextRelation) => {
+    const here = new TypeId(target);
+    const there = new TypeId(row.typeid);
+    try {
+      const [mine, peer] = await Promise.all([
+        row.direction !== 'in' ? dataManager.getByTypeId<AnyEntity>(here) : null,
+        row.direction !== 'out' ? dataManager.getByTypeId<AnyEntity>(there) : null,
+      ]);
+      await Promise.all([mine?.unshareContextEntities(there), peer?.unshareContextEntities(here)]);
+      setRows(await readRows(target));
+    } catch (err) {
+      console.error('[ContextMenuButton] remove context link failed', err);
+      notify.error({ title: t`Could not remove the link` });
+    }
+  };
 
   const openRow = async (row: ContextRelation) => {
     setOpen(false);
@@ -211,7 +232,7 @@ function ContextMenuPopover({
           // One grid for every row (rows are subgrids), so each field starts on the same line down the list.
           <div
             role="menu"
-            className="grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] divide-y divide-border rounded border border-border bg-background"
+            className="grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto_auto] divide-y divide-border rounded border border-border bg-background"
           >
             {visible.map((row) => {
               const Direction = DIRECTION_ICON[row.direction];
@@ -219,27 +240,44 @@ function ContextMenuPopover({
               const type = labelForType(row.type);
               // An entity nothing names (an untitled session) goes by the start of its id.
               const name = row.name || new TypeId(row.typeid).id.slice(0, 8);
+              const removable = row.kind.split(',').includes('shared');
               return (
-                <button
+                <div
                   key={row.typeid}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => void openRow(row)}
-                  title={`${directionLabel[row.direction]} · ${type}: ${name}`}
-                  className="col-span-5 grid grid-cols-subgrid items-center gap-x-2 px-2 py-1.5 text-start text-[11px] transition-colors hover:bg-muted/40"
-                  data-testid="context-menu-row"
-                  data-direction={row.direction}
-                  data-via={row.via.join(' ')}
+                  className="col-span-6 grid grid-cols-subgrid items-center transition-colors hover:bg-muted/40"
                 >
-                  <Direction className="h-3 w-3 text-foreground" aria-label={directionLabel[row.direction]} />
-                  <TypeIcon className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
-                  <span className="whitespace-nowrap text-muted-foreground">{type}</span>
-                  <span className="truncate text-foreground">{name}</span>
-                  <span className="flex flex-col items-end whitespace-nowrap leading-tight">
-                    <span className="text-foreground">{formatMoment(row.time) ?? '—'}</span>
-                    <span className="text-[9px] text-muted-foreground">{formatTimeAgo(row.time) ?? ''}</span>
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void openRow(row)}
+                    title={`${directionLabel[row.direction]} · ${type}: ${name}`}
+                    className="col-span-5 grid grid-cols-subgrid items-center gap-x-2 px-2 py-1.5 text-start text-[11px]"
+                    data-testid="context-menu-row"
+                    data-direction={row.direction}
+                    data-via={row.via.join(' ')}
+                  >
+                    <Direction className="h-3 w-3 text-foreground" aria-label={directionLabel[row.direction]} />
+                    <TypeIcon className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+                    <span className="whitespace-nowrap text-muted-foreground">{type}</span>
+                    <span className="truncate text-foreground">{name}</span>
+                    <span className="flex flex-col items-end whitespace-nowrap leading-tight">
+                      <span className="text-foreground">{formatMoment(row.time) ?? '—'}</span>
+                      <span className="text-[9px] text-muted-foreground">{formatTimeAgo(row.time) ?? ''}</span>
+                    </span>
+                  </button>
+                  {removable && (
+                    <button
+                      type="button"
+                      onClick={() => void removeRow(row)}
+                      title={t`Remove this link`}
+                      aria-label={t`Remove this link`}
+                      data-testid="context-menu-row-remove"
+                      className="me-1 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>

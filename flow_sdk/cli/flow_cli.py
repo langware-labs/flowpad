@@ -47,6 +47,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
     "icons": ("flow_sdk.cli.commands.icons_cmd", "icons_app", None),
     "app": ("flow_sdk.cli.commands.app_cmd", "app_app", None),
     "context": ("flow_sdk.cli.commands.context_cmd", "context_app", None),
+    "browser": ("flow_sdk.cli.commands.browser_cmd", "browser_app", None),
     "llm": ("flow_sdk.cli.commands.llm_cmd", "llm_app", None),
     "connections": ("flow_sdk.cli.commands.connections_cmd", "connections_app", None),
     "status": ("flow_sdk.cli.commands.status_cmd", "status_app", None),

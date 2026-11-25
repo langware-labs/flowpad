@@ -509,7 +509,10 @@ export function useProjectListMenu({
   // And only the ACTIVE workspace's projects; Global tabs belong to every workspace.
   const { contains } = useActiveWorkspace();
   const buckets = useMemo(
-    () => allBuckets.filter((b) => !isHiddenProject(b.project) && contains(b.project?.fs_storage_mount_path)),
+    () =>
+      allBuckets.filter(
+        (b) => !isHiddenProject(b.project) && !b.project?.scratch && contains(b.project?.fs_storage_mount_path),
+      ),
     [allBuckets, contains],
   );
 

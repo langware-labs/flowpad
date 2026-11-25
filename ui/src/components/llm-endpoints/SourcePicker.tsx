@@ -14,6 +14,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 
 import { Label } from '@src/components/ui/label';
 
+import { useEndpointFamily } from './endpoint-family';
 import { endpointTypeId } from './endpoint-catalog';
 
 export interface SourcePickerProps {
@@ -27,6 +28,7 @@ export interface SourcePickerProps {
 
 export function SourcePicker({ value, onChange, all, disabled }: SourcePickerProps) {
   const { t } = useLingui();
+  const family = useEndpointFamily();
 
   return (
     <div className="space-y-1.5" data-testid="source-picker">
@@ -44,8 +46,8 @@ export function SourcePicker({ value, onChange, all, disabled }: SourcePickerPro
       >
         <option value="">{all.length ? t`Choose an endpoint…` : t`No endpoints to draw from`}</option>
         {all.map((e) => (
-          <option key={e.id} value={endpointTypeId(e.id)}>
-            {e.name} ({e.kind === 'root' ? e.provider : t`chain`})
+          <option key={e.id} value={endpointTypeId(e.id, family.type)}>
+            {e.name} ({e.kind === 'root' ? e.provider || t`API key` : t`chain`})
           </option>
         ))}
       </select>

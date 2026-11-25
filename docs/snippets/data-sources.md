@@ -7,7 +7,8 @@ version: 2
 A data source is one stream Flowpad syncs from — one feed, one channel, one
 mailbox, one tree — configured on a driver. Watching three feeds is three sources. It is a `DataSource`, and an asset: `save()` writes
 `agentic-assets/data_source/<name>/data_source.json` into the current project
-(the user scope outside one), and nothing is on disk before that. Every item it
+(the user scope outside one) — except a person's message channel, which is theirs
+and goes to the user scope unless a project is named — and nothing is on disk before that. Every item it
 produces is a `SourceItem`; one cycle is one verb,
 `source.sync()` (the heartbeat calls the same code through `sync_source`).
 Everything below runs in-process against the session DB, and every `python`

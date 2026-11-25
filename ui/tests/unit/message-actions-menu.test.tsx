@@ -65,6 +65,41 @@ describe('message header row', () => {
     expect(screen.queryByTitle('Delete message')).toBeNull();
     expect(screen.queryByTitle('Edit name')).toBeNull();
   });
+
+  const earlier = (extra: Record<string, unknown> = {}) =>
+    render(
+      <MemoryRouter>
+        <MessageBubble
+          message={{ role: 'user', content: 'hello there', timestamp: '2026-10-04T14:47:00Z' } as never}
+          flowMessageId="m-1"
+          senderName="Ron Vardinon"
+          onForwardMessage={vi.fn()}
+          onReply={vi.fn()}
+          latest={false}
+          {...extra}
+        />
+      </MemoryRouter>,
+    );
+
+  it('an earlier message has reply and forward at the row end, hidden until hover, and a line under it', () => {
+    earlier();
+    expect(screen.queryByTestId('message-reply-forward')).toBeNull();
+    const actions = screen.getByTestId('message-hover-actions');
+    expect(within(actions).getAllByRole('button').map((b) => b.textContent)).toEqual(['Reply', 'Forward']);
+    expect(actions.className).toContain('opacity-0');
+    expect(actions.className).toContain('group-hover:opacity-100');
+    expect(screen.getByTestId('message-divider')).toBeTruthy();
+  });
+
+  it('an earlier message shows its buttons once selected, and keeps its session button in view', () => {
+    earlier({ isSelected: true, messageSession: { name: 'Fix the invoice', onOpen: vi.fn() } });
+    const actions = screen.getByTestId('message-hover-actions');
+    expect(actions.className).toContain('opacity-100');
+    expect(actions.className).not.toContain('opacity-0');
+    const below = screen.getByTestId('message-reply-forward');
+    expect(within(below).queryByTestId('message-reply')).toBeNull();
+    expect(within(below).getByText('Fix the invoice')).toBeTruthy();
+  });
 });
 
 describe('message ⋮ menu', () => {

@@ -523,6 +523,8 @@ export type SessionBrowser = string;
 
 /** One word for a driver's availability to this worker, decided on the backend (`browser_drivers.state_of`). */
 export type BrowserDriverState = 'ready' | 'running' | 'connected' | 'not_connected' | 'not_installed' | 'unsupported';
+/** A kind's state: its driver's, or `error` when a session reported it failing. */
+export type BrowserKindState = BrowserDriverState | 'error';
 
 /** One browser driver as the backend lists it (`BrowserDriverSpec`), with this machine's view of it. */
 export interface BrowserDriverInfo {
@@ -542,6 +544,29 @@ export interface BrowserDriverInfo {
   config: Record<string, string>;
 }
 
+/** One browser a session can be given: an app, the way it is driven and one profile (`BrowserKindSpec`). */
+export interface BrowserKindInfo {
+  /** `<browser>.<driving>.name.<profile>` — what names it everywhere. */
+  kind: string;
+  browser: string;
+  driving: 'cdp' | 'extension';
+  /** The profile's folder id. */
+  profile: string;
+  name: string;
+  /** The driver that drives it, and what a menu draws from it. */
+  driver: SessionBrowser;
+  icon: string;
+  install_url: string;
+  state: BrowserKindState;
+  /** What a session reported when `state` is `error`; "" otherwise. */
+  error: string;
+  /** The person hid it from this computer's list; shown only under "All". */
+  hidden?: boolean;
+  /** ISO times of the profile's folder; null where the OS keeps none or it never browsed. */
+  created: string | null;
+  last_used: string | null;
+}
+
 export interface BrowserStatus {
   /** What the project recommends. */
   setting: SessionBrowser;
@@ -549,6 +574,8 @@ export interface BrowserStatus {
   pick: SessionBrowser;
   /** The browser in use: for a session what it resolves to, else what a new session here gets. */
   effective: SessionBrowser;
+  /** The one kind in use: the profile that was chosen, else the driver's first usable one; "" when none. */
+  effective_kind: string;
   /** Which rung decided `effective`. */
   source: 'pick' | 'session' | 'project' | 'default';
   /** The driver that was asked for but this worker cannot use; "" when the choice stood. */
@@ -556,6 +583,8 @@ export interface BrowserStatus {
   /** This session's worker, by vendor key. */
   worker: string;
   drivers: BrowserDriverInfo[];
+  /** One per browser profile on this machine: the menu's rows, and what `flow browser list` prints. */
+  kinds: BrowserKindInfo[];
   extension: {
     installed: boolean;
     device: string;
@@ -621,6 +650,8 @@ export class Project extends APIEntity<Project> {
    *  or from the uname: the portal is recognised by where it LIVES, and
    *  `system` means the narrower "SDK-shipped". See `isHiddenProject`. */
   hidden: boolean = false;
+  /** Mirror of the backend stored `Project.scratch`: a tool's own working folder, left out of the project list. */
+  scratch: boolean = false;
   /** The folder's own name when it is not the project's name (a rename changes the
    *  name, never the folder), else null. Mirror of the backend computed
    *  `Project.folder_name_mismatch`, compared the way project names are; read-only. */
@@ -643,6 +674,7 @@ export class Project extends APIEntity<Project> {
     this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
     this.customization = (entity.customization as ProjectCustomization | undefined) ?? {};
     this.hidden = (entity.hidden as boolean | undefined) ?? false;
+    this.scratch = (entity.scratch as boolean | undefined) ?? false;
     this.folderNameMismatch = (entity.folder_name_mismatch as string | null | undefined) ?? null;
   }
 
@@ -1287,10 +1319,30 @@ export class Project extends APIEntity<Project> {
     return this.post<{ env_files: string[] }>('set-env-files', { paths });
   }
 
-  /** The person's own browser for this project on this computer — a browser driver's name, or ""
+  /** The project's default browser on this computer — a browser kind or a driver's name, or ""
    *  to go back to what the project recommends. Saved on this instance, never in the project. */
   async setBrowser(browser: SessionBrowser): Promise<{ browser: SessionBrowser }> {
     return this.post<{ browser: SessionBrowser }>('set-browser', { browser });
+  }
+
+  /** One session's own browser (a kind or a driver's name); it applies at the session's next launch. */
+  async selectBrowser(processId: string, browser: SessionBrowser): Promise<{ browser: SessionBrowser }> {
+    return this.post<{ browser: SessionBrowser }>('select-browser', { process_id: processId, browser });
+  }
+
+  /** Bring a browser kind's window up on this computer. */
+  async openBrowser(kind: string): Promise<{ kind: string; opened: boolean }> {
+    return this.post<{ kind: string; opened: boolean }>('browser-open', { kind });
+  }
+
+  /** What a person calls a browser kind on this computer; "" goes back to its profile's name. */
+  async renameBrowser(kind: string, name: string): Promise<{ kind: string; name: string }> {
+    return this.post<{ kind: string; name: string }>('browser-name', { kind, name });
+  }
+
+  /** Take a browser kind off this computer's list, or put it back. Nothing is uninstalled. */
+  async hideBrowser(kind: string, hidden: boolean): Promise<{ kind: string; hidden: boolean }> {
+    return this.post<{ kind: string; hidden: boolean }>('browser-hidden', { kind, hidden });
   }
 
   /** The project's browser, what is available, and — for a session — what it resolves to

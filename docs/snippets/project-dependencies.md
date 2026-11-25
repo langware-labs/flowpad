@@ -106,6 +106,14 @@ states = await site.resolve_dependencies()   # fetch what is missing, link it, i
 | `not_installed` | optional, not installed |
 | `invalid` | the declaration is wrong (`reason` says how), or a dependency's `file:` source, which is never followed |
 
+The index follows the checkout. Resolving — which opening the project does, and `update=True`
+does after its pull — indexes a dependency again when its git commit is no longer the one it
+was last indexed at, whoever moved it (a `git pull` you ran in the folder counts). What the
+new commit added or changed shows up; a record whose file left the dependency's folder leaves
+the index. A checkout that did not move is not walked. A git checkout is only read: no id is
+written into its files, so indexing never makes its next pull refuse. A `file:` folder outside
+git is yours to mint ids in; it has no commit to compare, so it is indexed when it is linked.
+
 A required dependency that is not `ready` is a warning when the project opens (`await
 site.dependency_warnings()`), counted by the project's setup readiness, and fetched by its
 setup wizard. `site.dismiss_dependency_warning(name)` silences it until Flowpad restarts.

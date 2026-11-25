@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Conversation, FlowMessage, Task, TypeId } from '@sdk';
-import { buildContextEntityLines, buildConversationStatusPrompt, buildMessageStartPrompt } from '@src/components/conversation/prompt-building';
+import {
+  buildContextEntityLines,
+  buildConversationStatusPrompt,
+  buildMessageStartPrompt,
+  withLiveSessionNote,
+} from '@src/components/conversation/prompt-building';
 
 describe('buildConversationStatusPrompt', () => {
   it('asks the worker to read THIS conversation and report its latest status', () => {
@@ -43,5 +48,23 @@ describe('buildContextEntityLines', () => {
     const [line] = buildContextEntityLines([tid]);
     expect(line).toContain(tid.toUrlString());
     expect(line).not.toContain('flow conversation');
+  });
+});
+
+describe('withLiveSessionNote', () => {
+  const sessionId = '0295afcb-509a-4468-ae67-0d37a06245e5';
+
+  it('adds one line naming the session, what its host approved, and the skill', () => {
+    const note = { hostName: 'Shani Shuber', sessionId, approvedKinds: ['prompt', 'command', 'control'] };
+    expect(withLiveSessionNote('Read it first.', note)).toBe(
+      'Read it first.\n\nNote: a live session with Shani Shuber is active (session 0295afcb, approved: prompts, ' +
+        'commands, Flowpad control). Use the `live-session-helper` skill to work through it.',
+    );
+  });
+
+  it('says a session still awaits approval, and adds nothing when there is none', () => {
+    const waiting = withLiveSessionNote('Read it first.', { hostName: 'Shani Shuber', sessionId, approvedKinds: null });
+    expect(waiting).toContain('is awaiting approval (session 0295afcb)');
+    expect(withLiveSessionNote('Read it first.', null)).toBe('Read it first.');
   });
 });

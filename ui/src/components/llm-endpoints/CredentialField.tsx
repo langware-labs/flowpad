@@ -16,7 +16,7 @@
  * key pasted for the wrong provider stores without complaint, and only the model probe notices,
  * much later and in different words ("no model is available through this endpoint").
  */
-import { llmEndpointsService, type LLMCredentialTestResult } from '@sdk';
+import type { LLMCredentialTestResult } from '@sdk';
 import { useLingui as useLinguiCore } from '@lingui/react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertCircle, Check, Loader2, Trash2, Upload } from 'lucide-react';
@@ -30,6 +30,7 @@ import { Label } from '@src/components/ui/label';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
+import { useEndpointFamily } from './endpoint-family';
 import { keyShapeProblem } from './endpoint-catalog';
 import { TONE } from './tone';
 
@@ -61,6 +62,7 @@ export function CredentialField({
 }: CredentialFieldProps) {
   const { t } = useLingui();
   const { i18n } = useLinguiCore();
+  const { service } = useEndpointFamily();
   const [busy, setBusy] = useState<'save' | 'test' | 'delete' | null>(null);
   const [verdict, setVerdict] = useState<LLMCredentialTestResult | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -115,7 +117,7 @@ export function CredentialField({
     }
     setBusy('save');
     try {
-      const res = await llmEndpointsService.setCredential(endpointId, key);
+      const res = await service.setCredential(endpointId, key);
       onChange('');
       setVerdict(null);
       onStored?.(res.credential_hint);
@@ -133,7 +135,7 @@ export function CredentialField({
     try {
       // A typed-but-unsaved key is tested WITHOUT being stored; otherwise the
       // stored one is tested.
-      const res = await llmEndpointsService.testCredential(endpointId, currentKey() || undefined);
+      const res = await service.testCredential(endpointId, currentKey() || undefined);
       setVerdict(res);
     } catch (e) {
       setVerdict({ valid: false, status: 0, models_count: 0, message: errorMessage(e, t`Test failed`) });
@@ -146,7 +148,7 @@ export function CredentialField({
     if (!endpointId) return;
     setBusy('delete');
     try {
-      await llmEndpointsService.deleteCredential(endpointId);
+      await service.deleteCredential(endpointId);
       setVerdict(null);
       onStored?.('');
       notify.success({ title: t`Key removed` });

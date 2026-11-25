@@ -64,6 +64,7 @@ class LaunchErrorCode(StrEnum):
     SIGNED_OUT = "signed_out"  # NOT_AUTHENTICATED is its legacy alias
     KEY_REJECTED = "key_rejected"
     BUDGET_NOT_READY = "budget_not_ready"
+    BUDGET_USED = "budget_used"
     CLI_CRASHED = "cli_crashed"
     PINNED_SOURCE_UNAVAILABLE = "pinned_source_unavailable"
     CLI_OUTDATED = "cli_outdated"
@@ -73,8 +74,10 @@ class LaunchErrorCode(StrEnum):
 CODE_TABLE = {c: ("transient_error" if f in ("wait", "retry") else "config_error", f) for c, f in (
     ("folder_not_trusted", "trust_folder"), ("first_run_setup", "finish_setup"), ("bypass_warning", "accept_bypass"),
     ("signed_out", "connect"), ("not_authenticated", "connect"), ("key_rejected", "replace_key"), ("budget_not_ready", "wait"),
-    ("not_installed", "install"), ("cli_crashed", "reinstall"), ("pinned_source_unavailable", "ask_owner"),
+    ("budget_used", "upgrade"), ("not_installed", "install"), ("cli_crashed", "reinstall"), ("pinned_source_unavailable", "ask_owner"),
     ("cli_outdated", "reinstall"), ("model_unavailable", "ask_owner"), ("unknown", "retry"))}
+#: A source that DID fund the harness and stopped names the fix, whatever refusal ranks above it.
+WINNING_REFUSALS = ("key_rejected", "budget_used")
 SERVER_FIXES = ("trust_folder", "finish_setup", "accept_bypass")  # done by the driver's apply_launch_fix
 BLOCKING_CODES = {code for code, (_, fix) in CODE_TABLE.items() if fix in SERVER_FIXES}  # prompts on screen
 CLI_CRASHES: dict[str, str] = {}  # worker_type → stderr of a CLI the last login probe saw crash
@@ -197,8 +200,8 @@ class LaunchError(Exception):
             return cls.config(LaunchErrorCode.NOT_INSTALLED, text, worker_type)
         if name == "LLMSourceError":  # the top refusal names the card; a rejected key outranks it
             codes = [getattr(src, "reason_code", "") for src in getattr(exc, "sources", [])]
-            refusal = "budget_not_ready" if getattr(exc, "budget_not_ready", False) else (
-                "key_rejected" if "key_rejected" in codes else next((c for c in codes if c), ""))
+            won = next((w for w in WINNING_REFUSALS if w in codes), None) or next((c for c in codes if c), "")
+            refusal = "budget_not_ready" if getattr(exc, "budget_not_ready", False) else won
             return cls.of(code_for_refusal(refusal), text, worker_type)
         return cls.transient(LaunchErrorCode.UNKNOWN, text or name, worker_type)
 

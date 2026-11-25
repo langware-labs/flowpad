@@ -223,6 +223,48 @@ async def test_dispatch_discard_missing_file():
     assert result.status_code == 400
 
 
+async def test_dispatch_discard_all_reverts_then_cleans(tmp_path):
+    """Real git: tracked edits, a deletion, a staged new file and an untracked folder all go; ignored stays."""
+    import subprocess
+
+    from tests.unit.conftest import LocalNode
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@local.test")
+    git("config", "user.name", "t")
+    (tmp_path / "kept.txt").write_text("v1")
+    (tmp_path / "gone.txt").write_text("v1")
+    (tmp_path / ".gitignore").write_text("ignored.txt\n")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    (tmp_path / "kept.txt").write_text("v2")
+    (tmp_path / "gone.txt").unlink()
+    (tmp_path / "staged.txt").write_text("new")
+    git("add", "staged.txt")
+    (tmp_path / "new_dir").mkdir()
+    (tmp_path / "new_dir" / "a.txt").write_text("new")
+    (tmp_path / "ignored.txt").write_text("mine")
+
+    repo = GitRepo(str(tmp_path), LocalNode())
+    result = await repo.dispatch("discard-all", {}, method="POST")
+
+    assert result.data["ok"] is True, result.data
+    assert (tmp_path / "kept.txt").read_text() == "v1"
+    assert (tmp_path / "gone.txt").read_text() == "v1"
+    assert not (tmp_path / "staged.txt").exists()
+    assert not (tmp_path / "new_dir").exists()
+    assert (tmp_path / "ignored.txt").read_text() == "mine"
+
+
+async def test_dispatch_discard_all_requires_post():
+    result = await make_repo([]).dispatch("discard-all", {}, method="GET")
+    assert result.status == "FAIL"
+    assert result.status_code == 405
+
+
 async def test_dispatch_stage_file():
     result = await make_repo([make_cmd("")]).dispatch("stage-file", {"file": "a.txt"}, method="POST")
     assert result.status == "SUCCESS"

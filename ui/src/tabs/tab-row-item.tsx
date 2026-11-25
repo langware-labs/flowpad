@@ -334,6 +334,14 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
         if (key === currentDock?.tabHash && activeAssetTitle) {
           item.title = activeAssetTitle;
         }
+        // A view that folds several screens into one chip is named by the screen on show (the
+        // endpoints view: LLM or Cloud APIs). A chip that carries another name (one the user gave) keeps it.
+        // Matched by view, not by key: such a view has one chip, and a hub page spells its key differently.
+        if (currentDock?.viewType && tab.dockPointer?.viewType === currentDock.viewType) {
+          const base = viewerTitle(currentDock.viewType);
+          const shown = viewerTitle(currentDock.viewType, currentDock.pointer);
+          if (shown && shown !== base && item.title === base) item.title = shown;
+        }
         // The ACTIVE Assets tab follows the asset on screen: its icon, tooltip and card.
         if (key === currentDock?.tabHash && currentDock.viewType === ViewType.ASSETS) {
           const remote = focusEntity?.remote ?? tab.target_remote;

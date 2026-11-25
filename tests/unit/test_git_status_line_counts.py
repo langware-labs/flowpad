@@ -235,3 +235,19 @@ async def test_commit_review_invalid_revision_is_an_error(repo: Path, revision: 
     for subpath in ('status', 'diff'):
         result = await git.dispatch(subpath, {'revision': revision, 'file': 'tracked.txt'})
         assert result.status != 'SUCCESS'
+
+
+@pytest.mark.parametrize('name', ['AI video generation.md', 'שלום.md'])
+async def test_a_new_file_git_quotes_is_listed_by_its_real_path_and_removed(repo: Path, name: str):
+    """git quotes a path with a space or a non-ASCII letter; the panel must get
+    the path on disk, or Remove names a file that is not there."""
+    (repo / 'reports').mkdir()
+    new = repo / 'reports' / name
+    new.write_text('1\n2\n')
+    git = GitRepo(str(repo), LocalNode())
+
+    [entry] = (await git.get_status(line_counts=True)).files
+    assert (entry.path, entry.status, entry.insertions) == (f'reports/{name}', '?', 2)
+
+    assert (await git.discard_file(entry.path, entry.status)).ok
+    assert not new.exists()

@@ -72,6 +72,40 @@ throws (read `e.response?.data?.message`, or `sdk.errorText(e)`). It sends the p
 | talk to the parent | `sdk.postToHost({type, …})`, `sdk.onHostMessage(type, fn)` — no secrets in a host message |
 | query options the dock passed | `sdk.appOption(name)` |
 
+## Nano-app — one `.html` file with slots
+
+A nano-app is a page that says what it is and can be shown in three sizes. The file carries its manifest and its
+slots; the host asks for one with `?slot=`:
+
+```html
+<script type="application/json" id="nano-app">{"name": "review", "title": "Review", "input": "crm.lead"}</script>
+<template data-slot="header">{{status}} · {{summary}}</template>   <!-- one line of TEXT, filled by the backend; no scripts -->
+<template data-slot="block">…</template>                           <!-- inside a message or a section -->
+<main data-slot="page">…</main>                                     <!-- a tab: the default, and what a bare browser shows -->
+<script type="module">
+  // Served by Flowpad there is no `api`, so this is `/sdk/…`; as a file in a browser its opener names the backend.
+  const sdk = await import((new URLSearchParams(location.search).get('api') ?? '') + '/sdk/flowpad-sdk.js');
+  const app = await sdk.nano.start();   // theme, the slot mounted, initSdk, its data read, its height reported
+  app.slot;                             // 'block' | 'page'
+  app.input;                            // {kind, value}: what the message its STATE KEY names carries for it, or null
+  app.saved;                            // what the app saved on an earlier visit, or null
+  await app.save({rejected: [...]});    // keep plain JSON on that message: a reload and the other slot read it
+  app.open('page');                     // ask the host for the full page
+</script>
+```
+
+**The state key is the one thing an opener hands the app** (`?state=<key>`, SKILL.md §4). The key names the
+message that carries the app, and `app.input` / `app.saved` come from the backend through it — never a path in
+the address, never a file the app looks for. So the same file opens in a message, in a tab, and as a plain
+`file:///…/app.html?state=<key>&api=<backend origin>` in a browser ("Open in browser" builds that address).
+Decisions a person makes in the app go through `app.save`, not page memory; work on Flowpad's data goes through
+the SDK (`dataManager`, an entity's action).
+
+`sdk.nano.start()` replaces `applyHostTheme()` + `initSdk()` — call it once, first. Write each slot as a whole:
+the block's markup lives in its `<template>`, so query it only after `start()`. Keep the block short (the host
+caps its height and it scrolls inside). Python reads the same file: `read_nano_app(html)`, `render_header(html, data)`
+(`flow_sdk.schema.data_spec.nano_app_spec`).
+
 ## Dev server
 
 A Vite dev server proxies `/api` and `/sdk` to the backend, so the same imports work. Never replace the proxy with

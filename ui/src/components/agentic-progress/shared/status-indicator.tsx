@@ -161,6 +161,14 @@ export const workerStatusConfig: Record<WorkerStatus, StatusConfig> = {
     bgColor: 'bg-sky-100 dark:bg-sky-900/30',
     label: WORKER_STATUS_LABEL[WorkerStatus.PENDING_USER],
   },
+  [WorkerStatus.BACKGROUND_WORK]: {
+    icon: Hourglass,
+    color: 'text-amber-500',
+    bgColor: 'bg-amber-100 dark:bg-amber-900/30',
+    label: WORKER_STATUS_LABEL[WorkerStatus.BACKGROUND_WORK],
+    // Not animated: every animated status draws as the one "working" spinner in a
+    // list row, and this must not read as a turn in flight.
+  },
   [WorkerStatus.ERROR]: {
     icon: AlertCircle,
     color: 'text-red-500',

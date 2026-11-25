@@ -16,9 +16,9 @@ from typing import Any, Optional
 
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.conversation_channel import AUTOMATIONS
-from flow_sdk.builtin.flow_message import CARD_FILE, FlowMessageKind
+from flow_sdk.builtin.flow_message import APP_FILE, CARD_FILE, FlowMessageKind
 from flow_sdk.responses.response import ApiSuccessResponse
-from flow_sdk.schema.data_spec.automation_spec import AutomationRef, AutomationResult
+from flow_sdk.schema.data_spec.automation_spec import AutomationRef, AutomationResult, AutomationResultStatus
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +56,11 @@ async def post_message(
     files: Optional[dict[str, bytes]] = None,
     asset_references: Optional[list[str]] = None,
     private: bool = False,
+    app: Any = None,
 ) -> Optional[str]:
     """Write Flowpad's message into the conversation and raise its arrival; the new message's id.
-    ``private``: a private message -- this machine's user reads it there and shares or dismisses it."""
+    ``private``: a private message -- this machine's user reads it there and shares or dismisses it.
+    ``app``: an app message's ``MessageAppSpec``, written with the row."""
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
     from flow_sdk.notifications import notify_message_arrival  # noqa: PLC0415
 
@@ -72,7 +74,7 @@ async def post_message(
         body.update(private=True, sender_name=sender_name)
     if asset_references:
         body["asset_references"] = list(asset_references)
-    added = await handle_add_message(body, someone)
+    added = await handle_add_message(body, someone, app=app)
     message_id = (added.data or {}).get("id") if isinstance(added, ApiSuccessResponse) else None
     if message_id:
         await notify_message_arrival(conversation_id, message_id, sender_name=sender_name, text=text)
@@ -81,14 +83,28 @@ async def post_message(
 
 async def automation_conversation(automation: AutomationRef, someone: str) -> Conversation:
     """The automation's own conversation on the Automations channel -- found by its trigger, or written."""
-    key = f"trigger-{automation.trigger_id}"
-    found = await Conversation.get_one({"channel": AUTOMATIONS.name, "channel_source_id": key})
+    found = await find_automation_conversation(automation.trigger_id)
     if found is not None:
         return found
     conv = Conversation(title=automation.name or "Automation")
     conv.channel = AUTOMATIONS.name
-    conv.channel_source_id = key
+    conv.channel_source_id = f"trigger-{automation.trigger_id}"
     return await conv.save(someone)
+
+
+async def find_automation_conversation(trigger_id: str) -> Optional[Conversation]:
+    """The automation's conversation when it has one; a lookup, nothing is written."""
+    return await Conversation.get_one({"channel": AUTOMATIONS.name, "channel_source_id": f"trigger-{trigger_id}"})
+
+
+async def set_app_status(message_id: str, status: AutomationResultStatus) -> None:
+    """Where an app message's work stands now (its chip). Read fresh and saved: the row's update is its notice."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    message = await FlowMessage.get_by_id(message_id)
+    if message is not None and message.app is not None and message.app.status != status:
+        message.app = message.app.model_copy(update={"status": status})
+        await message.save()
 
 
 async def post_automation_result(automation: AutomationRef, result: AutomationResult, value: Any = None, *,
@@ -110,6 +126,28 @@ async def post_automation_result(automation: AutomationRef, result: AutomationRe
         files={CARD_FILE: value_json(result),
                **({f"{value.spec_kind}.value.json": value_json(value)} if value is not None else {})},
         asset_references=asset_references,
+    )
+
+
+async def post_app_message(automation: AutomationRef, html: str, value: Any, *,
+                           status: Optional[AutomationResultStatus] = None, data: Optional[dict] = None) -> Optional[str]:
+    """Post an APP MESSAGE into the automation's conversation: the nano-app ``html`` (``app.html``) and the
+    ``value`` it opens on (``<kind>.value.json``). The conversation draws the app's block slot in the bubble;
+    its ``app.header`` -- and its text -- is the app's header slot filled from ``data``, ``app.status`` where
+    the work stands, so a list row and the arrival notice read right with no frame. Answers the message id."""
+    from flow_sdk.schema.data_spec.message_app_spec import MessageAppSpec  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.nano_app_spec import read_nano_app, render_header  # noqa: PLC0415
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+    if read_nano_app(html) is None:
+        raise ValueError("an app message carries a nano-app: the page has no nano-app manifest")
+    header = render_header(html, data or {})
+    someone = (await get_or_create_local_user()).typeid
+    conv = await automation_conversation(automation, someone)
+    return await post_message(
+        conv.id, header, kind=FlowMessageKind.AUTOMATION_RESULT, sender_name=automation.name or "Automation",
+        someone=someone, files={APP_FILE: html.encode("utf-8"), f"{value.spec_kind}.value.json": value_json(value)},
+        app=MessageAppSpec(status=status, header=header),
     )
 
 

@@ -46,6 +46,8 @@ describe('editorForPath', () => {
     // archive — browsed as its extracted folder, never as text
     ['/tmp/flowpad-logs.zip', AssetEditor.ARCHIVE],
     ['/tmp/LOGS.ZIP', AssetEditor.ARCHIVE],
+    // calendar invite — its events, never raw text
+    ['/tmp/invite.ics', AssetEditor.ICS],
     // one value of a kind — its kind's data viewer; a plain .json stays code
     ['/tmp/diagnosis.value.json', AssetEditor.VALUE],
     ['/p/agentic-assets/value/eval.run-1a2b/value.json', AssetEditor.VALUE],

@@ -180,6 +180,10 @@ class IndexerOptions:
     # global so `seen_ids` reflects all references; callers wiring scope-aware
     # cleanup pass `roots=None` together with this filter.
     scope_filter: ScopeFilter | None = None
+    # When set, only orphans whose declared source lies under one of these folders
+    # are reported and acted on — a walk of one folder that cleans up after itself
+    # and nothing else (a dependency re-indexed after its checkout moved).
+    orphan_roots: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -542,18 +546,27 @@ def _source_gone_orphans(
     def gone(source: str) -> bool:
         return source_gone(source) or (Path(source).is_absolute() and flowignore.excludes(source))
 
-    def _declared_source(eid: str) -> str:
-        row = db_rows.get(eid)
-        if row:
-            return str(row[0] or "")
-        return str((_read_disk_metadata(type_name, eid) or {}).get("asset_ref") or "")
-
     return {
         eid
         for eid in candidates
         # An unreachable root is not a deletion — see ``source_gone``.
-        if gone(_declared_source(eid))
+        if gone(_declared_source(type_name, eid, db_rows))
     }
+
+
+def _declared_source(type_name: str, eid: str, db_rows: dict[str, tuple]) -> str:
+    """The source a record declares (asset_ref): from its row, else its record home's metadata.json."""
+    row = db_rows.get(eid)
+    if row:
+        return str(row[0] or "")
+    return str((_read_disk_metadata(type_name, eid) or {}).get("asset_ref") or "")
+
+
+def _under_roots(type_name: str, candidates: set[str], db_rows: dict[str, tuple], roots: tuple[str, ...]) -> set[str]:
+    """The candidates whose declared source lies under ``roots`` (``IndexerOptions.orphan_roots``)."""
+    from flow_sdk.server.search_filters import under_dependency_root  # noqa: PLC0415
+
+    return {eid for eid in candidates if under_dependency_root(_declared_source(type_name, eid, db_rows), roots)}
 
 
 def _scope_filtered_orphans(
@@ -987,7 +1000,12 @@ class FSIndexer:
                     # ``existing_db_ids`` is the pre-loaded id set per type;
                     # empty means it couldn't be enumerated → sentinel-only.
                     row_present = not existing_db_ids or ref_id in existing_db_ids.get(str(ref.record_type), ())
-                    fresh = bool(ref_id) and not opts.force and not probe.index_required and row_present
+                    fresh = (
+                        bool(ref_id)
+                        and not opts.force
+                        and row_present
+                        and (not probe.index_required or probe.restamp_if_reinstalled())
+                    )
                 except Exception as e:
                     logging.warning(
                         "[FSIndexer] identity probe failed for %s (%s): %r",
@@ -1385,11 +1403,15 @@ class FSIndexer:
             # Unseen is only a candidate; ``_source_gone_orphans`` keeps the
             # ones whose declared source is gone (strict orphan definition).
             # Stat-per-candidate work — off the loop with the other disk probes.
+            candidates = (disk_ids | db_rows.keys()) - seen
+            if opts.orphan_roots:
+                # Narrowed first: the stat below then touches only what lies under those folders.
+                candidates = await asyncio.to_thread(_under_roots, type_name, candidates, db_rows, opts.orphan_roots)
             missing = sorted(
                 await asyncio.to_thread(
                     _source_gone_orphans,
                     type_name,
-                    (disk_ids | db_rows.keys()) - seen,
+                    candidates,
                     db_rows,
                 )
             )

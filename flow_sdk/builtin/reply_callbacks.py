@@ -94,6 +94,10 @@ def _answers(asked: Any, fm: Any, written: set[str]) -> bool:
 
     if fm is None or str(fm.id) == str(asked.id) or fm.conversation_id != asked.conversation_id:
         return False
+    # A live session's own lines ("X approved the live session") are posted as the person, but
+    # they are the session speaking: a wait for the answer must not be used up by one.
+    if str(getattr(fm, "kind", "") or "") == "session_event":
+        return False
     when, asked_at = iso_to_utc(fm.occurred_at), iso_to_utc(asked.occurred_at)
     if when is not None and asked_at is not None and when < asked_at:
         return False

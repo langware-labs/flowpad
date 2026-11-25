@@ -83,6 +83,8 @@ export enum LLMSourceRefusal {
   KeyRejected = 'key_rejected',
   CliCrashed = 'cli_crashed',
   BudgetNotReady = 'budget_not_ready',
+  /** The hub refused a turn: this budget is spent. Cleared when the hub reports money left. */
+  BudgetUsed = 'budget_used',
 }
 
 /** What a person can DO about a refusal — one table, so every surface offers the same fix. */

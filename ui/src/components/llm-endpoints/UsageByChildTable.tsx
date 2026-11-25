@@ -11,6 +11,7 @@ import { useMemo } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { formatValue } from '@src/components/cost-dashboard/constants';
 
+import { useEndpointFamily } from './endpoint-family';
 import { UsageChildRow } from './UsageRows';
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 import { childLabel, formatUsd } from './usage-math';
@@ -27,6 +28,7 @@ export interface UsageByChildTableProps {
 
 export function UsageByChildTable({ by, breakdown, names, all }: UsageByChildTableProps) {
   const { t } = useLingui();
+  const family = useEndpointFamily();
   const lookup = useMemo(() => {
     const byId = new Map(all.map((e) => [e.id, e.name]));
     return (id: string) => byId.get(id);
@@ -43,7 +45,7 @@ export function UsageByChildTable({ by, breakdown, names, all }: UsageByChildTab
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>{by === 'child' ? t`Via` : t`Model`}</TableHead>
+            <TableHead>{by === 'child' ? t`Via` : by === 'model' ? t`Model` : t`Caller`}</TableHead>
             <TableHead className="text-end">
               <Trans>Requests</Trans>
             </TableHead>
@@ -51,11 +53,13 @@ export function UsageByChildTable({ by, breakdown, names, all }: UsageByChildTab
               <Trans>Errors</Trans>
             </TableHead>
             <TableHead className="text-end">
-              <Trans>Fallbacks</Trans>
+              {family.llm ? <Trans>Fallbacks</Trans> : <Trans>Refused</Trans>}
             </TableHead>
-            <TableHead className="text-end">
-              <Trans>Tokens</Trans>
-            </TableHead>
+            {family.llm && (
+              <TableHead className="text-end">
+                <Trans>Tokens</Trans>
+              </TableHead>
+            )}
             <TableHead className="text-end">
               <Trans>Cost</Trans>
             </TableHead>
@@ -64,7 +68,7 @@ export function UsageByChildTable({ by, breakdown, names, all }: UsageByChildTab
         <TableBody>
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+              <TableCell colSpan={family.llm ? 6 : 5} className="py-6 text-center text-sm text-muted-foreground">
                 <Trans>No usage in this period.</Trans>
               </TableCell>
             </TableRow>
@@ -78,13 +82,11 @@ export function UsageByChildTable({ by, breakdown, names, all }: UsageByChildTab
                 id={isChild ? endpointIdFromTypeId(dim) : null}
                 label={isChild ? childLabel(dim, names, lookup) : dim || t`direct`}
                 testId={`usage-row-${dim || 'direct'}`}
-                values={[
-                  c.requests,
-                  c.errors,
-                  c.fallbacks,
-                  formatValue(c.total_tokens, 'tokens'),
-                  formatUsd(c.cost_usd),
-                ]}
+                values={
+                  family.llm
+                    ? [c.requests, c.errors, c.fallbacks, formatValue(c.total_tokens, 'tokens'), formatUsd(c.cost_usd)]
+                    : [c.requests, c.errors, c.refusals ?? 0, formatUsd(c.cost_usd)]
+                }
               />
             );
           })}

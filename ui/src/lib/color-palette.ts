@@ -97,12 +97,3 @@ export const ENTITY_COLOR_PALETTE: readonly PaletteSwatch[] = [
   { token: 'rose', hex: '#e11d48' },
   { token: 'slate', hex: '#64748b' },
 ] as const;
-
-/** The palette's colours a set of things does not use yet (all of them once every one is taken), ordered so
- *  that consecutive picks are far apart: the palette runs round the hue wheel, where neighbours look alike. */
-export function unusedPaletteColors(taken: Iterable<string | null | undefined>): string[] {
-  const used = new Set([...taken].map((hex) => hex?.toLowerCase()));
-  const spread = ENTITY_COLOR_PALETTE.map((_, i, all) => all[(i * 5) % all.length].hex);
-  const free = spread.filter((hex) => !used.has(hex));
-  return free.length ? free : spread;
-}

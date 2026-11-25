@@ -835,7 +835,7 @@ class ScanActionsMixin:
             )
             if resume_session_id and not fork_session:
                 process.session_id = resume_session_id
-            process.enable_pending_question_hook()
+            process.enable_worker_report_hooks()
             # Stamp provenance links before save so they ride the same write.
             # Invalid / unparseable typeids are skipped — a bad provenance hint
             # must never block a launch.

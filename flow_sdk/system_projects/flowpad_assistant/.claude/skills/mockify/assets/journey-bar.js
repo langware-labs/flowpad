@@ -2,6 +2,7 @@
  * Contract (what the page defines, the data it reads and writes, the controls): journey-bar.md. */
 (() => {
   const CFG = window.MOCKIFY || {};
+  const GUIDE = !!CFG.guide;   // a guide someone follows: the guide bar, no reviewer tools, no Flowpad data
   const store = {
     get(k) { try { return JSON.parse(sessionStorage.getItem('mockify:' + k)); } catch { return null; } },
     set(k, v) { try { sessionStorage.setItem('mockify:' + k, JSON.stringify(v)); } catch { /* no storage here */ } },
@@ -16,6 +17,9 @@
     @keyframes mk-glow{50%{box-shadow:0 0 0 3px color-mix(in srgb,var(--mk-hint,#8b5cf6) 20%,transparent)}}
     @media (prefers-reduced-motion:reduce){.mk-next{animation:none}}
     [data-dead]{opacity:.55;cursor:not-allowed!important}
+    .mk-callout[hidden]{display:none}
+    .mk-callout{position:fixed;z-index:2147483644;pointer-events:none;display:inline-flex;align-items:center;gap:8px;background:#6d28d9;color:#fff;font:600 13px/1.2 system-ui,sans-serif;padding:5px 12px 5px 5px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.55);white-space:nowrap}
+    .mk-callout b{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#fff;color:#6d28d9;font-size:12px}
     .mk-pick{outline:2px solid #6d28d9!important;outline-offset:2px!important}
     html.mk-picking,html.mk-picking *{cursor:crosshair!important}
     [data-change].mk-off{display:none!important}
@@ -184,6 +188,9 @@
     .grip { cursor: grab; padding: 0 4px; color: var(--mk-muted); user-select: none; touch-action: none; font-size: 14px; }
     .grip:active { cursor: grabbing; }
     .scope { color: var(--mk-accent); }
+    .guide .scope, .guide .restart, .guide .chg, .guide .sep, .guide .execute, .guide .next:disabled { display: none; }   /* the last step has no Next */
+    .guide .where { flex: 0 1 auto; width: auto; max-width: 520px; } .guide .step { max-width: none; }
+    .skip { color: var(--mk-accent); font-weight: 600; font-size: 12px; text-decoration: underline; padding: 0 6px; }
     .scope.on { background: var(--mk-accent); color: var(--mk-accent-fg); }
     .anchor { display: flex; gap: 8px; align-items: center; margin: 6px 0 8px; padding: 6px 8px; border-radius: 8px; background: var(--mk-soft); }
     .anchor b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -291,6 +298,7 @@
     <button class="nav back hide-min" title="Previous screen (←)" aria-label="Back">‹ <span class="lbl">Back</span></button>
     <button class="nav next hide-min" title="Next screen (→)" aria-label="Next"><span class="lbl">Next</span> ›</button>
     <div class="where"><span class="step"></span><span class="n"></span></div>
+    <button class="skip hide-min" hidden title="This step does not apply — go past it"></button>
     <span class="chg hide-min" hidden><button class="cnt" title="Go to the next change on this screen"></button><span class="sw"><button class="sw-d on" title="Today (red) and the suggestion (green), side by side">Diff</button><button class="sw-t" title="The screen as it is today">Today</button><button class="sw-a" title="Only the suggestion">After</button></span></span>
     <span class="sep hide-min"></span>
     <button class="ico steps hide-min" title="All screens" aria-label="All screens">☰</button>
@@ -302,6 +310,7 @@
 
   const $ = (s) => root.querySelector(s);
   const bar = $('.bar'), panel = $('.panel');
+  bar.classList.toggle('guide', GUIDE);
 
   // ── next-step hints: which controls on this screen move the journey, and which one goes onward ──
   // A control names where it leads with data-next="<step id>"; the one leading onward glows, the rest ring.
@@ -327,6 +336,25 @@
     });
     if (onward && !marked.some((el) => el.classList.contains('mk-next'))) $('.next').classList.add('hint');
   }
+  // ── guide: the instruction sits beside the control to press, and a step that may not apply can be passed ──
+  const skipTo = (i) => (J[i]?.skip ? J.slice(i + 1).find((x) => !x.skip) || null : null);
+  $('.skip').onclick = () => { const past = skipTo(cur); if (past) mock.go(past.id); };
+  const callout = Object.assign(document.createElement('div'), { className: 'mk-callout', hidden: true });
+  callout.setAttribute('data-mockify', '');
+  if (GUIDE) document.body.append(callout);
+  function drawCallout() {
+    if (!GUIDE) return;
+    const el = marked.find((e) => e.classList.contains('mk-next')), s = J[cur];
+    callout.hidden = !el || !s?.do || bar.classList.contains('min');
+    if (callout.hidden) return;
+    callout.innerHTML = `<b>${cur + 1}</b>${esc(s.do)}`;
+    const r = el.getBoundingClientRect(), w = callout.offsetWidth, h = callout.offsetHeight, gap = 10;
+    // beside the control, on the side that has room; a control as wide as the screen gets it just above
+    const side = r.right + gap + w <= innerWidth - 8 ? r.right + gap : r.left - gap - w >= 8 ? r.left - gap - w : null;
+    const x = side ?? Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+    const y = side === null ? (r.top - h - gap >= 8 ? r.top - h - gap : r.bottom + gap) : r.top + r.height / 2 - h / 2;
+    callout.style.left = `${x}px`; callout.style.top = `${Math.max(8, y)}px`;
+  }
   // data-next works on its own: a click on such a control moves the journey (no onclick needed).
   // Any other control on a screen is not part of the mock: say so where it was clicked, never a silent no-op.
   // Every app script is stripped, so nothing on a screen is live: anything that LOOKS clickable is inert.
@@ -342,7 +370,7 @@
     const r = el.getBoundingClientRect();
     tip = document.createElement('div');
     tip.setAttribute('data-mockify', '');
-    tip.textContent = 'Not part of this mock';
+    tip.textContent = GUIDE ? 'Not part of this guide' : 'Not part of this mock';
     tip.style.cssText = `position:fixed;z-index:2147483646;left:${Math.max(4, r.left)}px;top:${Math.max(4, r.bottom + 6)}px;`
       + 'background:#111827;color:#f9fafb;font:500 12px system-ui;padding:4px 8px;border-radius:6px;pointer-events:none';
     document.body.append(tip);
@@ -409,10 +437,15 @@
     return { id, name: p?.name || '', label: p ? `👤 ${p.name} · ${p.role}` : '', device: DEV[s.device || m.device || CFG.device || 'desktop'] || s.device };
   }
   let lastWho = null;
-  function render() {
-    if (allMode && J[cur]) changesOf(J[cur]).forEach((c) => { if (!isRev(J[cur], c)) setRev(J[cur], c, true); });
-    if (!J.length) { $('.step').textContent = data.error || 'Loading the mock…'; $('.n').textContent = ''; return; }
-    const s = J[cur];
+  function guideWhere(s) {
+    // the reader's bar: what to do here, how far along, and the way past a step that may not apply
+    $('.step').textContent = s.do || s.title;
+    $('.n').innerHTML = `<span class="count">${cur + 1} of ${J.length}</span>`;
+    const past = skipTo(cur);
+    $('.skip').hidden = !past;
+    if (past) $('.skip').textContent = `${s.skip} Skip to ${find(past.id) + 1}`;
+  }
+  function reviewWhere(s) {
     $('.step').innerHTML = `<span class="stag ${isNew(s) ? 'new' : 'ex'}">${isNew(s) ? 'NEW' : 'EXISTING'}</span>` + esc((isBranch(s) ? '↳ ' : '') + s.title);
     const multi = multiApp();
     let on = -1; const cs = crumbs();
@@ -426,6 +459,12 @@
     $('.n').innerHTML = who + (multi ? `<span class="trail">${trail}</span><span class="count">·</span>` : '')
       + `<span class="count">${J.some(isBranch) ? `${s.num} · ` : ''}${cur + 1} of ${J.length}</span>`
       + (isApproved() ? `<span class="count" title="Approved ${esc((data.mock.input.approved_at || '').slice(0, 10))} — the mock is the contract">· ✓ approved</span>` : '');
+  }
+  function render() {
+    if (allMode && J[cur]) changesOf(J[cur]).forEach((c) => { if (!isRev(J[cur], c)) setRev(J[cur], c, true); });
+    if (!J.length) { $('.step').textContent = data.error || 'Loading the mock…'; $('.n').textContent = ''; return; }
+    const s = J[cur];
+    if (GUIDE) guideWhere(s); else reviewWhere(s);
     $('.back').disabled = !mock.canBack;
     $('.next').disabled = !mock.canNext;
     const nOpen = openRows().length;
@@ -435,6 +474,7 @@
     markHints();
     drawPins();
     drawChanges();
+    drawCallout();
   }
   function latestVote(st, c) {
     const r = data.rows.filter((x) => x.input.step === st.id && x.input.change === c.id).sort((a, b) => (a.input.created < b.input.created ? 1 : -1))[0];
@@ -465,7 +505,7 @@
     const tag = document.createElement('div');
     tag.className = 'mk-scr-tag ' + (isNew(st) ? 'new' : 'existing');
     tag.textContent = isNew(st) ? 'NEW SCREEN' : cs.length ? `EXISTING · ${cs.length} change${cs.length === 1 ? '' : 's'}` : 'EXISTING';
-    chPins.append(tag);
+    if (!GUIDE) chPins.append(tag);
     // the diff labels: "− n today" on what goes, "+ n <title>" on what comes — always shown, never stacked
     const placed = [];
     // a coloured circle (red = today, green = the suggestion) with the change's number; the words are its tooltip
@@ -581,7 +621,7 @@
     if (changesOf(J[cur]).some((c) => c.id === id)) setHot(id);
   });
   let pinQueued = false;
-  const pinsSoon = () => { if (pinQueued) return; pinQueued = true; requestAnimationFrame(() => { pinQueued = false; drawChanges(); }); };
+  const pinsSoon = () => { if (pinQueued) return; pinQueued = true; requestAnimationFrame(() => { pinQueued = false; drawChanges(); drawCallout(); }); };
   addEventListener('scroll', pinsSoon, true); addEventListener('resize', pinsSoon);
 
   function placePanel() {
@@ -590,7 +630,7 @@
     panel.style.cssText = r.left + 420 > innerWidth ? 'left:auto;right:0' : '';
   }
   // Every panel opens with the same toolbar: the screen's feedback, the review of what is sent, approving, saving to the repo.
-  const TOOLS = [['feedback', '💬 Feedback'], ['send', 'Review'], ['approve', '✓ Approve'], ['save', '💾 Save to repo']];
+  const TOOLS = GUIDE ? [] : [['feedback', '💬 Feedback'], ['send', 'Review'], ['approve', '✓ Approve'], ['save', '💾 Save to repo']];
   const head = () => '<button class="close" title="Close (Esc)" aria-label="Close">✕</button><div class="ptools">'
     + TOOLS.map(([p, l]) => `<button class="tb ptool${open === p ? ' on' : ''}" data-panel="${p}">${l}</button>`).join('') + '</div>';
   function renderPanel() {
@@ -857,6 +897,7 @@
 
   // ── data: the mock row and its feedback rows, through the Flowpad SDK ──
   async function boot() {
+    if (GUIDE) return finishBoot();   // one file, opened anywhere: nothing to read, nothing to save
     let sdk;
     try { sdk = await import('/sdk/flowpad-sdk.js'); } catch { sdk = null; }
     if (!sdk || !CFG.key) {
@@ -1161,7 +1202,7 @@
   // Back and Next never move: they sit before everything whose width changes, and the bar is held by its LEFT edge
   // (measured at its widest, so it still fits) — a centred or right-held bar would shift them with every screen.
   const pin = () => {
-    if (bar.classList.contains('min')) return;
+    if (GUIDE || bar.classList.contains('min')) return;   // a guide's bar changes width with every instruction: it keeps its place, not its left edge
     const chg = $('.chg'), was = chg.hidden;
     chg.hidden = false;
     const r = host.getBoundingClientRect(); place(r.left, r.top);

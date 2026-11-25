@@ -75,6 +75,19 @@ export interface IRemoteWorkerSession extends IEntity {
   prompt_limit?: number | null;
   /** Turns answered so far (host-authoritative). */
   prompts_used?: number;
+  /** `TurnKind`s the guest asked to run; null = prompts only. */
+  requested_turn_kinds?: string[] | null;
+  /** `TurnKind`s the host approved (host-authoritative); null = prompts only. */
+  turn_kinds?: string[] | null;
+}
+
+/** What one turn of a session runs on the host (mirror of `TurnKind` in remote_worker_session.py). */
+export const TURN_KINDS = ['prompt', 'command', 'control'] as const;
+export type TurnKind = (typeof TURN_KINDS)[number];
+
+/** The known kinds named in `value`, once each, in `TURN_KINDS` order. */
+function cleanTurnKinds(value: readonly string[] | null | undefined): TurnKind[] {
+  return TURN_KINDS.filter((k) => (value ?? []).includes(k));
 }
 
 @registerEntity
@@ -99,10 +112,24 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
   approved_via: string | null = null;
   prompt_limit: number | null = null;
   prompts_used: number = 0;
+  requested_turn_kinds: string[] | null = null;
+  turn_kinds: string[] | null = null;
 
   constructor(entity: Partial<IRemoteWorkerSession> = {}) {
     super(entity as IEntity);
     Object.assign(this, entity);
+  }
+
+  /** What the host may approve: what the guest asked for. A prompt request is its one prompt. */
+  get askableTurnKinds(): TurnKind[] {
+    const asked = this.prompt_limit != null ? [] : cleanTurnKinds(this.requested_turn_kinds);
+    return asked.length ? asked : ['prompt'];
+  }
+
+  /** What a turn of this session may be: the approved kinds, never more than was asked. */
+  get effectiveTurnKinds(): TurnKind[] {
+    const approved = cleanTurnKinds(this.turn_kinds);
+    return (approved.length ? approved : (['prompt'] as TurnKind[])).filter((k) => this.askableTurnKinds.includes(k));
   }
 
   /** True when `userId` is this session's host (the executor). */
@@ -158,15 +185,16 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
   }
 
   /** Host approves a PENDING session (this session only); queued prompts
-   *  re-drive server-side. `projectId` is
-   *  where the session runs — required when neither the session nor its
-   *  conversation has a project (a person-to-person chat has none by design);
-   *  without it the host refuses (409) and the session stays pending.
-   *  `scratch` is the host's "No project": the instance's one temp folder. */
-  public approve(projectId?: string, options: { scratch?: boolean } = {}): Promise<void> {
+   *  re-drive server-side. `projectId` is the project the host picked to run
+   *  in; `scratch` is the host's "No project": the instance's one temp folder.
+   *  With neither, the backend runs it in the session's or the conversation's
+   *  project when that has a folder on this machine, else in the temp folder. */
+  public approve(projectId?: string, options: { scratch?: boolean; turnKinds?: string[] } = {}): Promise<void> {
     const body: Record<string, unknown> = {};
     if (options.scratch) body.scratch = true;
     else if (projectId) body.project_id = projectId;
+    // What the host left ticked; absent = everything the guest asked for.
+    if (options.turnKinds) body.turn_kinds = options.turnKinds;
     return this.lifecycleAction('approve', RemoteWorkerSessionStatus.IDLE, Object.keys(body).length ? body : undefined);
   }
 

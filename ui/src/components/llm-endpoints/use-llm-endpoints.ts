@@ -19,37 +19,53 @@ import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
+import { API_FAMILY, LLM_FAMILY, useEndpointFamily, type EndpointFamily } from './endpoint-family';
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 
-/** Global by construction — an endpoint is a hub-wide resource, not a project's. */
-const ENDPOINTS_QUERY = new QueryRequest({
-  type: LLMEndpoint.type,
-  query: { expand: ['permissions'] },
-  scope: [],
-  name: 'llm-endpoints:list',
-});
+/** Global by construction — an endpoint is a hub-wide resource, not a project's. One request per
+ *  family, built once: a fresh object per render would re-subscribe the live query. */
+const ENDPOINTS_QUERY: Record<string, QueryRequest> = Object.fromEntries(
+  [LLM_FAMILY, API_FAMILY].map((family) => [
+    family.id,
+    new QueryRequest({
+      type: family.type,
+      query: { expand: ['permissions'] },
+      scope: [],
+      name: `${family.queryKey}s:list`,
+    }),
+  ]),
+);
 
-export function useLlmEndpoints({ enabled = true }: { enabled?: boolean } = {}) {
-  const { data, isLoading, refetch, error } = useEntitiesQuery<LLMEndpoint>(ENDPOINTS_QUERY, { enabled });
+export function useLlmEndpoints({
+  enabled = true,
+  family: given,
+}: { enabled?: boolean; family?: EndpointFamily } = {}) {
+  const contextFamily = useEndpointFamily();
+  const family = given ?? contextFamily;
+  const { data, isLoading, refetch, error } = useEntitiesQuery<LLMEndpoint>(ENDPOINTS_QUERY[family.id], { enabled });
   // Endpoints usable through the `authenticated_role` stamp (the global root) carry no role edge
   // to this user, so the entity query does not list them; the hub's catalog does. Rows the user
   // holds a role on win (they carry the permission expansion).
   const shared = useQuery({
-    queryKey: ['llm-endpoint', 'shared'],
-    queryFn: () => llmEndpointsService.listShared(),
+    queryKey: [family.queryKey, 'shared'],
+    queryFn: () => family.service.listShared(),
     staleTime: 60_000,
-    enabled,
+    // The catalog (endpoints open to every signed-in user) is an LLM endpoint notion.
+    enabled: enabled && family.llm,
   });
   const endpoints = useMemo(() => {
     const byId = new Map<string, LLMEndpoint>();
     for (const row of shared.data ?? []) if (row.id) byId.set(row.id, row);
-    for (const row of data ?? []) if (row.id) byId.set(row.id, row);
+    // Only this family's rows: for one render after the switch the live query still holds the other's.
+    for (const row of data ?? []) if (row.id && row.getType() === family.type) byId.set(row.id, row);
     return [...byId.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  }, [data, shared.data]);
+  }, [data, shared.data, family.type]);
   const refetchShared = shared.refetch;
+  const hasCatalog = family.llm;
   const refetchAll = useCallback(async () => {
-    await Promise.all([refetch(), refetchShared()]);
-  }, [refetch, refetchShared]);
+    // `refetch` runs a disabled query too, so the catalog is asked for only where there is one.
+    await Promise.all([refetch(), ...(hasCatalog ? [refetchShared()] : [])]);
+  }, [refetch, refetchShared, hasCatalog]);
   return { endpoints, isLoading: isLoading || shared.isLoading, refetch: refetchAll, error: error ?? shared.error };
 }
 
@@ -67,28 +83,31 @@ export function useLlmEndpoint(idOrTypeId: string | null | undefined): LLMEndpoi
 }
 
 export function useLlmEndpointChain(id: string | undefined) {
+  const family = useEndpointFamily();
   return useQuery({
-    queryKey: ['llm-endpoint', id, 'chain'],
-    queryFn: () => llmEndpointsService.getChain(id as string),
+    queryKey: [family.queryKey, id, 'chain'],
+    queryFn: () => family.service.getChain(id as string),
     enabled: !!id,
     staleTime: 15_000,
   });
 }
 
 export function useLlmEndpointModels(id: string | undefined) {
+  const family = useEndpointFamily();
   return useQuery({
     queryKey: ['llm-endpoint', id, 'models'],
     queryFn: () => llmEndpointsService.listModels(id as string),
-    enabled: !!id,
+    enabled: !!id && family.llm,
     staleTime: 60_000,
   });
 }
 
 export function useLlmEndpointModelConfig(id: string | undefined) {
+  const family = useEndpointFamily();
   return useQuery({
     queryKey: ['llm-endpoint', id, 'model-config'],
     queryFn: () => llmEndpointsService.getModelConfig(id as string),
-    enabled: !!id,
+    enabled: !!id && family.llm,
   });
 }
 
@@ -113,18 +132,19 @@ export function useLlmProviderSizes(id: string | undefined) {
 
 /** Key + fetcher for one endpoint's usage over `query` — shared by the detail's
  *  Usage tab and the list's Today column, so the two hit one cache entry. */
-export function usageQueryOptions(id: string, query: LLMUsageQuery) {
+export function usageQueryOptions(id: string, query: LLMUsageQuery, family: EndpointFamily = LLM_FAMILY) {
   return {
-    queryKey: ['llm-endpoint', id, 'usage', query.from, query.to, query.granularity, query.by ?? ''] as const,
-    queryFn: () => llmEndpointsService.getUsage(id, query),
+    queryKey: [family.queryKey, id, 'usage', query.from, query.to, query.granularity, query.by ?? ''] as const,
+    queryFn: () => family.service.getUsage(id, query),
     staleTime: 15_000,
   };
 }
 
 export function useLlmEndpointUsage(id: string | undefined, query: LLMUsageQuery | null) {
   // Disabled until both are known; the placeholder key is never fetched.
+  const family = useEndpointFamily();
   return useQuery({
-    ...usageQueryOptions(id ?? '', query ?? { from: 0, to: 0, granularity: 'day' }),
+    ...usageQueryOptions(id ?? '', query ?? { from: 0, to: 0, granularity: 'day' }, family),
     enabled: !!id && !!query,
   });
 }

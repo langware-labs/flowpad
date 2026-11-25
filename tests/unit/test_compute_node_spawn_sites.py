@@ -60,7 +60,7 @@ class _InstalledHarness:
     async def is_installed(worker_type=None) -> bool:
         return True
 
-    def enable_pending_question_hook(self) -> None:
+    def enable_worker_report_hooks(self) -> None:
         """``_scan_create_process`` registers every new process for the question hook."""
 
 

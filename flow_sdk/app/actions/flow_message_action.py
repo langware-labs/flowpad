@@ -16,7 +16,7 @@ import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 from weakref import WeakValueDictionary
 
 from flow_sdk import stream_inbox
@@ -2360,15 +2360,82 @@ async def handle_stream_inbox_update(fm_id: str, patch: dict, someone_typeid: st
     return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
 
 
+def _any_like(*pairs: tuple[str, str]):
+    """The match for rows where ANY ``(field, text)`` pair holds — the field contains the text."""
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
+
+    return ExpressionNode(
+        op=QueryOp.OR,
+        operands=[ExpressionNode(op=QueryOp.LIKE, operands=[field, f"%{text}%"]) for field, text in pairs],
+    )
+
+
+async def _find(entity, match, **options) -> list:
+    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+    return await entity.get_all(QueryFilter(match=match), **options)
+
+
+def _conversation_ids(messages) -> set[str]:
+    # An unsent draft is not a message to find.
+    return {str(m.conversation_id) for m in messages if m.conversation_id and not m.is_draft}
+
+
+async def _conversations_matching(needle: str, *fields: str) -> set[str]:
+    found = await _find(Conversation, _any_like(*((field, needle) for field in fields)))
+    return {str(c.id) for c in found if c.id}
+
+
+async def _conversations_from(needle: str) -> set[str]:
+    """Conversations a matching person wrote in — by name, or by the address ``sender_id`` carries
+    (``email:a@b.c``) — or is in without having written: a member, or whom it is addressed to."""
+    messages, with_them = await asyncio.gather(
+        _find(FlowMessage, _any_like(("sender_name", needle), ("sender_id", needle)), hydrate=False),
+        _conversations_matching(needle, "members", "address"),
+    )
+    return _conversation_ids(messages) | with_them
+
+
+async def _messages_saying(needle: str, tagged=None) -> list:
+    """Messages whose body matches, narrowed in the query to ``tagged`` when given. Two lanes, because
+    bodies live in two places under the reference model: a channel message's text is on its SourceItem
+    (the FlowMessage row is a blank reference), a hub-native message's is on the row. Reference rows
+    can't false-match the second lane — their stored ``text`` is ``""``."""
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryOp  # noqa: PLC0415
+
+    def narrowed(match):
+        return ExpressionNode(op=QueryOp.AND, operands=[match, tagged]) if tagged else match
+
+    items, native = await asyncio.gather(
+        _find(SourceItem, _any_like(("body", needle), ("name", needle))),
+        _find(FlowMessage, narrowed(_any_like(("text", needle))), hydrate=False),
+    )
+    if not items:
+        return native
+    of_items = ExpressionNode(op=QueryOp.IN, operands=["source_item_id", [str(i.id) for i in items]])
+    return [*native, *await _find(FlowMessage, narrowed(of_items), hydrate=False)]
+
+
+async def _conversations_saying(needle: str, tags: list[str]) -> set[str]:
+    """Conversations with a message whose body matches ``needle`` (when given) and that carries one of
+    ``tags`` (when given). A tag is a message's, so the two are asked of the same message."""
+    from flow_sdk.server.search_filters import apply_any_tag_filter  # noqa: PLC0415
+
+    # LIKE is only a candidate filter (a legal underscore is a LIKE wildcard), so
+    # apply_any_tag_filter remains the exact canonical matcher.
+    tagged = _any_like(*(("tags", text) for tag in tags for text in (f'"{tag}"', f'"{tag}.'))) if tags else None
+    messages = await (_messages_saying(needle, tagged) if needle else _find(FlowMessage, tagged, hydrate=False))
+    return _conversation_ids(apply_any_tag_filter(messages, tags))
+
+
 @action.post(action_name="stream-inbox-search", types=None)
 async def stream_inbox_search() -> ApiResponse:
-    """Full-stream-inbox search → conversation ids; optional q and any-of tags.
+    """Full-stream-inbox search → conversation ids.
 
-    Two lanes because bodies live in two places under the reference model:
-    a channel message's text is on its SourceItem (the FlowMessage row is a
-    blank reference), a hub-native message's is on the row. Reference rows
-    can't false-match the second query — their stored ``text`` is ``""``.
-    Substring (`$LIKE`) on both lanes, matching the search this replaces.
+    One optional text per column of the list — ``from`` (who wrote or is in it, by name or address),
+    ``subject`` (the title), ``q`` (a message body) — and any-of ``tags``. A conversation is a hit when
+    it matches every one given; none given matches nothing. Substring (`$LIKE`) throughout.
     """
     try:
         request_info = get_current_request_info()
@@ -2376,68 +2443,18 @@ async def stream_inbox_search() -> ApiResponse:
             return ApiFailResponse(message="No request info")
         body = await request_info.get_post_data() or {}
         scope = await _optional_agent_stream_inbox_scope(body.get("agent_id"))
-        needle = str(body.get("q") or "").strip()
-        from flow_sdk.server.search_filters import apply_any_tag_filter, wanted_tags
+        sender, subject, needle = (str(body.get(key) or "").strip() for key in ("from", "subject", "q"))
+        from flow_sdk.server.search_filters import wanted_tags
 
         selected_tags = wanted_tags(body.get("tags"))
-        if not needle and not selected_tags:
+        lanes = [
+            *([_conversations_from(sender)] if sender else []),
+            *([_conversations_matching(subject, "title")] if subject else []),
+            *([_conversations_saying(needle, selected_tags)] if needle or selected_tags else []),
+        ]
+        if not lanes:
             return ApiSuccessResponse(data={"conversation_ids": []})
-        like = f"%{needle}%"
-
-        import asyncio  # noqa: PLC0415
-
-        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-
-        # Narrow in the query before the shared hierarchy predicate. LIKE is
-        # only a candidate filter (a legal underscore is a LIKE wildcard), so
-        # apply_any_tag_filter remains the exact canonical matcher.
-        tag_match = ExpressionNode(op=QueryOp.OR, operands=[
-            ExpressionNode(op=QueryOp.LIKE, operands=["tags", pattern])
-            for tag in selected_tags for pattern in (f'%"{tag}"%', f'%"{tag}.%')
-        ]) if selected_tags else None
-
-        def filtered(match):
-            return QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[match, tag_match]) if tag_match else match)
-
-        if not needle:
-            messages = apply_any_tag_filter(await FlowMessage.get_all(QueryFilter(match=tag_match), hydrate=False), selected_tags)
-            ids = {str(m.conversation_id) for m in messages if m.conversation_id}
-            if scope is not None:
-                ids &= scope.conversation_ids
-            return ApiSuccessResponse(data={"conversation_ids": sorted(ids)})
-
-        # The two lanes are independent — run them together.
-        items, native = await asyncio.gather(
-            SourceItem.get_all(
-                QueryFilter(
-                    match=ExpressionNode(
-                        op=QueryOp.OR,
-                        operands=[
-                            ExpressionNode(op=QueryOp.LIKE, operands=["body", like]),
-                            ExpressionNode(op=QueryOp.LIKE, operands=["name", like]),
-                        ],
-                    )
-                )
-            ),
-            FlowMessage.get_all(
-                filtered(ExpressionNode(op=QueryOp.LIKE, operands=["text", like])),
-                hydrate=False,
-            ),
-        )
-        native = [m for m in native if not m.is_draft]  # an unsent draft is not a message to find
-        conversation_ids: set[str] = {str(m.conversation_id) for m in apply_any_tag_filter(native, selected_tags) if m.conversation_id}
-        if items:
-            refs = await FlowMessage.get_all(
-                filtered(
-                    ExpressionNode(
-                        op=QueryOp.IN,
-                        operands=["source_item_id", [str(i.id) for i in items]],
-                    )
-                ),
-                hydrate=False,
-            )
-            conversation_ids |= {str(m.conversation_id) for m in apply_any_tag_filter(refs, selected_tags) if m.conversation_id}
+        conversation_ids = set.intersection(*await asyncio.gather(*lanes))
         if scope is not None:
             conversation_ids &= scope.conversation_ids
         return ApiSuccessResponse(data={"conversation_ids": sorted(conversation_ids)})
@@ -3375,6 +3392,21 @@ def _clamp_invitation_ts(invitations: list[Pointer], merged: list[Pointer]) -> l
     ]
 
 
+def _reached_here_after(fm: Any, moment: datetime) -> bool:
+    """``fm`` was written or received on this machine after ``moment``.
+
+    The reconcile drops a hub-mirrored message the hub's listing does not name. A reply this
+    machine posted while the listing was in flight (a live session answering its queue during
+    the catch-up) is sent, mirrored, and not in a listing taken before it existed — it was
+    being erased here as "deleted on the hub".
+    """
+    for stamp in (getattr(fm, "created_date", None), getattr(fm, "received_at", None)):
+        when = stamp if isinstance(stamp, datetime) else iso_to_utc(str(stamp)) if stamp else None
+        if when is not None and (when if when.tzinfo else when.replace(tzinfo=UTC)) >= moment:
+            return True
+    return False
+
+
 async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> bool:
     """Bring local message state for a single conversation up to the hub's.
 
@@ -3410,6 +3442,9 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
             async def _list(action: str):
                 return await HubProxy.call("GET", BuiltinEntityType.CONVERSATION, conv_id, action=action, strict=True)
 
+            # The listing answers for the moment it was taken. A message written or received
+            # here after that is not "absent from the hub": the listing simply predates it.
+            listed_at = datetime.now(UTC)
             try:
                 try:
                     children = await _list("messages")
@@ -3525,6 +3560,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
                         or fm.kind == FlowMessageKind.INVITATION
                         or bool(getattr(fm, "is_draft", False))
                         or not fm.remote
+                        or _reached_here_after(fm, listed_at)
                     )
                     if not keep:
                         # remote=True and absent from the hub list ⇒ deleted
@@ -3557,6 +3593,12 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
                 synced,
                 len(child_list),
             )
+            # What was just pulled may include live-session turns sent while this machine was
+            # away. Storing them kicked nothing, and only NOW are they all here: draining
+            # earlier ran them newest first, the order they are materialized in.
+            from flow_sdk.app.actions.execute_prompt import redrive_hosted_sessions  # noqa: PLC0415
+
+            asyncio.create_task(redrive_hosted_sessions(conv_id))
             return True
         except Exception as e:  # noqa: BLE001
             logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)
@@ -5006,10 +5048,15 @@ async def message_apply_classification(self: FlowMessage) -> ApiResponse:
     return ApiSuccessResponse(data=_tag_state(message))
 
 
+#: How many conversations one Classify click takes: a run's cost and its review message stay readable.
+CLASSIFY_BATCH = 25
+
+
 @action.all(action_name="classify-conversations", types=["flow_message"], methods=["get", "post"])
 async def classify_conversations() -> ApiResponse:
     """POST ``{conversations: [id]}`` starts the shipped ``stream-inbox-classifier`` block on them -- a durable
-    call that outlives the request -- and answers its record. GET ``?call_id=`` reads that record again; its
+    call that outlives the request -- and answers its record. With no ``conversations`` the run takes the newest
+    ``CLASSIFY_BATCH`` conversations that wait for a tag. GET ``?call_id=`` reads that record again; its
     ``result.value`` is the proposed ``stream_inbox.classification`` once the call completed. Nothing is tagged."""
     from flow_sdk.builtin.compute_op import ComputeOp
 
@@ -5035,6 +5082,12 @@ async def classify_conversations() -> ApiResponse:
         return ApiSuccessResponse(data=data)
     body = await info.get_post_data()
     picked = body.get("conversations") if isinstance(body, dict) else None
+    if picked is None:
+        from flow_sdk import stream_inbox
+
+        picked = (await stream_inbox.unclassified())[:CLASSIFY_BATCH]
+        if not picked:
+            return ApiFailResponse(message="No conversation waits for a tag.", status_code=400)
     if not (isinstance(picked, list) and picked and all(isinstance(i, str) and i for i in picked)):
         return ApiFailResponse(message="Expected the conversations to classify", status_code=400)
     # Its own folder on this instance: a run leaves its receipts where it works, never in the server's folder.
@@ -5046,11 +5099,52 @@ async def classify_conversations() -> ApiResponse:
     return ApiSuccessResponse(data=record.model_dump(mode="json"))
 
 
+@action.post(action_name="app-key", types=["flow_message"])
+async def app_key(self: FlowMessage) -> ApiResponse:
+    """The state key this app message's nano-app is opened with: it names the message, so the app reads what
+    it was opened on through the key (``app-data``). The same message answers the same key. For the app shell
+    and callers on this machine -- a page's own key opens no other page."""
+    from flow_sdk.builtin.flow_message import app_state_key
+    from flow_sdk.server import page_state
+
+    info = get_current_request_info()
+    if info is None or not page_state.may_mint(info.request, app_shell=True):
+        return ApiFailResponse(message="Only Flowpad on this computer may open a message's app.", status_code=403)
+    if self.app is None:
+        return ApiFailResponse(message="This message carries no app.", status_code=400)
+    return ApiSuccessResponse(data={"key": app_state_key(str(self.typeid))})
+
+
+@action.all(action_name="app-data", types=["flow_message"], methods=["get", "post"])
+async def app_data() -> ApiResponse:
+    """What a nano-app opens on, for the message its STATE KEY names -- never an id the page chooses. GET
+    answers ``{input, saved}`` (both None for a key that names no message); POST ``{saved}`` keeps the app's
+    own JSON for its next visit."""
+    from flow_sdk.schema.data_spec.nano_app_spec import NanoAppData
+    from flow_sdk.server import page_state
+
+    info = get_current_request_info()
+    if info is None:
+        return ApiFailResponse(message="No request context available", status_code=400)
+    # Looked up here, not read off the middleware: a server that does not demand keys still knows them.
+    state = page_state.lookup(page_state.presented_key(info.request))
+    named = state.context.get("message") if state is not None else None
+    message = await FlowMessage.get_one({"id": TypeId(named).id}) if named else None
+    if info.request.method.upper() == "GET":
+        return ApiSuccessResponse(data=(message.app_data() if message is not None else NanoAppData()).model_dump(mode="json"))
+    body = await info.get_post_data()
+    if message is None or not isinstance(body, dict) or "saved" not in body:
+        return ApiFailResponse(message="Expected {saved}, from a page opened on a message's app", status_code=400)
+    message.save_app_data(body["saved"])
+    return ApiSuccessResponse(data={"saved": body["saved"]})
+
+
 @action.post(action_name="stream-inbox-classification", types=["flow_message"])
 async def submit_stream_inbox_classification() -> ApiResponse:
-    """A classification run hands in its proposal: ``{value, dry?}`` -> ``{fits, errors, ref?}``. The value is
-    held to its schema and to the tag tree as it is now; one that fits is kept and posted as a message unless
-    ``dry`` (the run's own check). Nothing is tagged."""
+    """A classification run hands in its proposal: ``{value, dry?, validate?}`` -> ``{fits, errors, ref?}``. The
+    value is held to its schema and to the tag tree as it is now; one that fits is kept and posted as a message
+    unless ``dry`` (the run's own check). ``validate`` answers ``value`` with every row's ``validation`` (the
+    decision model's own reading) instead, and keeps nothing. Nothing is tagged."""
     from pydantic import ValidationError
 
     from flow_sdk.schema.data_spec.stream_inbox_classification_spec import StreamInboxClassification
@@ -5064,6 +5158,8 @@ async def submit_stream_inbox_classification() -> ApiResponse:
         value = StreamInboxClassification.model_validate({k: v for k, v in body["value"].items() if k != "spec_kind"})
     except ValidationError as exc:
         return ApiSuccessResponse(data={"fits": False, "errors": [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()]})
+    if body.get("validate"):
+        return ApiSuccessResponse(data={"value": (await classification.validate(value)).model_dump(mode="json")})
     errors = await classification.problems(value)
     if errors or body.get("dry"):
         return ApiSuccessResponse(data={"fits": not errors, "errors": errors})
@@ -5073,8 +5169,8 @@ async def submit_stream_inbox_classification() -> ApiResponse:
 @action.post(action_name="apply-stream-inbox-classification", types=["flow_message"])
 async def apply_stream_inbox_classification() -> ApiResponse:
     """A person applies a proposed ``stream_inbox.classification``: ``conversations`` (ids; absent = every
-    row) and, unless ``tree`` is false, the tag tree changes. No automation starts; applied rows are kept
-    as ground truth."""
+    row) and the tag tree changes -- every one unless ``tree`` is false, or only those of the tags ``tree``
+    lists. No automation starts; applied rows are kept as ground truth."""
     from pydantic import ValidationError
 
     from flow_sdk.schema.data_spec.stream_inbox_classification_spec import StreamInboxClassification
@@ -5089,7 +5185,9 @@ async def apply_stream_inbox_classification() -> ApiResponse:
         return ApiFailResponse(message="conversations is a list of conversation ids", status_code=400)
     try:
         value = StreamInboxClassification.model_validate({k: v for k, v in body["value"].items() if k != "spec_kind"})
-        return ApiSuccessResponse(data=await classification.apply(value, conversations=picked, tree=body.get("tree") is not False))
+        tree = body.get("tree")
+        tree = [t for t in tree if isinstance(t, str)] if isinstance(tree, list) else tree is not False
+        return ApiSuccessResponse(data=await classification.apply(value, conversations=picked, tree=tree))
     except (ValidationError, ValueError) as exc:
         return ApiFailResponse(message=str(exc), status_code=400)
 

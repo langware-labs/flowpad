@@ -24,6 +24,9 @@ A skill Flowpad ships declares its kinds once, in `flowpad_assistant/agentic-ass
 name is plain (`forkit.issue`), one for the whole system, nothing to copy or apply per project. A page of your own
 project uses that project's kinds (`--<ns>--.<kind>`, the data-management skill). The forkit skill is the example.
 
+A page meant to be embedded (in a message, a section) or passed along is a **nano-app**: the same one file, with a
+manifest and `header` / `block` / `page` slots, started with `sdk.nano.start()` and handed one thing — its state key, which names what it was opened on — `reference/api.md` "Nano-app".
+
 ## 1. Load it — pick by where the page runs
 
 | page | load |
@@ -63,6 +66,7 @@ On a local Flowpad every `/api` call must present the key Flowpad minted for the
 | a served page — an app, a project file under `…/fs/serve/…`, a relative link — in a same-origin frame or link | inherited: the server reads the opener's `?state=` from the Referer and injects it |
 | **Flowpad's own app shell** — `/win/…`, `/dock/…` (a process terminal, an editor, a chat) in a frame or new tab | **never inherited** (no page may take the app's reach): the URL must carry `?state=<key>` |
 | a link with `rel=noreferrer`, or a URL you hand outside the page | no Referer: carry `?state=<key>` |
+| a **nano-app file opened in a browser** (`file:///…/app.html`) | not served, so nothing is injected: its opener's URL carries `?state=<key>&api=<backend origin>` — a known key is what the backend answers it for |
 
 Without it the frame shows *"This page was opened without permission to use Flowpad. Open it again from Flowpad."*
 

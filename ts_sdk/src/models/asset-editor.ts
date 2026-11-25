@@ -56,6 +56,7 @@ export enum AssetEditor {
   PDF = 'pdf', // native browser render of a .pdf via <iframe>/<embed>
   DOCX = 'docx', // a .docx, rendered read-only to HTML by mammoth
   ARCHIVE = 'archive', // a .zip, browsed as the folder it extracts to (a temp copy)
+  ICS = 'ics', // an iCalendar file (a meeting invite), shown as its events
   // A `.value.json`: one DataSpec value carrying its own `spec_kind`, shown by that kind's
   // viewer (a diagnosis, an eval run) — the data-viewer registry, outside any host app.
   VALUE = 'value',
@@ -156,6 +157,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.PDF]: [],
   [AssetEditor.DOCX]: [],
   [AssetEditor.ARCHIVE]: [],
+  [AssetEditor.ICS]: [],
   [AssetEditor.VALUE]: [],
 };
 
@@ -197,6 +199,7 @@ export const PREVIEW_EDITORS: ReadonlySet<AssetEditor> = new Set([
   AssetEditor.PDF,
   AssetEditor.DOCX,
   AssetEditor.ARCHIVE,
+  AssetEditor.ICS,
   AssetEditor.VALUE,
 ]);
 
@@ -311,6 +314,7 @@ const STATIC_EXT_TO_EDITOR: Record<string, AssetEditor> = {
   pdf: AssetEditor.PDF,
   docx: AssetEditor.DOCX,
   zip: AssetEditor.ARCHIVE,
+  ics: AssetEditor.ICS,
 };
 
 /**

@@ -40,16 +40,9 @@ STOPPED = "Stopped by the receiver before it finished."
 
 async def _workdir(conv) -> Path:
     """The conversation's project folder, else the instance's scratch folder (never a new Project)."""
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.remote_worker_session import scratch_workdir  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import project_folder, scratch_workdir  # noqa: PLC0415
 
-    project_id = getattr(conv, "project_id", None)
-    if project_id:
-        project = await Project.get_one({"id": project_id})
-        folder = getattr(project, "fs_storage_mount_path", None) if project else None
-        if folder:
-            return Path(folder)
-    return scratch_workdir()
+    return Path(await project_folder(getattr(conv, "project_id", None)) or scratch_workdir())
 
 
 async def _answered(conversation_id: str, call_id: str) -> bool:

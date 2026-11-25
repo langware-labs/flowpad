@@ -1,6 +1,7 @@
 /**
  * The Context button lists an entity's context — who it holds and who holds it — as one
- * list, read when the menu opens. A row only navigates; on the hub the button is not drawn.
+ * list, read when the menu opens. A row navigates, a shared link has an X that removes it; on the hub
+ * the button is not drawn.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -67,6 +68,29 @@ describe('Context button', () => {
     fireEvent.click(rows[0]);
     await waitFor(() => expect(h.openDock).toHaveBeenCalledTimes(1));
     expect(String(h.openDock.mock.calls[0][0].pointer)).toContain('22222222-2222-4222-8222-222222222222');
+  });
+
+  it('a shared link has an X that takes it out of the context of the side holding it', async () => {
+    vi.spyOn(dataContext, 'caps', 'get').mockReturnValue({ localFiles: true } as never);
+    const unshare = vi.fn().mockResolvedValue([]);
+    let rows = h.rows;
+    vi.spyOn(dataManager, 'getByTypeId').mockImplementation(
+      (tid) =>
+        Promise.resolve({
+          getContextRelations: () => Promise.resolve(rows),
+          unshareContextEntities: (peer: TypeId) => unshare(String(tid), String(peer)),
+        }) as never,
+    );
+    render(toolbar);
+
+    fireEvent.click(screen.getByTestId('entity-actions-context'));
+    // Only the shared row (the conversation that holds this task) can be removed; the private one cannot.
+    const remove = await waitFor(() => screen.getByTestId('context-menu-row-remove'));
+    rows = h.rows.slice(1);
+    fireEvent.click(remove);
+
+    await waitFor(() => expect(screen.getAllByTestId('context-menu-row')).toHaveLength(1));
+    expect(unshare.mock.calls).toEqual([[h.rows[0].typeid, typeId.toString()]]);
   });
 
   it('the header toggles hide and show rows by how they came to be', async () => {

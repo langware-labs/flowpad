@@ -16,7 +16,7 @@ from flow_sdk.core.status.build import (
 )
 from flow_sdk.core.status.check import UnknownStatusFact, check_fact, harness_kind, install_target
 from flow_sdk.core.status.push import publish_status_changed
-from flow_sdk.core.status.refresh import refresh_status
+from flow_sdk.core.status.refresh import refresh_status, refresh_status_after
 from flow_sdk.schema.data_spec.status_spec import (
     AccountSpec,
     HarnessStatusSpec,
@@ -49,6 +49,7 @@ __all__ = [
     "login_state",
     "publish_status_changed",
     "refresh_status",
+    "refresh_status_after",
     "stored_key_hints",
     "stored_key_providers",
     "stored_keys",

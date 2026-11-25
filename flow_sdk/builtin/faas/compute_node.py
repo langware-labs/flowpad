@@ -1887,9 +1887,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         GET is a pure read of the stores that own each fact -- no probe, no network.
         POST ``status/refresh`` (optional body ``{"kinds": [...]}``) is the one verb that
-        re-discovers CLIs and re-probes their logins; it returns the refreshed record.
+        re-discovers CLIs and re-probes their logins; it returns the refreshed record. With
+        ``after_process`` it returns at once and refreshes when a turn of that run ends (an update).
         """
-        from flow_sdk.core.status import build_status, refresh_status  # noqa: PLC0415
+        from flow_sdk.core.status import build_status, refresh_status, refresh_status_after  # noqa: PLC0415
 
         request_info = get_current_request_info()
         method = (request_info.request.method if request_info and request_info.request else "GET").upper()
@@ -1899,7 +1900,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 return ApiFailResponse(message=f"unknown status verb {sub_path!r}; POST status/refresh")
             body = await request_info.get_post_data() or {}
             kinds = body.get("kinds") if isinstance(body, dict) else None
-            await refresh_status(list(kinds) if kinds else None)
+            after_process = body.get("after_process") if isinstance(body, dict) else None
+            if after_process:
+                refresh_status_after(str(after_process), list(kinds) if kinds else None)
+            else:
+                await refresh_status(list(kinds) if kinds else None)
         status = await build_status()
         return ApiSuccessResponse(data=status.model_dump(mode="json"))
 
@@ -2250,6 +2255,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             POST /git-ops/init          body { workdir } → git init + Flowpad config (idempotent)
             POST /git-ops/restore-file  { workdir, file, hash } → checkout file at revision
             POST /git-ops/discard-file  { workdir, file, status } → undo a file's pending change
+            POST /git-ops/discard-all   { workdir } → undo every pending change
             POST /git-ops/stage-file    { workdir, file } → stage just this file
             POST /git-ops/unstage-file  { workdir, file } → unstage just this file
         """

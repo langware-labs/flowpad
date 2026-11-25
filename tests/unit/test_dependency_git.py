@@ -43,6 +43,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.type_info import register_all
 from tests.unit._project_names import unique_project_name
+from tests.unit.conftest import git_cmd
 
 register_all()
 
@@ -334,6 +335,7 @@ async def test_a_bad_url_is_unreachable_without_linking_anything(tmp_path: Path)
 def _commit_upstream(vendor_repo: str, name: str, text: str) -> None:
     """A vendor-side change: a new commit on the repo the clone was made from."""
     root = Path(vendor_repo.removeprefix("git+file://"))
+    (root / name).parent.mkdir(parents=True, exist_ok=True)
     (root / name).write_text(text, encoding="utf-8")
     for args in (["add", name], ["-c", "user.email=v@x", "-c", "user.name=v", "commit", "-qm", f"add {name}"]):
         subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, timeout=20)
@@ -425,3 +427,74 @@ async def test_a_checkout_already_in_the_workspace_is_used_not_cloned_over(
     assert state.state == "ready", state
     assert Path(state.local_path) == delivered
     assert not (workspace / "vendor-1").exists(), "nothing was cloned beside the delivered checkout"
+
+
+# ── the index follows the checkout ───────────────────────────────────────────────────────────
+
+
+def _commit_skill(vendor_repo: str, name: str) -> None:
+    _commit_upstream(vendor_repo, f".claude/skills/{name}/SKILL.md", f"---\nname: {name}\ndescription: {name} v2\n---\n")
+
+
+async def _skills_under(root: "str | Path") -> set[str]:
+    from flow_sdk.builtin.skill import Skill  # noqa: PLC0415
+
+    base = Path(root).resolve()
+    return {Path(s.asset_ref).name for s in await Skill.get_all() if s.asset_ref and Path(s.asset_ref).resolve().is_relative_to(base)}
+
+
+async def test_a_checkout_that_moved_is_indexed_again_and_is_never_written_to(tmp_path: Path, vendor_repo: str, monkeypatch) -> None:
+    """A pull the person ran themselves in a ``file:`` dependency reaches the index at the next resolve
+    (opening the project). Their checkout is only read: indexing leaves no edit that would make that
+    pull refuse. A checkout that did not move is not walked again."""
+    mine = tmp_path / "mine"
+    subprocess.run(["git", "clone", "-q", vendor_repo.removeprefix("git+"), str(mine)], check=True, capture_output=True, timeout=20)
+    project = await _project(tmp_path, "customer-a")
+    await project.add_dependency(f"file:{mine}")
+    assert await _skills_under(mine) == {"triage-ticket"}
+    assert _tracked_changes(mine) == [], "indexing wrote into the person's checkout"
+
+    _commit_skill(vendor_repo, "triage-ticket")  # an edit to the skill that was indexed
+    _commit_skill(vendor_repo, "escalate")
+    subprocess.run(["git", "pull", "-q"], cwd=mine, check=True, capture_output=True, timeout=20)
+    await project.resolve_dependencies()
+    assert await _skills_under(mine) == {"triage-ticket", "escalate"}
+
+    walked: list[int] = []
+    index = project_dependencies._index
+
+    async def counted(owner, linked):
+        walked.append(len(linked))
+        return await index(owner, linked)
+
+    monkeypatch.setattr(project_dependencies, "_index", counted)
+    await project.resolve_dependencies()
+    assert walked == [0], "an unchanged checkout must cost no walk"
+
+
+async def test_pull_to_latest_indexes_what_it_brought(tmp_path: Path, vendor_repo: str) -> None:
+    project = await _project(tmp_path, "customer-a")
+    state = await project.add_dependency(vendor_repo)
+    _commit_skill(vendor_repo, "escalate")
+    await project.check_dependency_updates()
+    await project.resolve_dependencies(update=True)
+    assert await _skills_under(state.local_path) == {"triage-ticket", "escalate"}
+
+
+async def test_a_skill_the_pull_removed_leaves_the_index_and_only_under_that_dependency(tmp_path: Path, vendor_repo: str) -> None:
+    """Removal is limited to the dependency whose checkout moved: a dead row under another folder stays."""
+    notes = tmp_path / "notes"
+    (notes / ".claude" / "skills" / "scratch").mkdir(parents=True)
+    (notes / ".claude" / "skills" / "scratch" / "SKILL.md").write_text("---\nname: scratch\ndescription: s\n---\n", encoding="utf-8")
+    project = await _project(tmp_path, "customer-a")
+    state = await project.add_dependency(vendor_repo)
+    await project.add_dependency(f"file:{notes}")
+    (notes / ".claude" / "skills" / "scratch" / "SKILL.md").unlink()
+
+    upstream = Path(vendor_repo.removeprefix("git+file://"))
+    git_cmd(upstream, "rm", "-rq", ".claude/skills/triage-ticket")
+    git_cmd(upstream, "-c", "user.email=v@x", "-c", "user.name=v", "commit", "-qm", "drop the skill")
+    await project.check_dependency_updates()
+    await project.resolve_dependencies(update=True)
+    assert await _skills_under(state.local_path) == set()
+    assert await _skills_under(notes) == {"scratch"}, "a walk of one dependency removed a row under another folder"

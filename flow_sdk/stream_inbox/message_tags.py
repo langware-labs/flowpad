@@ -200,7 +200,7 @@ def apply_delta(tags: list[str], state: MessageProcessing, *, add=(), remove=(),
     return desired
 
 
-async def _publish(message_id: str, *, wake_worker=False) -> None:
+async def _publish(message_id: str, *, wake_worker=False, tags_changed=False) -> None:
     from flow_sdk.builtin.flow_message import FlowMessage
 
     # Re-read at publication, so an intervening writer never gets an older frame.
@@ -210,6 +210,10 @@ async def _publish(message_id: str, *, wake_worker=False) -> None:
         await fresh.notify_updated()
     if wake_worker:
         wake(message_id)
+    if tags_changed:   # the count of conversations waiting for a tag follows the tags
+        from flow_sdk import stream_inbox
+
+        stream_inbox.touch("message-tags")
 
 
 async def _mutate(message_id: str, change: Callable, *, wake_worker=False):
@@ -231,7 +235,12 @@ async def _mutate(message_id: str, change: Callable, *, wake_worker=False):
         if values != before:
             await db.update_existing_data_fields(message_id, FlowMessage.get_type(), values)
 
-            await db.after_commit(partial(_publish, message_id, wake_worker=wake_worker))
+            # Only a change inside the classification tree can move the count of conversations waiting for a tag.
+            from flow_sdk.schema.data_spec.stream_inbox_classification_spec import tags_under
+
+            root = settings().root
+            await db.after_commit(partial(_publish, message_id, wake_worker=wake_worker,
+                                          tags_changed=tags_under(tags, root) != tags_under(before["tags"], root)))
         message.tags, message.message_processing = tags, state
         return message
 
@@ -517,6 +526,10 @@ async def retag_as_classification(message_id: str, *, add, remove, rules=None):
 
     async def change(m, s):
         s.suppressed_tags = [t for t in s.suppressed_tags if t not in add]
+        # A person settled where this message belongs -- "no tag fits" included -- so it is classified,
+        # and no longer waits for a classification. One already under way keeps its own state.
+        if s.classification not in {"pending", "running"}:
+            s.classification, s.classification_error = "succeeded", ""
         return apply_delta(m.tags, s, add=add, remove=remove(m, s) if callable(remove) else remove,
                            source=TagAssignment(source="classification"),
                            rules=await scoped_rules(m, rules), start_automations=False)

@@ -94,11 +94,11 @@ def test_process_cell_is_supported_iff_declared(harness: str):
 V1_VENDORS = ("claude", "codex", "copilot")
 
 
-#: The one deliberate addition on top of the shared set: Claude's process hooks
-#: also carry ``PreToolUse`` (matcher-scoped to the user-input tools), because
-#: Claude may keep a pending ``AskUserQuestion`` out of its transcript and the
-#: hook is how Flowpad learns a question is waiting.
-PROCESS_EXTRAS = {"claude": frozenset({HookEventType.PRE_TOOL_USE})}
+#: The deliberate additions on top of the shared set, both things Claude's
+#: transcript does not show in time: ``PreToolUse`` (matcher-scoped to the
+#: user-input tools) is how Flowpad learns a question is waiting, and ``Stop``
+#: carries the background work still running when a turn ends.
+PROCESS_EXTRAS = {"claude": frozenset({HookEventType.PRE_TOOL_USE, HookEventType.STOP})}
 
 
 @pytest.mark.parametrize("harness", V1_VENDORS)

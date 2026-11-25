@@ -8,13 +8,16 @@ against. A person changing a labelled message's tags afterwards is moderation: t
 
 from __future__ import annotations
 
-from typing import Optional
+import asyncio
+from pathlib import Path
+from typing import Optional, Union
 
 from flow_sdk.core.log_dataset import KeptDataset, rows, spawn
 from flow_sdk.schema.data_spec.layout import ROWS_DIR
 from flow_sdk.schema.data_spec.stream_inbox_classification_spec import (
     StreamInboxClassification,
     TagTreeChange,
+    TagValidation,
     tags_under,
 )
 from flow_sdk.tags.grammar import tag_is_within
@@ -25,6 +28,8 @@ GROUND_TRUTH = KeptDataset(
     "The ground truth the tag classifier's eval runs on. Kept on this instance, never in a project.",
 )
 _ORDER = {"added": 0, "updated": 1, "moved": 2, "removed": 3}
+#: How many rows ``validate`` asks the decision model about at the same time.
+_VALIDATE_AT_ONCE = 4
 
 
 async def _tag(name: str):
@@ -110,27 +115,107 @@ async def problems(value: StreamInboxClassification) -> list[str]:
             out.append(f"tree change removed {change.tag}: {change.merged_into} is neither in the tree nor made by this value")
     out += [f"{row.title!r}: proposed {tag} is neither in the tree nor added by this value"
             for row in value.conversations for tag in row.proposed if tag not in known | made]
+    out += [f"{row.title!r}: no tag proposed -- every conversation gets a tag (the ontology refactor defines one)"
+            for row in value.conversations if not row.proposed]
     return out
 
 
+def tree_after(definitions: list[dict[str, str]], changes: list[TagTreeChange]) -> list[dict[str, str]]:
+    """``definitions`` (the classifier's options) as ``changes`` would leave them. Nothing is written."""
+    tree = {d["name"]: d["description"] for d in definitions}
+    for change in sorted(changes, key=lambda c: _ORDER[c.op]):
+        if change.op in ("added", "updated"):
+            tree[change.tag] = change.meaning or ""
+        elif change.op == "moved":
+            for name in [n for n in tree if tag_is_within(n, change.was or "")]:
+                tree[change.tag + name[len(change.was or ""):]] = tree.pop(name)
+        else:
+            tree.pop(change.tag, None)
+    return [{"name": name, "description": meaning} for name, meaning in sorted(tree.items())]
+
+
+async def validate(value: StreamInboxClassification) -> StreamInboxClassification:
+    """``value`` with every row's ``validation``: the decision model reads the row's message against the tag
+    tree as the value would leave it, and the row says whether it lands on the proposed tag. A row the
+    decision could not be asked about (no message, no decision service) carries no validation. Writes nothing."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
+    from flow_sdk.stream_inbox.message_subject import message_state  # noqa: PLC0415
+    from flow_sdk.stream_inbox.message_tags import classify, ontology  # noqa: PLC0415
+
+    definitions = tree_after(await ontology(), value.tree_changes)
+
+    async def check(row):
+        message = await FlowMessage.get_by_id(row.message_id) if row.proposed else None
+        if message is None:
+            return row.model_copy(update={"validation": None})
+        answer = await classify(message_state(message), definitions)
+        if answer.exit_code is not ExitCode.OK or not answer.has_value:
+            return row.model_copy(update={"validation": None})
+        detected = getattr(answer.value, "tag", "") or ""
+        return row.model_copy(update={"validation": TagValidation(detected=detected, ok=detected in row.proposed)})
+
+    # The first row alone: a decision call finds its hub endpoint first and remembers it, and rows asked all at
+    # once each repeat that search and use up the hub client's connections (25 cold calls made thousands of
+    # requests and every one of them failed). The rest go a few at a time.
+    rows, gate = list(value.conversations), asyncio.Semaphore(_VALIDATE_AT_ONCE)
+
+    async def gated(row):
+        async with gate:
+            return await check(row)
+
+    checked = [await check(rows[0])] if rows else []
+    checked += await asyncio.gather(*map(gated, rows[1:]))
+    return value.model_copy(update={"conversations": checked})
+
+
+#: The contrast-tested entity palette (``ui/src/lib/color-palette.ts``), spread so consecutive picks look apart.
+_PALETTE = ("#dc2626", "#65a30d", "#0284c7", "#db2777", "#d97706", "#059669", "#6366f1", "#64748b", "#ea580c",
+            "#16a34a", "#3b82f6", "#e11d48", "#a16207", "#0d9488", "#8b5cf6", "#0891b2", "#c026d3")
+
+
+def review_app() -> Path:
+    """The nano-app a proposal is reviewed and applied in: one HTML file, shipped beside the classifier skill."""
+    from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+
+    return flowpad_assistant_project_root() / ".claude" / "skills" / "stream-inbox-classifier" / "classification-review.html"
+
+
+async def _with_colors(value: StreamInboxClassification) -> StreamInboxClassification:
+    """``value`` with a colour on every tag it adds: one the tree does not use yet. Chosen once, here, so what a
+    person sees before applying is what is applied."""
+    if all(change.color for change in value.tree_changes if change.op == "added"):
+        return value
+    from flow_sdk.builtin.tag import Tag  # noqa: PLC0415
+
+    used = {(t.color or "").lower() for t in await Tag.get_all({"deprecated": False})} | {c.color for c in value.tree_changes}
+    free = iter([hex_ for hex_ in _PALETTE if hex_ not in used] or _PALETTE)
+    changes = [c.model_copy(update={"color": next(free, _PALETTE[0])}) if c.op == "added" and not c.color else c
+               for c in value.tree_changes]
+    return value.model_copy(update={"tree_changes": changes})
+
+
 async def submit(value: StreamInboxClassification) -> str:
-    """A run hands in its proposal: kept on this instance, and posted as the classifier automation's
-    message (its arrival is the one notification). Answers the value's reference -- what the run returns,
-    since the value itself is bigger than a block may return."""
-    from flow_sdk.app.automation_message import post_automation_result  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.automation_spec import AutomationRef, AutomationResult  # noqa: PLC0415
+    """A run hands in its proposal: kept on this instance, and posted as the classifier automation's APP
+    MESSAGE -- the review nano-app opened on the proposal, so it is read and applied in the conversation
+    (its arrival is the one notification). Answers the value's reference -- what the run returns, since the
+    value itself is bigger than a block may return."""
+    from flow_sdk.app.automation_message import post_app_message  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.automation_spec import AutomationRef  # noqa: PLC0415
     from flow_sdk.stream_inbox.message_tags import classifier  # noqa: PLC0415
     from flow_sdk.values import save_value  # noqa: PLC0415
 
+    value = await _with_colors(value)
     ref = save_value(value, _values())
     rule = await classifier()
     if rule is not None:
-        changing = sum(row.action != "keep" for row in value.conversations)
-        line = f"Classified {len(value.conversations)} conversations: {changing} would change, {len(value.tree_changes)} tag changes. Nothing is applied yet."
-        result = AutomationResult.of("needs_review", line, {
-            "Conversations read": len(value.conversations), "Would change": changing,
-            "Tag changes": len(value.tree_changes), "Applied": "Nothing yet. Open the classification to review and apply it."})
-        await post_automation_result(AutomationRef(trigger_id=str(rule.id), name=rule.name or ""), result, value)
+        count = lambda n, one, many: f"{n} {one if n == 1 else many}"  # noqa: E731
+        said = [count(len(value.tree_changes), "tag change", "tag changes")] if value.tree_changes else []
+        said += [count(len(value.conversations), "conversation", "conversations"),
+                 f"{sum(row.action != 'keep' for row in value.conversations)} would change"]
+        await post_app_message(
+            AutomationRef(trigger_id=str(rule.id), name=rule.name or ""), review_app().read_text(encoding="utf-8"), value,
+            status="needs_review", data={"summary": " · ".join(said)})
     return ref
 
 
@@ -184,19 +269,26 @@ def moderated(message) -> None:
     spawn(follow())
 
 
-async def apply(value: StreamInboxClassification, *, conversations: Optional[list[str]] = None, tree: bool = True) -> dict:
-    """Make the proposal real for ``conversations`` (ids; None = every row) and, with ``tree``, every tree
-    change. A row whose tag a tree change adds or moves brings that change with it, tree or not."""
+async def apply(value: StreamInboxClassification, *, conversations: Optional[list[str]] = None,
+                tree: Union[bool, list[str]] = True) -> dict:
+    """Make the proposal real for ``conversations`` (ids; None = every row) and the tree changes ``tree``
+    names: True = every one, a list = the changes of those tags. A row whose tag a tree change adds or moves
+    brings that change with it, whatever ``tree`` says. A row with no proposed tag is not applied."""
     from flow_sdk.stream_inbox.message_tags import _rules, ontology, retag_as_classification  # noqa: PLC0415
 
     picked = [r for r in value.conversations if conversations is None or r.conversation_id in conversations]
     needed = {tag for row in picked for tag in row.proposed}
-    changes = [c for c in value.tree_changes if tree or (c.op in ("added", "moved") and c.tag in needed)]
+    named = set(tree) if isinstance(tree, list) else set()
+    changes = [c for c in value.tree_changes
+               if tree is True or c.tag in named or (c.op in ("added", "moved") and c.tag in needed)]
     rules = await _rules()   # one read for the whole apply: the rule set does not change under it
     done = {c.tag: await _apply_change(c, rules) for c in sorted(changes, key=lambda c: _ORDER[c.op])}
     known = {d["name"] for d in await ontology()}
     applied, failed, truths = [], {}, []
     for row in picked:
+        if not row.proposed:
+            failed[row.conversation_id] = "No tag is proposed for it."
+            continue
         missing = [tag for tag in row.proposed if tag not in known]
         message = None if missing else await retag_as_classification(
             row.message_id, add=row.proposed, rules=rules,
@@ -205,7 +297,42 @@ async def apply(value: StreamInboxClassification, *, conversations: Optional[lis
             failed[row.conversation_id] = f"{', '.join(missing)} is not in the tag tree." if missing else "The message is gone."
             continue
         applied.append(row.conversation_id)
-        truths.append(await _truth_row(message, row.proposed[0] if row.proposed else "", "auto"))
+        truths.append(await _truth_row(message, row.proposed[0], "auto"))
     if truths:
         await GROUND_TRUTH.put_many(truths)
+    if applied:
+        await settle_reviews(applied)
     return {"applied": applied, "failed": failed, "tree": done}
+
+
+async def settle_reviews(applied: list[str]) -> None:
+    """A review message says ``needs_review`` until nothing in it waits. After ``applied`` (conversation ids)
+    got their tags, each waiting review that proposes one of them is looked at again: once every conversation
+    of its proposal carries a tag from the tree -- from it, from a later proposal, or by hand -- it is ``done``."""
+    from flow_sdk.app.automation_message import find_automation_conversation, set_app_status  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.stream_inbox.message_tags import classifier  # noqa: PLC0415
+
+    async def messages(ids: list[str]) -> list:
+        # hydrate=False: only ``app`` and ``tags`` are read, never a body.
+        return await FlowMessage.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])), hydrate=False) if ids else []
+
+    rule = await classifier()
+    conv = await find_automation_conversation(str(rule.id)) if rule is not None else None
+    if conv is None:
+        return
+    waiting = {}
+    for review in await messages([ref.id for ref in conv.message_refs()]):
+        if review.app is None or review.app.status != "needs_review":
+            continue
+        stored = review.attached_value(StreamInboxClassification.spec_kind) or {}
+        held = StreamInboxClassification.model_validate({k: v for k, v in stored.items() if k != "spec_kind"})
+        if any(row.conversation_id in applied for row in held.conversations):
+            waiting[str(review.id)] = held
+    tags = {str(m.id): m.tags for m in await messages(
+        list({row.message_id for held in waiting.values() for row in held.conversations}))}
+    for review_id, held in waiting.items():
+        # A message that is gone waits for nothing.
+        if all(row.message_id not in tags or tags_under(tags[row.message_id], held.root) for row in held.conversations):
+            await set_app_status(review_id, "done")

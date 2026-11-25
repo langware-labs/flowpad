@@ -27,8 +27,10 @@ from flow_sdk.schema.data_spec.browser_driver_spec import (
     ANY_WORKER,
     BrowserAttach,
     BrowserDriverSpec,
+    BrowserKindSpec,
     BrowserProbe,
     WorkerSetupSpec,
+    parse_kind,
 )
 from flow_sdk.utils.templates import fill
 
@@ -39,6 +41,13 @@ SHIPPED_ROOT = Path(__file__).resolve().parents[1] / "system_projects" / "flowpa
 DEFAULT = "agent"
 #: A driver's saved config per machine: ``{<driver>: {<field>: <value>}}`` in the instance's preferences.
 PREF_CONFIG = "preferences.browser.config"
+#: What a person renamed a kind to, per machine: ``{<kind>: <name>}``.
+PREF_NAMES = "preferences.browser.names"
+#: What a session reported about a failing kind, per machine: ``{<kind>: {message, at}}``.
+PREF_ERRORS = "preferences.browser.errors"
+#: The kinds a person hid from the list, per machine: ``{<kind>: true}``. Nothing is uninstalled.
+PREF_HIDDEN = "preferences.browser.hidden"
+_KIND_PREFS = (PREF_NAMES, PREF_ERRORS, PREF_HIDDEN)
 #: A profile is a folder name of Flowpad's own — never a path, never a real user profile.
 _PROFILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}")
 
@@ -76,6 +85,37 @@ def names() -> tuple[str, ...]:
 
 def get(name: str) -> BrowserDriverSpec | None:
     return _registry().get(name or "")
+
+
+def driver_of(browser: object) -> str:
+    """The driver behind what a choice holds — a driver's name, or a kind
+    (``<browser>.<driving>.name.<profile>``); "" when it names neither."""
+    value = str(browser or "")
+    if value in _registry():
+        return value
+    _, driving, profile = parse_kind(value)
+    if not profile:
+        return ""
+    # A managed driver's profile is qualified by its folder; the extension's is a real profile.
+    return next((spec.name for spec in list_drivers()
+                 if spec.probe.value == driving and (not spec.managed or profile.startswith(_managed_profile(spec.name, "x")[:-1]))), "")
+
+
+def open_kind(kind: str) -> None:
+    """Bring a browser kind's window up for the person: a managed driver's own window (started
+    when it is not running), or the real profile's. Raises ``AgentBrowserError`` /
+    ``BrowserProfileError``."""
+    from flow_sdk.core import agent_browser  # noqa: PLC0415 — it imports this module
+    from flow_sdk.core.browser_profiles import BrowserProfileError, open_profile  # noqa: PLC0415
+
+    browser, _, profile = parse_kind(kind)
+    spec = get(driver_of(kind))
+    if spec is None or not browser:
+        raise BrowserProfileError("UNKNOWN_KIND", f"{kind!r} is not a browser kind")
+    if spec.managed:
+        agent_browser.ensure_running(driver=spec.name)
+    else:
+        open_profile(browser, profile)
 
 
 # ── workers ────────────────────────────────────────────────────────────────
@@ -234,3 +274,102 @@ def state_of(
             return "not_installed"
         return "connected" if in_use and not failed else "not_connected"
     return window or window_state(name)
+
+
+# ── kinds ──────────────────────────────────────────────────────────────────
+
+
+def usable(state: str) -> bool:
+    """A state a session can be given: the worker can use the browser and it is installed."""
+    return state not in ("unsupported", "not_installed")
+
+
+def _managed_profile(driver: str, profile: str = "") -> str:
+    """The profile part of a managed driver's kind. Qualified by the driver: two managed drivers
+    on "default" are two folders. :func:`driver_of` reads the driver back off it."""
+    return f"{driver}-{profile or 'default'}"
+
+
+def _kind_prefs() -> tuple[dict, dict, dict]:
+    """What this machine keeps per kind — ``(names, errors, hidden)`` — in one file read."""
+    from flow_sdk.preferences import read_instance_prefs  # noqa: PLC0415
+
+    saved = read_instance_prefs({key: {} for key in _KIND_PREFS})
+    return tuple(dict(saved[key]) if isinstance(saved[key], dict) else {} for key in _KIND_PREFS)  # type: ignore[return-value]
+
+
+def _set_kind_pref(key: str, kind: str, value: Any) -> None:
+    """Set (or, with a falsy value, drop) what this machine keeps about one kind under ``key``."""
+    from flow_sdk.preferences import write_instance_pref  # noqa: PLC0415
+
+    saved = _kind_prefs()[_KIND_PREFS.index(key)]
+    if value:
+        saved[kind] = value
+    elif saved.pop(kind, None) is None:
+        return
+    write_instance_pref(key, saved)
+
+
+def rename_kind(kind: str, name: str) -> None:
+    """What a person calls the kind on this machine; "" goes back to its profile's name."""
+    _set_kind_pref(PREF_NAMES, kind, name.strip())
+
+
+def hide_kind(kind: str, hidden: bool) -> None:
+    """Take the kind off this machine's list (or put it back). The browser itself is untouched."""
+    _set_kind_pref(PREF_HIDDEN, kind, hidden)
+
+
+def report_error(kind: str, message: str) -> None:
+    """A session's report that the kind is failing; "" clears it."""
+    from flow_sdk.instances.model import utc_now_iso  # noqa: PLC0415
+
+    _set_kind_pref(PREF_ERRORS, kind, {"message": message.strip(), "at": utc_now_iso()} if message.strip() else None)
+
+
+def list_kinds(states: Mapping[str, str], scan: Any = None, proven: tuple[str, str] = ("", "")) -> list[BrowserKindSpec]:
+    """Every browser a session could be given on this machine, one per profile: the list a person
+    sees in the footer menu and an agent reads with ``flow browser list``. A kind the person
+    hid stays in it, marked ``hidden``: the menu leaves it out unless asked for all, an agent never sees it.
+
+    A driver that rides the worker's extension gives one entry per real browser profile
+    (``scan``: :func:`browser_profiles.scan_extension`); a managed driver gives its own window,
+    on the profile of Flowpad's it is configured with. ``states``: each driver's
+    :func:`state_of`, read once by the caller. ``proven``: ``(browser, at)`` of a session's last
+    successful call — a failure reported before it on that browser is over, and is not shown."""
+    from flow_sdk.core import agent_browser  # noqa: PLC0415
+    from flow_sdk.core.browser_profiles import folder_times  # noqa: PLC0415
+
+    names, errors, hidden = _kind_prefs()
+    worked_on, worked_at = proven
+
+    def mine(kind: BrowserKindSpec) -> BrowserKindSpec:
+        """The kind as this machine keeps it: its own name for it, and a reported failure."""
+        failure = errors.get(kind.kind) or {}
+        over = worked_on in (kind.kind, kind.driver) and worked_at > str(failure.get("at") or "")
+        changes: dict[str, Any] = {"name": names[kind.kind]} if names.get(kind.kind) else {}
+        if hidden.get(kind.kind):
+            changes["hidden"] = True
+        if failure.get("message") and usable(kind.state) and not over:
+            changes |= {"state": "error", "error": str(failure["message"])}
+        return kind.model_copy(update=changes) if changes else kind
+
+    kinds: list[BrowserKindSpec] = []
+    for spec in list_drivers():
+        state = states.get(spec.name, "")
+        common = {"driving": spec.probe, "driver": spec.name, "icon": spec.icon, "install_url": spec.install_url}
+        if spec.probe is BrowserProbe.EXTENSION:
+            for found in scan.profiles if scan is not None else ():
+                profile = found.profile
+                kinds.append(BrowserKindSpec(
+                    browser=found.browser_id, profile=profile.id, name=profile.name,
+                    state=state if found.installed or state == "unsupported" else "not_installed",
+                    created=profile.created, last_used=profile.last_used, **common,
+                ))
+            continue
+        folder = agent_browser.profile_dir(spec.name)
+        kinds.append(BrowserKindSpec(
+            browser=agent_browser.app_for(spec.name), profile=_managed_profile(spec.name, read_config(spec.name).get("profile") or ""),
+            name=spec.title or spec.name, state=state, **folder_times(folder, folder / "Default" / "History"), **common,
+        ))
+    return [mine(kind) for kind in kinds]

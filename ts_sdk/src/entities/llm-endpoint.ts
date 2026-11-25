@@ -171,7 +171,7 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
   /** What this endpoint draws from, as bare ids (the form `id` takes): the hub's answer on a
    *  permissions read (its `partof` edges, typeids), else the local `sources` field. */
   get parentIds(): string[] {
-    const prefix = `${LLMEndpoint.type}-`;
+    const prefix = `${(this.constructor as typeof LLMEndpoint).type}-`;
     return (this.expand?.source_ids ?? this.sources).map((ref) =>
       ref.startsWith(prefix) ? ref.slice(prefix.length) : ref,
     );

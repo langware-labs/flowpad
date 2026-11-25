@@ -10,8 +10,8 @@
  *
  * **Pure — no React, no SDK.** Unit-tested by round-trip.
  */
-import type { LLMEndpointFilters, LLMEndpointLimits, LLMStreamingPolicy } from '@sdk';
-import { DEFAULT_LLM_FILTERS, DEFAULT_LLM_LIMITS } from '@sdk';
+import type { APIEndpointLimits, LLMEndpointFilters, LLMEndpointLimits, LLMStreamingPolicy } from '@sdk';
+import { DEFAULT_API_LIMITS, DEFAULT_LLM_FILTERS, DEFAULT_LLM_LIMITS } from '@sdk';
 
 export const STREAMING_POLICIES: readonly LLMStreamingPolicy[] = ['allow', 'require', 'deny'];
 
@@ -54,6 +54,9 @@ export interface FiltersForm {
 }
 
 export type LimitKey = keyof LLMEndpointLimits;
+/** Every limit either family has: an LLM endpoint's (tokens, dollars, requests a minute) and an API
+ *  endpoint's (dollars, requests per window). */
+export type AnyLimitKey = LimitKey | keyof APIEndpointLimits;
 
 export const LIMIT_KEYS: readonly LimitKey[] = [
   'tokens_total',
@@ -67,7 +70,10 @@ export const LIMIT_KEYS: readonly LimitKey[] = [
   'requests_per_minute',
 ];
 
-export type LimitsForm = Record<LimitKey, string>;
+/** An API endpoint's limits: dollars first, then requests. No tokens. */
+export const API_LIMIT_KEYS = Object.keys(DEFAULT_API_LIMITS) as readonly AnyLimitKey[];
+
+export type LimitsForm = Record<LimitKey, string> & Partial<Record<AnyLimitKey, string>>;
 
 export const NUMERIC_FILTER_KEYS = ['max_tokens_ceiling', 'max_input_chars', 'temperature_max', 'top_p_max'] as const;
 export type NumericFilterKey = (typeof NUMERIC_FILTER_KEYS)[number];
@@ -151,14 +157,18 @@ export function formToFilters(form: FiltersForm): LLMEndpointFilters {
   };
 }
 
-export function limitsToForm(limits: Partial<LLMEndpointLimits> | null | undefined): LimitsForm {
-  const l: LLMEndpointLimits = { ...DEFAULT_LLM_LIMITS, ...(limits ?? {}) };
-  return Object.fromEntries(LIMIT_KEYS.map((k) => [k, textOrEmpty(l[k])])) as LimitsForm;
+export function limitsToForm(
+  limits: Partial<Record<AnyLimitKey, number | null>> | null | undefined,
+  keys: readonly AnyLimitKey[] = LIMIT_KEYS,
+): LimitsForm {
+  const l: Partial<Record<AnyLimitKey, number | null>> = { ...DEFAULT_LLM_LIMITS, ...(limits ?? {}) };
+  // The LLM keys are always present (a form is a full record of them); `keys` adds the family's own.
+  return Object.fromEntries([...new Set([...LIMIT_KEYS, ...keys])].map((k) => [k, textOrEmpty(l[k])])) as LimitsForm;
 }
 
-export function formToLimits(form: LimitsForm): LLMEndpointLimits {
+export function formToLimits(form: LimitsForm, keys: readonly AnyLimitKey[] = LIMIT_KEYS): LLMEndpointLimits {
   return Object.fromEntries(
-    LIMIT_KEYS.map((k) => [k, finiteOrNull(numOrNull(form[k] ?? ''))]),
+    keys.map((k) => [k, finiteOrNull(numOrNull(form[k] ?? ''))]),
   ) as unknown as LLMEndpointLimits;
 }
 

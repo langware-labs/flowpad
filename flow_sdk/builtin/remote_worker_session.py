@@ -49,6 +49,24 @@ class ReplyPolicy(StrEnum):
     REVIEW = "review"  # save as a host draft inside the session
 
 
+class TurnKind(StrEnum):
+    """What one turn of a session runs on the host. The guest asks for kinds, the
+    host approves some of them, and a turn of any other kind is refused."""
+    PROMPT = "prompt"    # the host's worker answers (spends the host's LLM tokens)
+    COMMAND = "command"  # a shell command in the session's folder (no LLM)
+    CONTROL = "control"  # a script in the host's open Flowpad tab, with the SDK (no LLM)
+
+
+ALL_TURN_KINDS: tuple[str, ...] = tuple(k.value for k in TurnKind)
+
+
+def clean_turn_kinds(value: Any) -> list[str]:
+    """The known kinds named in ``value``, once each, in ``TurnKind`` order. Anything
+    else — a kind this build does not know, a non-list — is dropped, never run."""
+    named = set(value) if isinstance(value, (list, tuple, set)) else set()
+    return [k for k in ALL_TURN_KINDS if k in named]
+
+
 def _instance_scratch(name: str) -> "Path":
     """A fixed folder under the instance's own data folder (never machine-wide).
     It is a protected path, so running there never mints a Project for it."""
@@ -71,8 +89,16 @@ def chat_scratch_workdir() -> "Path":
     return _instance_scratch("chat-scratch")
 
 
-# The approve refusal for a session with nowhere to run — the UI answers it with a project picker.
-NEEDS_PROJECT_MESSAGE = "pick the project this live session runs in"
+async def project_folder(project_id: str | None) -> str | None:
+    """The folder a project has on THIS machine, or None: no such project, no path
+    saved for it (a project that only exists on the hub), or a path that is gone."""
+    if not project_id:
+        return None
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    project = await Project.get_one({"id": project_id})
+    folder = getattr(project, "fs_storage_mount_path", None) if project else None
+    return folder if folder and Path(folder).is_dir() else None
 
 
 class ApprovedVia(StrEnum):
@@ -229,6 +255,16 @@ class RemoteWorkerSession(Entity):
         default=None, description="Prompts this session may run; None = unlimited (a live session)."
     )
     prompts_used: int = APIField(default=0, description="Turns answered so far (host-authoritative).")
+    # The kinds of turn (``TurnKind``). ``requested_turn_kinds`` is the guest's ask, on
+    # the start marker; ``turn_kinds`` is what the host left ticked at Approve, and the
+    # only list a turn is checked against. None on either = prompts only (an older row
+    # or peer). The ask never becomes the approval by itself.
+    requested_turn_kinds: Optional[list[str]] = APIField(
+        default=None, description="TurnKinds the guest asked for; None = prompts only."
+    )
+    turn_kinds: Optional[list[str]] = APIField(
+        default=None, description="TurnKinds the host approved (host-authoritative); None = prompts only."
+    )
     approved_via: Optional[str] = APIField(default=None, description="ApprovedVia: manual.")
 
     # Host-authoritative, synced projection so the guest can render live state.
@@ -256,6 +292,22 @@ class RemoteWorkerSession(Entity):
         return self.is_prompt_request and self.prompts_used >= self.prompt_limit
 
     @property
+    def askable_turn_kinds(self) -> list[str]:
+        """What the host may approve: what the guest asked for. A prompt request is its one prompt."""
+        if self.is_prompt_request:
+            return [TurnKind.PROMPT.value]
+        return clean_turn_kinds(self.requested_turn_kinds) or [TurnKind.PROMPT.value]
+
+    @property
+    def effective_turn_kinds(self) -> list[str]:
+        """What a turn of this session may be: the approved kinds, never more than was asked."""
+        approved = clean_turn_kinds(self.turn_kinds) or [TurnKind.PROMPT.value]
+        return [k for k in approved if k in self.askable_turn_kinds]
+
+    def allows(self, kind: str | None) -> bool:
+        return kind in self.effective_turn_kinds
+
+    @property
     def effective_reply_policy(self) -> ReplyPolicy:
         try:
             return ReplyPolicy(self.reply_policy) if self.reply_policy else ReplyPolicy.AUTO
@@ -271,14 +323,14 @@ class RemoteWorkerSession(Entity):
         "host_user_id", "guest_user_id", "host_name", "guest_name",
         "status", "last_activity_at", "started_at",
         "starting_message_id", "reply_policy", "approved_at", "approved_via",
-        "prompt_limit", "prompts_used",
+        "prompt_limit", "prompts_used", "requested_turn_kinds", "turn_kinds",
     })
     # Host-authoritative subset: adopted from a snapshot only on the guest,
     # and only when the snapshot's activity clock is fresher.
     _HOST_AUTHORITATIVE_FIELDS: ClassVar[frozenset[str]] = frozenset({
         "status", "last_activity_at", "host_user_id", "host_name",
         "collaboration_room_id", "reply_policy", "approved_at", "approved_via",
-        "prompts_used",
+        "prompts_used", "turn_kinds",
     })
     # Identity the host row may be MISSING when it materialized from a guest
     # carrier packed before the guest's roster resolved — filled once, never
@@ -286,7 +338,7 @@ class RemoteWorkerSession(Entity):
     # opening proposal, adopted the same fill-only way.
     _HOST_FILL_FIELDS: ClassVar[tuple[str, ...]] = (
         "guest_user_id", "guest_name", "conversation_id", "host_user_id", "host_name",
-        "starting_message_id", "reply_policy", "prompt_limit",
+        "starting_message_id", "reply_policy", "prompt_limit", "requested_turn_kinds",
     )
 
     @classmethod
@@ -314,6 +366,8 @@ class RemoteWorkerSession(Entity):
         """
         data = {k: v for k, v in (snap or {}).items() if k in cls.SNAPSHOT_FIELDS and v is not None}
         if local is None:
+            if local_is_host:
+                data.pop("turn_kinds", None)  # only the host's own Approve writes what is approved
             return cls.model_validate({**data, "type": cls.get_type()})
 
         if local_is_host:
@@ -321,6 +375,7 @@ class RemoteWorkerSession(Entity):
             # is the one state the host takes from a guest's snapshot.
             if data.get("status") == RemoteWorkerSessionStatus.ENDED and local.status != RemoteWorkerSessionStatus.ENDED:
                 local.mark_activity(RemoteWorkerSessionStatus.ENDED)
+                local._stop_running_command()  # the guest left: nothing keeps running for it
             # host_user_id/host_name included: a first carrier packed before the
             # guest's roster resolved the peer stamps host_user_id=None, and the
             # host row materialized from it could otherwise never acquire its own
@@ -452,6 +507,7 @@ class RemoteWorkerSession(Entity):
         if not already_ended:
             self.mark_activity(RemoteWorkerSessionStatus.ENDED)
             await self.save()
+        self._stop_running_command()
         await self._stop_host_worker()
         if announce and not already_ended:
             await self._emit_event(event, text=text, someone_typeid=someone_typeid)
@@ -461,6 +517,12 @@ class RemoteWorkerSession(Entity):
         the ``expired`` line — it is the guest's indication and carries the
         ENDED snapshot — so a guest-side close stays silent rather than doubling it."""
         await self.end("expired", announce=local_is_host, someone_typeid=someone_typeid)
+
+    def _stop_running_command(self) -> None:
+        """A command still running for this session is ended with it (a no-op when there is none)."""
+        from flow_sdk.app.actions.execute_prompt import stop_running_command  # noqa: PLC0415
+
+        stop_running_command(self.id)
 
     async def _stop_host_worker(self) -> None:
         """Best-effort: stop the host-side worker so queued/future remote prompts
@@ -526,26 +588,28 @@ class RemoteWorkerSession(Entity):
         await self.approve(via=ApprovedVia.MANUAL, someone_typeid=someone_typeid)
         asyncio.create_task(redrive_session_prompts(self))
 
-    async def run_project_id(self, requested: str | None = None) -> str | None:
-        """Where this session's turns run on the host: the project the host
-        picks at approval (``requested`` — checked: it must exist and have a
-        folder), else the one already chosen for the session, else the
-        conversation's. None = the host still has to pick.
+    async def place_to_run(self, conversation: Any = None) -> tuple[str | None, str]:
+        """Where this session's turns run on the host: ``(project id, folder)``.
 
-        A person-to-person chat is project-less by design (``Conversation.
-        resolve_project_id``), so for a live session started in one, approval is
-        where the project gets chosen — never later, in a turn that can only fail.
+        There is ALWAYS a folder — a session never fails for want of one. It is the
+        "No project" folder when that was chosen; else the folder of the session's
+        project, else of its conversation's — a project counts only when it has a
+        folder on this machine; else the instance's temp folder (``scratch_workdir``).
+        The choice is kept on the row (the caller saves), so every turn of the
+        session runs in the same place.
         """
         from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
-        from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-        if requested:
-            project = await Project.get_one({"id": requested})
-            return requested if project is not None and getattr(project, "fs_storage_mount_path", None) else None
-        if self.project_id:
-            return self.project_id
-        conv = await Conversation.get_one({"id": self.conversation_id}) if self.conversation_id else None
-        return getattr(conv, "project_id", None) or None
+        if conversation is None and self.conversation_id:
+            conversation = await Conversation.get_one({"id": self.conversation_id})
+        if not self.workdir:
+            for project_id in (self.project_id, getattr(conversation, "project_id", None)):
+                folder = await project_folder(project_id)
+                if folder:
+                    self.project_id = project_id
+                    return project_id, folder
+            self.workdir = str(scratch_workdir())
+        return None, self.workdir
 
     @action.post(action_name="approve")
     async def _http_approve(self) -> ApiResponse:
@@ -554,28 +618,40 @@ class RemoteWorkerSession(Entity):
         immediately; ``prompt_auto_handled``-before-run keeps the re-drive
         idempotent against concurrently arriving prompts.
 
-        Body: ``{project_id?, scratch?}``. It approves this session only —
-        nothing is remembered for the guest's next one. ``project_id`` is where the session runs, required when neither the
-        session nor its conversation has a project — refused (409, session left
-        PENDING) rather than approved into a turn that can only fail.
-        ``scratch: true`` is the host's "No project": the session runs in the
-        instance's one temp folder (``scratch_workdir``)."""
+        Body: ``{project_id?, scratch?, turn_kinds?}``. ``turn_kinds`` is what the host
+        left ticked: a non-empty subset of what the guest asked for, else 400. Absent =
+        everything asked for. It approves this session only —
+        nothing is remembered for the guest's next one. ``project_id`` is the
+        project the host picked to run in; ``scratch: true`` is the host's "No
+        project", the instance's one temp folder (``scratch_workdir``). With
+        neither: ``place_to_run``."""
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         ri = get_current_request_info()
         body = (await ri.get_post_data() or {}) if ri else {}
         if body.get("remember"):
             return ApiFailResponse(message="approve covers this session only; nothing can be remembered", status_code=400)
+        if "turn_kinds" in body and body["turn_kinds"] is not None:
+            named = body["turn_kinds"] if isinstance(body["turn_kinds"], list) else [None]
+            ticked = clean_turn_kinds(named)
+            # Every NAMED kind must be one that was asked for: an unknown one is refused, not dropped.
+            if not ticked or any(k not in self.askable_turn_kinds for k in named):
+                return ApiFailResponse(
+                    message="turn_kinds must be one or more of what was asked for: " + ", ".join(self.askable_turn_kinds),
+                    status_code=400,
+                )
+            self.turn_kinds = ticked
+        elif not clean_turn_kinds(self.turn_kinds):
+            self.turn_kinds = self.askable_turn_kinds
+        requested = str(body.get("project_id") or "").strip() or None
         if body.get("scratch") in (True, "true", "1"):
             self.workdir = str(scratch_workdir())
+        elif requested:
+            if await project_folder(requested) is None:
+                return ApiFailResponse(message="that project has no folder to run in", status_code=400)
+            self.project_id = requested
         else:
-            requested = str(body.get("project_id") or "").strip() or None
-            project_id = await self.run_project_id(requested)
-            if project_id is None:
-                if requested:
-                    return ApiFailResponse(message="that project has no folder to run in", status_code=400)
-                return ApiFailResponse(message=NEEDS_PROJECT_MESSAGE, status_code=409)
-            self.project_id = project_id
+            await self.place_to_run()
         if self.status not in ACTIVE_STATUSES and not can_transition(self.status, RemoteWorkerSessionStatus.IDLE):
             return ApiFailResponse(message=f"illegal live-session transition: {self.status} → idle")
         await self._approve_and_run()

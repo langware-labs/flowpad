@@ -401,12 +401,16 @@ async def test_last_active_project_is_scoped_to_workspace(db, home):
     from flow_sdk.builtin.workspace import Workspace
 
     workspace = await Workspace.new("Client")
+    # "mock" is the newest in each scope, but a scratch project is never the one to land in.
     for name, root, recency in [("older", Path(workspace.root_path), 10),
                                 ("recent", Path(workspace.root_path), 20),
-                                ("outside", home / "Flowpad workspace", 30)]:
+                                ("mock-in", Path(workspace.root_path), 25),
+                                ("outside", home / "Flowpad workspace", 30),
+                                ("mock-out", home / "Flowpad workspace", 40)]:
         folder = root / name
         folder.mkdir(parents=True)
-        project = Project(name=name, fs_storage_mount_path=str(folder), last_active_at=recency)
+        project = Project(name=name, fs_storage_mount_path=str(folder), last_active_at=recency,
+                          scratch=name.startswith("mock"))
         project.id = Project.allocate_id(project.model_dump())
         await project.save()
     assert (await Project.get_last_active(str(workspace.id))).name == "recent"

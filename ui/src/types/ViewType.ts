@@ -45,6 +45,9 @@ type LucideExportName = {
 
 export interface ViewerMeta {
   title: MessageDescriptor;
+  /** A view whose pointer selects between screens with different names (the endpoints view: LLM or
+   *  Cloud APIs) names the one a pointer shows; `undefined` = `title`. */
+  titleFor?: (pointer: string) => MessageDescriptor | undefined;
   /**
    * Icon component name (a string, to keep JSX out of this shared module).
    *
@@ -325,8 +328,10 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   // Hub LLM endpoints (page=hub). Pointer = `<id>[/<overview|usage|models>]`:
   // in-view selection + tab, so it folds into one chip (CREDENTIALS precedent).
+  // `api[/…]` is the Cloud APIs side of the same screen (`llm-endpoints-pointer`), named as its header is.
   [ViewType.LLM_ENDPOINTS]: {
     title: msg`LLM Endpoints`,
+    titleFor: (pointer) => (/^api(\/|$)/.test(pointer) ? msg`Cloud API Endpoints` : undefined),
     iconName: 'Waypoints',
     tabLocation: 'dedicated',
     canAddAsTab: false,
@@ -621,9 +626,13 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
  * never follow a locale switch. Read a title through here rather than off
  * `.title`, so the resolution happens once, at render, in one place.
  */
-export function viewerTitle(viewType: ViewType | string | null | undefined): string | undefined {
+export function viewerTitle(
+  viewType: ViewType | string | null | undefined,
+  pointer?: string | null,
+): string | undefined {
   if (!viewType) return undefined;
-  const descriptor = VIEWER_REGISTRY[viewType as ViewType]?.title;
+  const meta = VIEWER_REGISTRY[viewType as ViewType];
+  const descriptor = (pointer ? meta?.titleFor?.(pointer) : undefined) ?? meta?.title;
   return descriptor ? i18n._(descriptor) : undefined;
 }
 

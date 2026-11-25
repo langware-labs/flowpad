@@ -76,6 +76,7 @@ class AssetEditor(StrEnum):
     PDF = "pdf"
     DOCX = "docx"  # a .docx, rendered read-only to HTML by mammoth
     ARCHIVE = "archive"  # a .zip, browsed as the folder it extracts to (a temp copy)
+    ICS = "ics"  # an iCalendar file (a meeting invite), shown as its events
     VALUE = "value"  # a .value.json: one DataSpec value, shown by its kind's viewer
 
 
@@ -123,6 +124,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.PDF: [],
     AssetEditor.DOCX: [],
     AssetEditor.ARCHIVE: [],
+    AssetEditor.ICS: [],
     AssetEditor.VALUE: [],
 }
 

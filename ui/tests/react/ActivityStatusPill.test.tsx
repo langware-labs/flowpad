@@ -1,6 +1,6 @@
 /**
- * The activity bar: a one-liner in the footer for the newest job reported to the box, its
- * receipt once it ends, and the details modal it opens. Driven through the store's real
+ * The activity bar: a one-liner in the footer for the newest job reported to the box while
+ * it runs, and the details modal it opens. Driven through the store's real
  * ingestion point, the way WS snapshots arrive.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -98,20 +98,15 @@ describe('activity bar', () => {
     expect(openDock.mock.lastCall?.[0].toUrl()).toContain('/automations/runs');
   });
 
-  it('keeps a clean receipt after the root ends, in the bar and the open modal, until dismissed', async () => {
+  it('a root that ends clean leaves the bar; the open modal keeps its receipt', async () => {
     renderBar();
     act(() => handleActivitySnapshot(activitySpec({ label: 'Indexing', done: 3, total: 9 })));
     await userEvent.click(screen.getByTestId('activity-status-line'));
 
     act(() => handleActivitySnapshot(activitySpec({ label: 'Indexing', state: 'completed', message: 'all green', done: 9, total: 9, seq: 2 })));
 
-    expect(screen.getByTestId('activity-status-pill').dataset.state).toBe('completed');
-    expect(screen.getByTestId('activity-details-summary').textContent).toContain('Indexing');
-
-    act(() => useActivityDetailsStore.getState().setOpen(false));
-    // fireEvent, not userEvent: see the body pointer-events note in beforeEach.
-    fireEvent.click(screen.getByTestId('activity-status-dismiss'));
     expect(screen.queryByTestId('activity-status-pill')).toBeNull();
+    expect(screen.getByTestId('activity-details-summary').textContent).toContain('Indexing');
   });
 
   it('a root that ends with errors leaves the bar: its errors go to the warnings list', () => {

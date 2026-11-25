@@ -102,3 +102,39 @@ async def test_every_webhook_verb_the_inbound_screen_calls_goes_to_the_hub_verba
         ("DELETE", f"/api/v1/graph/webhook/{claim}"),
     ]
     assert fake.seen[1][3] == {"parent": "@whatsapp", "claim": {"kind": "account", "key": "1"}}
+
+
+@pytest.mark.asyncio
+async def test_every_api_endpoint_call_the_endpoints_screen_makes_goes_to_the_hub_verbatim(hub):
+    from flow_sdk.builtin.api_endpoint import APIEndpoint  # noqa: F401, PLC0415 — registers the hub-only type
+
+    fake = hub()
+    endpoint = mint_uuid()
+
+    calls = [
+        ("GET", "api_endpoint", None),
+        ("POST", "api_endpoint", {"name": "video", "kinds": ["video.generate"]}),
+        ("GET", f"api_endpoint/{endpoint}/chain", None),
+        ("GET", f"api_endpoint/{endpoint}/usage", None),
+        ("GET", f"api_endpoint/{endpoint}/history", None),
+        ("POST", f"api_endpoint/{endpoint}/allocate", {"name": "a student", "limits": {"cost_usd_total": 6}}),
+        ("POST", f"api_endpoint/{endpoint}/credential", {"key": "k"}),
+        ("POST", f"api_endpoint/{endpoint}/test", {}),
+        ("PUT", f"api_endpoint/{endpoint}", {"limits": {"cost_usd_total": 10}}),
+        ("DELETE", f"api_endpoint/{endpoint}", None),
+    ]
+    for method, path, body in calls:
+        with pytest.raises(AssertionError, match="forwarded"):
+            await call_local(method, path, json=body)
+
+    assert [(m, p) for m, p, _, _ in fake.seen] == [(m, f"/api/v1/graph/{p}") for m, p, _ in calls]
+    assert fake.seen[5][3] == {"name": "a student", "limits": {"cost_usd_total": 6}}
+
+
+@pytest.mark.asyncio
+async def test_an_api_endpoint_has_no_local_copy_to_save():
+    from flow_sdk.builtin.api_endpoint import APIEndpoint  # noqa: PLC0415
+
+    assert APIEndpoint._hub_only is True
+    with pytest.raises(ValueError, match="the hub's row"):
+        await APIEndpoint(name="x").save()

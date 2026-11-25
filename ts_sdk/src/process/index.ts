@@ -21,6 +21,7 @@ export {
   isProcessEnded,
   isWorkerRunning,
   isWorkerTerminal,
+  isWorkerTurnOver,
   hasWorkerStarted,
   isReadyForInput,
   isBusy,

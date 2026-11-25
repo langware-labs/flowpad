@@ -6,29 +6,53 @@
   "channel_icon_names": {
     "gmail": "Gmail",
     "slack": "Slack",
-    "linkedin": "Linkedin"
+    "linkedin": "Linkedin",
+    "whatsapp": "WhatsApp"
   },
-  "description": "Reads Gmail, Slack or LinkedIn messages by having your Claude Code session fetch them — with the connectors you already authorised there, or through a browser.",
+  "channel_badge_icon_names": {
+    "linkedin": "Globe",
+    "whatsapp": "Globe"
+  },
+  "description": "Reads Gmail, Slack, LinkedIn or WhatsApp messages by having your Claude Code session fetch them — with the connectors you already authorised there, or through a browser.",
   "kind": "datasource.agent",
+  "offers": [
+    {
+      "key": "linkedin",
+      "title": "LinkedIn",
+      "channel": "linkedin",
+      "description": "Your LinkedIn messages, read and answered in a browser profile that is signed in to LinkedIn.",
+      "preset": {"connector": "linkedin"},
+      "fields": ["browser"],
+      "featured": true
+    },
+    {
+      "key": "whatsapp",
+      "title": "WhatsApp Web",
+      "channel": "whatsapp",
+      "description": "Your own WhatsApp chats, read in a browser profile that is signed in to WhatsApp Web. Read only, one-to-one chats; a chat it reads becomes read on WhatsApp.",
+      "preset": {"connector": "whatsapp"},
+      "fields": ["browser"],
+      "featured": true
+    }
+  ],
   "config": {
     "connector": {
       "type": "text",
       "label": "Service",
-      "placeholder": "gmail | slack | linkedin",
-      "account_key": true,
-      "hint": "gmail, slack or linkedin."
+      "placeholder": "gmail | slack | linkedin | whatsapp",
+      "account_key": true
     },
     "mailbox": {
       "type": "text",
       "label": "Label or channel",
       "placeholder": "INBOX",
-      "hint": "Gmail: a label (defaults to INBOX). Slack: a channel ID (C…), required. LinkedIn: leave empty."
+      "hint": "Gmail: a label (defaults to INBOX). Slack: a channel ID (C…), required. A service read through a browser: leave empty."
     },
     "browser": {
       "type": "text",
       "label": "Browser",
-      "placeholder": "extension | chrome_debug | agent",
-      "hint": "For a service read through a browser (LinkedIn): the browser driver the worker uses. That browser must be signed in to the service."
+      "choices": true,
+      "hint": "For a service read through a browser: the browser profile the worker uses. That profile must be signed in to the service."
     },
     "harness": {
       "type": "text",

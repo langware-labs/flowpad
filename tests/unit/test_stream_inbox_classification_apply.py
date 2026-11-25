@@ -3,6 +3,7 @@ import pytest
 
 from flow_sdk import evals
 from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.dataset import Dataset
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.tag import Tag
@@ -89,8 +90,9 @@ async def test_a_row_whose_tag_is_not_in_the_tree_fails_alone():
 async def test_the_shipped_eval_judges_the_classifier_on_the_ground_truth(monkeypatch):
     base, t = await tree("billing", "refund")
     right, wrong, none = [await FlowMessage(text=text).save() for text in ("invoice", "money back", "thanks")]
-    await classification.apply(StreamInboxClassification.model_validate({"conversations": [
+    done = await classification.apply(StreamInboxClassification.model_validate({"conversations": [
         row(right, [], [t["billing"]]), row(wrong, [], [t["refund"]]), row(none, [], [])]}))
+    assert done["failed"] == {f"c-{none.id}": "No tag is proposed for it."}   # a row with no tag is not ground truth
 
     async def choose(value, choices):   # the classifier's double: everything about money is billing
         text = value.message.text
@@ -98,8 +100,8 @@ async def test_the_shipped_eval_judges_the_classifier_on_the_ground_truth(monkey
 
     monkeypatch.setattr("flow_sdk.tags.classify.choose", choose)
     run, _ = await evals.run(Dataset.at(classification.GROUND_TRUTH.folder()))
-    assert run.eval_name == "stream-inbox-tags" and run.metrics["accuracy"] == pytest.approx(2 / 3, abs=1e-3)
-    assert (run.counts.get("correct"), run.counts.get("wrong")) == (2, 1)
+    assert run.eval_name == "stream-inbox-tags" and run.metrics["accuracy"] == pytest.approx(1 / 2, abs=1e-3)
+    assert (run.counts.get("correct"), run.counts.get("wrong")) == (1, 1)
 
 
 @async_context
@@ -112,7 +114,67 @@ async def test_a_run_hands_its_proposal_in_by_reference_and_the_tree_decides_wha
     assert await classification.problems(ghost) == [
         f"tree change added {t['billing']}: the tag already exists",
         f"'invoice': proposed {base}.ghost is neither in the tree nor added by this value"]
+    empty = StreamInboxClassification.model_validate({"conversations": [row(message, [], [])]})
+    assert "no tag proposed" in (await classification.problems(empty))[0]   # every conversation gets a tag
     good = StreamInboxClassification.model_validate({"conversations": [row(message, [], [t["billing"]])]})
     assert await classification.problems(good) == []
     ref = await classification.submit(good)
     assert ref.startswith("stream_inbox.classification.id.") and classification.submitted(ref) == good
+    # A new tag that came with no colour gets one when the proposal is handed in: what is shown is what is applied.
+    fresh = StreamInboxClassification.model_validate({"tree_changes": [{"op": "added", "tag": f"{base}.refund", "meaning": "x", "reason": "y"}]})
+    assert classification.submitted(await classification.submit(fresh)).tree_changes[0].color in classification._PALETTE
+
+
+@async_context
+async def test_the_decision_model_validates_rows_on_the_tree_to_be_and_one_tag_change_is_approved_alone(monkeypatch):
+    base, t = await tree("billing")
+    refund = f"{t['billing']}.refund"
+    money, hello = [await FlowMessage(text=text).save() for text in ("money back", "hello")]
+    value = StreamInboxClassification.model_validate({"conversations": [row(money, [], [refund]), row(hello, [], [t["billing"]])],
+        "tree_changes": [{"op": "added", "tag": refund, "meaning": "Asks for money back", "reason": "new"},
+                         {"op": "updated", "tag": t["billing"], "was": "about billing", "meaning": "Invoices only", "reason": "sharper"}]})
+    offered = {}
+
+    async def choose(context, choices):   # the decision model's double: only "money back" lands, on refund
+        offered.update(choices)
+        return DecisionVerdict.satisfied("", value=TagClassification(tag=refund if context.message.text == "money back" else "", confidence=0.9))
+
+    monkeypatch.setattr("flow_sdk.tags.classify.choose", choose)
+    checked = await classification.validate(value)
+    assert (offered[refund], offered[t["billing"]]) == ("Asks for money back", "Invoices only")   # the tree as the value leaves it
+    assert [(r.validation.detected, r.validation.ok) for r in checked.conversations] == [(refund, True), ("", False)]
+    assert refund not in {d["name"] for d in await message_tags.ontology()}   # validating wrote nothing
+
+    done = await classification.apply(value, conversations=[], tree=[refund])
+    assert done == {"applied": [], "failed": {}, "tree": {refund: "applied"}}
+    assert {d["name"]: d["description"] for d in await message_tags.ontology()}[t["billing"]] == "about billing"   # not the other change
+
+
+@async_context
+async def test_a_review_message_needs_review_until_its_conversations_carry_a_tag(monkeypatch, tmp_path):
+    from flow_sdk.server.builtin_triggers import set_service_triggers
+
+    await set_service_triggers()   # the classifier automation: its conversation is where a proposal is posted
+    monkeypatch.setattr(classification, "_values", lambda: tmp_path / "values")
+    base, t = await tree("billing")
+    one, two = await FlowMessage(text="invoice").save(), await FlowMessage(text="charged twice").save()
+    value = StreamInboxClassification.model_validate({"conversations": [row(one, [], [t["billing"]]), row(two, [], [t["billing"]])]})
+    await classification.submit(value)
+    conv = await Conversation.get_one({"channel": "automations", "channel_source_id": f"trigger-{(await message_tags.classifier()).id}"})
+
+    async def review():
+        return await FlowMessage.get_by_id(conv.latest_message_ref().id)
+
+    await classification.apply(value, conversations=[f"c-{one.id}"])
+    assert (await review()).app.status == "needs_review"     # one conversation still waits
+    await classification.apply(value, conversations=[f"c-{two.id}"])
+    assert (await review()).app.status == "done"
+
+
+def test_the_review_app_is_a_nano_app_whose_header_says_what_the_run_proposes():
+    from flow_sdk.schema.data_spec.nano_app_spec import read_nano_app, render_header
+
+    page = classification.review_app().read_text(encoding="utf-8")
+    app = read_nano_app(page)
+    assert (app.name, app.input, app.slots) == ("classification-review", "stream_inbox.classification", ["header", "block", "page"])
+    assert render_header(page, {"summary": "1 tag change · 6 conversations · 5 would change"}) == "1 tag change · 6 conversations · 5 would change"

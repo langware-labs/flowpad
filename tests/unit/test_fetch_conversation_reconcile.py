@@ -256,8 +256,11 @@ async def test_hub_side_delete_drops_stale_pointer():
         {"kind": "invitation", "remote": True},  # invitation placeholder
         {"delivery_status": "draft", "remote": True},  # local draft
         {"remote": False},  # no confirmed hub twin
+        # Sent while the listing was in flight (2026-11-25: a live session answering its queue
+        # during the catch-up had 31 of its replies erased here as "deleted on the hub").
+        {"created_date": "2999-01-01T00:00:00Z"},
     ],
-    ids=["created", "invitation", "draft", "not-remote"],
+    ids=["created", "invitation", "draft", "not-remote", "newer-than-the-listing"],
 )
 async def test_local_pending_survives_rewrite(pending_fields):
     conv = "aaaa0003-1111-4111-8111-000000000003"

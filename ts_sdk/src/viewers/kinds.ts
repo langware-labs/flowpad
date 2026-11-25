@@ -104,3 +104,12 @@ export function parseValueRef(text: unknown): { kind: string; id: string } | nul
   const id = text.slice(at + 4);
   return at > 0 && isValidEntityId(id) && !kind.split('.').includes('id') ? { kind, id } : null;
 }
+
+/** A value file's content (`*.value.json`): the value, and the kind it carries in its `spec_kind` (a dump's tag). */
+export function readValue(raw: unknown): { kind: string; value: unknown } {
+  const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not a value: expected an object');
+  const { spec_kind: kind, ...value } = parsed as Record<string, unknown>;
+  if (typeof kind !== 'string' || !kind) throw new Error('the file names no spec_kind');
+  return { kind, value };
+}

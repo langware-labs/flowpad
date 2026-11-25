@@ -56,6 +56,12 @@ describe('agent icons', () => {
     expect(tiles.map((tile) => tile.own)).toEqual([true, true, true, false, false]);
   });
 
+  it('in project scope shows only the project agents, each with its deployments', () => {
+    const scoped = buildAgentTiles([mine, withDeps], [mine, withDeps, ownedElsewhere, readable], deployments, issues, 'project');
+    expect(scoped.map((tile) => tile.key)).toEqual(['agent-mine', 'agent-busy']);
+    expect(scoped.map(deploymentCount)).toEqual([0, 2]);
+  });
+
   it('counts the deployments a click lists, and the open issues on the agent or any of them', () => {
     expect(tiles.map(deploymentCount)).toEqual([0, 2, 1, 2, 0]);
     expect(tiles.map((tile) => tile.issueCount)).toEqual([0, 2, 0, 1, 0]);

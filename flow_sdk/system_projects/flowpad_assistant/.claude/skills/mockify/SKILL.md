@@ -2,16 +2,16 @@
 id: 098a70ff-0160-4950-aa04-b7e7d1990ea2
 name: mockify
 description: 'Turns a product idea into a clickable HTML mock of the user journey
-  that the user can walk and comment on — every screen in order, with a journey bar
-  and a per-screen feedback box (text + image) whose comments are saved as rows and
-  sent back to this session in one Execute. Two
-  modes: real, the default (built from a running app''s own captured DOM and CSS,
-  checked side by side so it looks exactly like the app), and fast (HTML in the
-  product''s tokens — only for a product that does not run here, or when
-  the user asks for a sketch). Use for "mock this flow", "show me the UX", "make a clickable mock", or a
-  design discussion that needs screens before code; also when mock feedback arrives or a mock is approved. `mockify plan` / `mockify implement`:
-  build the approved mock from its build list, each item proven against its screen. `mockify test`: define a regression
-  test on the current UI as a manual_regression .md. NOT for a working
+  that the user can walk and comment on — every screen in order, a journey bar
+  and a per-screen feedback box (text + image) whose comments come back to this
+  session in one Execute. Two modes: real, the default (built from a running app''s
+  captured DOM and CSS, so it looks exactly like the app), and fast (HTML in the
+  product''s tokens — only for a product that does not run here, or a sketch on
+  request). Use for "mock this flow", "show me the UX", "make a clickable mock" or a
+  design discussion needing screens before code; also when mock feedback arrives or a mock is approved.
+  `mockify plan` / `mockify implement`: build the approved mock, each item proven against its screen.
+  `mockify test`: a regression test on the current UI (manual_regression .md). `mockify guide`: a
+  click-through guide of the app as it is ("send them the steps"), as one file. NOT for a working
   app (web-app-builder), a one-page report or chart (html-builder), or slides (decker).'
 ---
 
@@ -22,7 +22,7 @@ the details being discussed written ON the screens; the reviewer walks it, leave
 and submits them back to you. It is not the product: no backend of its own, no real data.
 
 **A mock never lives in the repo.** Every mock, its kinds, its datasets and its feedback live in the
-**mock project** — `$TMPDIR/mockify/<repo folder name>/`, a Flowpad project of its own outside the repo.
+**mock project** — `$TMPDIR/mockify/<repo folder name>/`, a Flowpad project of its own outside the repo. It is marked `scratch`, so it stays out of the user's project list.
 Nothing is written into the repo until the person presses **💾 Save to repo** (the journey bar's popup toolbar) (or asks for it in
 words) — then "Save to repo" below copies that one mock in. Never `install_data.py`, `DM ds-put` or a mock folder into the repo.
 
@@ -64,6 +64,14 @@ Design, the mock's own three phases:
 
 The failure this order prevents: a mock that is one base screen with small patches, where clicking a
 control changes nothing. Every screen is planned, then built in full, then checked against its plan.
+
+**Questions end with planning; a build is whole.** Every open question — a decision on a screen, a flag, an
+approval you would want, a branch or a permission you need — is asked and answered before the build starts.
+Once the build starts (an approved plan, `mockify implement`, or the person saying "go") you build ALL of it in
+one run: no partial build, no stopping between steps to ask or to wait for a review, no "say go for the next
+part". Never write such a stop into a plan. Stop mid-build only for a real blocker (something that cannot be
+built at all, or an action that needs the person's confirmation), say it in the first line, and keep building
+everything that does not depend on it.
 
 After approval the mock is a **contract**: "Approve", "`mockify plan`" and "`mockify implement`" below are how it is kept.
 
@@ -395,10 +403,19 @@ No product code yet. For every item, in order:
 3. A plan, a review finding, a technical limit or your own better idea never changes a screen. Only the person
    does, on the mock.
 
-Done when no item is without `where` and none is `flagged`. Send the person the list with its `where` column.
+4. Ask now everything the build will need answered: every decision still open on a screen (`decisions`), every
+   choice between two ways to build an item, which branch the work goes on, anything you would otherwise stop for
+   later. One round of questions, here; an open decision the person leaves unanswered is built as drawn.
+
+Done when no item is without `where`, none is `flagged`, and no question is open. Send the person the list with
+its `where` column.
 Whatever plan document you write is this list in its order; it adds nothing the list does not have.
 
 ## `mockify implement` — build one item, prove it, then the next
+
+The build is whole: every item, in one run, with no stop to ask or to wait (see "Questions end with planning").
+A question you find now means planning missed it: take the choice that keeps the screen as drawn, note it on the
+item, and go on.
 
 Loop until `report` exits 0. Re-read the rows (`DM ds-rows $B … > <scratch>/items.json`) before each script call.
 
@@ -449,6 +466,24 @@ The `.md.ts` is written afterwards the usual way (`ui/tests/manual_regression/ru
   ```
   An existing file needs `--replace` (it keeps the id). Show the file, list `steps_without_expect`, and stop: the mock stays in the mock project (no Save to
   repo), the `.md` is the scenario from now on, and nothing is committed unless asked.
+
+## `mockify guide` — a journey someone follows, not one someone reviews
+
+"Show them how to do it": the same tree, captures and build, read by the person who will DO the steps. Set
+`guide: true` on the mock row and write, per screen, **`do`** — the instruction, in the reader's language and words
+("Press the Claude row"). Nothing else changes: `tree.py` refuses a guide screen with no `do`, and one that carries
+`changes` or `decisions` (a guide shows the product as it is).
+
+- **The page opens with the guide bar** (`assets/journey-bar.md`, "Guide mode"): the screen's `do` as its title and
+  as a callout beside the control that goes on (`data-next`). The last screen has no Next, so its `do` says what
+  happens next outside the screen.
+- **A step that may not apply** gets `skip` — the question that says when ("Already signed in?"); the bar offers
+  "… Skip to n", the next step without one.
+- **One file, no Flowpad behind it.** A guide reads no row and saves nothing, so `index.html` is sent as it is
+  (`flow conversation send … --file`); every file under the mock folder is inlined by the build.
+- Capture in the reader's language, and replace your dev instance's names with theirs IN the capture script
+  (never by hand in the built page). Say in the reply which names are look-alikes.
+- The reader does not approve or comment: there is no build list for a guide, and no Save to repo.
 
 ## The mock project is a temp folder
 

@@ -9,10 +9,11 @@
  * which the form does set — through the field that owns it.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Agent, DataSource, type SourceStatus } from '@sdk';
+import { Agent, DataSource, dataContext, type SourceStatus } from '@sdk';
 import type { TypeId } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
+import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
 import { useAllocateAgentMailbox } from '@src/hooks/use-allocate-agent-mailbox';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { errorMessage } from '@src/lib/error-message';
@@ -23,6 +24,7 @@ import { SteppedDialogContent, type StepCrumb } from '@src/components/ui/stepped
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Switch } from '@src/components/ui/switch';
+import { ScopeBar } from '@src/components/ui/scope-bar';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Textarea } from '@src/components/ui/textarea';
 import { SetupWizardPanel } from '@src/components/setup-wizard/SetupWizardDialog';
@@ -46,14 +48,16 @@ import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 import {
-  choiceKey,
   groupMembers,
   offeredSpecs,
+  offerOf,
   sourceChoices,
   useSourceSpecs,
+  isMessageDriverSpec,
   isObjectDriverSpec,
+  type SourceChoice,
 } from './use-source-specs';
-import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
+import { FieldType, type DataSourceChoice, type DataDriver, type DriverOffer, type SpecConfigField } from '@sdk';
 
 /** The one config-shaped field that is NOT stored in `config` — it is the
  *  entity's own `allowed_senders`. Named once here so the seed, the
@@ -96,6 +100,7 @@ export function DataSourceDialog({
   editing,
   owner,
   only,
+  onlyChoice,
   added,
   initial,
   variant = 'source',
@@ -110,10 +115,12 @@ export function DataSourceDialog({
   /** Narrow the provider tiles — the channels line offers only specs that
    *  `sends`. An empty result renders as a sentence, not a blank picker. */
   only?: (spec: DataDriver) => boolean;
+  /** Narrow the tiles themselves: a driver's offered channel is a tile its driver's own may not be. */
+  onlyChoice?: (choice: SourceChoice) => boolean;
   /** Tiles already added, by choice key (group, else driver name): drawn disabled, the value is the tooltip. */
   added?: ReadonlyMap<string, string>;
-  /** Open on this provider as if its tile had been pressed: a group's ways to connect, else its form. */
-  initial?: DataDriver;
+  /** Open on this choice as if its tile had been pressed: a group's ways to connect, else its form. */
+  initial?: SourceChoice;
   /** Copy follows the resource being added, not whether providers are filtered. */
   variant?: 'source' | 'channel';
 }) {
@@ -122,8 +129,10 @@ export function DataSourceDialog({
   // shows up here with no frontend release.
   const { specs: installed, specFor } = useSourceSpecs();
   const allocateMailbox = useAllocateAgentMailbox();
-  // A source is an asset: it is saved into the project open here (an agent's into the agent's project).
+  // Where a source is saved is the person's choice: "Me" (in no project) or "Project" (the one open here).
   const { project } = useDataContext();
+  // Null until they pick — the driver's default stands. Apart from `draft`, which every step back replaces.
+  const [placePick, setPlacePick] = useState<'user' | 'project' | null>(null);
   const ownerAgentId = owner?.type === Agent.type ? owner.id : null;
   const offered = offeredSpecs(installed, !!ownerAgentId);
   const specs = only ? offered.filter(only) : offered;
@@ -149,11 +158,19 @@ export function DataSourceDialog({
   // subscribing the effect to it.
   const seedRef = useRef(specFor);
   seedRef.current = specFor;
-  // A group's tile opens its ways to connect; any other tile, its form.
-  const pickTile = (p: DataDriver) => {
-    setGroup(p.group || '');
-    setDraft(p.group ? emptyDraft() : emptyDraft(p));
-    setStep(p.group ? 'choice' : 'form');
+  // A group's tile opens its ways to connect; any other tile, its form. A channel a driver offers on
+  // its own opens the driver's form already set to it, under the channel's name.
+  const pickTile = (p: DataDriver, offer?: DriverOffer) => {
+    const grouped = !!p.group && !offer;
+    const draft = grouped ? emptyDraft() : emptyDraft(p);
+    setGroup(grouped ? p.group : '');
+    setPlacePick(null);
+    setDraft(
+      offer
+        ? { ...draft, name: offer.title, fields: { ...draft.fields, ...offer.preset } }
+        : draft,
+    );
+    setStep(grouped ? 'choice' : 'form');
     // A channel that only needs a sign-in asks nothing on a form: picking it adds it, and its setup follows.
     setAutoAdd(variant === 'channel' && !p.group && !!p.sign_in_title);
   };
@@ -162,33 +179,46 @@ export function DataSourceDialog({
   initialRef.current = initial;
   useEffect(() => {
     if (!open) return;
-    if (!editing && initialRef.current) pickTile(initialRef.current);
+    if (!editing && initialRef.current) pickTile(initialRef.current.spec, initialRef.current.offer);
     else {
       setDraft(editing ? draftFrom(editing, seedRef.current(editing.provider)) : emptyDraft());
       setGroup('');
       setStep(editing ? 'form' : 'provider');
     }
+    setPlacePick(null);
     setShowAdvanced(false);
     setTried(false);
   }, [open, editing]);
 
   const spec = specFor(draft.provider);
   // One tile per driver group (its first member stands for it), one per ungrouped driver.
-  const tiles = sourceChoices(specs);
+  const tiles = onlyChoice ? sourceChoices(specs).filter(onlyChoice) : sourceChoices(specs);
+  // The channel this source is one of, when its driver offers it as a choice of its own: the form then
+  // asks only for that channel's fields.
+  const offer = offerOf(spec, draft.fields);
+  const asked = ([key, field]: [string, SpecConfigField]) => !field.advanced && (!offer || !!offer.fields?.includes(key));
+  // The tile the form is on, by the key `sourceChoices` gave it.
+  const chosenKey = offer ? `${draft.provider}:${offer.key}` : group || draft.provider;
   // The agent the cloud creates this account for — no form, nothing to validate. The
   // picker only offers a provisioned provider with an agent owner, so this is that agent.
   const provisioned = !editing && spec?.provisioned ? ownerAgentId : null;
   // The wizard asks for this driver's config — the form asks only for a name, then hands over.
   const byWizard = setUpByWizard(spec, !!editing);
+  // Asked only where there is a choice to make: a new source of a person, on a machine that has project folders.
+  const asksPlace = !editing && !ownerAgentId && dataContext.caps.localFiles;
+  // A message channel is the person's own; any other data source is the project's.
+  const place =
+    asksPlace && project?.typeId ? (placePick ?? (isMessageDriverSpec(spec) ? 'user' : 'project')) : 'user';
   const [settingUp, setSettingUp] = useState<DataSource | null>(null);
   // A source added that reads through a sign-in (its driver's `auth.connector`): the dialog goes on to its
   // setup — the sign-in asked in place, then its tree — instead of closing on "Added".
   const [settingUpSource, setSettingUpSource] = useState<DataSource | null>(null);
   const [listening, setListening] = useState(false);
   const needsSignIn = !!spec?.sign_in_title;
+  // What a channel's tile asks for is required, whatever the driver's own form requires.
   const problems = useMemo(
-    () => (provisioned ? [] : validateDraft(draft, spec, { config: !byWizard })),
-    [provisioned, draft, spec, byWizard],
+    () => (provisioned ? [] : validateDraft(draft, spec, { config: !byWizard, required: offer?.fields })),
+    [provisioned, draft, spec, byWizard, offer],
   );
 
   const setField = (key: string, value: string) =>
@@ -288,7 +318,7 @@ export function DataSourceDialog({
           allowed_senders: allowedSenders,
           open_to_all: draft.open_to_all,
         });
-        await source.save(project?.typeId && !ownerAgentId ? [project.typeId] : []);
+        await source.save(place === 'project' && project?.typeId ? [project.typeId] : []);
         // Sync now rather than on the next heartbeat; a source still in setup has nothing to read yet.
         if (source.status === 'active') void source.requestPoll().catch(() => {});
         notify.success({ title: t`Added ${source.name}` });
@@ -345,7 +375,7 @@ export function DataSourceDialog({
       <fieldset key={key} className="space-y-1" disabled={key === ALLOWED_SENDERS_KEY && draft.open_to_all}>
         <Label htmlFor={`ds-${key}`}>
           {field.label || key}
-          {fieldRules(spec, key).required && <span className="ms-1 text-destructive">*</span>}
+          {fieldRules(spec, key, offer?.fields).required && <span className="ms-1 text-destructive">*</span>}
         </Label>
         {/* A choosable field hands its own input over as the fallback, so the picker and
             the text box are one decision made in one place rather than two branches here
@@ -397,7 +427,7 @@ export function DataSourceDialog({
   if (group && step !== 'provider')
     crumbs.push({ label: group, onClick: beforeSetup && step === 'form' ? toChoice : undefined });
   // Never an empty crumb: the driver may not be known (yet) — the source's own name stands in.
-  const formCrumb = editing ? editing.name : spec?.title || draft.provider || settingUp?.name || '';
+  const formCrumb = editing ? editing.name : offer?.title || spec?.title || draft.provider || settingUp?.name || '';
   if ((step === 'form' || settingUp || settingUpSource) && formCrumb) crumbs.push({ label: formCrumb });
   if (settingUp) crumbs.push({ label: t`Connect` });
   if (settingUpSource) crumbs.push({ label: t`Setup` });
@@ -491,34 +521,41 @@ export function DataSourceDialog({
                 <Trans>No installed provider can carry a channel.</Trans>
               </p>
             )}
-            {tiles.map(({ spec: p, label, iconName }) => {
+            {tiles.map(({ key, spec: p, label, iconName, badgeName, offer: tileOffer }) => {
               // Through the one source→glyph rule, so the tile a person picks and the
               // card it becomes cannot disagree. No channel here: a provider is being
               // chosen, not one of a multi-channel transport's channels.
               // A group's tile is the choice ("WhatsApp"), so it shows the group's own glyph, not its first member's.
               const Glyph = lucideByName(iconName);
-              const chosen = p.group ? group === p.group : draft.provider === p.name;
-              const addedTip = added?.get(choiceKey(p));
+              const Badge = badgeName ? lucideByName(badgeName) : null;
+              const chosen = key === chosenKey;
+              const addedTip = added?.get(key);
               if (addedTip)
                 return (
-                  <Tooltip key={p.name} delayDuration={TILE_TIP_DELAY}>
+                  <Tooltip key={key} delayDuration={TILE_TIP_DELAY}>
                     {/* A disabled button gets no hover: the wrapper carries the tip. */}
                     <TooltipTrigger asChild>
-                      <span data-testid={`provider-added-${choiceKey(p)}`}>
-                        <DesktopTile Icon={Glyph} label={label} disabled />
+                      <span data-testid={`provider-added-${key}`}>
+                        <DesktopTile
+                          iconSlot={<IconWithBadge Base={Glyph} Badge={Badge} className="h-7 w-7" />}
+                          label={label}
+                          disabled
+                        />
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">{addedTip}</TooltipContent>
                   </Tooltip>
                 );
               return (
-                <Tooltip key={p.name} delayDuration={TILE_TIP_DELAY}>
+                <Tooltip key={key} delayDuration={TILE_TIP_DELAY}>
                   <TooltipTrigger asChild>
                     <DesktopTile
-                      data-testid={p.group ? `provider-group-${p.group}` : `provider-${p.name}`}
-                      Icon={Glyph}
+                      data-testid={
+                        tileOffer ? `provider-${key}` : p.group ? `provider-group-${p.group}` : `provider-${p.name}`
+                      }
+                      iconSlot={<IconWithBadge Base={Glyph} Badge={Badge} className="h-7 w-7" />}
                       label={label}
-                      onClick={() => pickTile(p)}
+                      onClick={() => pickTile(p, tileOffer)}
                       className={cn(chosen && 'border-primary bg-accent text-foreground ring-1 ring-primary')}
                     />
                   </TooltipTrigger>
@@ -529,7 +566,9 @@ export function DataSourceDialog({
                         actually have. */}
                   <TooltipContent side="bottom" className="max-w-[16rem]">
                     <span className="font-medium">{label}</span>
-                    {p.description && <span className="mt-0.5 block opacity-90">{p.description}</span>}
+                    {(tileOffer?.description || p.description) && (
+                      <span className="mt-0.5 block opacity-90">{tileOffer?.description || p.description}</span>
+                    )}
                     {p.sign_in_title && (
                       <span className="mt-1 block opacity-90" data-testid="provider-needs">
                         <Trans>Needs {p.sign_in_title} sign-in</Trans>
@@ -554,7 +593,7 @@ export function DataSourceDialog({
           <div className="space-y-4">
             {!editing && !draft.provider ? null : provisioned ? (
               <p className="text-sm text-muted-foreground" data-testid="provisioned-source-note">
-                {spec?.description}
+                {offer?.description || spec?.description}
               </p>
             ) : (
               <>
@@ -566,10 +605,36 @@ export function DataSourceDialog({
                   <Input
                     id="ds-name"
                     value={draft.name}
-                    placeholder={spec?.title || undefined}
+                    placeholder={offer?.title || spec?.title || undefined}
                     onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
                   />
                 </div>
+
+                {asksPlace && (
+                  <div className="space-y-1" data-testid="ds-scope" data-scope={place}>
+                    <Label>
+                      <Trans>Saved for</Trans>
+                    </Label>
+                    <ScopeBar
+                      value={place}
+                      onChange={setPlacePick}
+                      options={[
+                        { value: 'user', label: t`Me` },
+                        {
+                          value: 'project',
+                          label: t`Project`,
+                          disabled: !project?.typeId,
+                          title: project?.typeId ? undefined : t`Open a project to save it there`,
+                        },
+                      ]}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {place === 'user'
+                        ? t`Yours alone: kept outside every project, never shared with one.`
+                        : t`Saved in this project's folder: it goes into git and to everyone who sets the project up.`}
+                    </p>
+                  </div>
+                )}
 
                 {byWizard ? (
                   <p
@@ -579,9 +644,7 @@ export function DataSourceDialog({
                     <Trans>A guided setup asks for everything else this channel needs, step by step.</Trans>
                   </p>
                 ) : (
-                  specFields(spec)
-                    .filter(([, f]) => !f.advanced)
-                    .map(renderField)
+                  specFields(spec).filter(asked).map(renderField)
                 )}
 
                 {!byWizard && specFields(spec).some(([key]) => key === ALLOWED_SENDERS_KEY) && (

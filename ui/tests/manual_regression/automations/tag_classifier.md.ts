@@ -4,7 +4,8 @@
  * and the telegram arrival path are real. Run it with `bash scripts/test_message_tags_browser.sh tag_classifier`.
  *
  * Scenarios: the row cell (no tags / one / many), the quick menu (see, remove, tick), Edit tags… → the
- * editor with the message carried, add a sub-tag, Run, edit instructions → Rerun, Another message → Run, Apply.
+ * editor with the message carried, add a sub-tag, Run, edit instructions → Rerun, Another message → Run, Apply,
+ * and Classify on ticked rows: the notice, then the proposal reviewed and applied inside the automation's message.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -200,20 +201,52 @@ test('Another message → pick → Run; Apply tags the message', async ({ page }
   await expect.poll(() => tagsOf('one')).toContain('stream_inbox.sales.intro');
 });
 
-test('ticked Stream Inbox rows → Classify: a dry-run table; Why shows the decision; Apply tags without running anything', async ({ page }) => {
-  await graph('post', `flow_message/${arrived.one.id}/set-tags`, { tags: [] });
+test('ticked Stream Inbox rows → Classify: the run hands its proposal in as a message; the app reviews, keeps and applies it', async ({ page }) => {
+  // The run is the real block on a scripted worker (tests/utils/classifier_run_behavior.py): the conversation
+  // whose id sorts first gets a NEW tag, the other an existing one. Nothing below is stubbed.
+  for (const key of ['one', 'many'] as const) await graph('post', `flow_message/${arrived[key].id}/set-tags`, { tags: [] });
+  const [fresh, known] = (['one', 'many'] as const)
+    .slice()
+    .sort((a, b) => (arrived[a].conversation_id < arrived[b].conversation_id ? -1 : 1));
+  const demo = 'stream_inbox.sales.demo';
+
   await page.goto('/dock/stream_inbox');
   for (const key of ['one', 'many'] as const) await row(page, key).getByTestId('stream-inbox-row-select').click();
   await page.getByTestId('stream-inbox-selection-classify').click();
-  const one = page.getByTestId(`classify-row-${arrived.one.id}`);
-  await expect(one.getByTestId('classify-row-new')).toContainText('intro');
-  expect(await tagsOf('one'), 'the table is a dry run').toEqual([]);
-  await one.getByTestId('classify-row-why').click();
-  await expect(page.getByTestId('classify-row-run')).toContainText('sure');
-  await one.getByRole('checkbox').click();
-  await page.getByTestId('classify-selection-apply').click();
-  await expect(page.getByTestId('classify-summary')).toHaveText('1 applied · no automation started');
-  expect(await tagsOf('one')).toEqual(['stream_inbox.sales.intro']);
-  const applied = await graph<{ message_processing: { queue: Array<{ tag: string }> } }>('get', `flow_message/${arrived.one.id}`);
-  expect(applied.message_processing.queue.filter((entry) => entry.tag)).toEqual([]);
+  await expect(page.getByTestId('classify-notice')).toContainText('message will be sent once it is done');
+  await expect(page.getByTestId('classify-dialog'), 'the window closes once the proposal is handed in').toHaveCount(0);
+  expect([await tagsOf('one'), await tagsOf('many')], 'a proposal tags nothing').toEqual([[], []]);
+
+  const message = page.locator('[data-testid="stream-inbox-conversation-row"]').filter({ has: page.getByTestId('stream-inbox-row-app-header') }).first();
+  await expect(message.getByTestId('app-status-chip')).toHaveText('Needs review');
+  await message.click();
+  const block = page.frameLocator('[data-testid="nano-app-frame"]');
+  await block.getByTestId(`classify-tree-row-${demo}`).getByTestId('classify-tag-reject').click();
+  await expect(block.getByTestId(`classify-row-${arrived[fresh].conversation_id}`).getByTestId('classify-row-new'), 'its row falls back to the tag above').toContainText('sales');
+
+  // What was rejected is kept on the message: a reload shows it, and so does the app's page.
+  await page.reload();
+  await block.getByTestId('classify-tab-tags').click();
+  await expect(block.getByTestId('classify-tag-undo'), 'the rejection survives a reload').toBeVisible();
+  await block.getByTestId('classify-tab-convs').click();
+  await block.getByTestId('classify-open-page').click();
+  // The page is handed the message's state key and nothing else: no value is named in its address.
+  const full = page.frameLocator('iframe[src*="app.html"]:not([data-testid="nano-app-frame"])');
+  await full.getByTestId('classify-tab-tags').click();
+  await expect(full.getByTestId('classify-tag-undo'), 'the page shows the same review').toBeVisible();
+  await full.getByTestId('classify-tab-convs').click();
+  await full.getByTestId(`classify-row-${arrived[known].conversation_id}`).getByTestId('classify-row-why').click();
+  await expect(full.getByTestId('classify-row-trace')).toContainText('Scripted reading.');
+  await full.getByTestId('classify-apply-all').click();
+  await expect.poll(() => tagsOf(fresh)).toEqual(['stream_inbox.sales']);
+  await expect.poll(() => tagsOf(known)).toEqual(['stream_inbox.sales.intro']);
+  await expect(full.getByTestId('classify-summary')).toContainText('2 applied');
+  const tree = await graph<Array<{ name: string }>>('get', 'tag');
+  expect(tree.map((tag) => tag.name), 'a rejected tag change is never written').not.toContain(demo);
+  for (const key of ['one', 'many'] as const) {
+    const applied = await graph<{ message_processing: { queue: Array<{ tag: string }> } }>('get', `flow_message/${arrived[key].id}`);
+    expect(applied.message_processing.queue.filter((entry) => entry.tag), 'applying starts no automation').toEqual([]);
+  }
+  await page.goto('/dock/stream_inbox');
+  await expect(message.getByTestId('app-status-chip'), 'nothing in the review waits any more').toHaveText('Done');
 });

@@ -2,6 +2,7 @@ import { QueryFilter, QueryRequest, RemoteWorkerSession } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useMemo } from 'react';
 import type { SessionAnchorIndex } from '@src/components/conversation/conversation-items';
+import type { LiveSessionNote } from '@src/components/conversation/prompt-building';
 
 export interface ConversationSessions {
   /** Every RemoteWorkerSession bound to this conversation, by id. */
@@ -55,4 +56,27 @@ export function sessionRole(
   cloudUserId: string | null | undefined,
 ): 'host' | 'guest' | 'observer' {
   return session ? session.roleFor(cloudUserId) : 'guest';
+}
+
+/**
+ * The live session the viewer is the guest of in this conversation — awaiting approval or approved —
+ * as the launch prompt names it. Null when there is none, or the viewer is its host.
+ */
+export function useLiveSessionNote(
+  conversationId: string | null | undefined,
+  cloudUserId: string | null | undefined,
+): LiveSessionNote | null {
+  const { byId } = useConversationSessions(conversationId);
+  return useMemo(() => {
+    const open = [...byId.values()]
+      .filter((s) => s.prompt_limit == null && s.roleFor(cloudUserId) === 'guest')
+      .filter((s) => ['pending', 'idle', 'running', 'error'].includes(s.status))
+      .sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''))[0];
+    if (!open?.id) return null;
+    return {
+      hostName: open.host_name?.trim() || 'the host',
+      sessionId: open.id,
+      approvedKinds: open.status === 'pending' ? null : open.effectiveTurnKinds,
+    };
+  }, [byId, cloudUserId]);
 }

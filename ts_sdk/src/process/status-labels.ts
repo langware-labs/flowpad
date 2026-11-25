@@ -40,6 +40,7 @@ export const WORKER_STATUS_LABEL: Record<WorkerStatus, string> = {
   [WorkerStatus.INTERRUPTED]: 'Interrupted',
   [WorkerStatus.INACTIVE]: 'Inactive',
   [WorkerStatus.PENDING_USER]: 'Idle',
+  [WorkerStatus.BACKGROUND_WORK]: 'Working in background',
   [WorkerStatus.WORKING]: 'Working',
   [WorkerStatus.THINKING]: 'Thinking',
   [WorkerStatus.TOOL_CALL]: 'Using tool',

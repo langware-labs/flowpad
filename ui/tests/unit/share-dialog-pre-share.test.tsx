@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { credentialsService, dataManager, TypeId, Project } from '@sdk';
 import type { ShareSource } from '@src/hooks/share-sources';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 
 // The dialog's collaborators are app plumbing (router, auth, contact lookups), not the behaviour under
@@ -112,13 +113,15 @@ const source: ShareSource = {
 };
 function show() {
   return render(
-    <ShareToConversationDialog
-      open
-      onClose={() => undefined}
-      source={source}
-      initialParticipants={[{ email: 'ami@example.com' }]}
-      commit={() => Promise.resolve('conversation-1')}
-    />,
+    <TooltipProvider>
+      <ShareToConversationDialog
+        open
+        onClose={() => undefined}
+        source={source}
+        initialParticipants={[{ email: 'ami@example.com' }]}
+        commit={() => Promise.resolve('conversation-1')}
+      />
+    </TooltipProvider>,
   );
 }
 beforeEach(() => {
@@ -199,7 +202,7 @@ describe('the generic pre-share step', () => {
     pickManager();
     await waitFor(() => expect(screen.getByTestId('share-values-route-note').textContent).toMatch(/no secret manager yet/));
     fireEvent.click(screen.getByTestId('share-preshare-continue'));
-    await screen.findByTestId('secret-manager-option-onepassword');
+    fireEvent.click(await screen.findByTestId('secret-manager-option-onepassword'));
     fireEvent.change(screen.getByTestId('secret-vault-name'), { target: { value: 'team' } });
     fireEvent.change(screen.getByTestId('secret-vault-field-account'), { target: { value: 'acme' } });
     fireEvent.click(screen.getByTestId('secret-vault-save'));

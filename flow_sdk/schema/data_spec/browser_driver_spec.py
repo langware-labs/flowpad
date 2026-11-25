@@ -14,7 +14,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import ClassVar, Optional
 
-from pydantic import Field
+from pydantic import Field, computed_field
 
 from flow_sdk.schema.data_spec.frontmatter import AssetDocumentSpec
 from flow_sdk.schema.data_spec.secret_manager_spec import ConfigFieldSpec
@@ -40,6 +40,49 @@ class BrowserProbe(StrEnum):
     CDP = "cdp"
     #: The worker's own record of its extension.
     EXTENSION = "extension"
+
+
+#: What parts a kind's fixed head from the profile, which is kept whole (a profile's folder id
+#: may hold a space or a dot).
+KIND_NAME = ".name."
+
+
+def parse_kind(kind: object) -> tuple[str, str, str]:
+    """``<browser>.<driving>.name.<profile>`` → ``(browser, driving, profile)``; three empty
+    strings when ``kind`` is not one."""
+    head, sep, profile = str(kind or "").partition(KIND_NAME)
+    browser, dot, driving = head.rpartition(".")
+    return (browser, driving, profile) if sep and dot and browser and profile else ("", "", "")
+
+
+class BrowserKindSpec(DataSpec):
+    """One browser a session can be given: a browser app, the way it is driven, and one profile.
+    ``kind`` names it — ``<browser>.<driving>.name.<profile>`` (``chrome.extension.name.Profile 2``)."""
+
+    #: The browser app, by ``browser_profiles`` id (``chrome``, ``canary``).
+    browser: str
+    #: How it is driven — the driver's ``probe``: ``extension`` or ``cdp``.
+    driving: BrowserProbe
+    #: The profile's folder id, never its displayed name: a displayed name can repeat and change.
+    profile: str
+    #: What a person reads; starts as the profile's displayed name.
+    name: str
+    #: The driver folder that drives it, and what a menu draws from it.
+    driver: str
+    icon: str = ""
+    install_url: str = ""
+    #: One word for a menu (``browser_drivers.state_of``), or ``error`` with what a session reported.
+    state: str = ""
+    error: str = ""
+    #: The person hid it from this machine's list; the browser itself is untouched.
+    hidden: bool = False
+    created: Optional[str] = None
+    last_used: Optional[str] = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def kind(self) -> str:
+        return f"{self.browser}.{self.driving.value}{KIND_NAME}{self.profile}"
 
 
 class WorkerSetupSpec(DataSpec):

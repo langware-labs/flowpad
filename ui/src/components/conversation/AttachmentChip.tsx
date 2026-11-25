@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
+  CalendarDays,
   Download,
   ExternalLink,
   File,
@@ -86,6 +87,7 @@ function fileMeta(name: string): FileMeta {
   ) {
     return { Icon: FileCode, bg: 'bg-purple-500', label: upper };
   }
+  if (ext === 'ics') return { Icon: CalendarDays, bg: 'bg-sky-600', label: 'ICS' };
   if (['md', 'mdx', 'txt', 'log', 'rst'].includes(ext)) return { Icon: FileText, bg: 'bg-slate-500', label: upper };
   return { Icon: File, bg: 'bg-slate-500', label: upper };
 }

@@ -91,12 +91,31 @@ def _version(cap) -> str:
     return match.group(0) if match else ""
 
 
+def _npm_prefix(path: str, package: str) -> str:
+    """The npm prefix this CLI was installed under, or "" when npm did not install it."""
+    parts = os.path.realpath(path).split(os.sep)
+    if "node_modules" in parts:  # a link into <prefix>/lib/node_modules/<package>
+        root = parts[: parts.index("node_modules")]
+        return os.sep.join(root[:-1] if root[-1:] == ["lib"] else root)
+    folder = os.path.dirname(path)  # Windows: a shim beside <prefix>\node_modules\<package>
+    return folder if os.path.isdir(os.path.join(folder, "node_modules", *package.split("/"))) else ""
+
+
 def _update_command(path: str, spec) -> str:
-    """How to update this CLI: Homebrew when brew installed it, else its own installer."""
+    """How to update THIS copy of the CLI -- the one at ``path``, which is the one that runs.
+
+    The package manager that installed it (Homebrew, npm) updates it in place. The vendor's own
+    installer writes its own folder, so it is the answer only for a copy no manager owns: run
+    against a brew or npm copy it adds a second CLI and leaves the running one as old as it was.
+    """
     parts = os.path.realpath(path).split(os.sep) if path else []
     for root in ("Cellar", "Caskroom"):  # the brew package is the folder right under its root
         if root in parts[:-1]:
             return f"brew upgrade {parts[parts.index(root) + 1]}"
+    package = str(getattr(spec, "latest_version_npm", "") or "")
+    prefix = _npm_prefix(path, package) if path and package else ""
+    if prefix:
+        return f'npm install -g --prefix "{prefix}" {package}@latest'
     return str(getattr(spec, "install_command", "") or "")
 
 

@@ -320,3 +320,27 @@ async def test_cleanup_sweep_has_its_own_row_until_the_run_ends(tmp_path: Path) 
     assert last.text == PROGRESS_TEXT_COMPLETE
     # Records count, not sweep steps.
     assert last.done == last.total == sum(r.total for r in last.rows if r.type_name != SWEEP_ROW_NAME)
+
+
+def test_shipped_asset_stays_fresh_across_a_reinstall(tmp_path: Path, monkeypatch) -> None:
+    """A reinstall re-stamps every shipped file's mtime; only changed bytes re-index."""
+    from flow_sdk import config
+
+    skill = tmp_path / ".claude" / "skills" / "demo"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("body", encoding="utf-8")
+    monkeypatch.setattr(config, "flowpad_assistant_canonical_root", lambda: tmp_path.as_posix())
+
+    def rec() -> FSRecord:
+        return FSRecord(type="skill", id="t-shipped-1", asset_ref=FSRef(skill))
+
+    rec().write_hash()
+    new_ts = _time.time() + 5
+    os.utime(skill / "SKILL.md", (new_ts, new_ts))
+    assert rec().index_required is True  # the stat token moved
+    assert rec().restamp_if_reinstalled() is True  # same bytes → re-stamped, no re-parse
+    assert rec().index_required is False
+
+    (skill / "SKILL.md").write_text("changed", encoding="utf-8")
+    assert rec().restamp_if_reinstalled() is False
+    assert rec().index_required is True

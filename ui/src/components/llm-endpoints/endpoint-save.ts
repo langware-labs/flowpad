@@ -14,18 +14,12 @@
  *
  * Returns what happened rather than notifying: the wording belongs to the dialog.
  */
-import {
-  LLM_MODEL_SIZES,
-  LLMEndpoint,
-  dataManager,
-  llmEndpointsService,
-  lmKeysService,
-  type LMApiProvider,
-} from '@sdk';
+import { LLM_MODEL_SIZES, LLMEndpoint, dataManager, lmKeysService, type LMApiProvider } from '@sdk';
 
 import { errorMessage } from '@src/lib/error-message';
 
-import { buildAllocateBody, buildEntityJson, providerSpec, type EndpointDraft } from './endpoint-catalog';
+import { LLM_FAMILY, type EndpointFamily } from './endpoint-family';
+import { buildEntityJson, providerSpec, type EndpointDraft } from './endpoint-catalog';
 import { endpointIdFromTypeId } from './llm-endpoints-pointer';
 import { invalidateLocalEndpoints } from './local-endpoints';
 
@@ -98,21 +92,24 @@ async function saveLocal(draft: EndpointDraft, isEdit: boolean): Promise<SaveRes
     : { endpoint, outcome: 'added_local' };
 }
 
-async function saveHub(draft: EndpointDraft, editing: LLMEndpoint | null): Promise<SaveResult> {
-  const json = buildEntityJson(draft, !!editing);
+async function saveHub(draft: EndpointDraft, editing: LLMEndpoint | null, family: EndpointFamily): Promise<SaveResult> {
+  // Same three calls for both families; only the JSON differs (an API endpoint has a target, kinds
+  // and prices where an LLM endpoint has a provider and models).
+  const json = family.draft.entityJson(draft, !!editing);
   if (editing) {
     return { endpoint: await dataManager.save<LLMEndpoint>(editing.typeId, [], json as never), outcome: 'updated' };
   }
   if (draft.kind === 'chain') {
-    const endpoint = await llmEndpointsService.allocate(endpointIdFromTypeId(draft.source), buildAllocateBody(draft));
+    const body = family.draft.allocateBody(draft);
+    const endpoint = await family.service.allocate(endpointIdFromTypeId(draft.source), body as never);
     return { endpoint, outcome: 'allocated' };
   }
-  const fresh = new LLMEndpoint(json as never);
+  const fresh = new family.Entity(json as never);
   const endpoint = await dataManager.save<LLMEndpoint>(fresh.typeId, [], json as never);
   const id = endpoint?.id ?? fresh.id;
   if (!draft.key.trim() || !id) return { endpoint, outcome: 'added' };
   try {
-    await llmEndpointsService.setCredential(id, draft.key.trim());
+    await family.service.setCredential(id, draft.key.trim());
     return { endpoint, outcome: 'added_with_key' };
   } catch (e) {
     return { endpoint, outcome: 'added_key_failed', message: errorMessage(e, '') };
@@ -143,7 +140,8 @@ export function saveEndpoint(
   destination: EndpointDestination,
   draft: EndpointDraft & Partial<DeviceDraftFields>,
   editing: LLMEndpoint | null,
+  family: EndpointFamily = LLM_FAMILY,
 ): Promise<SaveResult> {
   if (destination === 'device') return saveDevice(draft, editing);
-  return destination === 'local' ? saveLocal(draft, !!editing) : saveHub(draft, editing);
+  return destination === 'local' ? saveLocal(draft, !!editing) : saveHub(draft, editing, family);
 }

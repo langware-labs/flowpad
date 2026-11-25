@@ -36,6 +36,7 @@ from flow_sdk.cli.commands._common import (
     ok,
     parse_config_pairs,
     post_graph_json,
+    rows_of,
 )
 
 source_app = typer.Typer(name="source", help="Configure, verify, sync and message through data sources.", add_completion=False, no_args_is_help=True)
@@ -67,21 +68,13 @@ def _get(path: str) -> Any:
     return get_graph_json(_url(path), on_error=_on_error())
 
 
-def _rows(data) -> list:
-    if isinstance(data, dict):
-        for key in ("items", "entities", "results", "data"):
-            if isinstance(data.get(key), list):
-                return data[key]
-    return data if isinstance(data, list) else []
-
-
 def _source_action(source_id: str, action: str, payload: Optional[dict] = None, *, timeout: int = 120) -> Any:
     return _post(f"data_source/{source_id}/{action}", payload, not_found=f"Data source not found: {source_id}", timeout=timeout)
 
 
 @source_app.command("types", help="The data source assets this instance can run, and what each can do.")
 def types() -> None:
-    specs = _rows(_get("data_driver"))
+    specs = rows_of(_get("data_driver"))
     ok({"types": [
         {k: s.get(k) for k in ("name", "title", "kind", "family", "sends", "load_error", "auth", "runtime")} for s in specs if isinstance(s, dict)
     ]})
@@ -89,7 +82,7 @@ def types() -> None:
 
 @source_app.command("list", help="Configured data sources.")
 def list_sources() -> None:
-    rows = _rows(_get("data_source"))
+    rows = rows_of(_get("data_source"))
     ok({"sources": [
         {k: r.get(k) for k in ("id", "name", "provider", "status", "health", "channel", "error_detail", "last_synced_at")} for r in rows if isinstance(r, dict)
     ]})
@@ -105,7 +98,7 @@ def create(
     window_days: Annotated[int, typer.Option("--window-days", help="How far back a sync reads.")] = 0,
     project: Annotated[
         str,
-        typer.Option("--project", help="Project id the source belongs to. Default: the working directory's, else the last active one."),
+        typer.Option("--project", help="Project id the source belongs to. Default: none for a message channel (it is yours); else the working directory's, else the last active one."),
     ] = "",
 ) -> None:
     payload: dict = {"provider": provider, "name": name or provider, "config": parse_config_pairs(config, "INVALID_ARG", "--config expects key=value")}
@@ -115,7 +108,7 @@ def create(
         payload["reflect"] = reflect
     if window_days:
         payload["window_days"] = window_days
-    row = _post(data_source_create_path(discover_port(), project or None), payload) or {}
+    row = _post(data_source_create_path(discover_port(), project or None, provider), payload) or {}
     ok({"source": {k: row.get(k) for k in ("id", "name", "provider", "status", "health", "channel", "setup_detail", "asset_ref")}})
 
 

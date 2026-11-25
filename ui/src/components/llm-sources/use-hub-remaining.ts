@@ -13,7 +13,7 @@
  * page's Test goes the same way, for the same reason.
  */
 import { dataContext, llmSourcesService, type LLMFundingStatus } from '@sdk';
-import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useQueries, useQuery, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
 import { endpointIdFromTypeId, endpointTypeId } from '@src/components/llm-endpoints/llm-endpoints-pointer';
@@ -52,11 +52,18 @@ export function useHubRemaining(
   return useQueries({ queries: typeids.map(chainQuery), combine });
 }
 
+const CHAIN_KEY = ['llm-sources', 'chain'];
+
+/** Re-read every chain on screen: what is left changed (a top-up, an upgrade). */
+export function invalidateHubRemaining(queryClient: QueryClient): Promise<void> {
+  return queryClient.invalidateQueries({ queryKey: CHAIN_KEY });
+}
+
 /** One endpoint's chain read — shared, so the bar and the sponsor line cost one GET. */
 function chainQuery(typeid: string) {
   const id = endpointIdFromTypeId(typeid);
   return {
-    queryKey: ['llm-sources', 'chain', id],
+    queryKey: [...CHAIN_KEY, id],
     queryFn: () => llmSourcesService.chain(id),
     // The chain is read from this backend's own LLM sources; the hub has none to read.
     enabled: dataContext.caps.localFiles,

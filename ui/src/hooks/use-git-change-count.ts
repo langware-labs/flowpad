@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fsManager, type GitConflict } from '@sdk';
+import { fsManager, recheckMdSync, type GitConflict } from '@sdk';
 import { getGitFetch, getGitStatus } from '@src/lib/git-status-cache';
 
 export interface UseGitChangeCountResult {
@@ -68,6 +68,8 @@ export function useGitChangeCount(computeNodeId: string | null, workdir: string 
       }
       // Shared cache dedups the cross-tab mount burst; force on poll/refresh.
       const result = await getGitStatus(computeNodeId, workdir, { force });
+      // Markdown sync follows the project's git status: whatever made git worth re-reading may have moved it too.
+      void recheckMdSync();
       if (request !== latestRequestRef.current) return;
       if (!result || result.error) {
         setHasRepo(false);

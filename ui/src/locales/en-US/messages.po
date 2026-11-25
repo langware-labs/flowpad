@@ -169,6 +169,11 @@ msgstr ".env.local is not ignored by git here, so a value written there would be
 msgid "· assigned to {assignee}"
 msgstr "· assigned to {assignee}"
 
+#. placeholder {0}: turn.exitCode ?? '?'
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "· command · exit {0}"
+msgstr "· command · exit {0}"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· local"
 msgstr "· local"
@@ -180,6 +185,14 @@ msgstr "· pick a branch"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· remote"
 msgstr "· remote"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "· script · returned"
+msgstr "· script · returned"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "· script · threw"
+msgstr "· script · threw"
 
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 msgid "· skill: {skill}"
@@ -310,6 +323,10 @@ msgstr "(not set)"
 msgid "(not visible)"
 msgstr "(not visible)"
 
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "(optional)"
+msgstr "(optional)"
+
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "(overridden)"
 msgstr "(overridden)"
@@ -399,6 +416,11 @@ msgstr "{0, plural, one {# error} other {# errors}}"
 msgid "{0, plural, one {# Event captured} other {# Events captured}}"
 msgstr "{0, plural, one {# Event captured} other {# Events captured}}"
 
+#. placeholder {0}: u.paths.length
+#: src/components/footer/MdSyncChip.tsx
+msgid "{0, plural, one {# file} other {# files}}"
+msgstr "{0, plural, one {# file} other {# files}}"
+
 #. placeholder {0}: s.findings.length
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "{0, plural, one {# finding} other {# findings}}"
@@ -477,6 +499,11 @@ msgstr "{0, plural, one {# session used this skill} other {# sessions used this 
 msgid "{0, plural, one {# session} other {# sessions}}"
 msgstr "{0, plural, one {# session} other {# sessions}}"
 
+#. placeholder {0}: unsynced.length
+#: src/components/footer/MdSyncChip.tsx
+msgid "{0, plural, one {# source} other {# sources}}"
+msgstr "{0, plural, one {# source} other {# sources}}"
+
 #. placeholder {0}: teams.length
 #: src/components/organization/budgets/OrgSharePanel.tsx
 #: src/components/organization/org-detail-panel.tsx
@@ -535,10 +562,9 @@ msgstr "{0} — opened \"{fallbackName}\" instead."
 msgid "{0} · {1} · {2}ms"
 msgstr "{0} · {1} · {2}ms"
 
-#. placeholder {0}: f.label
 #: src/components/credentials/SecretVaultPicker.tsx
-msgid "{0} (optional)"
-msgstr "{0} (optional)"
+#~ msgid "{0} (optional)"
+#~ msgstr "{0} (optional)"
 
 #. placeholder {0}: hot.info.from
 #: src/components/assets/editor/chart/SequenceChartView.tsx
@@ -612,10 +638,9 @@ msgstr "{0} changed"
 msgid "{0} chats — their transcripts stay on disk."
 msgstr "{0} chats — their transcripts stay on disk."
 
-#. placeholder {0}: rows.length
 #: src/components/tags/ClassifyTable.tsx
-msgid "{0} classified · {changing} would change · {done} applied"
-msgstr "{0} classified · {changing} would change · {done} applied"
+#~ msgid "{0} classified · {changing} would change · {done} applied"
+#~ msgstr "{0} classified · {changing} would change · {done} applied"
 
 #. placeholder {0}: whens.length
 #: src/components/automations/PackageRow.tsx
@@ -631,6 +656,16 @@ msgstr "{0} connected"
 #: src/components/connections-manager.tsx
 msgid "{0} connection failed"
 msgstr "{0} connection failed"
+
+#. placeholder {0}: asked.length
+#: src/components/tags/ClassifyTable.tsx
+msgid "{0} conversations"
+msgstr "{0} conversations"
+
+#. placeholder {0}: target.split('/')[0]
+#: src/components/footer/MdSyncChip.tsx
+msgid "{0} copy behind"
+msgstr "{0} copy behind"
 
 #. placeholder {0}: result.kept.join(', ')
 #: src/components/connections-manager.tsx
@@ -969,6 +1004,12 @@ msgstr "{0} of {1} set"
 msgid "{0} of {1} set up"
 msgstr "{0} of {1} set up"
 
+#. placeholder {0}: formatUsd(Math.min(cost.used, cost.limit))
+#. placeholder {1}: formatUsd(cost.limit)
+#: src/components/upgrade/UpgradeScreen.tsx
+msgid "{0} of {1} used"
+msgstr "{0} of {1} used"
+
 #. placeholder {0}: tries.data.filter((r) => caughtWord(r.verdict).kind === 'yes').length
 #. placeholder {1}: tries.data.length
 #: src/components/automations/MessageRulePage.tsx
@@ -1071,7 +1112,6 @@ msgstr "{0} secret{1}"
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/StreamInboxTags.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -1279,12 +1319,20 @@ msgid "{cloudPlaces} cloud deployments"
 msgstr "{cloudPlaces} cloud deployments"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
-msgstr "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} budget_used {Your Flowpad budget is used up} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+msgstr "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} budget_used {Your Flowpad budget is used up} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
-msgstr "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+#~ msgid "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+#~ msgstr "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} budget_used {You're out of tokens} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+msgstr "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} budget_used {You're out of tokens} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+#~ msgid "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
+#~ msgstr "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}"
 
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "{completedCount}/{totalCount} completed"
@@ -1419,9 +1467,17 @@ msgstr "{eventCount} ev · {executionCount} exec"
 msgid "{failed} of {0} failed to delete."
 msgstr "{failed} of {0} failed to delete."
 
+#: src/components/footer/MdSyncChip.tsx
+msgid "{files, plural, one {# file} other {# files}}"
+msgstr "{files, plural, one {# file} other {# files}}"
+
 #: src/components/status-bar/GitResolveButton.tsx
 msgid "{files} files need merging — let the assistant merge them"
 msgstr "{files} files need merging — let the assistant merge them"
+
+#: src/components/footer/MdSyncChip.tsx
+msgid "{filesWord} out of sync · {sourcesWord} not synced"
+msgstr "{filesWord} out of sync · {sourcesWord} not synced"
 
 #: src/components/git/RepoPicker.tsx
 msgid "{filteredCount} of {totalCount} repos"
@@ -1440,8 +1496,12 @@ msgid "{firstName} is still uploading the bundle. Try again in a moment."
 msgstr "{firstName} is still uploading the bundle. Try again in a moment."
 
 #: src/components/launch-failure/LaunchFailureCard.tsx
-msgid "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} other {Try again}}"
-msgstr "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} other {Try again}}"
+#~ msgid "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} other {Try again}}"
+#~ msgstr "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} other {Try again}}"
+
+#: src/components/launch-failure/LaunchFailureCard.tsx
+msgid "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} upgrade {Upgrade} other {Try again}}"
+msgstr "{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} upgrade {Upgrade} other {Try again}}"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
@@ -1450,6 +1510,10 @@ msgstr "{folderName} has changes that haven't been pushed yet. The receiver can 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "{guestName} is waiting for your approval before any prompt runs on your machine."
 msgstr "{guestName} is waiting for your approval before any prompt runs on your machine."
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{guestName} wants to run on your machine:"
+msgstr "{guestName} wants to run on your machine:"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
@@ -1490,6 +1554,14 @@ msgstr "{hostName} reviews"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName}'s Claude Code"
 msgstr "{hostName}'s Claude Code"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName}'s Flowpad"
+msgstr "{hostName}'s Flowpad"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName}'s machine"
+msgstr "{hostName}'s machine"
 
 #: src/components/remote-control/RemoteControlPanel.tsx
 msgid "{hours} h {rest} min left"
@@ -2105,6 +2177,10 @@ msgstr "{who} has this conversation in project {0}, which is not a checkout of <
 msgid "{widerCount, plural, one {# error in the last {widerSpanLabel} — switch} other {# errors in the last {widerSpanLabel} — switch}}"
 msgstr "{widerCount, plural, one {# error in the last {widerSpanLabel} — switch} other {# errors in the last {widerSpanLabel} — switch}}"
 
+#: src/components/footer/MdSyncChip.tsx
+msgid "{written, plural, one {# file updated} other {# files updated}}"
+msgstr "{written, plural, one {# file updated} other {# files updated}}"
+
 #: src/components/cron-view/CronForm.tsx
 msgid "* * * * *"
 msgstr "* * * * *"
@@ -2155,6 +2231,11 @@ msgstr "↑ draws from"
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 msgid "↻ re-run"
 msgstr "↻ re-run"
+
+#. placeholder {0}: unsynced.length - sources.length
+#: src/components/footer/MdSyncChip.tsx
+msgid "+ {0} more"
+msgstr "+ {0} more"
 
 #: src/components/agents/MailboxListsEditor.tsx
 msgid "+ Add"
@@ -2575,6 +2656,10 @@ msgstr "A budget others can share"
 msgid "A call here spends"
 msgstr "A call here spends"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "A call that matches no row is free. A call is booked when its answer is delivered. Times multiplies the price by a number in the request, e.g. parameters.durationSeconds=8 (8 when the request does not say)."
+msgstr "A call that matches no row is free. A call is booked when its answer is delivered. Times multiplies the price by a number in the request, e.g. parameters.durationSeconds=8 (8 when the request does not say)."
+
 #: src/components/token-plan/AllocateDialog.tsx
 msgid "A capped sub-budget of yours, for an agent or app."
 msgstr "A capped sub-budget of yours, for an agent or app."
@@ -2742,6 +2827,14 @@ msgstr "A place and channel by hand…"
 msgid "A port is a whole number from 1 to 65535."
 msgstr "A port is a whole number from 1 to 65535."
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "A price multiplier is a request field, optionally with =default."
+msgstr "A price multiplier is a request field, optionally with =default."
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "A price must be a non-negative number."
+msgstr "A price must be a non-negative number."
+
 #: src/components/task-receive/IncomingDeepLink.tsx
 msgid "a project"
 msgstr "a project"
@@ -2760,8 +2853,8 @@ msgid "A project with that name exists"
 msgstr "A project with that name exists"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth."
-msgstr "A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth."
+#~ msgid "A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth."
+#~ msgstr "A proposal: nothing is tagged until you apply, and no automation starts. What you apply is ground truth."
 
 #: src/components/inbound/ConnectNumberDialog.tsx
 msgid "A real email address the hub creates for one of your agents. Nothing to set up."
@@ -2903,6 +2996,7 @@ msgid "Accept failed"
 msgstr "Accept failed"
 
 #: src/components/conversation/InviteCard.tsx
+#: src/components/ics-viewer/IcsViewer.tsx
 msgid "Accepted"
 msgstr "Accepted"
 
@@ -3051,6 +3145,7 @@ msgstr "active"
 #: src/components/automations/AutomationsList.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/footer/BrowserChip.tsx
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -3103,6 +3198,7 @@ msgstr "Activity"
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/footer/MdSyncChip.tsx
 #: src/components/notes/NoteViews.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -3432,6 +3528,7 @@ msgid "Add project"
 msgstr "Add project"
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
 msgid "Add row"
 msgstr "Add row"
 
@@ -3705,7 +3802,6 @@ msgstr "agent"
 #: src/components/contact-picker/ContactPicker.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/quick-create/registry.ts
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/types/ViewType.ts
@@ -3879,8 +3975,10 @@ msgstr "all"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
 #: src/components/explorer-view/ExplorerNavigator.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
+#: src/components/home-tiles/HomeTiles.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -4225,6 +4323,10 @@ msgstr "Already signed in, launch sandbox"
 msgid "Already up to date"
 msgstr "Already up to date"
 
+#: src/components/upgrade/UpgradeScreen.tsx
+msgid "Already upgraded? Check again"
+msgstr "Already upgraded? Check again"
+
 #: src/components/automations/blocks/ThenBlock.tsx
 msgid "Also"
 msgstr "Also"
@@ -4550,6 +4652,10 @@ msgstr "Anthropic"
 msgid "Anthropic API key for direct API access"
 msgstr "Anthropic API key for direct API access"
 
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "any call"
+msgstr "any call"
+
 #: src/components/automations/MessageRulePage.tsx
 msgid "Any channel"
 msgstr "Any channel"
@@ -4561,6 +4667,10 @@ msgstr "any diagram written as mermaid text"
 #: src/components/assets/editor/app-profile/AppServingFields.tsx
 msgid "any free port"
 msgstr "any free port"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "any HTTP API"
+msgstr "any HTTP API"
 
 #: src/components/automations/RunsView.tsx
 msgid "Any result"
@@ -4634,6 +4744,7 @@ msgstr "Api Key"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/llm-endpoints/SourcePicker.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "API key"
 msgstr "API key"
@@ -4763,8 +4874,8 @@ msgstr "Appended to the current worker's prompt queue, tagged with this message.
 
 #: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/ClassifyTable.tsx
-msgid "applied"
-msgstr "applied"
+#~ msgid "applied"
+#~ msgstr "applied"
 
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Applied to each member's own default endpoint; a member's budget can only be narrower."
@@ -4778,22 +4889,20 @@ msgstr "Applies to"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
-#: src/components/tags/ClassifyTable.tsx
-#: src/components/tags/ClassifyTable.tsx
 msgid "Apply"
 msgstr "Apply"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Apply all"
-msgstr "Apply all"
+#~ msgid "Apply all"
+#~ msgstr "Apply all"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Apply every row you did not reject, with the tag changes they need"
-msgstr "Apply every row you did not reject, with the tag changes they need"
+#~ msgid "Apply every row you did not reject, with the tag changes they need"
+#~ msgstr "Apply every row you did not reject, with the tag changes they need"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Apply tag changes"
-msgstr "Apply tag changes"
+#~ msgid "Apply tag changes"
+#~ msgstr "Apply tag changes"
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Apply to message"
@@ -4835,8 +4944,8 @@ msgid "Approve this live session only"
 msgstr "Approve this live session only"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Approved as a new tag."
-msgstr "Approved as a new tag."
+#~ msgid "Approved as a new tag."
+#~ msgstr "Approved as a new tag."
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
@@ -4845,6 +4954,10 @@ msgstr "Approved by {hostName}"
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved for this session"
 msgstr "Approved for this session"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Approved: {approvedKinds}"
+msgstr "Approved: {approvedKinds}"
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
@@ -5078,8 +5191,8 @@ msgid "Asked by"
 msgstr "Asked by"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Asked for"
-msgstr "Asked for"
+#~ msgid "Asked for"
+#~ msgstr "Asked for"
 
 #: src/components/help/AskForHelpButton.tsx
 msgid "Asked of you"
@@ -5701,6 +5814,10 @@ msgstr "Base URL"
 msgid "Base URL must be an http(s) URL."
 msgstr "Base URL must be an http(s) URL."
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Base URL must be an https URL."
+msgstr "Base URL must be an https URL."
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
 msgstr "Bash Command *"
@@ -5728,6 +5845,11 @@ msgstr "Behavior"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Behaviour — who this agent is, its system prompt"
 msgstr "Behaviour — who this agent is, its system prompt"
+
+#. placeholder {0}: stale.source
+#: src/components/footer/MdSyncChip.tsx
+msgid "behind {0}"
+msgstr "behind {0}"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Betas allowed"
@@ -5918,6 +6040,10 @@ msgstr "Browse…"
 msgid "Browser"
 msgstr "Browser"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Browser name"
+msgstr "Browser name"
+
 #: src/components/links/BrowserProfileMenu.tsx
 msgid "Browser profile"
 msgstr "Browser profile"
@@ -6068,6 +6194,10 @@ msgid "By"
 msgstr "By"
 
 #: src/components/llm-endpoints/UsagePanel.tsx
+msgid "By caller"
+msgstr "By caller"
+
+#: src/components/llm-endpoints/UsagePanel.tsx
 msgid "By child"
 msgstr "By child"
 
@@ -6086,6 +6216,10 @@ msgstr "By name"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "By scope"
 msgstr "By scope"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "by the tokens the answer reports"
+msgstr "by the tokens the answer reports"
 
 #: src/components/quick-create/ChartCreateDialog.tsx
 msgid "C4 architecture"
@@ -6138,10 +6272,16 @@ msgstr "Cache write: {0}"
 msgid "call"
 msgstr "call"
 
+#: src/components/llm-endpoints/PricesList.tsx
 #: src/components/voice/CallControls.tsx
 #: src/notifications/error-detail.ts
 msgid "Call"
 msgstr "Call"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Call (path)"
+msgstr "Call (path)"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -6167,6 +6307,10 @@ msgstr "Call stack — which assets were called, by whom"
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "Call tree"
 msgstr "Call tree"
+
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+msgid "Caller"
+msgstr "Caller"
 
 #. placeholder {0}: answer.to || to
 #. placeholder {1}: answer.status || 'queued'
@@ -6328,6 +6472,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/terminal/interactive-terminal/useChainSession.tsx
 #: src/components/token-plan/AllocateDialog.tsx
@@ -6366,6 +6511,7 @@ msgid "cancelled"
 msgstr "cancelled"
 
 #: src/components/automations/AutomationsList.tsx
+#: src/components/nano-app/AppStatusChip.tsx
 msgid "Cancelled"
 msgstr "Cancelled"
 
@@ -6587,7 +6733,6 @@ msgstr "Change where it runs from the agent's schedules."
 msgid "Change your answers"
 msgstr "Change your answers"
 
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "changed"
 msgstr "changed"
@@ -6881,6 +7026,7 @@ msgid "checking…"
 msgstr "checking…"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/upgrade/UpgradeScreen.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "Checking…"
@@ -6983,6 +7129,7 @@ msgstr "Choose folder…"
 msgid "Choose how Flowpad's AI is paid for"
 msgstr "Choose how Flowpad's AI is paid for"
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Choose the endpoint this one draws from."
 msgstr "Choose the endpoint this one draws from."
@@ -7052,18 +7199,23 @@ msgstr "Class name…"
 msgid "Classification failed. You can still assign tags."
 msgstr "Classification failed. You can still assign tags."
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "Classification is in progress. An <0/> message will be sent once it is done. You can close this window."
+msgstr "Classification is in progress. An <0/> message will be sent once it is done. You can close this window."
+
 #: src/components/task-bar/task-utils.ts
 #: src/components/task-bar/task-utils.ts
 msgid "classification.json"
 msgstr "classification.json"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Classify"
 msgstr "Classify"
 
-#. placeholder {0}: value ? rows.length : asked.length
+#. placeholder {0}: asked.length
 #: src/components/tags/ClassifyTable.tsx
 msgid "Classify {0} conversations"
 msgstr "Classify {0} conversations"
@@ -7089,6 +7241,7 @@ msgid "Classify now"
 msgstr "Classify now"
 
 #: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Classifying…"
 msgstr "Classifying…"
 
@@ -7290,7 +7443,6 @@ msgstr "Clear Index"
 
 #: src/components/asset-counters/AssetItems.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear search"
 msgstr "Clear search"
 
@@ -7304,7 +7456,6 @@ msgstr "Clear search index?"
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/navigator-panel/SelectionActionBar.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/tags/ClassifyTable.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Clear selection"
 msgstr "Clear selection"
@@ -7620,8 +7771,8 @@ msgid "Close terminal"
 msgstr "Close terminal"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Close the tag tree"
-msgstr "Close the tag tree"
+#~ msgid "Close the tag tree"
+#~ msgstr "Close the tag tree"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Close ticket"
@@ -7663,6 +7814,15 @@ msgstr "Cloud · {0}"
 #: src/notifications/ingest.ts
 msgid "Cloud access denied"
 msgstr "Cloud access denied"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+#: src/types/ViewType.ts
+msgid "Cloud API Endpoints"
+msgstr "Cloud API Endpoints"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Cloud APIs"
+msgstr "Cloud APIs"
 
 #. placeholder {0}: cloudWarning.message
 #: src/components/automations/AutomationsList.tsx
@@ -7870,6 +8030,7 @@ msgid "command"
 msgstr "command"
 
 #: src/components/assets/editor/mcp/McpViewer.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/project-resource-list/resource-meta.ts
@@ -7916,6 +8077,7 @@ msgstr "Command:"
 msgid "Command: "
 msgstr "Command: "
 
+#: src/components/collaboration/TurnKinds.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Commands"
 msgstr "Commands"
@@ -7979,6 +8141,10 @@ msgstr "Commit all changes (no push)"
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
+
+#: src/components/status-bar/GitPushButton.tsx
+msgid "Commit all pending changes and push"
+msgstr "Commit all pending changes and push"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -8283,6 +8449,10 @@ msgstr "Connected in this browser {0}"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Connected to {hostName}'s machine — the last prompt failed."
 msgstr "Connected to {hostName}'s machine — the last prompt failed."
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Connected to {hostName}'s machine · {kinds}"
+msgstr "Connected to {hostName}'s machine · {kinds}"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Connected to {hostName}'s machine."
@@ -8784,6 +8954,8 @@ msgstr "Copy relative path"
 msgid "Copy remote URL"
 msgstr "Copy remote URL"
 
+#: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Copy session details"
@@ -8897,8 +9069,8 @@ msgid "Could not answer the prompt"
 msgstr "Could not answer the prompt"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Could not apply"
-msgstr "Could not apply"
+#~ msgid "Could not apply"
+#~ msgstr "Could not apply"
 
 #: src/components/conversation/DiagnosisCard.tsx
 #: src/components/help/AskForHelpDialog.tsx
@@ -9123,6 +9295,10 @@ msgstr "Could not deny"
 msgid "Could not deploy"
 msgstr "Could not deploy"
 
+#: src/components/conversation/useConversationSession.ts
+msgid "Could not detach the message from the session"
+msgstr "Could not detach the message from the session"
+
 #: src/notifications/commands.ts
 msgid "Could not disable the sniffer"
 msgstr "Could not disable the sniffer"
@@ -9256,6 +9432,11 @@ msgstr "Could not list the changes"
 msgid "Could not list the secret managers."
 msgstr "Could not list the secret managers."
 
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Could not load API endpoints"
+msgstr "Could not load API endpoints"
+
 #: src/components/automations/AutomationsList.tsx
 msgid "Could not load automations"
 msgstr "Could not load automations"
@@ -9295,6 +9476,10 @@ msgstr "Could not load the bus"
 #: src/components/entity-actions/ContextMenuButton.tsx
 msgid "Could not load the context."
 msgstr "Could not load the context."
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "Could not load the prices."
+msgstr "Could not load the prices."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Could not load this automation"
@@ -9411,6 +9596,10 @@ msgstr "Could not open the sub-flow"
 #: src/components/workspace/workspace-switcher.tsx
 msgid "Could not open the workspace folder"
 msgstr "Could not open the workspace folder"
+
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Could not open this calendar file: {error}"
+msgstr "Could not open this calendar file: {error}"
 
 #. placeholder {0}: error ?? path
 #: src/components/docx-viewer/DocxViewer.tsx
@@ -9557,6 +9746,10 @@ msgstr "Could not remove the help desk files"
 msgid "Could not remove the key"
 msgstr "Could not remove the key"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Could not remove the link"
+msgstr "Could not remove the link"
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
 msgid "Could not remove the package"
@@ -9669,6 +9862,10 @@ msgstr "Could not run it there"
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "Could not run schedule"
 msgstr "Could not run schedule"
+
+#: src/components/footer/MdSyncChip.tsx
+msgid "Could not run syncmd."
+msgstr "Could not run syncmd."
 
 #: src/components/links/link-handlers.ts
 msgid "Could not run the command"
@@ -10447,6 +10644,10 @@ msgstr "created"
 msgid "Created"
 msgstr "Created"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "created {created}"
+msgstr "created {created}"
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Created through"
 msgstr "Created through"
@@ -10898,6 +11099,7 @@ msgstr "declined"
 #: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/ics-viewer/IcsViewer.tsx
 msgid "Declined"
 msgstr "Declined"
 
@@ -11299,7 +11501,7 @@ msgstr "Delete organization"
 msgid "Delete organization…"
 msgstr "Delete organization…"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Delete project"
 msgstr "Delete project"
 
@@ -11647,6 +11849,10 @@ msgstr "Desktop updates are checked every 20 minutes."
 msgid "Desktop version"
 msgstr "Desktop version"
 
+#: src/components/conversation/MessageBubble.tsx
+msgid "Detach this message from the session"
+msgstr "Detach this message from the session"
+
 #: src/components/asset-counters/issue-counters.tsx
 msgid "Detail"
 msgstr "Detail"
@@ -11662,6 +11868,7 @@ msgstr "Detail"
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Details"
 msgstr "Details"
@@ -11930,6 +12137,22 @@ msgstr "Discard"
 msgid "Discard (delete)"
 msgstr "Discard (delete)"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all"
+msgstr "Discard all"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes"
+msgstr "Discard all changes"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes: back to the last commit"
+msgstr "Discard all changes: back to the last commit"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes?"
+msgstr "Discard all changes?"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Discard changes and go back"
 msgstr "Discard changes and go back"
@@ -11987,7 +12210,6 @@ msgstr "Disk I/O backend"
 #: src/components/conversation/PrivateMessageFrame.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
-#: src/components/footer/ActivityStatusPill.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -12165,6 +12387,7 @@ msgstr "done"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/nano-app/AppStatusChip.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/stream-inbox-view/TagFilterButton.tsx
 #: src/components/tags/MessageTags.tsx
@@ -13312,6 +13535,11 @@ msgstr "Every number, bot and app that sends you messages — and where each mes
 msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location. Earlier sessions keep their history but cannot be resumed."
 msgstr "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location. Earlier sessions keep their history but cannot be resumed."
 
+#. placeholder {0}: data?.files?.length ?? 0
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Every pending change in this folder is dropped (files: {0}). Changed and removed files go back to the last commit, and new files are deleted from disk. This cannot be undone."
+msgstr "Every pending change in this folder is dropped (files: {0}). Changed and removed files go back to the last commit, and new files are deleted from disk. This cannot be undone."
+
 #: src/components/connections-manager.tsx
 msgid "every project"
 msgstr "every project"
@@ -13584,6 +13812,7 @@ msgid "Expert details"
 msgstr "Expert details"
 
 #: src/components/automations/AutomationsList.tsx
+#: src/components/nano-app/AppStatusChip.tsx
 msgid "Expired"
 msgstr "Expired"
 
@@ -13681,6 +13910,7 @@ msgstr "failed"
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/nano-app/AppStatusChip.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
@@ -14718,6 +14948,10 @@ msgstr "Flowpad Cloud Results"
 msgid "Flowpad Cloud:"
 msgstr "Flowpad Cloud:"
 
+#: src/components/collaboration/TurnKinds.tsx
+msgid "Flowpad control"
+msgstr "Flowpad control"
+
 #: src/pages/entry/DesktopDownload.tsx
 msgid "FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows."
 msgstr "FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows."
@@ -14985,6 +15219,7 @@ msgid "formats unknown"
 msgstr "formats unknown"
 
 #: src/components/account/system-diagnoses.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/ShareReplyCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -15009,6 +15244,10 @@ msgstr "Found {0} rules"
 #: src/components/credentials-view/CredentialView.tsx
 msgid "found in {0}, not where it is declared"
 msgstr "found in {0}, not where it is declared"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "free"
+msgstr "free"
 
 #: src/i18n/pref-labels.ts
 msgid "Free-form JSON for experimental feature toggles. Invalid JSON is not saved."
@@ -15847,6 +16086,10 @@ msgstr "Here is the code — give it to one user"
 msgid "Hey <0>{firstName}</0>"
 msgstr "Hey <0>{firstName}</0>"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "hidden"
+msgstr "hidden"
+
 #: src/notifications/error-detail.ts
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Hidden errors"
@@ -15860,7 +16103,13 @@ msgstr "Hidden files"
 msgid "Hidden from your stream inbox"
 msgstr "Hidden from your stream inbox"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Hide"
+msgstr "Hide"
+
 #. placeholder {0}: header.title
+#. placeholder {0}: kind.name
+#: src/components/footer/BrowserChip.tsx
 #: src/components/navigator-panel/NavigatorPanel.tsx
 msgid "Hide {0}"
 msgstr "Hide {0}"
@@ -16178,8 +16427,8 @@ msgid "How it runs"
 msgstr "How it runs"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "How it was decided"
-msgstr "How it was decided"
+#~ msgid "How it was decided"
+#~ msgstr "How it was decided"
 
 #: src/i18n/pref-labels.ts
 msgid "How many hook-sniffer events to retain in the buffer."
@@ -16400,6 +16649,10 @@ msgstr "Ignored"
 #: src/components/ui/agent-avatar-picker.tsx
 msgid "Image"
 msgstr "Image"
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Images"
+msgstr "Images"
 
 #: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/hooks-view/hooks-view.tsx
@@ -16937,8 +17190,8 @@ msgid "instead?"
 msgstr "instead?"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "instead."
-msgstr "instead."
+#~ msgid "instead."
+#~ msgstr "instead."
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Instruction"
@@ -17396,10 +17649,9 @@ msgstr "Its budget is not shared with you."
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 msgstr "Its contents look like binary data (for example an image), so it can't be shown in the editor."
 
-#. placeholder {0}: change.merged_into.split('.').at(-1)
 #: src/components/tags/ClassifyTable.tsx
-msgid "its conversations go to {0}"
-msgstr "its conversations go to {0}"
+#~ msgid "its conversations go to {0}"
+#~ msgstr "its conversations go to {0}"
 
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Its files are not on this computer yet"
@@ -17535,6 +17787,10 @@ msgstr "Keep the existing automation actions"
 msgid "Keep the local copy out of git"
 msgstr "Keep the local copy out of git"
 
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Keep the values in"
+msgstr "Keep the values in"
+
 #: src/components/assets/confirm-project-delete.ts
 msgid "Keeping chat history can make this project reappear when projects are scanned."
 msgstr "Keeping chat history can make this project reappear when projects are scanned."
@@ -17569,6 +17825,14 @@ msgstr "Key ending {0} — only the owner can change it."
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Key filled in"
 msgstr "Key filled in"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Key format"
+msgstr "Key format"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Key header"
+msgstr "Key header"
 
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Key is in {manager}"
@@ -18003,8 +18267,8 @@ msgid "Leave out"
 msgstr "Leave out"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Leave this conversation as it is"
-msgstr "Leave this conversation as it is"
+#~ msgid "Leave this conversation as it is"
+#~ msgstr "Leave this conversation as it is"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
@@ -18112,6 +18376,7 @@ msgstr "Limits"
 msgid "Limits are optimistic: usage already in flight can overshoot slightly. Windows are UTC."
 msgstr "Limits are optimistic: usage already in flight can overshoot slightly. Windows are UTC."
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
 #: src/components/llm-endpoints/endpoint-catalog.ts
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
@@ -18378,6 +18643,10 @@ msgstr "Live sessions are not available here"
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
 msgid "live stream connection"
 msgstr "live stream connection"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "LLM"
+msgstr "LLM"
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "LLM APIs"
@@ -18783,6 +19052,7 @@ msgstr "Loading..."
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
+#: src/components/ics-viewer/IcsViewer.tsx
 #: src/components/items/IssueView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -19076,7 +19346,6 @@ msgid "Mailbox settings saved"
 msgstr "Mailbox settings saved"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
-#: src/components/tags/ClassifyTable.tsx
 msgid "Main agent"
 msgstr "Main agent"
 
@@ -19109,8 +19378,8 @@ msgid "Make the two the same — edit either one — then Pull, or wait for the 
 msgstr "Make the two the same — edit either one — then Pull, or wait for the next sync."
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Make this the conversation's tag. No automation runs."
-msgstr "Make this the conversation's tag. No automation runs."
+#~ msgid "Make this the conversation's tag. No automation runs."
+#~ msgstr "Make this the conversation's tag. No automation runs."
 
 #: src/components/harness-login/StatusRow.tsx
 msgid "Make this the default assistant"
@@ -19119,6 +19388,10 @@ msgstr "Make this the default assistant"
 #: src/components/tags/ClassifyTable.tsx
 #~ msgid "Make this the message's tag. No automation runs."
 #~ msgstr "Make this the message's tag. No automation runs."
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Make this the project default"
+msgstr "Make this the project default"
 
 #: src/components/search-index/index-copy.ts
 msgid "Make your records searchable"
@@ -19218,9 +19491,17 @@ msgstr "Markdown document"
 msgid "Markdown files"
 msgstr "Markdown files"
 
+#: src/components/footer/MdSyncChip.tsx
+msgid "Markdown files out of sync"
+msgstr "Markdown files out of sync"
+
 #: src/i18n/type-labels.ts
 msgid "Markdown Index"
 msgstr "Markdown Index"
+
+#: src/components/footer/MdSyncChip.tsx
+msgid "Markdown sync"
+msgstr "Markdown sync"
 
 #. placeholder {0}: index.name ?? index.id
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -19333,6 +19614,10 @@ msgstr "Maximum number of agentic turns"
 msgid "Maximum tokens per model response"
 msgstr "Maximum tokens per model response"
 
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Maybe"
+msgstr "Maybe"
+
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/project-resource-list/resource-meta.ts
 #: src/i18n/type-labels.ts
@@ -19383,6 +19668,8 @@ msgstr "MCP tools"
 
 #: src/components/conversation/task-it.tsx
 #: src/components/conversation/task-it.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 msgid "Me"
 msgstr "Me"
 
@@ -19505,6 +19792,7 @@ msgstr "Mermaid source"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/notifications/error-detail.ts
 msgid "Message"
 msgstr "Message"
@@ -19622,6 +19910,10 @@ msgstr "Meta official Cloud API"
 #: src/components/conversation/CredentialValueLock.tsx
 msgid "Method"
 msgstr "Method"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Methods allowed"
+msgstr "Methods allowed"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Metrics"
@@ -20120,6 +20412,10 @@ msgstr "Name of invite ••••{0}"
 msgid "Name the Google Cloud project"
 msgstr "Name the Google Cloud project"
 
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Name the header the key is sent in."
+msgstr "Name the header the key is sent in."
+
 #: src/components/assets/editor/agent-profile/ItMessageDialog.tsx
 msgid "Name the operation with at least one letter or digit."
 msgstr "Name the operation with at least one letter or digit."
@@ -20181,9 +20477,9 @@ msgstr "Needs attention · {count}"
 msgid "Needs git"
 msgstr "Needs git"
 
-#: src/components/conversation/AutomationResultCard.tsx
-#~ msgid "Needs review"
-#~ msgstr "Needs review"
+#: src/components/nano-app/AppStatusChip.tsx
+msgid "Needs review"
+msgstr "Needs review"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "needs setup"
@@ -20541,8 +20837,8 @@ msgid "New tab"
 msgstr "New tab"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "new tag"
-msgstr "new tag"
+#~ msgid "new tag"
+#~ msgstr "new tag"
 
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
@@ -21827,6 +22123,10 @@ msgstr "No revision history yet. Saving this asset records its first revision."
 msgid "No room selected."
 msgstr "No room selected."
 
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "No root to price a call."
+msgstr "No root to price a call."
+
 #: src/components/automations/AutomationPage.tsx
 msgid "No rule code to show."
 msgstr "No rule code to show."
@@ -22013,10 +22313,9 @@ msgid "no tag"
 msgstr "no tag"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "no tag fits"
-msgstr "no tag fits"
+#~ msgid "no tag fits"
+#~ msgstr "no tag fits"
 
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/MessageTags.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "No tags"
@@ -22317,6 +22616,10 @@ msgstr "Not an address"
 msgid "Not an address, a domain or a contact"
 msgstr "Not an address, a domain or a contact"
 
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Not answered"
+msgstr "Not answered"
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not available"
 msgstr "Not available"
@@ -22497,6 +22800,10 @@ msgstr "Not opened yet"
 msgid "Not picked up"
 msgstr "Not picked up"
 
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "not priced"
+msgstr "not priced"
+
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Not published"
 msgstr "Not published"
@@ -22648,6 +22955,10 @@ msgstr "Not started yet — its terminal appears when the deployment first runs.
 #: src/components/automations/MessageRulePage.tsx
 msgid "Not sure, so no"
 msgstr "Not sure, so no"
+
+#: src/components/footer/MdSyncChip.tsx
+msgid "Not synced · {sourcesWord}"
+msgstr "Not synced · {sourcesWord}"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Not tested yet"
@@ -23210,6 +23521,10 @@ msgstr "Onboarding"
 msgid "Onboarding reset"
 msgstr "Onboarding reset"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "once"
+msgstr "once"
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Once"
 msgstr "Once"
@@ -23235,8 +23550,8 @@ msgid "Once, on {date} at {time}"
 msgstr "Once, on {date} at {time}"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval."
-msgstr "One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval."
+#~ msgid "One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval."
+#~ msgstr "One agent reads each conversation and proposes its tag. A new tag needs the main agent’s approval."
 
 #: src/components/assets/editor/agent-profile/NewDeploymentWizard.tsx
 msgid "One click — a new code for one user."
@@ -23298,6 +23613,11 @@ msgstr "One of these"
 msgid "One of these is enough"
 msgstr "One of these is enough"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "One per line. Empty means every method."
+msgstr "One per line. Empty means every method."
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "One per line. Empty means everything the sources allow."
 msgstr "One per line. Empty means everything the sources allow."
@@ -23420,6 +23740,7 @@ msgstr "Oops! Page not found"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/footer/ActivityDetailsModal.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/SecretManagerChip.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
@@ -23548,6 +23869,10 @@ msgstr "Open a project to choose which of its secrets this machine can see."
 #: src/components/assets/editor/changes/useDocChangesWorker.ts
 msgid "Open a project to run these changes."
 msgstr "Open a project to run these changes."
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Open a project to save it there"
+msgstr "Open a project to save it there"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Open a project to see its assets."
@@ -23915,6 +24240,7 @@ msgstr "Open it now"
 msgid "Open knowledge browser"
 msgstr "Open knowledge browser"
 
+#: src/components/ics-viewer/IcsViewer.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Open link"
 msgstr "Open link"
@@ -24126,6 +24452,10 @@ msgstr "Open the app"
 msgid "Open the assistant in its own window, beside Flowpad"
 msgstr "Open the assistant in its own window, beside Flowpad"
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Open the automation"
+msgstr "Open the automation"
+
 #: src/components/automations/RunDetail.tsx
 msgid "Open the automation to fix it"
 msgstr "Open the automation to fix it"
@@ -24256,6 +24586,10 @@ msgstr "Open the thread"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
 msgstr "Open the transcript analysis session"
+
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Open the value"
+msgstr "Open the value"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Open the watched file"
@@ -24610,6 +24944,11 @@ msgstr "Organization: {organization}"
 msgid "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
 msgstr "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
 
+#. placeholder {0}: event.organizer
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Organized by {0}"
+msgstr "Organized by {0}"
+
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
 #: src/components/assets/editor/translations/TranslationsPanel.tsx
@@ -24647,6 +24986,10 @@ msgstr "OS"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "OS:"
 msgstr "OS:"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Other"
+msgstr "Other"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Other assets"
@@ -25032,6 +25375,7 @@ msgstr "Path"
 msgid "Path copied to clipboard"
 msgstr "Path copied to clipboard"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Paths allowed (globs)"
 msgstr "Paths allowed (globs)"
@@ -25777,6 +26121,16 @@ msgstr "Previous page"
 msgid "Previous runs"
 msgstr "Previous runs"
 
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "Price"
+msgstr "Price"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/LlmEndpointDetail.tsx
+msgid "Prices"
+msgstr "Prices"
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "primary"
 msgstr "primary"
@@ -25915,10 +26269,13 @@ msgstr "project"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/explorer-view/useExplorerModel.tsx
+#: src/components/home-tiles/HomeTiles.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/ProjectCleanupViewer.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
@@ -25984,7 +26341,7 @@ msgstr "Project create indexes once, as the project is created. First selection 
 msgid "Project data store"
 msgstr "Project data store"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Project deleted"
 msgstr "Project deleted"
 
@@ -26146,6 +26503,7 @@ msgstr "prompt"
 #: src/components/automations/ThenStepsEditor.tsx
 #: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
@@ -26252,6 +26610,7 @@ msgid "prompts"
 msgstr "prompts"
 
 #: src/components/chats-navigator/ChatPromptsPopover.tsx
+#: src/components/collaboration/TurnKinds.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
@@ -26529,8 +26888,6 @@ msgstr "Pulling…"
 #: src/components/assets/ContextFolderGitBadge.tsx
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
-#: src/components/status-bar/GitPushButton.tsx
-#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Push"
 msgstr "Push"
 
@@ -26542,6 +26899,20 @@ msgstr "Push {folderName}"
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push & notify"
 msgstr "Push & notify"
+
+#: src/components/status-bar/GitPushButton.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#~ msgid "Push all"
+#~ msgstr "Push all"
+
+#: src/components/status-bar/GitPushButton.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Push all changes"
+msgstr "Push all changes"
+
+#: src/components/status-bar/GitPushButton.tsx
+msgid "Push commits"
+msgstr "Push commits"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push to {branch} — optionally tell people about it."
@@ -27234,6 +27605,11 @@ msgstr "Refreshing…"
 msgid "Refund requests → an agent"
 msgstr "Refund requests → an agent"
 
+#: src/components/llm-endpoints/UsageByChildTable.tsx
+#: src/components/llm-endpoints/UsagePanel.tsx
+msgid "Refused"
+msgstr "Refused"
+
 #: src/i18n/pref-labels.ts
 msgid "Regenerate onboarding assets on next start"
 msgstr "Regenerate onboarding assets on next start"
@@ -27246,14 +27622,13 @@ msgstr "Registered on the hub, but its document hasn't been uploaded to the proj
 msgid "registered watchers: <0>{registeredCount}</0>"
 msgstr "registered watchers: <0>{registeredCount}</0>"
 
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/interactive-terminal/side-windows/ImprovementResultsModal.tsx
 msgid "Reject"
 msgstr "Reject"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "rejected"
-msgstr "rejected"
+#~ msgid "rejected"
+#~ msgstr "rejected"
 
 #: src/components/credentials/CredentialEditDialog.tsx
 #: src/components/harness-login/funding-pill.ts
@@ -27351,6 +27726,7 @@ msgstr "remote: {remote}"
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
 #: src/components/inbound/InboundView.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
 #: src/components/organization/tabs/MembersTab.tsx
 #: src/components/organization/tabs/TeamDetail.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
@@ -27381,6 +27757,10 @@ msgstr "Remove {0}"
 #: src/components/organization/tabs/MembersTab.tsx
 msgid "Remove {0} from {1}?"
 msgstr "Remove {0} from {1}?"
+
+#: src/components/footer/BrowserChip.tsx
+#~ msgid "Remove {0} from the list"
+#~ msgstr "Remove {0} from the list"
 
 #: src/components/agents/AllowedSendersEditor.tsx
 msgid "Remove {a}"
@@ -27489,6 +27869,10 @@ msgstr "Remove from queue"
 msgid "Remove from team"
 msgstr "Remove from team"
 
+#: src/components/footer/BrowserChip.tsx
+#~ msgid "Remove from the list"
+#~ msgstr "Remove from the list"
+
 #: src/components/terminal/project-list-menu.tsx
 msgid "Remove from this computer"
 msgstr "Remove from this computer"
@@ -27586,6 +27970,11 @@ msgstr "Remove this budget?"
 msgid "Remove this file from the next commit (git restore --staged)"
 msgstr "Remove this file from the next commit (git restore --staged)"
 
+#: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/entity-actions/ContextMenuButton.tsx
+msgid "Remove this link"
+msgstr "Remove this link"
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Remove this message from Flowpad?"
 msgstr "Remove this message from Flowpad?"
@@ -27614,6 +28003,10 @@ msgstr "Remove this? The hub stops routing its messages now. The agents and thei
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Remove variable"
 msgstr "Remove variable"
+
+#: src/components/footer/BrowserChip.tsx
+#~ msgid "removed"
+#~ msgstr "removed"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -27683,6 +28076,7 @@ msgstr "Removes: {removes}"
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/PendingActionsChip.tsx
 #: src/components/footer/PendingActionsChip.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -27696,6 +28090,8 @@ msgid "Rename"
 msgstr "Rename"
 
 #. placeholder {0}: c.displayName
+#. placeholder {0}: kind.name
+#: src/components/footer/BrowserChip.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Rename {0}"
 msgstr "Rename {0}"
@@ -27748,6 +28144,10 @@ msgstr "reopened with what you sent"
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 msgid "Repair with an agent"
 msgstr "Repair with an agent"
+
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Repeats"
+msgstr "Repeats"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/conversation/SealedTypedCard.tsx
@@ -27959,8 +28359,20 @@ msgid "Requests (month)"
 msgstr "Requests (month)"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests / day"
+msgstr "Requests / day"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Requests / minute"
 msgstr "Requests / minute"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests / month"
+msgstr "Requests / month"
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests / week"
+msgstr "Requests / week"
 
 #. placeholder {0}: redirected.join(' and ')
 #. placeholder {1}: next[0]
@@ -27971,6 +28383,10 @@ msgstr "Requests for {0} will be served as {1} — nobody has to change their ow
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Requests through this root will fail until a new key is saved."
 msgstr "Requests through this root will fail until a new key is saved."
+
+#: src/components/llm-endpoints/LimitsEditor.tsx
+msgid "Requests, total"
+msgstr "Requests, total"
 
 #: src/components/assets/DependencyChips.tsx
 msgid "required"
@@ -28536,6 +28952,7 @@ msgstr "Room unavailable"
 msgid "root"
 msgstr "root"
 
+#: src/components/llm-endpoints/PricesList.tsx
 #: src/components/token-plan/FundingChain.tsx
 msgid "Root"
 msgstr "Root"
@@ -28550,6 +28967,10 @@ msgstr "Root cause"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "roots"
 msgstr "roots"
+
+#: src/components/llm-endpoints/LlmEndpointsView.tsx
+msgid "Roots hold a provider key and the price of a call; other endpoints draw from them and narrow what passes with filters and limits. Spend is booked along the chain."
+msgstr "Roots hold a provider key and the price of a call; other endpoints draw from them and narrow what passes with filters and limits. Spend is booked along the chain."
 
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "Roots talk to a provider with a stored key; chains are fed from other endpoints in fallback order and narrow what passes with filters and limits. Usage is accumulated along the chain."
@@ -28915,6 +29336,7 @@ msgstr "running"
 #: src/components/items/item-state.ts
 #: src/components/project-setup/ProjectSetupPage.tsx
 #: src/components/project-setup/ProjectSetupPage.tsx
+#: src/components/tags/ClassifyTable.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "Running"
@@ -29290,6 +29712,15 @@ msgstr "Saved after the endpoint is created. Never shown again."
 msgid "Saved Contexts"
 msgstr "Saved Contexts"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/DataSourcePage.tsx
+msgid "Saved for"
+msgstr "Saved for"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Saved in this project's folder: it goes into git and to everyone who sets the project up."
+msgstr "Saved in this project's folder: it goes into git and to everyone who sets the project up."
+
 #: src/pages/hub-home/first-agent/FirstAgentCard.tsx
 msgid "Saved to My project"
 msgstr "Saved to My project"
@@ -29531,6 +29962,7 @@ msgid "Screen recording is not supported"
 msgstr "Screen recording is not supported"
 
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/conversation/MessageComposer.tsx
 msgid "Script"
 msgstr "Script"
 
@@ -29695,7 +30127,6 @@ msgid "Search languages…"
 msgstr "Search languages…"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Search messages"
 msgstr "Search messages"
@@ -29817,6 +30248,7 @@ msgid "secret manager"
 msgstr "secret manager"
 
 #: src/components/conversation/CredentialValueLock.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/footer/SecretManagerChip.tsx
 #: src/components/footer/SecretManagerChip.tsx
@@ -29991,7 +30423,6 @@ msgstr "Select a version to install:"
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/tags/ClassifyTable.tsx
 msgid "Select all"
 msgstr "Select all"
 
@@ -30028,7 +30459,6 @@ msgid "Select Chrome profile"
 msgstr "Select Chrome profile"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Select conversation"
 msgstr "Select conversation"
@@ -30367,6 +30797,9 @@ msgid "server.py in this asset — runs immediately"
 msgstr "server.py in this asset — runs immediately"
 
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/llm-endpoints/PricesList.tsx
 msgid "Serves"
 msgstr "Serves"
 
@@ -30594,6 +31027,10 @@ msgstr "Set budget"
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Set budget · {scopeName}"
 msgstr "Set budget · {scopeName}"
+
+#: src/components/llm-endpoints/PricesList.tsx
+msgid "Set by the owner of each root. A call that matches no row is free. A call is booked when its answer is delivered; a refused or failed call costs nothing."
+msgstr "Set by the owner of each root. A call that matches no row is free. A call is booked when its answer is delivered; a refused or failed call costs nothing."
 
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set conversation project"
@@ -31144,6 +31581,7 @@ msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "Should I allow this tool? Respond with JSON: {0}"
 
 #: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/types/ViewType.ts
 msgid "Show"
 msgstr "Show"
@@ -32468,6 +32906,10 @@ msgstr "started {0}"
 msgid "Started {ago}"
 msgstr "Started {ago}"
 
+#: src/components/tags/ClassifyTable.tsx
+msgid "started {started}"
+msgstr "started {started}"
+
 #: src/components/automations/RunDetail.tsx
 msgid "Started again as a test run."
 msgstr "Started again as a test run."
@@ -32735,6 +33177,7 @@ msgstr "stopped"
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/app-profile/AppPlacesColumn.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/tags/ClassifyTable.tsx
 msgid "Stopped"
 msgstr "Stopped"
 
@@ -33079,6 +33522,10 @@ msgstr "Sync {0} changes"
 msgid "Sync {0} changes and refresh stats"
 msgstr "Sync {0} changes and refresh stats"
 
+#: src/components/footer/MdSyncChip.tsx
+msgid "Sync {filesWord}"
+msgstr "Sync {filesWord}"
+
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/entity-card/entity-card-rows.ts
@@ -33162,8 +33609,8 @@ msgid "Tag"
 msgstr "Tag"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Tag changes"
-msgstr "Tag changes"
+#~ msgid "Tag changes"
+#~ msgstr "Tag changes"
 
 #: src/components/tags/StreamInboxTags.tsx
 #~ msgid "Tag created"
@@ -33188,8 +33635,8 @@ msgid "Tag shape"
 msgstr "Tag shape"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Tag tree"
-msgstr "Tag tree"
+#~ msgid "Tag tree"
+#~ msgstr "Tag tree"
 
 #: src/components/graph-view/TagGraphView.tsx
 msgid "Tag Tree"
@@ -33213,8 +33660,8 @@ msgid "Tags: {short}"
 msgstr "Tags: {short}"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Take the proposal back into Apply all"
-msgstr "Take the proposal back into Apply all"
+#~ msgid "Take the proposal back into Apply all"
+#~ msgstr "Take the proposal back into Apply all"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Takes ~4 seconds"
@@ -33693,6 +34140,10 @@ msgstr "The attachments of this message could not be delivered."
 msgid "The backend may have restarted. Click to reattach."
 msgstr "The backend may have restarted. Click to reattach."
 
+#: src/components/llm-endpoints/LlmEndpointDialog.tsx
+msgid "The base URL and where the key goes are fixed once created."
+msgstr "The base URL and where the key goes are fixed once created."
+
 #: src/components/voice/CallControls.tsx
 msgid "The call failed."
 msgstr "The call failed."
@@ -33986,6 +34437,10 @@ msgstr "The key could not be saved."
 #: src/components/conversation/SecureSendDialog.tsx
 msgid "The key could not be sent."
 msgstr "The key could not be sent."
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "The key format must name the key placeholder exactly once."
+msgstr "The key format must name the key placeholder exactly once."
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "The key is stored here"
@@ -34604,6 +35059,10 @@ msgstr "this budget"
 msgid "This budget is not available to you"
 msgstr "This budget is not available to you"
 
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "This calendar file has no events."
+msgstr "This calendar file has no events."
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This can take up to a minute if it was asleep."
 msgstr "This can take up to a minute if it was asleep."
@@ -35084,6 +35543,7 @@ msgstr "This process points to a deleted project."
 #: src/components/assets/confirm-project-delete.ts
 #: src/components/connections-manager.tsx
 #: src/components/footer/SecretManagerChip.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "this project"
 msgstr "this project"
@@ -35124,6 +35584,10 @@ msgstr "This project defines no kind."
 #: src/routes/loaders/load-project.ts
 msgid "This project doesn't exist or is no longer available."
 msgstr "This project doesn't exist or is no longer available."
+
+#: src/components/home-tiles/HomeTiles.tsx
+msgid "This project has no agents."
+msgstr "This project has no agents."
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "This project has no dataset."
@@ -35198,6 +35662,10 @@ msgstr "This removes the project from the list on this computer. It has no files
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "This removes the schedule from the agent. Past runs stay in the run history."
 msgstr "This removes the schedule from the agent. Past runs stay in the run history."
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "This root is priced by the tokens each answer reports. That is set through the API, not here."
+msgstr "This root is priced by the tokens each answer reports. That is set through the API, not here."
 
 #: src/components/runs/RunDetail.tsx
 msgid "This run wrote no files. Runs launched outside a flow only produce artifacts when the agent is told where to write them."
@@ -35556,6 +36024,11 @@ msgstr "Timeout for Anthropic API calls in ms"
 #: src/notifications/error-detail.ts
 msgid "Times"
 msgstr "Times"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "Times (request field)"
+msgstr "Times (request field)"
 
 #: src/components/items/IssueView.tsx
 msgid "times it happened"
@@ -36178,7 +36651,6 @@ msgstr "Under OAuth & Permissions add the bot scopes channels:history, groups:hi
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/notifications-view/NotificationsView.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#: src/components/tags/ClassifyTable.tsx
 msgid "Undo"
 msgstr "Undo"
 
@@ -36367,6 +36839,10 @@ msgstr "unsure"
 msgid "Unsure"
 msgstr "Unsure"
 
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Untitled event"
+msgstr "Untitled event"
+
 #: src/components/help/AskForHelpButton.tsx
 #: src/components/help/MyHelpRequests.tsx
 msgid "Untitled request"
@@ -36537,6 +37013,8 @@ msgstr "Updating plan"
 msgid "Updating…"
 msgstr "Updating…"
 
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+#: src/components/upgrade/UpgradeScreen.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/machines-bulk.ts
 msgid "Upgrade"
@@ -36665,9 +37143,13 @@ msgstr "Usage scan failed"
 msgid "Usage unavailable"
 msgstr "Usage unavailable"
 
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "USD"
+msgstr "USD"
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-#: src/components/tags/ClassifyTable.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Use"
@@ -36742,6 +37224,10 @@ msgstr "Use letters, digits, '.', '_', '~' or '-', starting with a letter or dig
 msgid "Use mine"
 msgstr "Use mine"
 
+#: src/components/upgrade/UpgradeScreen.tsx
+msgid "Use my own AI account"
+msgstr "Use my own AI account"
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Use suggestion"
 msgstr "Use suggestion"
@@ -36749,6 +37235,10 @@ msgstr "Use suggestion"
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Use the default home"
 msgstr "Use the default home"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Use the project default in this session"
+msgstr "Use the project default in this session"
 
 #: src/components/footer/BrowserChip.tsx
 msgid "Use the project's choice"
@@ -36774,6 +37264,10 @@ msgstr "Use weaker sandbox for nested commands"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "used"
 msgstr "used"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "used {used}"
+msgstr "used {used}"
 
 #: src/notifications/error-detail.ts
 msgid "Used / cap"
@@ -36997,7 +37491,6 @@ msgid "Vault {vault} is set up on this computer"
 msgstr "Vault {vault} is set up on this computer"
 
 #: src/components/credentials/SecretVaultPicker.tsx
-#: src/components/credentials/SecretVaultPicker.tsx
 msgid "Vault name"
 msgstr "Vault name"
 
@@ -37085,6 +37578,10 @@ msgstr "Vibe agents"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Vibe only"
 msgstr "Vibe only"
+
+#: src/components/llm-endpoints/api-endpoint-draft.ts
+msgid "Video"
+msgstr "Video"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/chart/chartControls.tsx
@@ -37371,6 +37868,10 @@ msgid "wants to run on your machine"
 msgstr "wants to run on your machine"
 
 #: src/components/conversation/SessionCard.tsx
+msgid "wants to run on your machine:"
+msgstr "wants to run on your machine:"
+
+#: src/components/conversation/SessionCard.tsx
 msgid "wants to run prompts on your machine"
 msgstr "wants to run prompts on your machine"
 
@@ -37388,10 +37889,9 @@ msgstr "Warning: {warning}"
 msgid "Warnings"
 msgstr "Warnings"
 
-#. placeholder {0}: change.was
 #: src/components/tags/ClassifyTable.tsx
-msgid "was {0}"
-msgstr "was {0}"
+#~ msgid "was {0}"
+#~ msgstr "was {0}"
 
 #: src/components/tags/StreamInboxTags.tsx
 msgid "was {previous}"
@@ -37580,6 +38080,10 @@ msgstr "What it is"
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 msgid "What it runs"
 msgstr "What it runs"
+
+#: src/components/llm-endpoints/ApiEndpointFields.tsx
+msgid "What it serves, e.g. speech.generate (optional)"
+msgstr "What it serves, e.g. speech.generate (optional)"
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What it worked on"
@@ -37906,8 +38410,8 @@ msgid "Whose it is"
 msgstr "Whose it is"
 
 #: src/components/tags/ClassifyTable.tsx
-msgid "Why"
-msgstr "Why"
+#~ msgid "Why"
+#~ msgstr "Why"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Why is this needed?"
@@ -38464,6 +38968,11 @@ msgstr "You'll be removed from the participant list. Other members keep the conv
 msgid "You're doing great!"
 msgstr "You're doing great!"
 
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+#: src/components/upgrade/UpgradeScreen.tsx
+msgid "You're out of tokens"
+msgstr "You're out of tokens"
+
 #: src/components/llm-setup/LlmSetupView.tsx
 msgid "You're set up"
 msgstr "You're set up"
@@ -38552,6 +39061,18 @@ msgstr "Your diagnosis request came back"
 msgid "Your display name"
 msgstr "Your display name"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "your Flowpad"
+msgstr "your Flowpad"
+
+#: src/components/upgrade/UpgradeScreen.tsx
+msgid "Your Flowpad budget is used up, so the assistant has paused. Your work is saved — upgrade to pick up right where you left off."
+msgstr "Your Flowpad budget is used up, so the assistant has paused. Your work is saved — upgrade to pick up right where you left off."
+
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "Your Flowpad budget is used up. Upgrade to keep going — your work is saved."
+msgstr "Your Flowpad budget is used up. Upgrade to keep going — your work is saved."
+
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Your group status report is ready"
 msgstr "Your group status report is ready"
@@ -38564,6 +39085,7 @@ msgstr "Your help requests"
 msgid "Your local value of {credential} is copied into the vault, and the credential records where it is."
 msgstr "Your local value of {credential} is copied into the vault, and the credential records where it is."
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/pages/hub-home/AccessKeysSection.tsx
 #: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
 msgid "your machine"
@@ -38673,6 +39195,10 @@ msgstr "Your workspace is ready"
 #: src/components/graph-view/GraphView.tsx
 msgid "Your WorldView"
 msgstr "Your WorldView"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Yours alone: kept outside every project, never shared with one."
+msgstr "Yours alone: kept outside every project, never shared with one."
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "zendesk, gmail"

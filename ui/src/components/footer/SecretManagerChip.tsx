@@ -218,7 +218,7 @@ export function SecretManagerChip() {
         </PopoverContent>
       </Popover>
       <Dialog open={adding !== null} onOpenChange={(o) => !o && setAdding(null)}>
-        <DialogContent className="w-[440px] p-4" data-testid="secret-manager-add-dialog">
+        <DialogContent className="w-[480px] p-5" data-testid="secret-manager-add-dialog">
           <DialogTitle className="sr-only">
             <Trans>Secret manager</Trans>
           </DialogTitle>

@@ -10,23 +10,29 @@ export interface ApproveLiveSession {
   /** Approve the session. When it has nowhere to run — a person-to-person chat
    *  has no project by design — the host first picks a project; resolves once
    *  approved, or untouched if the picker is dismissed. `replyPolicy` is set
-   *  first — a prompt request's Run & Update (auto) vs Run (review). */
-  approve: (session: RemoteWorkerSession, opts?: { replyPolicy?: SessionReplyPolicy }) => Promise<void>;
+   *  first — a prompt request's Run & Update (auto) vs Run (review). `turnKinds` is what the
+   *  host left ticked; absent = everything the guest asked for. */
+  approve: (
+    session: RemoteWorkerSession,
+    opts?: { replyPolicy?: SessionReplyPolicy; turnKinds?: string[] },
+  ) => Promise<void>;
   /** The project picker; render it once wherever the hook is used. */
   picker: ReactNode;
 }
 
 /**
  * The host's Approve, shared by the live-session view and the session card in
- * the conversation. The backend refuses an approval with nowhere to run (409)
- * rather than approving a turn that can only fail, so the place is asked for
- * here, before the call: a project, or "Run (Skip project)" — the instance's temp folder.
+ * the conversation. A chat with no project lets the host choose where it runs,
+ * here, before the call: a project, or "Run (Skip project)" — the instance's
+ * temp folder. The backend never needs the answer: with nothing picked it runs
+ * in the temp folder.
  */
 export function useApproveLiveSession(): ApproveLiveSession {
   const { t } = useLingui();
   // The approval waiting on the picker: which session, and the caller's promise to settle.
   const [pending, setPending] = useState<{
     session: RemoteWorkerSession;
+    turnKinds?: string[];
     resolve: () => void;
     reject: (e: unknown) => void;
   } | null>(null);
@@ -34,15 +40,14 @@ export function useApproveLiveSession(): ApproveLiveSession {
   const items = useMemo(() => projectEntitiesToSelectorItems(projects).filter((p) => !!p.path), [projects]);
 
   const approve = useCallback(
-    async (session: RemoteWorkerSession, opts: { replyPolicy?: SessionReplyPolicy } = {}) => {
+    async (session: RemoteWorkerSession, opts: { replyPolicy?: SessionReplyPolicy; turnKinds?: string[] } = {}) => {
       // Before the approval: the turn starts on approve and decides auto/review when it ends.
       if (opts.replyPolicy && session.effectiveReplyPolicy !== opts.replyPolicy) {
         await session.setReplyPolicy(opts.replyPolicy);
       }
-      if (!(await session.needsProjectToApprove())) return session.approve();
-      return new Promise<void>((resolve, reject) =>
-        setPending({ session, resolve, reject }),
-      );
+      const { turnKinds } = opts;
+      if (!(await session.needsProjectToApprove())) return session.approve(undefined, { turnKinds });
+      return new Promise<void>((resolve, reject) => setPending({ session, turnKinds, resolve, reject }));
     },
     [],
   );
@@ -57,7 +62,7 @@ export function useApproveLiveSession(): ApproveLiveSession {
       if (!pending) return;
       setPending(null);
       pending.session
-        .approve(where.projectId, { scratch: where.scratch })
+        .approve(where.projectId, { scratch: where.scratch, turnKinds: pending.turnKinds })
         .then(pending.resolve, pending.reject);
     },
     [pending],

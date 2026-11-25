@@ -68,6 +68,10 @@
     "tree": {
       "shape": "?mockify.tree",
       "description": "The mock tree: screens, actions and vars. What the page is built from and what Next / Back walk."
+    },
+    "guide": {
+      "shape": "?bool",
+      "description": "true: a guide someone follows, not a design someone reviews. Every screen has `do`; the page opens with the guide bar and reads no Flowpad data."
     }
   }
 }

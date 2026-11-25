@@ -161,10 +161,11 @@ const notDeleted = () => new ExpressionNode({ op: '$IS_NULL', operands: ['delete
 
 /** The view's clause, answered by the backend from the projected `archived` / `is_unread`, so a page
  *  is N rows of the view rather than N rows the browser then thins out. */
-function viewClauses(view: StreamInboxViewMode, starredIds: readonly string[] = []): ExpressionNode[] {
+function viewClauses(view: StreamInboxViewMode, among?: readonly string[]): ExpressionNode[] {
   // Starred is a list of favorites (bookmarks), not a field of the row: the starred ids ride in the
   // query. Archived rows included — a star outlives the archive, as a search hit does.
-  if (view === 'starred') return [new ExpressionNode({ op: '$IN', operands: ['id', [...starredIds]] })];
+  // A search's hits are a list of ids too, and span every view the same way.
+  if (among || view === 'starred') return [new ExpressionNode({ op: '$IN', operands: ['id', [...(among ?? [])]] })];
   if (view === 'archived') return [new ExpressionNode({ op: '$EQ', operands: ['archived', true] })];
   if (view === 'unread') return [notArchived(), new ExpressionNode({ op: '$EQ', operands: ['is_unread', true] })];
   // Every conversation that carries a share, archived or not — the record of what was shared with you.
@@ -198,20 +199,12 @@ export function conversationsPageRequest(
   scope: ConversationScope,
   view: StreamInboxViewMode,
   before: string | null,
-  starredIds: readonly string[] = [],
+  among?: readonly string[],
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
-  const clauses = viewClauses(view, starredIds);
+  const clauses = viewClauses(view, among);
   if (before) clauses.push(new ExpressionNode({ op: '$LT', operands: [Conversation.recencyField, before] }));
   return pageQuery(scope, clauses, 'desc', { limit: size });
-}
-
-/** The scope's conversations among `ids` (a body search's hits), newest first — every view, archived
- *  included, as search spans them. */
-export function conversationsByIdsRequest(scope: ConversationScope, ids: string[]): QueryRequest {
-  return pageQuery(scope, [new ExpressionNode({ op: '$IN', operands: ['id', ids] })], 'desc', {
-    limit: STREAM_INBOX_PAGE_SIZE,
-  });
 }
 
 /** The rows of the page just NEWER than one whose newest row is at `newest`: the `size` rows above it,
@@ -222,12 +215,12 @@ export function newerBoundaryRequest(
   scope: ConversationScope,
   view: StreamInboxViewMode,
   newest: string,
-  starredIds: readonly string[] = [],
+  among?: readonly string[],
   size: number = STREAM_INBOX_PAGE_SIZE,
 ): QueryRequest {
   return pageQuery(
     scope,
-    [...viewClauses(view, starredIds), new ExpressionNode({ op: '$GT', operands: [Conversation.recencyField, newest] })],
+    [...viewClauses(view, among), new ExpressionNode({ op: '$GT', operands: [Conversation.recencyField, newest] })],
     'asc',
     { limit: size },
   );

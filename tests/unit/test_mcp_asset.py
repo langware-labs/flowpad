@@ -218,6 +218,29 @@ async def test_a_dangling_declared_id_does_not_break_a_launch(home, agent_name):
     assert [m.name for m in await agent.mcp_assets()] == ["dummy"]
 
 
+async def test_a_launch_never_writes_into_a_shipped_agent(home, agent_name, tmp_path):
+    """A shipped agent's folder is product source: a launch attaches nothing there."""
+    _write_agent(home, agent_name)
+    await _index(home)
+    agent = await (await Agent.get_one({"name": agent_name})).save()
+    outside = await Mcp(name="outside", command="/bin/true").save(notify=False)
+    agent.mcp_servers = [str(outside.typeid)]
+    shipped = tmp_path / "flow_sdk" / "system_projects" / "p" / "agentic-assets" / "agent" / agent_name
+    agent.asset_ref = str(shipped)
+
+    assert await agent.attach_declared_mcp_servers() == 0
+    assert not shipped.exists()
+
+
+async def test_no_shipped_agent_declares_mcp_servers():
+    """A declared id names an Mcp row on ONE machine; a shipped agent's servers ship in its folder."""
+    from flow_sdk.config import system_projects_root
+
+    docs = list(system_projects_root().glob("*/agentic-assets/agent/*/agent.json"))
+    assert docs
+    assert not [d.parent.name for d in docs if json.loads(d.read_text(encoding="utf-8")).get("mcp_servers")]
+
+
 async def test_attaching_a_bundled_server_keeps_pointing_at_the_original_code(home, agent_name):
     """The subtle one. ``to_spec`` has ALREADY resolved the entrypoint into an
     absolute path in ``args``, so the attachment must not carry the entrypoint

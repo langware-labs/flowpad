@@ -18,7 +18,9 @@ import { DataSource, type DataDriver } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { lucideByName } from '@src/lib/lucide-by-name';
 
-type SpecGlyphs = Partial<Pick<DataDriver, 'icon_name' | 'channel_icon_names' | 'group_icon_name'>>;
+type SpecGlyphs = Partial<
+  Pick<DataDriver, 'icon_name' | 'channel_icon_names' | 'channel_badge_icon_names' | 'group_icon_name'>
+>;
 
 export function sourceIconName(spec: SpecGlyphs | null | undefined, channel: string | null | undefined): string {
   const byChannel = channel ? spec?.channel_icon_names?.[channel] : undefined;
@@ -34,7 +36,8 @@ export function sourceIcon(spec: SpecGlyphs | null | undefined, channel: string 
 /**
  * The glyph pair for a source or a driver card: the CHANNEL's mark, badged with whose way it is. A driver in a group
  * whose own icon differs from the group's (Flow's: Flowpad in the WhatsApp / Telegram / Slack group) is the group's
- * glyph with its own as the badge; anything else is its plain glyph. One rule for the choice card and the row, so the
+ * glyph with its own as the badge; a channel the driver badges (`channel_badge_icon_names`: reached through a browser)
+ * carries that badge; anything else is its plain glyph. One rule for the choice card and the row, so the
  * two cannot drift apart.
  */
 export function sourceGlyphs(
@@ -44,5 +47,6 @@ export function sourceGlyphs(
   const Glyph = sourceIcon(spec, channel);
   const group = spec?.group_icon_name;
   if (group && group !== spec?.icon_name) return { Base: lucideByName(group), Badge: Glyph };
-  return { Base: Glyph, Badge: null };
+  const badge = channel ? spec?.channel_badge_icon_names?.[channel] : undefined;
+  return { Base: Glyph, Badge: badge ? lucideByName(badge) : null };
 }

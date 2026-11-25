@@ -58,13 +58,18 @@ export function specFields(spec?: DataDriver): [string, SpecConfigField][] {
 
 /** The rules for one field, read off the driver's `Config` schema: whether it is required, the
  *  pattern a typed value (each entry, for a list) must match, and its default. */
-export function fieldRules(spec: DataDriver | undefined, key: string): { required: boolean; pattern?: string; default?: unknown } {
+export function fieldRules(
+  spec: DataDriver | undefined,
+  key: string,
+  /** Fields the picked choice requires on top of the driver's own (`DriverOffer.fields`). */
+  alsoRequired: readonly string[] = [],
+): { required: boolean; pattern?: string; default?: unknown } {
   const schema = spec?.config_schema;
   const prop: ConfigSchemaProperty = schema?.properties?.[key] ?? {};
   const patternOf = (p?: ConfigSchemaProperty): string | undefined =>
     p?.pattern ?? p?.anyOf?.map((a) => a.pattern).find(Boolean);
   return {
-    required: (schema?.required ?? []).includes(key),
+    required: (schema?.required ?? []).includes(key) || alsoRequired.includes(key),
     pattern: patternOf(prop) ?? patternOf(prop.items),
     default: prop.default,
   };
@@ -274,7 +279,11 @@ export function setUpByWizard(spec: DataDriver | undefined, editing: boolean): b
   return !editing && !!spec?.setup_wizards?.length;
 }
 
-export function validateDraft(draft: SourceDraft, spec?: DataDriver, { config = true } = {}): string[] {
+export function validateDraft(
+  draft: SourceDraft,
+  spec?: DataDriver,
+  { config = true, required = [] as readonly string[] } = {},
+): string[] {
   const problems: string[] = [];
 
   if (!draft.name.trim()) problems.push('Name is required.');
@@ -289,7 +298,7 @@ export function validateDraft(draft: SourceDraft, spec?: DataDriver, { config = 
     // the provider says is real.
     const picked = pickedIn(draft, key, field);
     if (picked.length) continue;
-    const rules = fieldRules(spec, key);
+    const rules = fieldRules(spec, key, required);
     if (rules.required && !raw) {
       problems.push(t`${label} is required.`);
       continue;

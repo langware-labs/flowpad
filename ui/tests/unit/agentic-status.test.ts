@@ -107,7 +107,7 @@ describe('ProcessStatus', () => {
 // ─── WorkerStatus wire values ────────────────────────────────────────────────
 
 describe('WorkerStatus', () => {
-  it('has exactly 14 canonical values (13 post-consolidation + pending_user)', () => {
+  it('has exactly 15 canonical values', () => {
     expect(Object.values(WorkerStatus).sort()).toEqual(
       [
         'initializing',
@@ -122,6 +122,7 @@ describe('WorkerStatus', () => {
         // Backend pending_user projection mirrored into TS (7659daf9);
         // deliberately in NO helper set — see the enum doc comment.
         'pending_user',
+        'background_work',
         'error',
         'api_error',
         'api_timeout',

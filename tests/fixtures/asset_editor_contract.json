@@ -33,6 +33,7 @@
     "pdf",
     "docx",
     "archive",
+    "ics",
     "value"
   ],
   "editor_types": {
@@ -120,6 +121,7 @@
     "pdf": [],
     "docx": [],
     "archive": [],
+    "ics": [],
     "value": []
   },
   "type_to_editor": {

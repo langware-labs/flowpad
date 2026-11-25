@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Download, Forward, MoreVertical, Pencil, SmilePlus, Star, Trash2, Zap } from 'lucide-react';
+import { Download, Forward, MoreVertical, Pencil, SmilePlus, Star, Trash2, Zap, type LucideIcon } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AgenticProcess, Conversation, TypeId, type ICloudOrigin } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -24,7 +24,18 @@ import { EmojiPickerContent } from './EmojiPicker';
 import { TaskItIcon, taskItHint } from './task-it';
 import type { WorkerType } from './conversation-session-constants';
 
+/** One more item, on top of the menu's own: what a message keeps out of its body (an app message's Forward,
+ *  its value, the rule that posted it). */
+export interface MessageMenuExtra {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  onSelect: () => void;
+}
+
 interface MessageActionsMenuProps {
+  /** Shown first, above the menu's own items. */
+  extraItems?: MessageMenuExtra[];
   flowMessageId?: string;
   /** Parent conversation id — its shared context names the current worker
    *  (the most-recently-linked AgenticProcess) a note is queued to. */
@@ -148,6 +159,7 @@ function MessageMenuItems({
   onOpenPicker,
   onOpenNote,
   onLaunchWorker,
+  extraItems,
 }: MessageActionsMenuProps & { onOpenPicker: () => void; onOpenNote: () => void }) {
   const isAdvanced = useIsAdvanced();
   const { isFavorited, toggleFavorite } = useFavorites();
@@ -175,6 +187,13 @@ function MessageMenuItems({
           <DropdownMenuSeparator />
         </>
       )}
+      {extraItems?.map(({ key, label, icon: Icon, onSelect }) => (
+        <DropdownMenuItem key={key} onSelect={onSelect} data-testid={`message-extra-${key}`}>
+          <Icon className={ITEM_ICON} />
+          {label}
+        </DropdownMenuItem>
+      ))}
+      {!!extraItems?.length && <DropdownMenuSeparator />}
       {onReact && (
         <DropdownMenuItem onSelect={onOpenPicker} data-testid="message-react">
           <SmilePlus className={ITEM_ICON} />

@@ -1,7 +1,7 @@
-import { AgenticProcess, TypeId, WorkerStatus } from '@sdk';
+import { AgenticProcess, TypeId, WorkerStatus, copyToClipboard } from '@sdk';
 import { useMemo, type ComponentType } from 'react';
 import { cn, RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
-import { Check, List, Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
+import { Check, Copy, List, Loader2, MessageSquare, Star, Trash2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { WorkerIcon, pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { formatTimeAgoShort } from '@src/utils/format-time-ago';
@@ -10,6 +10,7 @@ import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useIsBurning, useWorkerStatus } from '@src/store/pending-actions-store';
 import { compactWorkerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { sessionDetailsText } from '@src/components/terminal/interactive-terminal/SessionInfoPopover';
 import { ChatPromptsPopover } from './ChatPromptsPopover';
 import { MatchSnippet, type MatchPart } from './matchSnippet';
 
@@ -50,10 +51,13 @@ type RowMark = { icon: ComponentType<{ className?: string }>; cls: string; label
  *  the CLI's own words for the status and the last prompt. */
 function ChatStatusCard({
   mark,
+  process,
   detail,
   lastPrompt,
 }: {
   mark: RowMark;
+  /** The row's process — with a session it gives the card the session menu's copy button. */
+  process?: AgenticProcess | null;
   detail?: string | null;
   lastPrompt?: string | null;
 }) {
@@ -63,6 +67,22 @@ function ChatStatusCard({
       <div className="flex items-center gap-1.5 font-medium">
         <mark.icon className={cn('h-3 w-3', mark.cls)} />
         {mark.label}
+        {process?.session_id && (
+          <button
+            type="button"
+            data-testid="chat-history-row-copy-details"
+            className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            title={t`Copy session details`}
+            aria-label={t`Copy session details`}
+            onClick={(e) => {
+              // The card is rendered inside the row: the click must not open the chat.
+              e.stopPropagation();
+              void copyToClipboard(sessionDetailsText(process));
+            }}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       {detail && <div className="whitespace-pre-wrap break-words">{detail}</div>}
       {lastPrompt && (
@@ -174,7 +194,7 @@ export function ChatHistoryRow({
               className="max-w-72 space-y-1 text-xs"
               data-testid="chat-history-row-status-card"
             >
-              <ChatStatusCard mark={mark} detail={process?.worker_status_detail} lastPrompt={entry.last_prompt} />
+              <ChatStatusCard mark={mark} process={process} detail={process?.worker_status_detail} lastPrompt={entry.last_prompt} />
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

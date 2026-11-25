@@ -13,6 +13,7 @@ import { useMemo } from 'react';
 
 import { Badge } from '@src/components/ui/badge';
 
+import { KindChips } from './KindChips';
 import { buildChainTree, type ChainTreeNode, type HopHealth } from './chain-tree';
 import { TONE } from './tone';
 
@@ -75,6 +76,8 @@ export function ChainTree({ chain, onOpen }: ChainTreeProps) {
             {n.name}
           </button>
           {n.hop?.provider && <span className="font-mono text-[11px] text-muted-foreground">{n.hop.provider}</span>}
+          {/* An API endpoint's root says what it serves where an LLM root names its provider. */}
+          <KindChips kinds={n.hop?.kinds} />
           {n.depth > 0 && n.pathIndexes.length > 0 && (
             <span className="text-[11px] text-muted-foreground" title={t`Fallback order under its parent`}>
               #{n.order + 1}

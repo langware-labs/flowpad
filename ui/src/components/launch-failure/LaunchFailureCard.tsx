@@ -3,6 +3,7 @@ import { msg } from '@lingui/core/macro';
 import type { AgenticProcess, FlowData, LaunchFailureValue } from '@sdk';
 import { openLlmSources } from '@src/components/llm-sources/llm-sources-pointer';
 import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
+import { openUpgradeScreen } from '@src/components/upgrade/upgrade-store';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { HARNESS_CAPABILITY_BY_WORKER, normalizeWorkerType } from '@src/components/workers/worker-types';
@@ -17,15 +18,15 @@ export type LaunchFailure = Required<Pick<LaunchFailureValue, 'code' | 'fix'>> &
 // One ICU select per line of the card, keyed on the code (button: on the fix). Empty line 2 = first evidence line.
 const LINE1 = msg({
   message:
-    "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}",
+    "{code, select, folder_not_trusted {Trust folder {name}?} first_run_setup {{h} needs a one-time setup} bypass_warning {{h} asks to confirm full access} signed_out {{h} isn't connected to an account} key_rejected {{provider} key ****{key_hint} was rejected} budget_not_ready {Getting your Flowpad budget ready…} budget_used {You're out of tokens} not_installed {{h} isn't installed on this computer} cli_crashed {{h} crashed on start} cli_outdated {{h} is too old for this model} pinned_source_unavailable {This project requires {source_name}} other {{h} couldn't start}}",
 });
 const LINE2 = msg({
   message:
-    "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}",
+    "{code, select, folder_not_trusted {{folder} — {h} asks once per folder} first_run_setup {Theme and sign-in screens are waiting} bypass_warning {Flowpad runs it without per-step prompts} signed_out {No sign-in or key} budget_not_ready {{h} starts by itself when it's ready} budget_used {Your Flowpad budget is used up} not_installed {Install takes about a minute} cli_outdated {Update it to the newest version} pinned_source_unavailable {It isn't set up on this computer} other {}}",
 });
 const BUTTON = msg({
   message:
-    '{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} other {Try again}}',
+    '{fix, select, trust_folder {Trust} finish_setup {Finish setup} accept_bypass {Allow} connect {Connect} replace_key {Replace key} install {Install} reinstall {Reinstall} ask_owner {Set up} upgrade {Upgrade} other {Try again}}',
 });
 // Old servers send only a sentence: [code, fix, pattern].
 const LEGACY: [string, string, RegExp][] = [
@@ -78,7 +79,8 @@ export function LaunchFailureCard({ failure: f0, retry, process }: Props) {
   const run = async () => {
     if (fix === 'retry' || (f.phase === 'blocked' && !process)) return retry();
     if (f.phase === 'blocked') return (await process!.resolveLaunchFailure(fix))?.relaunched === false && retry();
-    if (fix.endsWith('install')) setInstall([HARNESS_CAPABILITY_BY_WORKER[worker]]);
+    if (fix === 'upgrade') openUpgradeScreen();
+    else if (fix.endsWith('install')) setInstall([HARNESS_CAPABILITY_BY_WORKER[worker]]);
     else openLlmSources(navigation, worker);
     setHandedOff(true);
   };

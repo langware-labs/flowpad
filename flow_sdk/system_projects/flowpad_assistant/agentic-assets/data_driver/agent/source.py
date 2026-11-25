@@ -46,8 +46,9 @@ class ConnectorProfile:
     default_mailbox: str
     agent: str
     subagent: str
-    send_agent: str
-    send_subagent: str
+    #: Empty: the connector is read only, and a send is refused before a worker is spent.
+    send_agent: str = ""
+    send_subagent: str = ""
     #: Read through a browser rather than a connector: the source's config names the browser driver.
     browser: bool = False
 
@@ -65,6 +66,11 @@ CONNECTOR_PROFILES: dict[str, ConnectorProfile] = {
         kind="content.message.chat", mailbox_noun="inbox", default_mailbox="inbox",
         agent="linkedin-reader", subagent="linkedin_analyzer", send_agent="linkedin-poster", send_subagent="linkedin_sender",
         browser=True,
+    ),
+    # Read only: sending from a person's own number is a decision of its own.
+    "whatsapp": ConnectorProfile(
+        kind="content.message.chat", mailbox_noun="chat list", default_mailbox="chats",
+        agent="whatsapp-reader", subagent="whatsapp_analyzer", browser=True,
     ),
 }
 
@@ -98,8 +104,8 @@ def browser_of(config: Mapping[str, Any]) -> str:
     from flow_sdk.core import browser_drivers  # noqa: PLC0415
 
     name = str((config or {}).get("browser") or "").strip()
-    if browser_drivers.get(name) is None:
-        raise Rejected(f"config.browser is required: one of {' | '.join(browser_drivers.names())}")
+    if not browser_drivers.driver_of(name):
+        raise Rejected(f"config.browser is required: a browser kind (`flow browser list`) or one of {' | '.join(browser_drivers.names())}")
     return name
 
 
@@ -188,6 +194,23 @@ class AgentSource(MessageSource):
         return AgentSendData(text=text, subject=subject or None, thread_key=thread_key, to=to, conversation_id=conversation_id), None
 
     @classmethod
+    async def choices_for(cls, row: Any, field: str) -> list:
+        """The browsers this machine can give a worker, one per profile — the footer menu's list.
+        Application state, so it is read from the application."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.agentic_process.browser_choice import machine_view  # noqa: PLC0415
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+        from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.choice_spec import Choice  # noqa: PLC0415
+
+        if field != "browser":
+            return []
+        _, _, kinds = await asyncio.to_thread(machine_view, await resolve_default_worker_type())
+        return [Choice(id=kind["kind"], name=kind["name"], detail=f"{kind['browser']} · {kind['driving']} · {kind['state'].replace('_', ' ')}")
+                for kind in kinds if browser_drivers.usable(kind["state"]) and not kind["hidden"]]
+
+    @classmethod
     def origin_kind_for(cls, config: Mapping[str, Any]) -> str:
         """The connector IS the channel — otherwise every thread badges and keys as "agent"."""
         return str((config or {}).get("connector") or "").strip() or cls.provider
@@ -256,6 +279,8 @@ class AgentSource(MessageSource):
         propagates as such: one failed reply must never become source health."""
         self._require_open()
         browser_of(self.config)  # refused before a worker is spent
+        if not profile_of(self.config).send_agent:
+            raise Unsupported("this channel is read only here: answer it in the app it belongs to")
         if not isinstance(data, MessageData):
             raise TypeError(f"expected MessageData, got {type(data).__name__}")
         if not (data.text or "").strip():

@@ -3,6 +3,7 @@ import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { LiveSessionsChip } from '@src/components/footer/LiveSessionsChip';
 import { BrowserChip } from '@src/components/footer/BrowserChip';
 import { SecretManagerChip } from '@src/components/footer/SecretManagerChip';
+import { MdSyncChip } from '@src/components/footer/MdSyncChip';
 import { FooterChip } from '@src/components/footer/FooterChip';
 import { ActivityStatusPill } from '@src/components/footer/ActivityStatusPill';
 import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
@@ -84,6 +85,9 @@ export function Footer({ className = '' }: FooterProps) {
           </FooterChip>
           <FooterChip name="secret manager" when={dataContext.caps.localFiles}>
             <SecretManagerChip />
+          </FooterChip>
+          <FooterChip name="md sync" when={dataContext.caps.localFiles}>
+            <MdSyncChip />
           </FooterChip>
           <FooterChip name="pending actions">
             <PendingActionsChip />

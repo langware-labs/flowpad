@@ -35,18 +35,44 @@ def test_resolve(override, legacy, project, ext, want):
     assert bc.resolve(override=override, legacy_chrome=legacy, project_browser=project, worker="claude", has_switch=ext) == want
 
 
-def test_the_persons_pick_wins_and_says_so():
-    """pick > session > project > default; the harness cap still applies, and the answer names its rung."""
-    ask = dict(override="agent", legacy_chrome=False, project_browser="agent", worker="claude", has_switch=True)
+def test_the_sessions_own_browser_wins_and_says_so():
+    """session > project default (pick) > project > default; the harness cap still applies, and the answer names its rung."""
+    ask = dict(override=None, legacy_chrome=False, project_browser="agent", worker="claude", has_switch=True)
     picked = bc.decide(**ask, pick="extension")
     assert (picked.kind, picked.source, picked.extension) == ("extension", "pick", True)
-    assert bc.decide(**ask, pick="bogus").source == "session", "a pick that names no driver is no pick"
-    assert bc.decide(**{**ask, "override": None, "project_browser": "extension"}).source == "project"
-    assert bc.decide(**{**ask, "override": None}).source == "default"
+    own = bc.decide(**{**ask, "override": "chrome_debug"}, pick="extension")
+    assert (own.kind, own.source) == ("chrome_debug", "session"), "what a channel or `flow browser select` set wins over the default"
+    assert bc.decide(**ask, pick="bogus").source == "default", "a pick that names no browser is no pick"
+    assert bc.decide(**{**ask, "project_browser": "extension"}).source == "project"
     capped = bc.decide(**{**ask, "worker": "codex", "has_switch": False}, pick="extension")
     assert (capped.kind, capped.source, capped.requested) == ("agent", "default", "extension"), "and it says what was asked"
     debug = bc.decide(**{**ask, "worker": "codex", "has_switch": False}, pick="chrome_debug")
     assert (debug.kind, debug.extension, debug.mcp_spec().name) == ("chrome_debug", False, "chrome_debug")
+
+
+def test_a_choice_may_name_one_profile():
+    """A browser kind is a choice too: the driver is read off it, and the launch keeps the profile."""
+    from flow_sdk.core import browser_drivers as bd
+
+    assert [bd.driver_of(value) for value in (
+        "extension", "chrome.extension.name.Profile 2", "canary.cdp.name.chrome_debug-default", "chrome.cdp.name.agent-default",
+        "chrome.cdp.name.nobody-default", "chrome.extension", "",
+    )] == ["extension", "extension", "chrome_debug", "agent", "", "", ""]
+    launch = bc.decide(override="chrome.extension.name.Profile 2", legacy_chrome=False, project_browser="agent", worker="claude", has_switch=True)
+    assert (launch.kind, launch.chosen, launch.source) == ("extension", "chrome.extension.name.Profile 2", "session")
+    with pytest.raises(ValueError):
+        bc.known_browser("chrome.extension.name.")
+
+
+def test_a_session_keeps_its_first_decision():
+    """The first launch's browser becomes the session's own, so a later project default does not move it."""
+    process = AgenticProcess(context_data={"other": 1})
+    assert bc.keep_choice(process, "chrome.extension.name.Default") and not bc.keep_choice(process, "chrome.extension.name.Default")
+    assert process.context_data == {"other": 1, "browser": "chrome.extension.name.Default"}
+    later = bc.decide(override=process.context_data["browser"], pick="agent", legacy_chrome=False, project_browser="agent",
+                      worker="claude", has_switch=True)
+    assert (later.kind, later.source) == ("extension", "session")
+    assert bc.keep_choice(process, "") and process.context_data == {"other": 1}
 
 
 def test_the_state_word_is_decided_once_on_the_backend(monkeypatch):
@@ -234,7 +260,62 @@ def test_scan_extension_finds_the_profile_it_is_installed_in(tmp_path, monkeypat
     assert {(p.profile.name, p.installed) for p in scan.profiles} == {("Shlomo", False), ("Work", True)}
     assert not scan.denied
     (root / "Local State").write_text("{}")  # unreadable shape ⇒ unknown, not absent
-    assert bp.scan_extension("ext-id").denied
+    (root / "Profile 1/History").write_text("")
+    blind = bp.scan_extension("ext-id")
+    assert blind.denied
+    by_folder = {p.profile.id: p for p in blind.profiles}
+    assert {k: (p.profile.name, p.installed) for k, p in by_folder.items()} == {
+        "Default": ("Default", False), "Profile 1": ("Profile 1", True)}, "an unreadable list is read off the folders"
+    assert by_folder["Profile 1"].profile.last_used and not by_folder["Default"].profile.last_used
+
+
+def test_the_kinds_are_one_per_profile(tmp_path, monkeypatch):
+    """The list the footer menu and `flow browser list` share: a managed driver's own window, and
+    one entry per real profile for the driver that rides the worker's extension."""
+    from flow_sdk.core import agent_browser, browser_drivers as bd, browser_profiles as bp
+
+    root = tmp_path / "Google/Chrome"
+    (root / "Profile 2/Extensions/ext-id").mkdir(parents=True)
+    (root / "Default").mkdir(parents=True)
+    (root / "Local State").write_text(json.dumps({"profile": {"info_cache": {"Default": {"name": "Home"}, "Profile 2": {"name": "Work"}}}}))
+    monkeypatch.setattr(bp, "_profile_roots", lambda b, os_name: [root] if b.id == "chrome" else [])
+    monkeypatch.setattr(bp, "app_binary", lambda app, os_name=None: "/bin/chrome" if app == "chrome" else None)
+    monkeypatch.setattr(agent_browser, "profile_dir", lambda driver="agent", instance=None: tmp_path / driver)
+    monkeypatch.setattr(bd, "read_config", lambda name: {"app": "", "profile": "default"})
+
+    states = {"agent": "ready", "chrome_debug": "ready", "extension": "not_connected"}
+    scan = bp.scan_extension("ext-id")
+    kinds = bd.list_kinds(states, scan)
+    assert {k.kind: (k.name, k.driver, k.state) for k in kinds} == {
+        "chrome.cdp.name.agent-default": ("Flowpad integrated browser", "agent", "ready"),
+        "chrome.cdp.name.chrome_debug-default": ("Chrome debug", "chrome_debug", "ready"),
+        "chrome.extension.name.Default": ("Home", "extension", "not_installed"),
+        "chrome.extension.name.Profile 2": ("Work", "extension", "not_connected"),
+    }
+
+    # What this machine keeps about a kind: the person's own name for it, and a reported failure.
+    saved: dict = {}
+    monkeypatch.setattr(bd, "_kind_prefs", lambda: tuple(dict(saved.get(key, {})) for key in bd._KIND_PREFS))
+    monkeypatch.setattr("flow_sdk.preferences.write_instance_pref", lambda key, value: saved.__setitem__(key, value))
+    work = "chrome.extension.name.Profile 2"
+    bd.rename_kind(work, " LinkedIn ")
+    bd.report_error(work, "signed out")
+    bd.report_error("chrome.extension.name.Default", "ignored: nothing to fail there")
+    after = {k.kind: (k.name, k.state, k.error) for k in bd.list_kinds(states, scan)}
+    assert after[work] == ("LinkedIn", "error", "signed out"), "renaming never changes the kind"
+    assert after["chrome.extension.name.Default"] == ("Home", "not_installed", "")
+    state_of_work = lambda **k: {x.kind: x.state for x in bd.list_kinds(states, scan, **k)}[work]  # noqa: E731
+    assert state_of_work(proven=(work, "2999-01-01T00:00:00Z")) == "not_connected", "a later call that worked ends it"
+    assert state_of_work(proven=(work, "2000-01-01T00:00:00Z")) == "error", "an earlier one does not"
+    bd.report_error(work, "")
+    assert state_of_work() == "not_connected"
+
+    # Hiding takes a kind off the list a person sees; it stays known, and comes back.
+    hidden = lambda: [k.kind for k in bd.list_kinds(states, scan) if k.hidden]  # noqa: E731
+    bd.hide_kind(work, True)
+    assert hidden() == [work]
+    bd.hide_kind(work, False)
+    assert hidden() == []
 
 
 def test_last_browser_use_opencode_and_deepagents(tmp_path):

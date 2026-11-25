@@ -128,7 +128,7 @@ def cmd_create(args) -> dict:
     keys = tuple(k for k in payload if k != "status")
     from flow_sdk.cli.commands._common import data_source_create_path, discover_port  # noqa: PLC0415
 
-    path = f"/graph/{data_source_create_path(discover_port())}"
+    path = f"/graph/{data_source_create_path(discover_port(), provider=str(payload.get('provider') or ''))}"
     source_id, row, dropped = create_and_verify(path, payload, keys, read_path="/graph/data_source")
     return {
         "id": source_id,

@@ -12,6 +12,7 @@ import { initialsFromLabel } from '@src/components/conversation/participant-disp
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { BreadcrumbChevron } from '@src/components/ui/breadcrumb';
+import { SegmentedControl } from '@src/components/ui/segmented-control';
 import { useOpenProjectApp, useProjectApps } from '@src/components/top-nav-bar/use-project-apps';
 import { WebAppAvatar } from '@src/components/webapp-display/WebAppIcon';
 import { MAX_HOME_AGENTS, useProjectAgents } from '@src/hooks/use-project-agents';
@@ -23,11 +24,14 @@ import {
   buildAppTiles,
   buildHubAgentTiles,
   deploymentCount,
+  loadAgentScope,
   loneDeployment,
   pageOf,
   resolveSelection,
+  saveAgentScope,
   TILES_PAGE_SIZE,
   tileIsLocal,
+  type AgentScope,
   type HomeSelection,
   type HomeTile,
   type PageSlice,
@@ -52,6 +56,8 @@ export interface HomeTilesState {
   busyKey: string | null;
   /** What is yours runs on this machine (the desktop); on the hub it lives in the cloud. */
   ownIsLocal: boolean;
+  /** All | Project beside the Agents title; absent where there is no current project (the hub). */
+  agentScope?: { value: AgentScope; set: (scope: AgentScope) => void };
 }
 
 /** The selection read from the URL, and the one way to change it. */
@@ -82,10 +88,15 @@ export function useHomeTiles(project: Project | null | undefined): HomeTilesStat
   const projectId = project?.id ? String(project.id) : '';
   const openApp = useOpenProjectApp(projectId);
   const { launch, busyId } = useAgentLauncher();
+  const [scope, setScope] = useState(loadAgentScope);
+  const setAgentScope = (next: AgentScope) => {
+    saveAgentScope(next);
+    setScope(next);
+  };
 
   const agents = useMemo(
-    () => buildAgentTiles(projectAgents.slice(0, MAX_HOME_AGENTS), knownAgents, deployments, issues),
-    [projectAgents, knownAgents, deployments, issues],
+    () => buildAgentTiles(projectAgents.slice(0, MAX_HOME_AGENTS), knownAgents, deployments, issues, scope),
+    [projectAgents, knownAgents, deployments, issues, scope],
   );
   const apps = useMemo(() => buildAppTiles(projectApps, deployments, issues), [projectApps, deployments, issues]);
 
@@ -112,7 +123,9 @@ export function useHomeTiles(project: Project | null | undefined): HomeTilesStat
   );
 
   const busyKey = busyId ? (agents.find((tile) => tile.agent?.id === busyId)?.key ?? null) : null;
-  return { agents, apps, selection, select, open, manage, busyKey, ownIsLocal: true };
+  // No project, nothing to narrow to: no toggle.
+  const agentScope = project ? { value: scope, set: setAgentScope } : undefined;
+  return { agents, apps, selection, select, open, manage, busyKey, ownIsLocal: true, agentScope };
 }
 
 const NO_APPS: HomeTile[] = [];
@@ -277,17 +290,39 @@ export function PageArrows({
   );
 }
 
+/** All | Project: which agents the row lists. */
+function AgentScopeToggle({ scope }: { scope: NonNullable<HomeTilesState['agentScope']> }) {
+  const { t } = useLingui();
+  return (
+    <SegmentedControl<AgentScope>
+      options={[
+        ['all', t`All`],
+        ['project', t`Project`],
+      ]}
+      value={scope.value}
+      onChange={scope.set}
+      testId="home-agents-scope"
+    />
+  );
+}
+
 /** One row of icons, 25 to a page. It opens on the page that holds the selected icon. */
 function TilePages({
   title,
   tiles,
   home,
   testId,
+  headerExtra,
+  empty,
 }: {
   title: ReactNode;
   tiles: HomeTile[];
   home: HomeTilesState;
   testId: string;
+  /** Sits beside the title, before the pager. */
+  headerExtra?: ReactNode;
+  /** Shown in place of the icons when there are none. */
+  empty?: ReactNode;
 }) {
   const [page, setPage] = useState(() => {
     const at = tiles.findIndex((tile) => tile.key === home.selection?.tile.key);
@@ -297,23 +332,42 @@ function TilePages({
   return (
     <TileSection
       title={title}
-      headerExtra={<PageArrows slice={slice} total={tiles.length} onPage={setPage} testId={testId} />}
+      headerExtra={
+        <>
+          {headerExtra}
+          <PageArrows slice={slice} total={tiles.length} onPage={setPage} testId={testId} />
+        </>
+      }
     >
       {slice.rows.map((tile) => (
         <Tile key={tile.key} tile={tile} home={home} />
       ))}
+      {tiles.length === 0 && empty}
     </TileSection>
   );
 }
 
 /** The home's agents and apps: one icon each. A click selects, a double click opens. */
 export function HomeTiles({ home, className }: { home: HomeTilesState; className?: string }) {
-  if (!home.agents.length && !home.apps.length) return null;
+  // Project scope with no agents keeps the row, so the toggle back to All stays reachable.
+  const showAgents = home.agents.length > 0 || home.agentScope?.value === 'project';
+  if (!showAgents && !home.apps.length) return null;
   return (
     <div className={cn('flex flex-col gap-4 text-start', className)} data-testid="home-tiles">
-      {home.agents.length > 0 && (
+      {showAgents && (
         <div data-testid="project-agents-strip">
-          <TilePages title={labelForType(Agent.type)} tiles={home.agents} home={home} testId="home-agents" />
+          <TilePages
+            title={labelForType(Agent.type)}
+            tiles={home.agents}
+            home={home}
+            testId="home-agents"
+            headerExtra={home.agentScope && <AgentScopeToggle scope={home.agentScope} />}
+            empty={
+              <p className="text-xs text-muted-foreground" data-testid="home-agents-empty">
+                <Trans>This project has no agents.</Trans>
+              </p>
+            }
+          />
         </div>
       )}
       {home.apps.length > 0 && (

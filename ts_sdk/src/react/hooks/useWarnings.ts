@@ -12,6 +12,7 @@ import {
   createNoHarnessWarning,
   SNIFFER_ACTIVE_WARNING,
   createSnifferNotFoundWarning,
+  createSyncmdNotFoundWarning,
   UserWarning,
 } from '../../models/UserWarning';
 import { dataContext } from '../../FlowSync/context';
@@ -25,6 +26,9 @@ import {
   setProjectReadiness,
 } from '../../stores/project-readiness-store';
 import { useProjectStatus } from './use-project-status';
+import { useMdSync } from './use-md-sync';
+import { refreshMdSync } from '../../stores/md-sync-store';
+import { MdSyncState } from '../../services/md-sync-service';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useContext } from './useContext';
 import { useLazyAsset } from './useLazyAsset';
@@ -87,6 +91,14 @@ export function useWarnings() {
     // Fetching dependency remotes is network work: in the background, after the readiness read.
     void checkProjectUpdatesOnce(projectId);
   }, [projectId]);
+  // Markdown sync (syncmd): read on project change here, and again whenever git status is checked.
+  useEffect(() => {
+    void refreshMdSync(isDesktop ? projectId : null);
+  }, [isDesktop, projectId]);
+  const mdSync = useMdSync();
+  // The backend answers `not_a_repo` first, so this is only ever true for a git project.
+  const syncmdMissing =
+    mdSync?.state === MdSyncState.UNAVAILABLE || mdSync?.state === MdSyncState.OUTDATED ? mdSync : null;
   // The setup answer the backend pushes on the project row (``local_status``): a skip, a credential, an app coming
   // up or a setup run ending reaches the nav bar's setup button without anyone asking again.
   const setupValue = useProjectStatus(isDesktop ? projectId : null).part('setup')?.value;
@@ -188,6 +200,10 @@ export function useWarnings() {
       warnings.push(createOrphanedProjectsWarning(orphanedProjects));
     }
 
+    if (syncmdMissing) {
+      warnings.push(createSyncmdNotFoundWarning(syncmdMissing));
+    }
+
     return warnings;
   }, [
     emptyProjects,
@@ -202,6 +218,7 @@ export function useWarnings() {
     noHarnessFound,
     unfundedReason,
     statusRecord,
+    syncmdMissing,
   ]);
 
   // Update context warnings when computed warnings change

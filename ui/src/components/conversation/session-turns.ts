@@ -31,6 +31,23 @@ export function resultTextOf(fm: FlowMessage): string | null {
   return reply ? (reply.prompt_preview ?? fm.text ?? '') : null;
 }
 
+/** What a session message's carrier says about its turn: the kind it runs (a prompt when it names
+ *  none) and, on an answer, a command's exit code (a script: 0 returned, 1 threw). */
+export function turnOf(fm: FlowMessage): { kind: string; exitCode: number | null } {
+  for (const a of fm.attachment ?? []) {
+    if (a?.attachment_type !== AttachmentType.TYPE_ID || !(a.data ?? '').startsWith('remote_worker_session-')) continue;
+    try {
+      const turn = (JSON.parse(a.prompt_preview ?? '') as { turn?: { kind?: unknown; exit_code?: unknown } })?.turn;
+      if (typeof turn?.kind === 'string') {
+        return { kind: turn.kind, exitCode: typeof turn.exit_code === 'number' ? turn.exit_code : null };
+      }
+    } catch {
+      // not a marker
+    }
+  }
+  return { kind: 'prompt', exitCode: null };
+}
+
 /** A session lifecycle line's event ("approved", "failed", …), or null. */
 export function sessionEventOf(fm: FlowMessage): string | null {
   for (const a of fm.attachment ?? []) {

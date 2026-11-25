@@ -90,6 +90,8 @@ logger = logging.getLogger(__name__)
 # pushed a new value, or stopped vouching for it): one frame per CHANGE of the effective value -- the sync that
 # merely re-confirms it emits nothing -- carrying the public DSN and environment (or null), the same fields the
 # bootstrap already hands every page. An open tab starts, reconfigures or stops Sentry without a reload.
+# `agent.no_token_source` says nothing can fund a process's harness: one frame per refused turn or spawn
+# (docs/flow-events.md).
 FORWARDED_TAG_PATTERNS: list[str] = [
     "app.ready",
     "graph_workflow.*",
@@ -98,6 +100,7 @@ FORWARDED_TAG_PATTERNS: list[str] = [
     "stream_inbox.*.message.status",
     "stream_inbox.*.reply.failed",
     "agent.status",
+    "agent.no_token_source",
     "voice.call.*",
     "task.*",
     "user_app.*",

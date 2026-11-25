@@ -7,6 +7,7 @@ import { useClock } from '@src/hooks/useActivity';
 import { cn } from '@src/lib/utils';
 import { GuestPermissionChip, HostApprovalChip } from '@src/components/collaboration/GuestPermissionChip';
 import { SessionRoleBadge } from '@src/components/collaboration/SessionRoleBadge';
+import { TurnKindTicks, useTurnKindLabels } from '@src/components/collaboration/TurnKinds';
 import { OpenSessionChatButton } from './LiveSessionActivity';
 import { PromptRunSummaryDialog } from './PromptRunSummaryDialog';
 import { sessionCardState, sessionExpiresAt, type SessionCardState } from './session-card-state';
@@ -21,8 +22,8 @@ export interface SessionCardProps {
   replyCount: number;
   /** URL-first: the caller navigates (`openDock(DockPointer.forLiveSession)`). */
   onOpen: () => void;
-  /** Host + pending only: approve this live session only. */
-  onApprove?: () => Promise<void>;
+  /** Host + pending only: approve this live session only, for the kinds of turn left ticked. */
+  onApprove?: (turnKinds: string[]) => Promise<void>;
   onDecline?: () => Promise<void>;
   /** Either side, while live: end the session. */
   onDisconnect?: () => Promise<void>;
@@ -145,6 +146,14 @@ export function SessionCard({
   const Icon = iconForType(RemoteWorkerSession.type);
   // The host answering a request; a failed prompt on a live session.
   const answering = role === 'host' && state === 'pending';
+  // What the guest asked to run, and what the host leaves ticked (all of it, until a tick is cleared).
+  const asked = session?.askableTurnKinds ?? ['prompt'];
+  const [unticked, setUnticked] = useState<string[]>([]);
+  const ticked = asked.filter((k) => !unticked.includes(k));
+  const choosesKinds = answering && asked.length > 1;
+  const approveTicked = onApprove ? () => onApprove(ticked) : undefined;
+  const approved = session?.effectiveTurnKinds ?? [];
+  const { line: kindsLine } = useTurnKindLabels();
   const failedLive = !!lastPromptFailed && state === 'active';
 
   const status = (() => {
@@ -152,7 +161,8 @@ export function SessionCard({
       case 'requesting':
         return role === 'host' ? t`requested` : t`requesting…`;
       case 'pending':
-        return role === 'host' ? t`wants to run prompts on your machine` : t`awaiting approval`;
+        if (role !== 'host') return t`awaiting approval`;
+        return choosesKinds ? t`wants to run on your machine:` : t`wants to run prompts on your machine`;
       case 'active':
         return running ? t`working…` : t`connected`;
       case 'ended':
@@ -347,6 +357,14 @@ export function SessionCard({
           {status}
         </span>
       )}
+      {choosesKinds && (
+        <TurnKindTicks
+          asked={asked}
+          ticked={ticked}
+          onChange={(next) => setUnticked(asked.filter((k) => !next.includes(k)))}
+          disabled={!!busy}
+        />
+      )}
       {state === 'active' && (
         <>
           <span className="shrink-0 tabular-nums text-muted-foreground" data-testid="session-card-counts">
@@ -359,8 +377,9 @@ export function SessionCard({
         <GuestPermissionChip
           guestName={guest}
           pending={state === 'pending'}
-          onApprove={() => void run('approve', onApprove)}
+          onApprove={() => void run('approve', approveTicked)}
           disabled={!!busy}
+          approvedKinds={approved.length > 1 ? kindsLine(approved) : undefined}
         />
       )}
       {role === 'guest' && session && (state === 'active' || state === 'pending') && (
@@ -377,7 +396,7 @@ export function SessionCard({
           button('retry', onRetry, 'border border-border text-foreground hover:bg-muted', <Trans>Retry</Trans>)}
         {answering && (
           <>
-            {button('approve', onApprove, 'bg-blue-600 text-white hover:bg-blue-500', <Trans>Approve</Trans>)}
+            {button('approve', approveTicked, 'bg-blue-600 text-white hover:bg-blue-500', <Trans>Approve</Trans>)}
             {button(
               'decline',
               onDecline,

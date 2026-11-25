@@ -42,6 +42,7 @@ export function ProjectNameTitle({ project }: { project: Project }) {
       name={project.displayName}
       onRename={onRename}
       manage
+      editIcon
       headingClassName="text-sm font-medium"
       testIdPrefix="project"
     />

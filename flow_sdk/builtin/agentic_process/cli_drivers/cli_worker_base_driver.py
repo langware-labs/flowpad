@@ -1589,7 +1589,15 @@ async def latch_spawn_failure(process: "AgenticProcess", error: WorkerSpawnError
 
 
 async def latch_turn_failure(process: "AgenticProcess", worker, fd) -> None:
-    """At a turn's END frame (so the UI sees it first): latch what the turn failed with, if anything."""
+    """At a turn's END frame (so the UI sees it first): latch what the turn failed with, if anything.
+    A spent hub budget is noted on the frame that reports it (``worker-unavailable``, reason ``budget_used``)."""
+    if fd.attributes.get("reason") == "budget_used":
+        from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import note_budget_used  # noqa: PLC0415
+
+        try:
+            await note_budget_used(process)
+        except Exception:  # reporting a refusal must not become one
+            logger.warning("AgenticProcess %s: could not note the spent budget", process.id, exc_info=True)
     if fd.attributes.get("element-type") == "end" and (failure := worker.turn_failure()):
         await latch_credential_failure(process, *failure)
 

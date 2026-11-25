@@ -109,6 +109,7 @@ from flow_sdk.transcript_analyzer.worker_status import (
     running_background_tasks,
 )
 from flow_sdk.transcript_analyzer.worker_status import is_terminal as is_worker_terminal
+from flow_sdk.transcript_analyzer.worker_status import is_turn_over
 
 if TYPE_CHECKING:
     from starlette.responses import JSONResponse
@@ -173,6 +174,8 @@ _DERIVED_TEXT = {"to_xml", "content", "start_tag_xml", "end_tag_xml"}
 #: say a question is waiting. Cleared by the next prompt; ignored once the
 #: transcript carries the call's result.
 PENDING_USER_INPUT_KEY = "pending_user_input"
+#: The background work a worker's last ``Stop`` hook said is still running.
+BACKGROUND_TASKS_KEY = "background_tasks"
 _LAUNCH_WATCHES: set = set()  # keeps watcher tasks alive
 # Gap between typing and Enter for TUIs that don't submit on paste (codex/copilot);
 # mirrors Shell.write_then_submit's submit_delay. claude submits on paste → no gap.
@@ -615,9 +618,13 @@ async def _index_additional_dir(
     strict: bool = False,
     project_id: str | None = None,
     own: bool = False,
-) -> None:
+    prune: bool = False,
+) -> bool:
     """Run a one-shot indexer scan over ``path`` so its skills/agents become
-    discoverable via ``Entity.assets_by_path``.
+    discoverable via ``Entity.assets_by_path``. Answers whether the scan ran clean.
+
+    ``prune=True`` also removes the records under ``path`` whose own file is gone — a folder
+    indexed again after its files changed (a dependency whose checkout moved).
 
     ``own=True`` (with ``project_id``): ``path`` is that project's OWN folder — a checkout a launch or a
     share made — so what it holds is project content (``scope="project"``). The default is a directory
@@ -652,7 +659,7 @@ async def _index_additional_dir(
         if not p.is_dir():
             if strict:
                 raise FileNotFoundError(f"Context directory is not available: {path}")
-            return
+            return False
         # ``project_id`` names who owns what the walk finds; ``None`` keeps the request-scoped
         # rule (``index_function._walk_requested_by_project``).
         scope = "project" if own and project_id else "user"
@@ -670,13 +677,20 @@ async def _index_additional_dir(
             roots.append(
                 FSRef(p, record_type=RecordType(root_type), parent=new_root, layout=info.layout_of(p, verify=True))
             )
-        result = await get_shared_indexer().index(IndexerOptions(roots=tuple(roots), verbose=False, include_temp=True))
+        from flow_sdk.fs_store.indexer import OrphanAction  # noqa: PLC0415
+
+        pruning = {"orphan_action": OrphanAction.DELETE, "orphan_roots": (str(p),)} if prune else {}
+        result = await get_shared_indexer().index(
+            IndexerOptions(roots=tuple(roots), verbose=False, include_temp=True, **pruning)
+        )
         if strict and result.total_errors:
             raise RuntimeError(f"Context indexing reported {result.total_errors} error(s)")
+        return not result.total_errors
     except Exception:
         logger.exception("add_dir: indexing failed for %s", path)
         if strict:
             raise
+        return False
 
 
 async def _index_session_on_close(session_id: str, display_name: str | None = None) -> None:
@@ -2640,7 +2654,7 @@ class AgenticProcess(Entity):
                     on_status(worker_status)
                 except Exception:  # noqa: BLE001
                     logger.debug("wait() status observer failed", exc_info=True)
-            if worker_status and is_worker_terminal(worker_status) and not is_turn_busy(self, worker_status):
+            if is_turn_over(worker_status) and not is_turn_busy(self, worker_status):
                 return
             if self.status == ProcessStatus.FAILED.value:
                 return
@@ -6102,21 +6116,22 @@ class AgenticProcess(Entity):
         """Subscribe to every hook delivered to this process."""
         return self.hooks.set_callback(callback)
 
-    def enable_pending_question_hook(self) -> None:
-        """Have the worker report the moment it blocks on a question
-        (``PreToolUse`` for ``USER_INPUT_TOOLS``), where its driver can.
+    def enable_worker_report_hooks(self) -> None:
+        """Have the worker report what its transcript does not show in time, where
+        its driver can: the moment it blocks on a question (``PreToolUse`` for
+        ``USER_INPUT_TOOLS``), and the background work still running when a turn
+        ends (``Stop``).
 
         Set at creation, before the first launch, so it never flips
         ``restart_required``.
         """
         from flow_sdk.builtin.hooks.types import HookScope  # noqa: PLC0415
 
-        event = HookEventType.PRE_TOOL_USE
-        if event not in self.hooks.supported_events(HookScope.PROCESS):
-            return
+        supported = self.hooks.supported_events(HookScope.PROCESS)
+        wanted = {e.value for e in (HookEventType.PRE_TOOL_USE, HookEventType.STOP) if e in supported}
         events = set(self.process_hook_events or [])
-        if event.value not in events:
-            self.process_hook_events = sorted({*events, event.value})
+        if not wanted <= events:
+            self.process_hook_events = sorted(events | wanted)
 
     async def _note_pending_user_input(self, raw: dict) -> None:
         """Record the question a ``PreToolUse`` hook reports the worker is blocked on."""
@@ -6132,6 +6147,39 @@ class AgenticProcess(Entity):
             pending["offset"] = 0
         self.context_data = {**(self.context_data or {}), PENDING_USER_INPUT_KEY: pending}
         await self.save()
+
+    async def _note_background_tasks(self, raw: dict) -> None:
+        """Record the background work a ``Stop`` hook says is still running.
+
+        Every turn end reports the whole current list, and the end of each piece
+        of work wakes the worker for a turn of its own, so the list empties by
+        itself. It is stamped with the worker that reported it: work never
+        outlives its worker.
+        """
+        tasks = [
+            {"id": str(t.get("id") or ""), "type": str(t.get("type") or ""), "description": str(t.get("description") or "")}
+            for t in raw.get("background_tasks") or []
+            if isinstance(t, dict) and t.get("status") == "running"
+        ]
+        if tasks == self.background_tasks():
+            return
+        context = dict(self.context_data or {})
+        context.pop(BACKGROUND_TASKS_KEY, None)
+        if tasks:
+            started_at = context.get(AgenticProcessContextKey.WORKER_STARTED_AT.value)
+            context[BACKGROUND_TASKS_KEY] = {"worker_started_at": started_at, "tasks": tasks}
+        self.context_data = context
+        await self.save()  # notifies: the worker status just changed with no transcript row
+
+    def background_tasks(self) -> list[dict]:
+        """The background work the CURRENT worker last reported as still running."""
+        reported = (self.context_data or {}).get(BACKGROUND_TASKS_KEY)
+        if not isinstance(reported, dict):
+            return []
+        started_at = (self.context_data or {}).get(AgenticProcessContextKey.WORKER_STARTED_AT.value)
+        if reported.get("worker_started_at") != started_at:
+            return []
+        return list(reported.get("tasks") or [])
 
     def pending_user_input(self) -> dict | None:
         """The hook-reported question still waiting for its answer, or None.
@@ -6167,6 +6215,8 @@ class AgenticProcess(Entity):
             raise ValueError(f"process hook event is not configured: {event.value}")
         if event is HookEventType.PRE_TOOL_USE:
             await self._note_pending_user_input(data.hook_data.get("raw_hook_data") or {})
+        elif event is HookEventType.STOP:
+            await self._note_background_tasks(data.hook_data.get("raw_hook_data") or {})
 
         payload = data.model_dump(mode="python")
         try:
@@ -7453,6 +7503,9 @@ class AgenticProcess(Entity):
             return WorkerStatus.PENDING_USER
         if self.status == ProcessStatus.STOPPED.value:
             return discovered if discovered and is_worker_terminal(discovered) else None
+        # The turn ended, the work it launched did not: the session is not done.
+        if discovered is WorkerStatus.COMPLETE and self.background_tasks():
+            return WorkerStatus.BACKGROUND_WORK
         return discovered
 
     def _goal_met(self) -> bool:
@@ -8496,6 +8549,9 @@ class AgenticProcess(Entity):
         transcript tail so it's transport-agnostic and each turn only reindexes
         its own new file-ops. Their entities re-parse + broadcast a
         ``data_op_msg`` (updated_date bump → frontend body re-read)."""
+        from flow_sdk.core.status.refresh import turn_ended  # noqa: PLC0415
+
+        turn_ended(str(self.id))  # a run that updated a CLI: the status record reads its version again
         try:
             touched = self._collect_touched_from_transcript_tail()
             # Only a shell command can delete a file the transcript does not name.

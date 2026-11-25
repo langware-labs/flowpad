@@ -19,6 +19,7 @@ export FLOW_INSTANCE="$instance"
 export FLOWPAD_INSTANCE_SKIP_GC=1
 export FLOWPAD_INSTANCE_BACKEND_MODULE=tests.e2e.mock_worker_backend
 export MOCK_MESSAGE_CLASSIFIER=1
+export MOCK_BEHAVIOR="${MOCK_BEHAVIOR-tests.utils.classifier_run_behavior:classifier_run}"
 export MOCK_DECISION=1
 export MOCK_DECISION_MATCH=1
 export MOCK_MESSAGE_TAG_CONTROL_PORT

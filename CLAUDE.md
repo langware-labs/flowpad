@@ -299,6 +299,10 @@ approval, so recommended rules are on there.
 
 * **Asset code may import the public SDK** (`flow_sdk.sources`, `flow_sdk.connections`, `token_for`, the hub client, `instance_settings`). It never imports another asset.
 
+* **A person's message channel is saved for Me, never for the project.** The add form asks **Me / Project**: a message channel starts on Me (the user scope, in no project and not in git), any other data source on Project; off the form, only a NAMED project places a channel (`DataSource._resolve_scope_project`, `docs/data-management/data-source-asset.md`). Whatever is in a project folder is a setup requirement of that project and of every project packaging it.
+
+* **Never commit a personal or company identifier in a data source** — an account or mailbox name, a person's or company's name (`LinkedIn (langware)`), a user id, a workspace or channel id — in `data_source.json`, its folder name, or anywhere else in the asset, unless the user explicitly approved that commit. `tests/unit/test_project_assets_are_project_business.py` fails on a person's channel, or a required credential, that this repo would carry.
+
 * **Exceptions need the user's explicit approval, every time.** An approved exception is recorded with its date and reason in `EXCEPTIONS` in `tests/unit/test_data_sources_are_self_contained.py` — that test is the gate, and it fails on any trace not listed. Don't add an entry yourself; ask.
 
 ## FlowCall — recognize the call-and-result contract

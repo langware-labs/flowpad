@@ -30,8 +30,15 @@ import { TabTipBodyContext, TabTooltipName } from '@src/components/tabs/TabToolt
 import { TabFavoriteStar } from '@src/components/tabs/TabFavoriteStar';
 import type { FavoriteRef } from '@src/hooks/use-favorites';
 import type { Annotation } from '@sdk';
-import { notesByTarget, useNotesAndMarks, type NoteTarget } from '@src/hooks/use-entity-notes';
+import {
+  deleteNote,
+  notesByTarget,
+  setTabMark,
+  useNotesAndMarks,
+  type NoteTarget,
+} from '@src/hooks/use-entity-notes';
 import { noteColor, notePaperStyle } from '@src/components/notes/note-palette';
+import { NoteColorPicker } from '@src/components/notes/NoteViews';
 import { TabNoteButton, TabNotesBadge, TabNotesPopover, type TabNotesView } from '@src/components/notes/TabNotes';
 import { useLocaleInfo } from '@src/contexts/locale-context';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -549,8 +556,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
           if (node) chipMountedAt.current[key] ??= performance.now();
           else delete chipMountedAt.current[key];
         }}
-        // A colored chip carries a border in its note's fold shade; the selected one is 3px all round.
-        style={tint ? { ...sizing, ...notePaperStyle(tint), borderColor: tint.fold, ...(isActive && { borderWidth: 3 }) } : sizing}
+        // Only the SELECTED colored chip is filled with its paper (3px border in the fold shade);
+        // an unselected one shows its color as a line along its bottom edge, so a fill always means selected.
+        style={tint && isActive ? { ...sizing, ...notePaperStyle(tint), borderColor: tint.fold, borderWidth: 3 } : sizing}
         data-tab-color={tint?.token}
         // `border-t-2` on EVERY state, colored only when active: the accent has
         // to follow the `rounded-t-lg` curve, and a border does that natively.
@@ -659,7 +667,16 @@ export const TabStrip: React.FC<TabStripProps> = ({
           </span>
         )}
 
-        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable, !!tint)}
+        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable, !!tint && isActive)}
+        {tint && !isActive && (
+          // The unselected tab's color: a line along its whole bottom edge.
+          <span
+            aria-hidden
+            data-testid="tab-color-underline"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px]"
+            style={{ background: tint.fold }}
+          />
+        )}
         {item.guestNote && (
           <span
             aria-hidden
@@ -737,6 +754,21 @@ export const TabStrip: React.FC<TabStripProps> = ({
                     <span className="flex-1">
                       {chipNotes.length > 0 ? t`${chipNotes.length} notes` : t`No notes yet`}
                     </span>
+                    {/* The tab's colour, set here in one click — apart from the note button beside it. */}
+                    <span
+                      data-testid="tab-color-picker"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <NoteColorPicker
+                        value={mark ? noteColor(mark.data?.color).token : null}
+                        onChange={(c) => {
+                          if (c) void setTabMark(noteTarget, c, mark);
+                          else if (mark) void deleteNote(mark);
+                        }}
+                      />
+                    </span>
+                    <span aria-hidden className="h-3.5 w-px bg-border" />
                     <button
                       type="button"
                       className="flex items-center rounded px-1.5 py-0.5 text-foreground hover:bg-muted"

@@ -1,7 +1,7 @@
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react/macro';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Database, Loader2 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -15,7 +15,7 @@ import { activityFooterLabel } from './activity-labels';
  * Footer pill. Always navigates to Records Scanner on click — the destination
  * page renders the live activity bar, so the user lands on a single screen
  * that surfaces both in-progress jobs and historical index status. Active:
- * spinner + progress label. Idle: refresh icon + "indexed Xm ago". Refetches
+ * spinner + progress label. Idle: database icon + "indexed Xm ago". Refetches
  * index-status on activity→idle so the label updates without a remount.
  */
 
@@ -92,7 +92,7 @@ export function IndexerStatusPill() {
       aria-label={t`${idle} — open Records Scanner`}
       data-testid="footer-indexing-indicator"
     >
-      <RefreshCw className="h-3.5 w-3.5 shrink-0" />
+      <Database className="h-3.5 w-3.5 shrink-0" />
       <span>{idle}</span>
     </button>
   );
