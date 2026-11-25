@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -489,7 +490,31 @@ def send_message(
         Optional[str],
         typer.Option(
             "--session",
-            help="Live-session id (remote_worker_session) to send into. Needs --prompt: a session runs prompts.",
+            help=(
+                "Live-session id (remote_worker_session) to send into. Needs something to run: "
+                "--prompt, --command or --script."
+            ),
+        ),
+    ] = None,
+    command: Annotated[
+        Optional[str],
+        typer.Option(
+            "--command",
+            help=(
+                "A shell command the host's machine runs in the session's folder; its exit code and output "
+                "come back as the answer. No LLM on their side. Needs --session, and the host's approval of commands."
+            ),
+        ),
+    ] = None,
+    script: Annotated[
+        Optional[str],
+        typer.Option(
+            "--script",
+            help=(
+                "A JavaScript body (or @file) run in the host's open Flowpad tab with `sdk` in scope; what it "
+                "returns comes back as the answer. No LLM on their side. Needs --session, and the host's approval "
+                "of Flowpad control."
+            ),
         ),
     ] = None,
     form: Annotated[Optional[str], typer.Option("--form", help=_FORM_HELP)] = None,
@@ -513,12 +538,26 @@ def send_message(
         body["private"] = True
     if reply_to:
         body["reply_to_id"] = _message_id(reply_to)
-    if prompt and prompt.strip():
-        body["prompt_text"] = prompt
+    if script and script.startswith("@"):
+        try:
+            script = Path(script[1:]).expanduser().read_text()
+        except OSError as exc:
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"--script file could not be read: {exc}")
+    runs = {"prompt": prompt, "command": command, "control": script}
+    given = [kind for kind, text in runs.items() if text and text.strip()]
+    if len(given) > 1:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "one turn runs one thing: give --prompt, --command or --script, not several")
+    if given:
+        # The text to run travels as the turn's prompt text; the kind says what the host does with it.
+        body["prompt_text"] = runs[given[0]]
+        if given[0] != "prompt":
+            if not session:
+                _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"--{'script' if given[0] == 'control' else given[0]} needs --session")
+            body["turn_kind"] = given[0]
     if session:
-        # Without a prompt the host's machine gets a chat line and runs nothing.
-        if not (prompt and prompt.strip()):
-            _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--session needs --prompt: the text alone is not run")
+        # With nothing to run the host's machine gets a chat line and runs nothing.
+        if not given:
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--session needs --prompt, --command or --script: the text alone is not run")
         body["remote_worker_session_id"] = session.strip()
     if form:
         body["attachment"] = [_form_attachment(form)]
@@ -543,9 +582,10 @@ def _signed_in() -> bool:
     "live-session",
     help=(
         "Start a live session on the other person's machine (they approve it), or show the one already "
-        "open. Answers the session id and status; once it is past `pending`, send prompts with "
-        '`flow conversation send <id> "<what they read>" --prompt "<what they run>" --session <session id>`. '
-        "Run it again to re-check the status."
+        "open. Answers the session id, its status and `turn_kinds` (what the host approved: prompt, "
+        "command, control). Once it is past `pending`, send a turn with "
+        '`flow conversation send <id> "<what they read>" --session <session id>` and one of '
+        '`--prompt "<text>"`, `--command "<shell>"`, `--script "<js>"`. Run it again to re-check the status.'
     ),
 )
 def start_live_session(
@@ -557,6 +597,13 @@ def start_live_session(
             help="auto (default): their replies come back as soon as captured; review: kept as their draft first.",
         ),
     ] = None,
+    kinds: Annotated[
+        Optional[str],
+        typer.Option(
+            "--kinds",
+            help="What to ask the host to allow, comma separated: prompt,command,control (default: all three).",
+        ),
+    ] = None,
 ) -> None:
     cid = _conversation_id(conversation_id)
     # Signed out, the request is saved here as pending and never reaches the host, while the
@@ -565,10 +612,13 @@ def start_live_session(
         _fail(EXIT_ACTION_FAILED, "AUTH_REQUIRED", _SIGN_IN_FIRST)
     data = _post_json(
         _graph_url(_discover_port(), f"conversation/{cid}/live-session"),
-        {"reply_policy": reply_policy.value} if reply_policy else {},
+        {
+            **({"reply_policy": reply_policy.value} if reply_policy else {}),
+            **({"turn_kinds": [k.strip() for k in kinds.split(",") if k.strip()]} if kinds else {}),
+        },
         not_found_hint=f"Conversation not found: {cid}",
     )
-    session_fields = ("status", "host_user_id", "host_name", "reply_policy")
+    session_fields = ("status", "host_user_id", "host_name", "reply_policy", "requested_turn_kinds", "turn_kinds")
     _ok({"conversation_id": cid, "session_id": data.get("id"), **{k: data.get(k) for k in session_fields}})
 
 

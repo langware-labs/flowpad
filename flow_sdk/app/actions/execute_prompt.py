@@ -19,7 +19,7 @@ import json
 import logging
 import weakref
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -723,6 +723,7 @@ async def resolve_or_mint_session(
             status=RemoteWorkerSessionStatus.PENDING,
             reply_policy=(start.reply_policy if start else None),
             prompt_limit=(start.prompt_limit if start else None),
+            requested_turn_kinds=(start.turn_kinds if start else None),
         )
     else:
         # Fill-only: an existing row keeps what it has; save only when a field
@@ -740,6 +741,7 @@ async def resolve_or_mint_session(
             _fill("starting_message_id", fm.id)
             _fill("reply_policy", start.reply_policy)
             _fill("prompt_limit", start.prompt_limit)
+            _fill("requested_turn_kinds", start.turn_kinds)
         _fill("guest_user_id", getattr(fm, "sender_id", None))
         _fill("guest_name", getattr(fm, "sender_name", None))
         _fill("host_user_id", host_user_id)
@@ -805,16 +807,18 @@ async def run_session_turn(
     """
     import contextlib  # noqa: PLC0415
 
-    from flow_sdk.builtin.remote_worker_session import (
-        RemoteWorkerSession,
-        RemoteWorkerSessionStatus,
-        ReplyPolicy,
-    )
+    from flow_sdk.builtin.flow_message import turn_kind_of  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus, TurnKind
 
     guard = contextlib.nullcontext() if _locked else _session_lock(session)
     async with guard:
         ap = None
         try:
+            # The host approved kinds of turn, not a session to do anything in.
+            kind = turn_kind_of(fm)
+            if not session.allows(kind):
+                raise _TurnFailed(f"a {kind} is not approved for this live session")
+
             # Always a folder, decided again here: a session approved before the
             # place was checked, or whose project lost its folder since, runs in
             # the instance's temp folder instead of failing the guest.
@@ -832,6 +836,13 @@ async def run_session_turn(
 
             # Consume BEFORE the (long) run so a re-delivered op can't double-run.
             await consume_prompt(fm, someone_typeid)
+
+            if kind != TurnKind.PROMPT.value:
+                # No worker and no LLM: the text runs as it was sent, and its result is the answer.
+                reply, reply_extra = await _run_plain_turn(kind, _turn_text(fm), workdir)
+                return await _answer_turn(
+                    session, fm, conversation, reply, someone_typeid, workdir=workdir, reply_extra=reply_extra
+                )
 
             prompt_text = await build_merged_prompt(fm)
             if not prompt_text:
@@ -899,70 +910,8 @@ async def run_session_turn(
                     "but produced no readable reply"
                 )
 
-            # A turn is long, and the host owns session settings while it runs:
-            # the ``settings`` action writes ``reply_policy`` straight to the row.
-            # Our in-memory copy predates that write, so BOTH the decision below
-            # and this save would roll it back — the guest is told "review before
-            # sending" and then keeps getting auto-sent replies. Re-read the
-            # host-owned setting before deciding, and before the save that would
-            # persist the stale one. Same lost-update shape ``consume_prompt``'s
-            # marker suffered until the bridge stopped rewriting whole rows.
-            fresh = await RemoteWorkerSession.get_one({"id": session.id})
-            if fresh is not None and getattr(fresh, "reply_policy", None):
-                session.reply_policy = fresh.reply_policy
-
-            # The reply still goes out (it answers a prompt the guest sent), but a
-            # session either side ended while this turn ran stays ended.
-            await _set_turn_status(session, RemoteWorkerSessionStatus.IDLE, fresh=fresh)
-            # Counted here, on an answered turn — a failed turn does not use up a
-            # prompt request's one prompt (its Retry runs in the same session).
-            session.prompts_used += 1
-            await session.save()
-
-            from flow_sdk.app.actions.notification_action import handle_add_message
-            from flow_sdk.schema.data_spec.prompt_run_summary_spec import summarize_last_turn  # noqa: PLC0415
-
-            review = session.effective_reply_policy is ReplyPolicy.REVIEW
-            reply_atts = await _emit_prompt_completion(
-                reply,
-                prompt_id=_first_prompt_id(fm),
-                session_id=session.id,
-                host_process_id=ap.id,
-                source_session_id=getattr(ap, "session_id", None),
-                # What the run did, for the sender's "View run": tools and files only.
-                summary=summarize_last_turn(transcript.entries if transcript is not None else [], root=workdir),
-            )
-            # The reply is a session message: the session id groups it and
-            # handle_add_message appends the snapshot carrier, so every reply
-            # ships the session's fresh state to the guest.
-            result = await handle_add_message(
-                {
-                    "conversation_id": conversation.id,
-                    "message": _wrap_as_claude_quote(reply),
-                    "is_draft": "true" if review else "",
-                    "attachment": reply_atts,
-                    "remote_worker_session_id": session.id,
-                },
-                someone_typeid,
-            )
-            # A prompt request ends once its prompt is answered — AFTER the reply
-            # went out, so the guest gets the answer and then the ENDED snapshot.
-            # Approving one prompt never leaves the host's machine open to the next.
-            if session.limit_reached and session.is_open:
-                await session.end("ended", announce=True, someone_typeid=someone_typeid)
-            feed_entry_id = None
-            if review and not _conversation_is_open(conversation.id):
-                draft_id = (getattr(result, "data", None) or {}).get("id")
-                feed_entry_id = await _post_draft_waiting_feed_entry(reply, conversation.id, draft_id)
-            return ApiSuccessResponse(
-                data={
-                    "executed": True,
-                    "reply_policy": session.effective_reply_policy.value,
-                    "process_id": ap.id,
-                    "session_id": session.id,
-                    "send_result": getattr(result, "data", None),
-                    "feed_entry_id": feed_entry_id,
-                }
+            return await _answer_turn(
+                session, fm, conversation, reply, someone_typeid, ap=ap, transcript=transcript, workdir=workdir
             )
         except Exception as e:  # noqa: BLE001
             # A failed prompt is answered by its failure line, even one that failed
@@ -974,6 +923,155 @@ async def run_session_turn(
                 except Exception:  # noqa: BLE001 — reporting the failure comes first
                     logger.warning("[session] could not consume the failed prompt fm=%s", fm.id, exc_info=True)
             return await _fail_turn(session, _what_the_turn_wrote(ap, e), someone_typeid)
+
+
+# How long one command turn may run. A session runs its turns one at a time, so a
+# command that never ends would hold every later turn; past this it is killed with
+# its whole process group and what it printed so far is the answer.
+COMMAND_TURN_SECONDS = 600.0
+
+
+def _turn_text(fm: "FlowMessage") -> str:
+    """The text a command or script turn runs: its inline PROMPT attachment, as sent."""
+    from flow_sdk.builtin.flow_message import PROMPT_FILE_VFS_PREFIX, AttachmentType  # noqa: PLC0415
+
+    for a in fm.attachment or []:
+        if a.attachment_type == AttachmentType.PROMPT and not str(a.data or "").startswith(PROMPT_FILE_VFS_PREFIX):
+            return str(a.data or "")
+    return ""
+
+
+class _Upload:
+    """A file made on the host, in the shape ``handle_add_message`` attaches (an upload)."""
+
+    def __init__(self, filename: str, content: bytes) -> None:
+        self.filename, self._content = filename, content
+
+    async def read(self) -> bytes:
+        return self._content
+
+
+async def _run_plain_turn(kind: str, text: str, workdir: str) -> tuple[str, dict]:
+    """Run a command or a script turn. Answers ``(result text, what rides the reply)``.
+
+    A command that exits non-zero, or a script that throws, is an ANSWER — the guest asked
+    what happens, and that is what happened. Only "it could not be run at all" fails the turn.
+    """
+    from flow_sdk.builtin.remote_worker_session import TurnKind  # noqa: PLC0415
+
+    if not text.strip():
+        raise _TurnFailed(f"the {kind} is empty — nothing to run")
+    if kind == TurnKind.COMMAND.value:
+        from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import OUTPUT_CAP  # noqa: PLC0415
+
+        lines: list[str] = []
+        result = await run_shell(text, timeout_seconds=COMMAND_TURN_SECONDS, workdir=Path(workdir), on_output=lines.append)
+        shown = "\n".join(part for part in (result.stdout.rstrip(), result.stderr.rstrip()) if part)
+        if result.timed_out:
+            shown = f"{shown}\n[stopped after {COMMAND_TURN_SECONDS:.0f}s]".strip()
+        code = result.returncode if result.returncode is not None else -1  # never started / killed
+        extra: dict = {"turn_kind": kind, "turn_exit_code": code, "message": f"exit {code}\n{shown}".rstrip()}
+        everything = "\n".join(lines)
+        if len(everything) > OUTPUT_CAP:  # the answer keeps the end; the whole output rides as a file
+            extra["files"] = [_Upload("command-output.txt", everything.encode())]
+        return shown, extra
+    raise _TurnFailed(f"this Flowpad cannot run a {kind} turn")
+
+
+async def _answer_turn(
+    session: "RemoteWorkerSession",
+    fm: "FlowMessage",
+    conversation: "Conversation",
+    reply: str,
+    someone_typeid: str,
+    *,
+    ap: "Optional[AgenticProcess]" = None,
+    transcript: Any = None,
+    workdir: str,
+    reply_extra: Optional[dict] = None,
+) -> ApiResponse:
+    """Post a turn's answer into its session and settle the session's state. ``ap`` is the
+    worker that answered a prompt; a command or a script has none, and its ``reply_extra``
+    names its kind (and its files) on the reply."""
+    from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        RemoteWorkerSession,
+        RemoteWorkerSessionStatus,
+        ReplyPolicy,
+    )
+
+    reply_extra = dict(reply_extra or {})
+    # A turn is long, and the host owns session settings while it runs:
+    # the ``settings`` action writes ``reply_policy`` straight to the row.
+    # Our in-memory copy predates that write, so BOTH the decision below
+    # and this save would roll it back — the guest is told "review before
+    # sending" and then keeps getting auto-sent replies. Re-read the
+    # host-owned setting before deciding, and before the save that would
+    # persist the stale one. Same lost-update shape ``consume_prompt``'s
+    # marker suffered until the bridge stopped rewriting whole rows.
+    fresh = await RemoteWorkerSession.get_one({"id": session.id})
+    if fresh is not None and getattr(fresh, "reply_policy", None):
+        session.reply_policy = fresh.reply_policy
+
+    # The reply still goes out (it answers a prompt the guest sent), but a
+    # session either side ended while this turn ran stays ended.
+    await _set_turn_status(session, RemoteWorkerSessionStatus.IDLE, fresh=fresh)
+    # Counted here, on an answered turn — a failed turn does not use up a
+    # prompt request's one prompt (its Retry runs in the same session).
+    session.prompts_used += 1
+    await session.save()
+
+    from flow_sdk.app.actions.notification_action import handle_add_message
+    from flow_sdk.schema.data_spec.prompt_run_summary_spec import summarize_last_turn  # noqa: PLC0415
+
+    review = session.effective_reply_policy is ReplyPolicy.REVIEW
+    reply_atts = await _emit_prompt_completion(
+        reply,
+        prompt_id=_first_prompt_id(fm),
+        session_id=session.id,
+        host_process_id=ap.id if ap is not None else "",
+        source_session_id=getattr(ap, "session_id", None),
+        # What the run did, for the sender's "View run": tools and files only. A command or a
+        # script is its own record: its text and its result are both in the session.
+        summary=(
+            summarize_last_turn(transcript.entries if transcript is not None else [], root=workdir)
+            if ap is not None
+            else None
+        ),
+    )
+    # The reply is a session message: the session id groups it and
+    # handle_add_message appends the snapshot carrier, so every reply
+    # ships the session's fresh state to the guest.
+    result = await handle_add_message(
+        {
+            "conversation_id": conversation.id,
+            "message": reply_extra.pop("message", None) or _wrap_as_claude_quote(reply),
+            "is_draft": "true" if review else "",
+            "attachment": reply_atts,
+            "remote_worker_session_id": session.id,
+            **reply_extra,
+        },
+        someone_typeid,
+    )
+    # A prompt request ends once its prompt is answered — AFTER the reply
+    # went out, so the guest gets the answer and then the ENDED snapshot.
+    # Approving one prompt never leaves the host's machine open to the next.
+    if session.limit_reached and session.is_open:
+        await session.end("ended", announce=True, someone_typeid=someone_typeid)
+    feed_entry_id = None
+    if review and not _conversation_is_open(conversation.id):
+        draft_id = (getattr(result, "data", None) or {}).get("id")
+        feed_entry_id = await _post_draft_waiting_feed_entry(reply, conversation.id, draft_id)
+    return ApiSuccessResponse(
+        data={
+            "executed": True,
+            "reply_policy": session.effective_reply_policy.value,
+            "process_id": ap.id if ap is not None else None,
+            "session_id": session.id,
+            "send_result": getattr(result, "data", None),
+            "feed_entry_id": feed_entry_id,
+        }
+    )
 
 
 async def _set_turn_status(
@@ -1269,6 +1367,15 @@ async def _release_interrupted_turn(session, msgs: list, someone_typeid: str) ->
         return
     last = max(prompts, key=when)
     if any(_is_completion(m) and when(m) > when(last) for m in msgs):
+        return
+    from flow_sdk.builtin.flow_message import turn_kind_of  # noqa: PLC0415
+
+    kind = turn_kind_of(last)
+    if kind != "prompt":
+        # A command or a script may already have changed something: say so once, never run it again.
+        await _fail_turn(
+            session, _TurnFailed(f"the host restarted while this {kind} ran — it was not run again"), someone_typeid
+        )
         return
     await release_prompt(last, someone_typeid)
     logger.info(

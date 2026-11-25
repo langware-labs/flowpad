@@ -430,6 +430,19 @@ def _carrier_marker(fm: "FlowMessage") -> "dict | None":
 SESSION_SNAPSHOT_MARKER_KEY = "snapshot"
 
 
+# Marker key naming what a session turn runs: ``{"turn": {"kind": "command"}}`` on the
+# turn's carrier. The text to run is the message's inline PROMPT attachment, so the hub
+# and a peer that predates the key carry it unchanged. Absent = a prompt.
+SESSION_TURN_MARKER_KEY = "turn"
+
+
+def turn_kind_of(fm: "FlowMessage") -> str:
+    """The ``TurnKind`` value a session message asks to run ("prompt" when it names none)."""
+    turn = (_carrier_marker(fm) or {}).get(SESSION_TURN_MARKER_KEY)
+    kind = turn.get("kind") if isinstance(turn, dict) else None
+    return str(kind) if kind else "prompt"
+
+
 def session_snapshot_from_header(fm: "FlowMessage") -> "dict | None":
     """The session snapshot riding the carrier's ``prompt_preview``, if any."""
     marker = _carrier_marker(fm)

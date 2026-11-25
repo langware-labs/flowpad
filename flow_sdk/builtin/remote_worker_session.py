@@ -49,6 +49,24 @@ class ReplyPolicy(StrEnum):
     REVIEW = "review"  # save as a host draft inside the session
 
 
+class TurnKind(StrEnum):
+    """What one turn of a session runs on the host. The guest asks for kinds, the
+    host approves some of them, and a turn of any other kind is refused."""
+    PROMPT = "prompt"    # the host's worker answers (spends the host's LLM tokens)
+    COMMAND = "command"  # a shell command in the session's folder (no LLM)
+    CONTROL = "control"  # a script in the host's open Flowpad tab, with the SDK (no LLM)
+
+
+ALL_TURN_KINDS: tuple[str, ...] = tuple(k.value for k in TurnKind)
+
+
+def clean_turn_kinds(value: Any) -> list[str]:
+    """The known kinds named in ``value``, once each, in ``TurnKind`` order. Anything
+    else — a kind this build does not know, a non-list — is dropped, never run."""
+    named = set(value) if isinstance(value, (list, tuple, set)) else set()
+    return [k for k in ALL_TURN_KINDS if k in named]
+
+
 def _instance_scratch(name: str) -> "Path":
     """A fixed folder under the instance's own data folder (never machine-wide).
     It is a protected path, so running there never mints a Project for it."""
@@ -237,6 +255,16 @@ class RemoteWorkerSession(Entity):
         default=None, description="Prompts this session may run; None = unlimited (a live session)."
     )
     prompts_used: int = APIField(default=0, description="Turns answered so far (host-authoritative).")
+    # The kinds of turn (``TurnKind``). ``requested_turn_kinds`` is the guest's ask, on
+    # the start marker; ``turn_kinds`` is what the host left ticked at Approve, and the
+    # only list a turn is checked against. None on either = prompts only (an older row
+    # or peer). The ask never becomes the approval by itself.
+    requested_turn_kinds: Optional[list[str]] = APIField(
+        default=None, description="TurnKinds the guest asked for; None = prompts only."
+    )
+    turn_kinds: Optional[list[str]] = APIField(
+        default=None, description="TurnKinds the host approved (host-authoritative); None = prompts only."
+    )
     approved_via: Optional[str] = APIField(default=None, description="ApprovedVia: manual.")
 
     # Host-authoritative, synced projection so the guest can render live state.
@@ -264,6 +292,22 @@ class RemoteWorkerSession(Entity):
         return self.is_prompt_request and self.prompts_used >= self.prompt_limit
 
     @property
+    def askable_turn_kinds(self) -> list[str]:
+        """What the host may approve: what the guest asked for. A prompt request is its one prompt."""
+        if self.is_prompt_request:
+            return [TurnKind.PROMPT.value]
+        return clean_turn_kinds(self.requested_turn_kinds) or [TurnKind.PROMPT.value]
+
+    @property
+    def effective_turn_kinds(self) -> list[str]:
+        """What a turn of this session may be: the approved kinds, never more than was asked."""
+        approved = clean_turn_kinds(self.turn_kinds) or [TurnKind.PROMPT.value]
+        return [k for k in approved if k in self.askable_turn_kinds]
+
+    def allows(self, kind: str | None) -> bool:
+        return kind in self.effective_turn_kinds
+
+    @property
     def effective_reply_policy(self) -> ReplyPolicy:
         try:
             return ReplyPolicy(self.reply_policy) if self.reply_policy else ReplyPolicy.AUTO
@@ -279,14 +323,14 @@ class RemoteWorkerSession(Entity):
         "host_user_id", "guest_user_id", "host_name", "guest_name",
         "status", "last_activity_at", "started_at",
         "starting_message_id", "reply_policy", "approved_at", "approved_via",
-        "prompt_limit", "prompts_used",
+        "prompt_limit", "prompts_used", "requested_turn_kinds", "turn_kinds",
     })
     # Host-authoritative subset: adopted from a snapshot only on the guest,
     # and only when the snapshot's activity clock is fresher.
     _HOST_AUTHORITATIVE_FIELDS: ClassVar[frozenset[str]] = frozenset({
         "status", "last_activity_at", "host_user_id", "host_name",
         "collaboration_room_id", "reply_policy", "approved_at", "approved_via",
-        "prompts_used",
+        "prompts_used", "turn_kinds",
     })
     # Identity the host row may be MISSING when it materialized from a guest
     # carrier packed before the guest's roster resolved — filled once, never
@@ -294,7 +338,7 @@ class RemoteWorkerSession(Entity):
     # opening proposal, adopted the same fill-only way.
     _HOST_FILL_FIELDS: ClassVar[tuple[str, ...]] = (
         "guest_user_id", "guest_name", "conversation_id", "host_user_id", "host_name",
-        "starting_message_id", "reply_policy", "prompt_limit",
+        "starting_message_id", "reply_policy", "prompt_limit", "requested_turn_kinds",
     )
 
     @classmethod
@@ -322,6 +366,8 @@ class RemoteWorkerSession(Entity):
         """
         data = {k: v for k, v in (snap or {}).items() if k in cls.SNAPSHOT_FIELDS and v is not None}
         if local is None:
+            if local_is_host:
+                data.pop("turn_kinds", None)  # only the host's own Approve writes what is approved
             return cls.model_validate({**data, "type": cls.get_type()})
 
         if local_is_host:
@@ -564,7 +610,9 @@ class RemoteWorkerSession(Entity):
         immediately; ``prompt_auto_handled``-before-run keeps the re-drive
         idempotent against concurrently arriving prompts.
 
-        Body: ``{project_id?, scratch?}``. It approves this session only —
+        Body: ``{project_id?, scratch?, turn_kinds?}``. ``turn_kinds`` is what the host
+        left ticked: a non-empty subset of what the guest asked for, else 400. Absent =
+        everything asked for. It approves this session only —
         nothing is remembered for the guest's next one. ``project_id`` is the
         project the host picked to run in; ``scratch: true`` is the host's "No
         project", the instance's one temp folder (``scratch_workdir``). With
@@ -575,6 +623,16 @@ class RemoteWorkerSession(Entity):
         body = (await ri.get_post_data() or {}) if ri else {}
         if body.get("remember"):
             return ApiFailResponse(message="approve covers this session only; nothing can be remembered", status_code=400)
+        if "turn_kinds" in body and body["turn_kinds"] is not None:
+            ticked = clean_turn_kinds(body["turn_kinds"])
+            if not ticked or any(k not in self.askable_turn_kinds for k in ticked):
+                return ApiFailResponse(
+                    message="turn_kinds must be one or more of what was asked for: " + ", ".join(self.askable_turn_kinds),
+                    status_code=400,
+                )
+            self.turn_kinds = ticked
+        elif not clean_turn_kinds(self.turn_kinds):
+            self.turn_kinds = self.askable_turn_kinds
         requested = str(body.get("project_id") or "").strip() or None
         if body.get("scratch") in (True, "true", "1"):
             self.workdir = str(scratch_workdir())

@@ -72,7 +72,9 @@ async def test_the_button_opens_a_pending_session_and_asks_the_host(bootstrapped
     assert line.remote_worker_session_id == session.id
     marker = _marker(line)
     assert marker[LIVE_SESSION_EVENT_MARKER_KEY] == "requested"
-    assert marker[SESSION_START_MARKER_KEY] == {"reply_policy": "auto"}  # notifies the host like an opening prompt
+    # Notifies the host like an opening prompt, and asks for every kind of turn by default.
+    assert marker[SESSION_START_MARKER_KEY] == {"reply_policy": "auto", "turn_kinds": ["prompt", "command", "control"]}
+    assert marker["snapshot"]["requested_turn_kinds"] == ["prompt", "command", "control"]
     assert marker["snapshot"]["status"] == S.PENDING.value  # the host's mirror materializes from it
 
 
