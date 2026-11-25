@@ -310,12 +310,12 @@ def test_the_kinds_are_one_per_profile(tmp_path, monkeypatch):
     bd.report_error(work, "")
     assert state_of_work() == "not_connected"
 
-    # Removing takes a kind off the list a person sees; it stays known, and comes back.
-    removed = lambda: [k.kind for k in bd.list_kinds(states, scan) if k.removed]  # noqa: E731
-    bd.remove_kind(work, True)
-    assert removed() == [work]
-    bd.remove_kind(work, False)
-    assert removed() == []
+    # Hiding takes a kind off the list a person sees; it stays known, and comes back.
+    hidden = lambda: [k.kind for k in bd.list_kinds(states, scan) if k.hidden]  # noqa: E731
+    bd.hide_kind(work, True)
+    assert hidden() == [work]
+    bd.hide_kind(work, False)
+    assert hidden() == []
 
 
 def test_last_browser_use_opencode_and_deepagents(tmp_path):

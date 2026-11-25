@@ -12,7 +12,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { formatDay } from '@src/utils/format-time-ago';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
 import { useInlineRename } from '@src/components/browseable-tree/use-inline-rename';
-import { Check, Pencil, X } from 'lucide-react';
+import { Check, EyeOff, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 /** The driver in use. */
@@ -228,7 +228,7 @@ function KindRow({
   selected,
   onSelect,
   onRename,
-  onRemove,
+  onHide,
   onOpen,
   onRefresh,
 }: {
@@ -237,7 +237,7 @@ function KindRow({
   onSelect: () => void;
   onRename: (name: string) => Promise<void>;
   /** Take it off the list (true) or put it back; the browser itself is untouched. */
-  onRemove: (removed: boolean) => void;
+  onHide: (hidden: boolean) => void;
   onOpen: () => void;
   onRefresh: () => void;
 }) {
@@ -245,10 +245,10 @@ function KindRow({
   const rename = useInlineRename(kind.name, onRename);
   const Glyph = lucideByName(kind.icon);
   const testId = `browser-row-${kind.kind}`;
-  // A removed browser, listed under "All": it can only be put back.
-  const restore = kind.removed && (
-    <button type="button" className={smallBtn} data-testid={`${testId}-restore`} onClick={() => onRemove(false)}>
-      <Trans>Restore</Trans>
+  // A hidden browser, listed under "All": it can only be shown again.
+  const show = (
+    <button type="button" className={smallBtn} data-testid={`${testId}-show`} onClick={() => onHide(false)}>
+      <Trans>Show</Trans>
     </button>
   );
   return (
@@ -256,11 +256,11 @@ function KindRow({
       testId={testId}
       icon={<Glyph className="h-3.5 w-3.5" />}
       name={kind.name}
-      note={kind.removed ? <Trans>removed</Trans> : <StateNote state={kind.state} error={kind.error} />}
-      tone={kind.removed ? 'muted' : TONE[kind.state]}
+      note={kind.hidden ? <Trans>hidden</Trans> : <StateNote state={kind.state} error={kind.error} />}
+      tone={kind.hidden ? 'muted' : TONE[kind.state]}
       below={<KindNote kind={kind} />}
       selected={selected}
-      disabled={!usable(kind) || kind.removed}
+      disabled={!usable(kind) || kind.hidden}
       onSelect={onSelect}
       editing={
         rename.editing && (
@@ -273,7 +273,7 @@ function KindRow({
         )
       }
       action={
-        restore || <>
+        kind.hidden ? show : <>
           {!rename.editing && (
             <button
               type="button"
@@ -289,13 +289,13 @@ function KindRow({
           {!rename.editing && !selected && (
             <button
               type="button"
-              aria-label={t`Remove ${kind.name} from the list`}
-              title={t`Remove from the list`}
-              data-testid={`${testId}-remove`}
+              aria-label={t`Hide ${kind.name}`}
+              title={t`Hide`}
+              data-testid={`${testId}-hide`}
               className={iconBtn}
-              onClick={() => onRemove(true)}
+              onClick={() => onHide(true)}
             >
-              <X className="h-3 w-3" />
+              <EyeOff className="h-3 w-3" />
             </button>
           )}
           <button type="button" className={smallBtn} data-testid={`${testId}-open`} onClick={onOpen}>
@@ -406,7 +406,7 @@ export function BrowserChip() {
   const { project, processId, status, refresh } = useBrowserStatus();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  // "All" also lists the browsers the person removed, so one can be restored.
+  // "All" also lists the browsers the person hid, so one can be shown again.
   const [list, setList] = useState<'active' | 'all'>('active');
   if (!project || !status) return null;
 
@@ -482,7 +482,7 @@ export function BrowserChip() {
               {why}
             </span>
           </div>
-          {(status.kinds ?? []).filter((k) => list === 'all' || !k.removed).map((k) => (
+          {(status.kinds ?? []).filter((k) => list === 'all' || !k.hidden).map((k) => (
             <KindRow
               key={k.kind}
               kind={k}
@@ -492,7 +492,7 @@ export function BrowserChip() {
                 await project.renameBrowser(k.kind, name);
                 await refresh();
               }}
-              onRemove={(removed) => void project.removeBrowser(k.kind, removed).then(refresh)}
+              onHide={(hidden) => void project.hideBrowser(k.kind, hidden).then(refresh)}
               onOpen={() => void project.openBrowser(k.kind).then(refresh)}
               onRefresh={() => void refresh()}
             />

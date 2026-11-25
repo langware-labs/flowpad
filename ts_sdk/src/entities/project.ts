@@ -560,8 +560,8 @@ export interface BrowserKindInfo {
   state: BrowserKindState;
   /** What a session reported when `state` is `error`; "" otherwise. */
   error: string;
-  /** The person took it off this computer's list; shown only under "All". */
-  removed?: boolean;
+  /** The person hid it from this computer's list; shown only under "All". */
+  hidden?: boolean;
   /** ISO times of the profile's folder; null where the OS keeps none or it never browsed. */
   created: string | null;
   last_used: string | null;
@@ -1341,8 +1341,8 @@ export class Project extends APIEntity<Project> {
   }
 
   /** Take a browser kind off this computer's list, or put it back. Nothing is uninstalled. */
-  async removeBrowser(kind: string, removed: boolean): Promise<{ kind: string; removed: boolean }> {
-    return this.post<{ kind: string; removed: boolean }>('browser-removed', { kind, removed });
+  async hideBrowser(kind: string, hidden: boolean): Promise<{ kind: string; hidden: boolean }> {
+    return this.post<{ kind: string; hidden: boolean }>('browser-hidden', { kind, hidden });
   }
 
   /** The project's browser, what is available, and — for a session — what it resolves to

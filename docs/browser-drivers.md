@@ -94,8 +94,8 @@ The footer's browser menu and `flow browser list` show that same list (`kinds` o
 
 In the menu, picking a row inside a session selects for that session; elsewhere it sets the project
 default. A row's name can be edited in place: it is kept per machine (`preferences.browser.names`)
-and never changes the kind. A row can be removed: the kind is kept per machine in
-`preferences.browser.removed`, the menu shows it only under **All** (where it can be restored), and
+and never changes the kind. A row can be hidden: the kind is kept per machine in
+`preferences.browser.hidden`, the menu shows it only under **All** (where it can be shown again), and
 `flow browser list` leaves it out. Nothing is uninstalled. The rules an agent follows are in the shipped `instructions/common.md`.
 
 Selecting an extension kind records the profile; nothing yet makes the worker's extension attach to
