@@ -2996,6 +2996,7 @@ msgid "Accept failed"
 msgstr "فشل القبول"
 
 #: src/components/conversation/InviteCard.tsx
+#: src/components/ics-viewer/IcsViewer.tsx
 msgid "Accepted"
 msgstr "مقبولة"
 
@@ -9596,6 +9597,10 @@ msgstr "تعذّر فتح التدفق الفرعي"
 msgid "Could not open the workspace folder"
 msgstr "تعذّر فتح مجلد مساحة العمل"
 
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Could not open this calendar file: {error}"
+msgstr ""
+
 #. placeholder {0}: error ?? path
 #: src/components/docx-viewer/DocxViewer.tsx
 msgid "Could not open this document: {0}"
@@ -11094,6 +11099,7 @@ msgstr "مرفوض"
 #: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/ics-viewer/IcsViewer.tsx
 msgid "Declined"
 msgstr "مرفوضة"
 
@@ -16080,6 +16086,10 @@ msgstr "هذا هو الرمز — يُعطى لمستخدم واحد"
 msgid "Hey <0>{firstName}</0>"
 msgstr "مرحباً <0>{firstName}</0>"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "hidden"
+msgstr ""
+
 #: src/notifications/error-detail.ts
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Hidden errors"
@@ -16093,7 +16103,13 @@ msgstr "الملفات المخفية"
 msgid "Hidden from your stream inbox"
 msgstr "مخفي من صندوق التدفق الوارد الخاص بكم"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Hide"
+msgstr ""
+
 #. placeholder {0}: header.title
+#. placeholder {0}: kind.name
+#: src/components/footer/BrowserChip.tsx
 #: src/components/navigator-panel/NavigatorPanel.tsx
 msgid "Hide {0}"
 msgstr "إخفاء {0}"
@@ -19036,6 +19052,7 @@ msgstr "جاري التحميل..."
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
+#: src/components/ics-viewer/IcsViewer.tsx
 #: src/components/items/IssueView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -19596,6 +19613,10 @@ msgstr "الحد الأقصى لعدد دورات الوكيل"
 #: src/components/settings-view/settings-utils.ts
 msgid "Maximum tokens per model response"
 msgstr "الحد الأقصى للرموز لكل رد من النموذج"
+
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Maybe"
+msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/project-resource-list/resource-meta.ts
@@ -22595,6 +22616,10 @@ msgstr "ليس عنوانًا"
 msgid "Not an address, a domain or a contact"
 msgstr "ليس عنوانًا أو نطاقًا أو جهة اتصال"
 
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Not answered"
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not available"
 msgstr "غير متاح"
@@ -24215,6 +24240,7 @@ msgstr "فتحها الآن"
 msgid "Open knowledge browser"
 msgstr "فتح متصفح المعرفة"
 
+#: src/components/ics-viewer/IcsViewer.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Open link"
 msgstr "فتح الرابط"
@@ -24917,6 +24943,11 @@ msgstr "المؤسسة: {organization}"
 #: src/components/organization/organization-page.tsx
 msgid "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
 msgstr "تُحفظ المؤسسات والفرق في السحابة. للإدارة، يلزم الخروج من الوضع المحلي."
+
+#. placeholder {0}: event.organizer
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Organized by {0}"
+msgstr ""
 
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
@@ -27727,10 +27758,9 @@ msgstr "إزالة {0}"
 msgid "Remove {0} from {1}?"
 msgstr "إزالة {0} من {1}؟"
 
-#. placeholder {0}: kind.name
 #: src/components/footer/BrowserChip.tsx
-msgid "Remove {0} from the list"
-msgstr ""
+#~ msgid "Remove {0} from the list"
+#~ msgstr ""
 
 #: src/components/agents/AllowedSendersEditor.tsx
 msgid "Remove {a}"
@@ -27840,8 +27870,8 @@ msgid "Remove from team"
 msgstr "إزالة من الفريق"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Remove from the list"
-msgstr ""
+#~ msgid "Remove from the list"
+#~ msgstr ""
 
 #: src/components/terminal/project-list-menu.tsx
 msgid "Remove from this computer"
@@ -27975,8 +28005,8 @@ msgid "Remove variable"
 msgstr "إزالة المتغير"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "removed"
-msgstr ""
+#~ msgid "removed"
+#~ msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -28114,6 +28144,10 @@ msgstr "أُعيد فتحه بما أرسلتموه"
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 msgid "Repair with an agent"
 msgstr "الإصلاح بواسطة وكيل"
+
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Repeats"
+msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/conversation/SealedTypedCard.tsx
@@ -28607,7 +28641,6 @@ msgid "Restarting…"
 msgstr "جاري إعادة التشغيل…"
 
 #: src/components/assets/editor/revisions/RevisionsPanel.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Restore"
 msgstr "استعادة"
@@ -31548,6 +31581,7 @@ msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "هل يجب السماح بهذه الأداة؟ استجب بصيغة JSON: {0}"
 
 #: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/types/ViewType.ts
 msgid "Show"
 msgstr "إظهار"
@@ -35025,6 +35059,10 @@ msgstr "هذه الميزانية"
 msgid "This budget is not available to you"
 msgstr "هذه الميزانية غير متاحة لهذا الحساب"
 
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "This calendar file has no events."
+msgstr ""
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This can take up to a minute if it was asleep."
 msgstr "قد يستغرق هذا حتى دقيقة واحدة إذا كانت في وضع السكون."
@@ -36800,6 +36838,10 @@ msgstr "غير مؤكد"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Unsure"
 msgstr "غير مؤكد"
+
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Untitled event"
+msgstr ""
 
 #: src/components/help/AskForHelpButton.tsx
 #: src/components/help/MyHelpRequests.tsx

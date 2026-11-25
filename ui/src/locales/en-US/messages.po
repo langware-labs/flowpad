@@ -2996,6 +2996,7 @@ msgid "Accept failed"
 msgstr "Accept failed"
 
 #: src/components/conversation/InviteCard.tsx
+#: src/components/ics-viewer/IcsViewer.tsx
 msgid "Accepted"
 msgstr "Accepted"
 
@@ -9596,6 +9597,10 @@ msgstr "Could not open the sub-flow"
 msgid "Could not open the workspace folder"
 msgstr "Could not open the workspace folder"
 
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Could not open this calendar file: {error}"
+msgstr "Could not open this calendar file: {error}"
+
 #. placeholder {0}: error ?? path
 #: src/components/docx-viewer/DocxViewer.tsx
 msgid "Could not open this document: {0}"
@@ -11094,6 +11099,7 @@ msgstr "declined"
 #: src/components/conversation/SealedTypedCard.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
 #: src/components/conversation/SealedValuesPanel.tsx
+#: src/components/ics-viewer/IcsViewer.tsx
 msgid "Declined"
 msgstr "Declined"
 
@@ -16080,6 +16086,10 @@ msgstr "Here is the code — give it to one user"
 msgid "Hey <0>{firstName}</0>"
 msgstr "Hey <0>{firstName}</0>"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "hidden"
+msgstr "hidden"
+
 #: src/notifications/error-detail.ts
 #: src/notifications/ErrorDetailsDialog.tsx
 msgid "Hidden errors"
@@ -16093,7 +16103,13 @@ msgstr "Hidden files"
 msgid "Hidden from your stream inbox"
 msgstr "Hidden from your stream inbox"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Hide"
+msgstr "Hide"
+
 #. placeholder {0}: header.title
+#. placeholder {0}: kind.name
+#: src/components/footer/BrowserChip.tsx
 #: src/components/navigator-panel/NavigatorPanel.tsx
 msgid "Hide {0}"
 msgstr "Hide {0}"
@@ -19036,6 +19052,7 @@ msgstr "Loading..."
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/graph-workflows/GraphWorkflowsView.tsx
+#: src/components/ics-viewer/IcsViewer.tsx
 #: src/components/items/IssueView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -19596,6 +19613,10 @@ msgstr "Maximum number of agentic turns"
 #: src/components/settings-view/settings-utils.ts
 msgid "Maximum tokens per model response"
 msgstr "Maximum tokens per model response"
+
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Maybe"
+msgstr "Maybe"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/project-resource-list/resource-meta.ts
@@ -22595,6 +22616,10 @@ msgstr "Not an address"
 msgid "Not an address, a domain or a contact"
 msgstr "Not an address, a domain or a contact"
 
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Not answered"
+msgstr "Not answered"
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not available"
 msgstr "Not available"
@@ -24215,6 +24240,7 @@ msgstr "Open it now"
 msgid "Open knowledge browser"
 msgstr "Open knowledge browser"
 
+#: src/components/ics-viewer/IcsViewer.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Open link"
 msgstr "Open link"
@@ -24917,6 +24943,11 @@ msgstr "Organization: {organization}"
 #: src/components/organization/organization-page.tsx
 msgid "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
 msgstr "Organizations and teams live in the cloud. Switch out of Local mode to manage them."
+
+#. placeholder {0}: event.organizer
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Organized by {0}"
+msgstr "Organized by {0}"
 
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
 #: src/components/assets/editor/translations/DocLanguageSwitcher.tsx
@@ -27727,10 +27758,9 @@ msgstr "Remove {0}"
 msgid "Remove {0} from {1}?"
 msgstr "Remove {0} from {1}?"
 
-#. placeholder {0}: kind.name
 #: src/components/footer/BrowserChip.tsx
-msgid "Remove {0} from the list"
-msgstr "Remove {0} from the list"
+#~ msgid "Remove {0} from the list"
+#~ msgstr "Remove {0} from the list"
 
 #: src/components/agents/AllowedSendersEditor.tsx
 msgid "Remove {a}"
@@ -27840,8 +27870,8 @@ msgid "Remove from team"
 msgstr "Remove from team"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "Remove from the list"
-msgstr "Remove from the list"
+#~ msgid "Remove from the list"
+#~ msgstr "Remove from the list"
 
 #: src/components/terminal/project-list-menu.tsx
 msgid "Remove from this computer"
@@ -27975,8 +28005,8 @@ msgid "Remove variable"
 msgstr "Remove variable"
 
 #: src/components/footer/BrowserChip.tsx
-msgid "removed"
-msgstr "removed"
+#~ msgid "removed"
+#~ msgstr "removed"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -28114,6 +28144,10 @@ msgstr "reopened with what you sent"
 #: src/components/assets/editor/app-profile/AppSetupTab.tsx
 msgid "Repair with an agent"
 msgstr "Repair with an agent"
+
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Repeats"
+msgstr "Repeats"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/conversation/SealedTypedCard.tsx
@@ -28607,7 +28641,6 @@ msgid "Restarting…"
 msgstr "Restarting…"
 
 #: src/components/assets/editor/revisions/RevisionsPanel.tsx
-#: src/components/footer/BrowserChip.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Restore"
 msgstr "Restore"
@@ -31548,6 +31581,7 @@ msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "Should I allow this tool? Respond with JSON: {0}"
 
 #: src/components/entity-actions/ContextMenuButton.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/types/ViewType.ts
 msgid "Show"
 msgstr "Show"
@@ -35025,6 +35059,10 @@ msgstr "this budget"
 msgid "This budget is not available to you"
 msgstr "This budget is not available to you"
 
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "This calendar file has no events."
+msgstr "This calendar file has no events."
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This can take up to a minute if it was asleep."
 msgstr "This can take up to a minute if it was asleep."
@@ -36800,6 +36838,10 @@ msgstr "unsure"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Unsure"
 msgstr "Unsure"
+
+#: src/components/ics-viewer/IcsViewer.tsx
+msgid "Untitled event"
+msgstr "Untitled event"
 
 #: src/components/help/AskForHelpButton.tsx
 #: src/components/help/MyHelpRequests.tsx
