@@ -433,6 +433,12 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
 
                     await browser_context_watch.on_context(connection_id, ctx)
 
+        elif message_type == "ui_command_result":
+            # A tab's answer to a ``run_script`` ui_command — the one request/response on that channel.
+            from flow_sdk.notifications.tab_script import script_answered  # noqa: PLC0415
+
+            script_answered(message_data)
+
         elif message_type == "presence":
             # Per-tab visibility/focus update from the UI. Fire-and-forget:
             # the client sends via raw WebSocket.send and never awaits a reply,
@@ -570,6 +576,9 @@ async def _cleanup_connection(connection_id: str, disconnect_reason: str) -> Non
     # Clean up connection
     _active_connections.pop(connection_id, None)
     remove_registry_connection(connection_id)
+    from flow_sdk.notifications.tab_script import tab_closed  # noqa: PLC0415
+
+    tab_closed(connection_id)
 
     # Clean up watches
     from flow_sdk.app.actions.watch_registry import cleanup_connection

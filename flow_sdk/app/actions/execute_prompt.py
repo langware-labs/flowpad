@@ -746,7 +746,10 @@ async def resolve_or_mint_session(
         _fill("guest_name", getattr(fm, "sender_name", None))
         _fill("host_user_id", host_user_id)
         _fill("host_name", host_name)
-        _fill("project_id", getattr(conv, "project_id", None))
+        # Not when the host chose "No project": the row would be rewritten on every turn that
+        # arrives, from a copy read before the turn now running settled it.
+        if not session.workdir:
+            _fill("project_id", getattr(conv, "project_id", None))
         _fill("conversation_id", conv.id)
     if changed:
         await session.save()
@@ -976,6 +979,17 @@ async def _run_plain_turn(kind: str, text: str, workdir: str) -> tuple[str, dict
         if len(everything) > OUTPUT_CAP:  # the answer keeps the end; the whole output rides as a file
             extra["files"] = [_Upload("command-output.txt", everything.encode())]
         return shown, extra
+    if kind == TurnKind.CONTROL.value:
+        from flow_sdk.notifications.tab_script import NoTab, run_script_in_tab  # noqa: PLC0415
+
+        try:
+            answer = await run_script_in_tab(text)
+        except NoTab as exc:
+            raise _TurnFailed(str(exc)) from exc
+        if answer["ok"]:
+            shown = json.dumps(answer["value"], indent=1, ensure_ascii=False)
+            return shown, {"turn_kind": kind, "turn_exit_code": 0, "message": f"returned\n{shown}"}
+        return answer["error"], {"turn_kind": kind, "turn_exit_code": 1, "message": f"threw\n{answer['error']}"}
     raise _TurnFailed(f"this Flowpad cannot run a {kind} turn")
 
 

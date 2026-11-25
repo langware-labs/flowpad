@@ -190,6 +190,9 @@ export interface UiCommandMessage extends BaseMessage {
   request?: InstallRequest;
   /** `kind: 'open_link'` — the deep-link params (`action=open&fm=…`) of a message the hub asked this desktop to open. */
   query?: Record<string, string>;
+  /** For `run_script`: the script body, and the id its `ui_command_result` answer must carry. */
+  code?: string;
+  request_id?: string;
 }
 
 export interface LlmConfigMessage extends BaseMessage {

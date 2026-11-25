@@ -158,3 +158,59 @@ async def test_an_interrupted_command_is_reported_once_and_never_run_again(boots
     assert (await FlowMessage.get_one({"id": fm.id})).prompt_auto_handled is True  # not given back to the queue
     texts = [m.text or "" for m in await FlowMessage.get_all({"conversation_id": conv_id})]
     assert any("restarted while this command ran — it was not run again" in t for t in texts)
+
+
+async def test_a_script_fails_the_turn_when_the_host_has_no_flowpad_tab_open(bootstrapped_client, user):
+    conv_id, rws = await _approved(bootstrapped_client, ASKED_ALL)
+
+    msgs = await _run(conv_id, rws.id, "control", "return 1")
+
+    assert any("No Flowpad tab is open on this machine" in (m.text or "") for m in msgs)
+
+
+@pytest.mark.parametrize(
+    ("tab_says", "answer"),
+    [
+        ({"ok": True, "value": {"login": "signed_out"}}, 'returned\n{\n "login": "signed_out"\n}'),
+        ({"ok": False, "error": "TypeError: x is not a function"}, "threw\nTypeError: x is not a function"),
+    ],
+)
+async def test_a_script_runs_in_the_hosts_tab_and_its_value_or_its_throw_is_the_answer(
+    bootstrapped_client, user, monkeypatch, tab_says, answer
+):
+    from flow_sdk.core import navigate
+    from flow_sdk.notifications import tab_script, ui_command
+
+    sent: list[dict] = []
+
+    async def to_the_tab(ws, kind, **fields):  # the tab answers at once, as the listener does
+        sent.append({"kind": kind, **fields})
+        tab_script.script_answered({"request_id": fields["request_id"], **tab_says})
+
+    monkeypatch.setattr(navigate, "pick_connection", lambda connection_id: ("tab-1", object()))
+    monkeypatch.setattr(ui_command, "send_ui_command", to_the_tab)
+    conv_id, rws = await _approved(bootstrapped_client, ASKED_ALL)
+
+    msgs = await _run(conv_id, rws.id, "control", "return await sdk.status()")
+
+    assert [(s["kind"], s["code"]) for s in sent] == [("run_script", "return await sdk.status()")]
+    assert answer in [m.text for m in msgs]
+    assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.IDLE.value
+    assert tab_script._waiting == {}
+
+
+async def test_a_script_is_answered_at_once_when_its_tab_closes(monkeypatch):
+    import asyncio
+
+    from flow_sdk.core import navigate
+    from flow_sdk.notifications import tab_script, ui_command
+
+    async def never_answers(ws, kind, **fields):
+        asyncio.get_running_loop().call_soon(tab_script.tab_closed, "tab-1")
+
+    monkeypatch.setattr(navigate, "pick_connection", lambda connection_id: ("tab-1", object()))
+    monkeypatch.setattr(ui_command, "send_ui_command", never_answers)
+
+    answer = await tab_script.run_script_in_tab("await new Promise(() => {})")
+
+    assert answer == {"ok": False, "error": "the Flowpad tab closed before the script answered"}
