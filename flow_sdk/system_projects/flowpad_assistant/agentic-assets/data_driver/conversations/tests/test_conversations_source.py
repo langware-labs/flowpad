@@ -19,16 +19,19 @@ import pytest
 
 from flow_sdk.builtin.agent_serve import is_own_outgoing
 from flow_sdk.builtin.data_driver import DataDriver
+from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.cloud_client.hub_proxy import HubProxy
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.errors import NotFound
+from flow_sdk.sources.errors import NotFound, Rejected
 from flow_sdk.sources.testing import Subject, checks_for
 from flow_sdk.sources.values.items import MessageData
 
 ConversationsSource = asset_module("conversations").ConversationsSource
+REJECTED = asset_module("conversations").REJECTED
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -259,3 +262,68 @@ class TestAPersonsLogin:
                 await source.send(outgoing)
             assert await source.whoami() == ()
         assert "agent" in str(caught.value) and fake.calls == []
+
+
+class TestRecoveryOnSignIn:
+    """As the help desk's: a source parked because its login could not read answers again once this machine reads
+    the conversation list as an agent (``ensure_sources``, run on sign-in and start). A box signs in afresh on every
+    resume, so a source parked once must not stay parked."""
+
+    @staticmethod
+    async def _park_source(code: str) -> DataSource:
+        source = DataDriver.loaded("conversations").create_source({}, name=f"Conversations {uuid.uuid4().hex[:6]}")
+        source.health = SourceHealth.CONFIG_ERROR.value
+        source.error_code = code
+        await source.save()
+        return source
+
+    @staticmethod
+    def _sign_in_as(monkeypatch: pytest.MonkeyPatch, agent: Optional[str], *, walk_complete: bool = True) -> None:
+        async def walk(_entity_type: str) -> SimpleNamespace:
+            return SimpleNamespace(rows=[ROW], complete=walk_complete)
+
+        monkeypatch.setattr(HubProxy, "walk", walk)
+        monkeypatch.setattr(asset_module("conversations"), "try_read_agent_login", lambda: agent)
+
+    @staticmethod
+    async def _health_of(source: DataSource) -> Optional[str]:
+        stored = await DataSource.get_by_id(str(source.id))
+        assert stored is not None, "test setup failure: the source is gone"
+        return stored.health
+
+    def test_the_parked_code_is_the_one_a_rejected_read_is_given(self):
+        assert classify(Rejected("not an agent"))[1] == REJECTED
+
+    @pytest.mark.parametrize("code", [REJECTED, "access_denied"])
+    async def test_a_source_parked_by_a_login_that_could_not_read_answers_again_once_signed_in_as_the_agent(
+        self, monkeypatch: pytest.MonkeyPatch, code: str
+    ):
+        source = await self._park_source(code)
+        self._sign_in_as(monkeypatch, AGENT)
+
+        assert await ConversationsSource.ensure_sources() == 0, "it makes no source: the creator adds it"
+        assert await self._health_of(source) != SourceHealth.CONFIG_ERROR.value
+
+    async def test_a_signed_out_machine_leaves_it_parked(self, monkeypatch: pytest.MonkeyPatch):
+        source = await self._park_source(REJECTED)
+        self._sign_in_as(monkeypatch, None)
+
+        await ConversationsSource.ensure_sources()
+
+        assert await self._health_of(source) == SourceHealth.CONFIG_ERROR.value
+
+    async def test_an_unfinished_walk_leaves_it_parked(self, monkeypatch: pytest.MonkeyPatch):
+        source = await self._park_source(REJECTED)
+        self._sign_in_as(monkeypatch, AGENT, walk_complete=False)
+
+        await ConversationsSource.ensure_sources()
+
+        assert await self._health_of(source) == SourceHealth.CONFIG_ERROR.value
+
+    async def test_a_source_parked_for_another_reason_stays_parked(self, monkeypatch: pytest.MonkeyPatch):
+        source = await self._park_source("not_found")
+        self._sign_in_as(monkeypatch, AGENT)
+
+        await ConversationsSource.ensure_sources()
+
+        assert await self._health_of(source) == SourceHealth.CONFIG_ERROR.value
