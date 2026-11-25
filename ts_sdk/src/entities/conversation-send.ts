@@ -7,7 +7,11 @@ import {
   ConversationParticipant,
   createProjectConversation,
   deleteConversation,
+  agentTypeIdOf,
+  AGENT_MEMBER_ROLES,
+  isAgentParticipant,
 } from './conversation';
+import type { TypeId } from '../models/TypeId';
 import { FlowpadDiagnosis } from './flowpad-diagnosis';
 
 /**
@@ -178,10 +182,10 @@ export interface CreateAndSendResult {
 /**
  * Cross-user routing predicate: a conversation is delivered through the hub
  * bundle path (vs. project-local) when *any* participant carries a user_id
- * or an @-email — i.e. could be a different machine.
+ * or an @-email — i.e. could be a different machine — or is an agent, which lives on the hub.
  */
 export const hasRemoteParticipant = (ps: ConversationParticipant[]): boolean =>
-  ps.some((p) => !!p.user_id || (!!p.email && p.email.includes('@')));
+  ps.some((p) => !!p.user_id || (!!p.email && p.email.includes('@')) || isAgentParticipant(p));
 
 /**
  * Create-or-resume a conversation WITHOUT sending anything into it — the
@@ -212,7 +216,14 @@ export async function createConversationForShare(
     // participant has both: it is the path that also works for someone without
     // an account yet.
     const invitees: string[] = [];
+    // An agent is no invitee: the hub adds it as a principal, with nothing to accept.
+    const agents: TypeId[] = [];
     for (const p of params.members) {
+      const agent = agentTypeIdOf(p);
+      if (agent) {
+        agents.push(agent);
+        continue;
+      }
       const email = normalizeEmail(p.email) || '';
       if (email.includes('@')) {
         invitees.push(email);
@@ -221,7 +232,7 @@ export async function createConversationForShare(
       const userId = (p.user_id || '').trim();
       if (userId) invitees.push(userId);
     }
-    if (invitees.length === 0) {
+    if (invitees.length === 0 && agents.length === 0) {
       throw new Error('At least one recipient email or hub contact is required');
     }
 
@@ -247,9 +258,13 @@ export async function createConversationForShare(
     await conv.save();
     // One hub MembershipRequest per invitee — the hub's own call; the desktop answers it too, publishing
     // the conversation with the first one, so the rest go out together after it.
-    const [first, ...rest] = invitees;
-    await conv.inviteMember(first);
-    await Promise.all(rest.map((invitee) => conv.inviteMember(invitee)));
+    const admissions = [
+      ...invitees.map((invitee) => () => conv.inviteMember(invitee)),
+      ...agents.map((agent) => () => conv.addGroupMember(agent, AGENT_MEMBER_ROLES)),
+    ];
+    const [first, ...rest] = admissions;
+    await first();
+    await Promise.all(rest.map((admit) => admit()));
     conversationId = conv.id;
   } else {
     if (!params.project_id) {

@@ -32,7 +32,7 @@ import { ViewType } from '../utils/ui/view-types';
 import type { CredentialRequirement, CredentialVarKind } from './credential';
 import { SubAgent } from './subagent';
 import { Artifact, IArtifact } from './artifact';
-import type { DeploymentSourceKind, IDeployment } from './deployment';
+import type { DeploymentIdentity, DeploymentSourceKind, IDeployment } from './deployment';
 import type {
   AgentPlannedDeployment,
   AgentReadiness,
@@ -1938,6 +1938,8 @@ export interface ProjectDeployArgs {
   sourceRef?: string | null;
   /** The agent TypeId (`agent-<uuid>`) that answers on the box; `null` = none; omitted = the recommendation. */
   mainAgentId?: string | null;
+  /** Who the box signs in as; omitted = the hub's default (the main agent's shared Identity). */
+  identity?: DeploymentIdentity;
   tokenAllocation?: AgentTokenAllocation | null;
   deploymentId?: string;
   values?: Record<string, Record<string, string>>;
@@ -1973,6 +1975,7 @@ function projectDeployBody(args: ProjectDeployArgs): Record<string, unknown> {
     ...(args.sourceRef ? { source_ref: args.sourceRef } : {}),
     // Absent = the project's recommendation; '' = no agent (the backend's spelling of none).
     ...(args.mainAgentId !== undefined ? { main_agent_id: args.mainAgentId ?? '' } : {}),
+    ...(args.identity ? { identity: args.identity } : {}),
     ...(args.tokenAllocation !== undefined ? { token_allocation: args.tokenAllocation } : {}),
     ...(args.deploymentId ? { deployment_id: args.deploymentId } : {}),
     ...(args.values && Object.keys(args.values).length ? { values: args.values } : {}),
