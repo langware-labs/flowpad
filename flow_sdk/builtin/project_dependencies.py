@@ -128,6 +128,17 @@ async def _checkout_status(path: "str | Path"):
     return None if status.error else status
 
 
+#: Link data: the checkout's commit when this dependency was last indexed.
+_INDEXED_HEAD = "indexed_head"
+
+
+async def _head(path: str) -> Optional[str]:
+    """The commit ``path``'s checkout is on; ``None`` when it is not in a git repository."""
+    from flow_sdk.utils.git import git_head  # noqa: PLC0415
+
+    return await asyncio.to_thread(git_head, path) or None
+
+
 def _has_local_changes(status) -> bool:
     """Tracked files edited in the checkout (untracked files are not the person's edits to lose)."""
     return bool(status) and any(f.status != "?" for f in status.files)
@@ -877,9 +888,22 @@ async def _resolve(
     if index:
         for state in states:
             await dependency_project(state, create=True)
+    # The commit a link was indexed at outlives the re-resolve that rebuilt its data.
+    known = _links(project)
+    for tid, (_folder, data) in desired.items():
+        was = known.get(tid) or {}
+        if _INDEXED_HEAD in was and was.get("path") == data["path"]:
+            data[_INDEXED_HEAD] = was[_INDEXED_HEAD]
     added = await _reconcile(project, desired)
     if index:
-        await _index(project, [desired[tid] for tid in added])
+        # A checkout that moved since it was indexed (a pull, whoever ran it) is indexed again.
+        heads = dict(zip(desired, await asyncio.gather(*(_head(data["path"]) for _folder, data in desired.values()))))
+        stale = [tid for tid, (_folder, data) in desired.items() if tid in added or (heads[tid] and heads[tid] != data.get(_INDEXED_HEAD))]
+        done = await _index(project, [(desired[tid][1], heads[tid]) for tid in stale])
+        for tid, ok in zip(stale, done):
+            if ok and heads[tid]:
+                desired[tid][1][_INDEXED_HEAD] = heads[tid]
+        await _reconcile(project, desired)  # saves only when a commit was recorded
         if added and any(state.state != "ready" for state in states):
             # References walked before indexing may now exist in the new roots.
             # Complete their links and states locally; never fetch or index twice.
@@ -1038,25 +1062,32 @@ async def _reconcile(project: "Project", desired: dict[str, tuple["Folder", dict
     return added
 
 
-async def _index(project: "Project", linked: list[tuple["Folder", dict]]) -> None:
-    """Index newly linked roots. Rows found in a folder that is itself a project's mount
-    belong to THAT project, as its project content (``scope="project"`` — the same stamp
-    the provider's own index gives them, so the result does not depend on which walk ran
-    last); anything else belongs to the project that depends on it, as user scope."""
+async def _index(project: "Project", linked: list[tuple[dict, Optional[str]]]) -> list[bool]:
+    """Index each link (its data, its checkout's commit) — newly linked, or moved since it was
+    indexed — and answer which ran clean. Rows found in a folder that is itself a project's mount
+    belong to THAT project, as its project content (``scope="project"`` — the same stamp the
+    provider's own index gives them, so the result does not depend on which walk ran last);
+    anything else belongs to the project that depends on it, as user scope."""
     if not linked:
-        return
+        return []
     from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.roots import deepest_project_id_for_path, load_project_mounts  # noqa: PLC0415
 
     mounts = await load_project_mounts()
-    for _folder, data in linked:
+    done: list[bool] = []
+    for data, head in linked:
         provider = deepest_project_id_for_path(data["path"], mounts)
-        await _index_additional_dir(
+        # A git checkout is read, never written — the person's own included: an id saved into a
+        # tracked file makes its next ``git pull`` refuse. A folder outside git may mint ids.
+        checkout = provider is None and head is not None
+        done.append(await _index_additional_dir(
             data["path"],
-            read_only=bool(data.get("read_only")),
+            read_only=bool(data.get("read_only")) or checkout,
             project_id=provider or str(project.id),
             own=provider is not None,
-        )
+            prune=True,
+        ))
+    return done
 
 
 # ── authoring ───────────────────────────────────────────────────────────────

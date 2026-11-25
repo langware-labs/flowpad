@@ -137,6 +137,11 @@ def git_current_branch(repo_path: str) -> str:
     return "" if branch == "HEAD" else branch
 
 
+def git_head(path: str) -> str:
+    """The commit ``path``'s checkout is on, or "" when it is not in a repo."""
+    return _sync(path, "rev-parse", "HEAD")
+
+
 def git_repo_full_name(repo_path: str) -> str:
     """Extract 'owner/repo' from origin URL (handles https and ssh). Returns empty string if not found."""
     url = git_remote_url(repo_path)

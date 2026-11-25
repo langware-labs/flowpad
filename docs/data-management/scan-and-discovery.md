@@ -40,7 +40,7 @@ Two public coroutines:
 | `scan(opts)` | DFS over the roots; returns the flat list of visited `FSRef`s. No payload parse and no DB write. Callers that project scan results resolve identity through `TypeInfo`, which may persist a missing portable id. |
 | `index(opts)` | Runs `scan()`, then for each visited ref whose type declares a `from_disk_fn`, parses it into `FSRecord`s and persists them (`rec.sync_to_db(...)`) plus an FTS upsert. Returns an `IndexResult`. |
 
-`IndexerOptions` (frozen dataclass) controls a run: `verbose`, `limit`, `limit_per_type`, `include_temp`, `types` (index filter), `roots` (per-call root override), `force` (bypass skip-fresh), `gitignore`, `project_id`, `orphan_action`, `dedup_on_adopt` (arms the same-path duplicate sweep), `scope_filter`, and `on_progress`.
+`IndexerOptions` (frozen dataclass) controls a run: `verbose`, `limit`, `limit_per_type`, `include_temp`, `types` (index filter), `roots` (per-call root override), `force` (bypass skip-fresh), `gitignore`, `project_id`, `orphan_action`, `dedup_on_adopt` (arms the same-path duplicate sweep), `scope_filter`, `orphan_roots` (act only on orphans whose source lies under these folders), and `on_progress`.
 
 ### Roots
 
@@ -478,7 +478,7 @@ Mitigated for the indexer: `index()` commits in batches of 50 (`_INDEX_COMMIT_BA
 
 ### Destructive orphan action on a narrowed walk
 
-A non-`INDEX` `orphan_action` combined with custom `roots` and no `scope_filter` would misclassify cross-scope-referenced records as orphans and wipe them. The code refuses this (falls back to `INDEX` + warning), but the safety relies on callers either widening the walk to global (`roots=None`) or supplying a `scope_filter`. A caller that bypasses the HTTP wrapper and constructs `IndexerOptions` directly must respect this contract.
+A non-`INDEX` `orphan_action` combined with custom `roots` and no `scope_filter` would misclassify cross-scope-referenced records as orphans and wipe them. The code refuses this (falls back to `INDEX` + warning), but the safety relies on callers either widening the walk to global (`roots=None`), supplying a `scope_filter`, or naming the folders the cleanup is limited to (`orphan_roots` — a dependency indexed again after its checkout moved removes only what left that dependency's folder). A caller that bypasses the HTTP wrapper and constructs `IndexerOptions` directly must respect this contract.
 
 ### Self-heal indexing depends on an explicit path hint
 

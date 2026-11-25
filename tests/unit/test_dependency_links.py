@@ -245,6 +245,7 @@ async def test_a_git_dependency_is_indexed_read_only_and_a_folder_writably(tmp_p
 
     async def _index(path, **kwargs):
         indexed.append((path, kwargs.get("read_only"), kwargs.get("project_id")))
+        return True
 
     monkeypatch.setattr(agentic_process, "_index_additional_dir", _index)
 

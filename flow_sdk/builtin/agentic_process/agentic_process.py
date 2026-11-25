@@ -615,9 +615,13 @@ async def _index_additional_dir(
     strict: bool = False,
     project_id: str | None = None,
     own: bool = False,
-) -> None:
+    prune: bool = False,
+) -> bool:
     """Run a one-shot indexer scan over ``path`` so its skills/agents become
-    discoverable via ``Entity.assets_by_path``.
+    discoverable via ``Entity.assets_by_path``. Answers whether the scan ran clean.
+
+    ``prune=True`` also removes the records under ``path`` whose own file is gone — a folder
+    indexed again after its files changed (a dependency whose checkout moved).
 
     ``own=True`` (with ``project_id``): ``path`` is that project's OWN folder — a checkout a launch or a
     share made — so what it holds is project content (``scope="project"``). The default is a directory
@@ -652,7 +656,7 @@ async def _index_additional_dir(
         if not p.is_dir():
             if strict:
                 raise FileNotFoundError(f"Context directory is not available: {path}")
-            return
+            return False
         # ``project_id`` names who owns what the walk finds; ``None`` keeps the request-scoped
         # rule (``index_function._walk_requested_by_project``).
         scope = "project" if own and project_id else "user"
@@ -670,13 +674,20 @@ async def _index_additional_dir(
             roots.append(
                 FSRef(p, record_type=RecordType(root_type), parent=new_root, layout=info.layout_of(p, verify=True))
             )
-        result = await get_shared_indexer().index(IndexerOptions(roots=tuple(roots), verbose=False, include_temp=True))
+        from flow_sdk.fs_store.indexer import OrphanAction  # noqa: PLC0415
+
+        pruning = {"orphan_action": OrphanAction.DELETE, "orphan_roots": (str(p),)} if prune else {}
+        result = await get_shared_indexer().index(
+            IndexerOptions(roots=tuple(roots), verbose=False, include_temp=True, **pruning)
+        )
         if strict and result.total_errors:
             raise RuntimeError(f"Context indexing reported {result.total_errors} error(s)")
+        return not result.total_errors
     except Exception:
         logger.exception("add_dir: indexing failed for %s", path)
         if strict:
             raise
+        return False
 
 
 async def _index_session_on_close(session_id: str, display_name: str | None = None) -> None:
