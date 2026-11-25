@@ -1,7 +1,7 @@
 {
   "name": "editor",
-  "title": "Embedded — editor",
-  "description": "Choose the app, profile and port Embedded uses on this computer, and see which workers can use it.",
+  "title": "Flowpad integrated browser — editor",
+  "description": "Choose the app, profile and port the Flowpad integrated browser uses on this computer, and see which workers can use it.",
   "kind": "application.web.editor",
   "build": "."
 }

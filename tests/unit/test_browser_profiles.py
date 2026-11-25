@@ -128,6 +128,15 @@ def test_mac_launch_goes_through_open_with_new_instance(mac, launched):
     ]
 
 
+def test_a_profile_window_opens_only_for_a_folder_that_exists(mac, home, launched):
+    """A browser asked for a profile it does not have creates one, so a missing folder is refused."""
+    (home / "Library/Application Support/Google/Chrome/Profile 2").mkdir(exist_ok=True)
+    bp.open_profile("chrome", "Profile 2")
+    with pytest.raises(bp.BrowserProfileError, match="no profile"):
+        bp.open_profile("chrome", "Profile 9")
+    assert launched == [["open", "-na", str(mac / "Applications/Google Chrome.app"), "--args", "--profile-directory=Profile 2"]]
+
+
 # ── Windows ──────────────────────────────────────────────────────────────────
 
 

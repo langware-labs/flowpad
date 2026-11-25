@@ -25,12 +25,12 @@ from typing import Any, Mapping, Optional
 
 from flow_sdk.schema.data_spec.browser_driver_spec import (
     ANY_WORKER,
-    KIND_NAME,
     BrowserAttach,
     BrowserDriverSpec,
     BrowserKindSpec,
     BrowserProbe,
     WorkerSetupSpec,
+    parse_kind,
 )
 from flow_sdk.utils.templates import fill
 
@@ -90,13 +90,29 @@ def driver_of(browser: object) -> str:
     value = str(browser or "")
     if value in _registry():
         return value
-    head, sep, profile = value.partition(KIND_NAME)
-    driving = head.rpartition(".")[2]
-    if not sep or not profile:
+    _, driving, profile = parse_kind(value)
+    if not profile:
         return ""
     # A managed driver's profile is qualified by its folder; the extension's is a real profile.
     return next((spec.name for spec in list_drivers()
                  if spec.probe.value == driving and (not spec.managed or profile.startswith(_managed_profile(spec.name, "x")[:-1]))), "")
+
+
+def open_kind(kind: str) -> None:
+    """Bring a browser kind's window up for the person: a managed driver's own window (started
+    when it is not running), or the real profile's. Raises ``AgentBrowserError`` /
+    ``BrowserProfileError``."""
+    from flow_sdk.core import agent_browser  # noqa: PLC0415 — it imports this module
+    from flow_sdk.core.browser_profiles import BrowserProfileError, open_profile  # noqa: PLC0415
+
+    browser, _, profile = parse_kind(kind)
+    spec = get(driver_of(kind))
+    if spec is None or not browser:
+        raise BrowserProfileError("UNKNOWN_KIND", f"{kind!r} is not a browser kind")
+    if spec.managed:
+        agent_browser.ensure_running(driver=spec.name)
+    else:
+        open_profile(browser, profile)
 
 
 # ── workers ────────────────────────────────────────────────────────────────

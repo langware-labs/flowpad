@@ -287,7 +287,7 @@ def test_the_kinds_are_one_per_profile(tmp_path, monkeypatch):
     scan = bp.scan_extension("ext-id")
     kinds = bd.list_kinds(states, scan)
     assert {k.kind: (k.name, k.driver, k.state) for k in kinds} == {
-        "chrome.cdp.name.agent-default": ("Embedded", "agent", "ready"),
+        "chrome.cdp.name.agent-default": ("Flowpad integrated browser", "agent", "ready"),
         "chrome.cdp.name.chrome_debug-default": ("Chrome debug", "chrome_debug", "ready"),
         "chrome.extension.name.Default": ("Home", "extension", "not_installed"),
         "chrome.extension.name.Profile 2": ("Work", "extension", "not_connected"),

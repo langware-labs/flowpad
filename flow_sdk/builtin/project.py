@@ -899,6 +899,23 @@ class Project(SetupSkippable, Entity):
         await asyncio.to_thread(browser_drivers.report_error, kind, message)
         return ApiSuccessResponse(data={"kind": kind, "error": message.strip()})
 
+    @action.post(action_name="browser-open")
+    async def browser_open_action(self, kind: str = "") -> "ApiResponse":
+        """`POST /project/<id>/browser-open {kind}` — bring that browser's window up on this
+        computer. Refused on a machine nobody is looking at."""
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+        from flow_sdk.core.agent_browser import AgentBrowserError  # noqa: PLC0415
+        from flow_sdk.core.browser_profiles import BrowserProfileError  # noqa: PLC0415
+        from flow_sdk.instance_settings.runtime import get_assigned_runtime  # noqa: PLC0415
+
+        if runtime := get_assigned_runtime():
+            return ApiFailResponse(message=f"this backend runs as {runtime}, not on your machine", status_code=403)
+        try:
+            await asyncio.to_thread(browser_drivers.open_kind, kind)
+        except (AgentBrowserError, BrowserProfileError) as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"kind": kind, "opened": True})
+
     @action.post(action_name="browser-name")
     async def browser_name_action(self, kind: str = "", name: str = "") -> "ApiResponse":
         """`POST /project/<id>/browser-name {kind, name}` — what a person calls a browser kind on

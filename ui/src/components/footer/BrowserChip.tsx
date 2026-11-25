@@ -226,12 +226,14 @@ function KindRow({
   selected,
   onSelect,
   onRename,
+  onOpen,
   onRefresh,
 }: {
   kind: BrowserKindInfo;
   selected: boolean;
   onSelect: () => void;
   onRename: (name: string) => Promise<void>;
+  onOpen: () => void;
   onRefresh: () => void;
 }) {
   const { t } = useLingui();
@@ -273,6 +275,9 @@ function KindRow({
               <Pencil className="h-3 w-3" />
             </button>
           )}
+          <button type="button" className={smallBtn} data-testid={`${testId}-open`} onClick={onOpen}>
+            <Trans>Open</Trans>
+          </button>
           {kind.state === 'not_installed' && kind.install_url ? (
             <a className={smallBtn} href={kind.install_url} target="_blank" rel="noreferrer">
               <Trans>Install</Trans>
@@ -452,6 +457,7 @@ export function BrowserChip() {
                 await project.renameBrowser(k.kind, name);
                 await refresh();
               }}
+              onOpen={() => void project.openBrowser(k.kind).then(refresh)}
               onRefresh={() => void refresh()}
             />
           ))}

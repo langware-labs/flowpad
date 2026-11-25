@@ -444,11 +444,12 @@ def scan_extension(extension_id: str) -> ExtensionScan:
 
 
 def launch_argv(kind: BrowserKind, target: str, profile_id: str, url: str, os_name: OsName) -> list[str]:
-    """The command line, as a list — never a shell string, so a URL is one argument whatever it contains."""
+    """The command line, as a list — never a shell string, so a URL is one argument whatever it
+    contains. No ``url`` opens the profile's own window."""
     if kind == "firefox":
-        args = ["-P", profile_id, "-new-tab", url]
+        args = ["-P", profile_id, *(("-new-tab", url) if url else ())]
     else:
-        args = [f"--profile-directory={profile_id}", url]
+        args = [f"--profile-directory={profile_id}", *((url,) if url else ())]
     if os_name == "mac":
         # -n: without it `open` hands the args to nothing when the app is
         # already running; with it the browser forwards them to its live window.
@@ -462,6 +463,18 @@ def _check_url(url: str) -> None:
         raise BrowserProfileError("BAD_URL", f"only http(s) links open in a browser profile: {url!r}")
 
 
+def _installed(browser_id: str) -> tuple[BrowserDef, OsName, str]:
+    """The catalog's browser, this OS and its executable. Raises ``BrowserProfileError``."""
+    browser = next((b for b in CATALOG if b.id == browser_id), None)
+    if browser is None:
+        raise BrowserProfileError("UNKNOWN_BROWSER", f"unknown browser: {browser_id!r}")
+    os_name = current_os()
+    target = find_executable(browser, os_name)
+    if target is None:
+        raise BrowserProfileError("NOT_INSTALLED", f"{browser.name} is not installed")
+    return browser, os_name, target
+
+
 def open_in_profile(req: OpenInProfileRequest) -> None:
     """Open ``req.url`` in that browser's profile.
 
@@ -471,14 +484,23 @@ def open_in_profile(req: OpenInProfileRequest) -> None:
     from flow_sdk.server.launch import start_detached_process  # noqa: PLC0415 — keeps core free of server at import
 
     _check_url(req.url)
-    browser = next((b for b in CATALOG if b.id == req.browser), None)
-    if browser is None:
-        raise BrowserProfileError("UNKNOWN_BROWSER", f"unknown browser: {req.browser!r}")
-    os_name = current_os()
-    target = find_executable(browser, os_name)
-    if target is None:
-        raise BrowserProfileError("NOT_INSTALLED", f"{browser.name} is not installed")
+    browser, os_name, target = _installed(req.browser)
     if req.profile not in {p.id for p in _read_profiles(browser, os_name)}:
         raise BrowserProfileError("UNKNOWN_PROFILE", f"{browser.name} has no profile {req.profile!r}")
     logger.info("browser_profiles: open %s profile=%s", browser.id, req.profile)
     start_detached_process(launch_argv(browser.kind, target, req.profile, req.url, os_name))
+
+
+def open_profile(browser_id: str, profile_id: str) -> None:
+    """Bring up that browser profile's own window. The profile's folder must exist: a browser
+    asked for a profile it does not have creates one."""
+    from flow_sdk.server.launch import start_detached_process  # noqa: PLC0415 — keeps core free of server at import
+
+    browser, os_name, target = _installed(browser_id)
+    # The folder is asked for, not the browser's profile list: that list is unreadable where the
+    # OS keeps another app's data private, a named folder is still answered.
+    plain = profile_id and Path(profile_id).name == profile_id
+    if not plain or not any((root / profile_id).is_dir() for root in _profile_roots(browser, os_name)):
+        raise BrowserProfileError("UNKNOWN_PROFILE", f"{browser.name} has no profile {profile_id!r}")
+    logger.info("browser_profiles: open %s profile=%s", browser.id, profile_id)
+    start_detached_process(launch_argv(browser.kind, target, profile_id, "", os_name))

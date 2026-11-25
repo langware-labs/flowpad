@@ -1,6 +1,6 @@
 {
   "name": "agent",
-  "title": "Embedded",
+  "title": "Flowpad integrated browser",
   "icon": "globe",
   "description": "Flowpad's own browser window, on a profile of its own. It opens on the first browser call.",
   "workers": {

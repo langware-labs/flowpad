@@ -1328,6 +1328,11 @@ export class Project extends APIEntity<Project> {
     return this.post<{ browser: SessionBrowser }>('select-browser', { process_id: processId, browser });
   }
 
+  /** Bring a browser kind's window up on this computer. */
+  async openBrowser(kind: string): Promise<{ kind: string; opened: boolean }> {
+    return this.post<{ kind: string; opened: boolean }>('browser-open', { kind });
+  }
+
   /** What a person calls a browser kind on this computer; "" goes back to its profile's name. */
   async renameBrowser(kind: string, name: string): Promise<{ kind: string; name: string }> {
     return this.post<{ kind: string; name: string }>('browser-name', { kind, name });

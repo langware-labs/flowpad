@@ -47,6 +47,14 @@ class BrowserProbe(StrEnum):
 KIND_NAME = ".name."
 
 
+def parse_kind(kind: object) -> tuple[str, str, str]:
+    """``<browser>.<driving>.name.<profile>`` → ``(browser, driving, profile)``; three empty
+    strings when ``kind`` is not one."""
+    head, sep, profile = str(kind or "").partition(KIND_NAME)
+    browser, dot, driving = head.rpartition(".")
+    return (browser, driving, profile) if sep and dot and browser and profile else ("", "", "")
+
+
 class BrowserKindSpec(DataSpec):
     """One browser a session can be given: a browser app, the way it is driven, and one profile.
     ``kind`` names it — ``<browser>.<driving>.name.<profile>`` (``chrome.extension.name.Profile 2``)."""

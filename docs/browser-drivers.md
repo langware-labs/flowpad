@@ -24,7 +24,7 @@ the folders; the launch, the footer menu and the editor ask the manifest.
 
 | Name | Title | Workers | How it reaches a session | Window |
 |---|---|---|---|---|
-| `agent` | Embedded | all | MCP server `agent_browser` | Flowpad's own, a free port |
+| `agent` | Flowpad integrated browser | all | MCP server `agent_browser` | Flowpad's own, a free port |
 | `chrome_debug` | Chrome debug | all | MCP server `chrome_debug` | Chrome Canary on port 9222; one already running there is reused |
 | `extension` | Chrome extension | claude | the worker's own `--chrome` switch | the user's Chrome |
 
