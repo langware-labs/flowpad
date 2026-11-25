@@ -1,6 +1,7 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import type { BrowserDriverInfo, BrowserKindInfo, BrowserKindState, BrowserStatus, SessionBrowser } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { SegmentedControl } from '@src/components/ui/segmented-control';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useProjectLocation } from '@src/hooks/use-project-location';
 import { ProfileLabel } from '@src/components/links/BrowserProfileItems';
@@ -11,7 +12,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { formatDay } from '@src/utils/format-time-ago';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
 import { useInlineRename } from '@src/components/browseable-tree/use-inline-rename';
-import { Check, Pencil } from 'lucide-react';
+import { Check, Pencil, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 /** The driver in use. */
@@ -179,6 +180,7 @@ const TONE: Record<BrowserKindState, Tone> = {
 };
 
 export const smallBtn = 'rounded px-2 py-0.5 text-[11px] border hover:bg-accent';
+const iconBtn = 'shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground';
 const primaryBtn = 'rounded px-2 py-0.5 text-[11px] bg-primary text-primary-foreground';
 
 /** Which profile a driver runs on: Flowpad's own (a managed window), or the one the worker's
@@ -226,6 +228,7 @@ function KindRow({
   selected,
   onSelect,
   onRename,
+  onRemove,
   onOpen,
   onRefresh,
 }: {
@@ -233,6 +236,8 @@ function KindRow({
   selected: boolean;
   onSelect: () => void;
   onRename: (name: string) => Promise<void>;
+  /** Take it off the list (true) or put it back; the browser itself is untouched. */
+  onRemove: (removed: boolean) => void;
   onOpen: () => void;
   onRefresh: () => void;
 }) {
@@ -240,16 +245,22 @@ function KindRow({
   const rename = useInlineRename(kind.name, onRename);
   const Glyph = lucideByName(kind.icon);
   const testId = `browser-row-${kind.kind}`;
+  // A removed browser, listed under "All": it can only be put back.
+  const restore = kind.removed && (
+    <button type="button" className={smallBtn} data-testid={`${testId}-restore`} onClick={() => onRemove(false)}>
+      <Trans>Restore</Trans>
+    </button>
+  );
   return (
     <Row
       testId={testId}
       icon={<Glyph className="h-3.5 w-3.5" />}
       name={kind.name}
-      note={<StateNote state={kind.state} error={kind.error} />}
-      tone={TONE[kind.state]}
+      note={kind.removed ? <Trans>removed</Trans> : <StateNote state={kind.state} error={kind.error} />}
+      tone={kind.removed ? 'muted' : TONE[kind.state]}
       below={<KindNote kind={kind} />}
       selected={selected}
-      disabled={!usable(kind)}
+      disabled={!usable(kind) || kind.removed}
       onSelect={onSelect}
       editing={
         rename.editing && (
@@ -262,17 +273,29 @@ function KindRow({
         )
       }
       action={
-        <>
+        restore || <>
           {!rename.editing && (
             <button
               type="button"
               aria-label={t`Rename ${kind.name}`}
               title={t`Rename`}
               data-testid={`${testId}-rename`}
-              className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              className={iconBtn}
               onClick={rename.startEditing}
             >
               <Pencil className="h-3 w-3" />
+            </button>
+          )}
+          {!rename.editing && !selected && (
+            <button
+              type="button"
+              aria-label={t`Remove ${kind.name} from the list`}
+              title={t`Remove from the list`}
+              data-testid={`${testId}-remove`}
+              className={iconBtn}
+              onClick={() => onRemove(true)}
+            >
+              <X className="h-3 w-3" />
             </button>
           )}
           <button type="button" className={smallBtn} data-testid={`${testId}-open`} onClick={onOpen}>
@@ -383,6 +406,8 @@ export function BrowserChip() {
   const { project, processId, status, refresh } = useBrowserStatus();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
+  // "All" also lists the browsers the person removed, so one can be restored.
+  const [list, setList] = useState<'active' | 'all'>('active');
   if (!project || !status) return null;
 
   const state = chipState(status, Date.now());
@@ -439,15 +464,25 @@ export function BrowserChip() {
           </button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[30rem] max-w-[95vw] p-0" data-testid="browser-picker">
-          <div className="flex items-baseline justify-between gap-2 px-3 py-2 text-xs">
+          <div className="flex items-center gap-2 px-3 py-2 text-xs">
             <span className="font-semibold">
               <Trans>Browser</Trans>
             </span>
+            <SegmentedControl
+              options={[
+                ['active', t`Active`],
+                ['all', t`All`],
+              ]}
+              value={list}
+              onChange={setList}
+              testId="browser-list"
+            />
+            <span className="flex-1" />
             <span className="text-[11px] text-muted-foreground" data-testid="browser-source" data-source={status.source}>
               {why}
             </span>
           </div>
-          {(status.kinds ?? []).map((k) => (
+          {(status.kinds ?? []).filter((k) => list === 'all' || !k.removed).map((k) => (
             <KindRow
               key={k.kind}
               kind={k}
@@ -457,6 +492,7 @@ export function BrowserChip() {
                 await project.renameBrowser(k.kind, name);
                 await refresh();
               }}
+              onRemove={(removed) => void project.removeBrowser(k.kind, removed).then(refresh)}
               onOpen={() => void project.openBrowser(k.kind).then(refresh)}
               onRefresh={() => void refresh()}
             />

@@ -295,7 +295,7 @@ def test_the_kinds_are_one_per_profile(tmp_path, monkeypatch):
 
     # What this machine keeps about a kind: the person's own name for it, and a reported failure.
     saved: dict = {}
-    monkeypatch.setattr(bd, "_kind_prefs", lambda: (dict(saved.get(bd.PREF_NAMES, {})), dict(saved.get(bd.PREF_ERRORS, {}))))
+    monkeypatch.setattr(bd, "_kind_prefs", lambda: tuple(dict(saved.get(key, {})) for key in bd._KIND_PREFS))
     monkeypatch.setattr("flow_sdk.preferences.write_instance_pref", lambda key, value: saved.__setitem__(key, value))
     work = "chrome.extension.name.Profile 2"
     bd.rename_kind(work, " LinkedIn ")
@@ -309,6 +309,13 @@ def test_the_kinds_are_one_per_profile(tmp_path, monkeypatch):
     assert state_of_work(proven=(work, "2000-01-01T00:00:00Z")) == "error", "an earlier one does not"
     bd.report_error(work, "")
     assert state_of_work() == "not_connected"
+
+    # Removing takes a kind off the list a person sees; it stays known, and comes back.
+    removed = lambda: [k.kind for k in bd.list_kinds(states, scan) if k.removed]  # noqa: E731
+    bd.remove_kind(work, True)
+    assert removed() == [work]
+    bd.remove_kind(work, False)
+    assert removed() == []
 
 
 def test_last_browser_use_opencode_and_deepagents(tmp_path):

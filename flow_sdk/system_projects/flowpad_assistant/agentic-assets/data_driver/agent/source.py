@@ -208,7 +208,7 @@ class AgentSource(MessageSource):
             return []
         _, _, kinds = await asyncio.to_thread(machine_view, await resolve_default_worker_type())
         return [Choice(id=kind["kind"], name=kind["name"], detail=f"{kind['browser']} · {kind['driving']} · {kind['state'].replace('_', ' ')}")
-                for kind in kinds if browser_drivers.usable(kind["state"])]
+                for kind in kinds if browser_drivers.usable(kind["state"]) and not kind["removed"]]
 
     @classmethod
     def origin_kind_for(cls, config: Mapping[str, Any]) -> str:

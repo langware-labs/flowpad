@@ -89,7 +89,7 @@ def _do(process: Optional[str], action: str, payload: dict, *, needs_session: bo
 
 @browser_app.command("list", help="Print every browser kind on this machine as JSON: kind, name, state, error, created, last_used.")
 def list_browsers(process: ProcessOpt = None) -> None:
-    ok({"kinds": _status(process).get("kinds") or []})
+    ok({"kinds": [k for k in _status(process).get("kinds") or [] if not k.get("removed")]})
 
 
 @browser_app.command("show", help="Print the browser this session has as JSON: its kind and driver, what decided it, and its last call.")

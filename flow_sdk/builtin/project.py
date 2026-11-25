@@ -849,7 +849,8 @@ class Project(SetupSkippable, Entity):
 
         last_use, extension, drivers, kinds = await asyncio.to_thread(_probe)
         # The one kind in use: the profile that was chosen, else the driver's first usable one.
-        mine = [k for k in kinds if k["driver"] == launch.kind and browser_drivers.usable(k["state"])]
+        # A removed kind is never the one fallen back to; one chosen by name still stands.
+        mine = sorted((k for k in kinds if k["driver"] == launch.kind and browser_drivers.usable(k["state"])), key=lambda k: k["removed"])
         effective_kind = next((k["kind"] for k in mine if k["kind"] == launch.chosen), mine[0]["kind"] if mine else "")
         return ApiSuccessResponse(
             data={
@@ -929,6 +930,17 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message=f"{kind!r} is not a browser kind", status_code=400)
         await asyncio.to_thread(browser_drivers.rename_kind, kind, name)
         return ApiSuccessResponse(data={"kind": kind, "name": name.strip()})
+
+    @action.post(action_name="browser-removed")
+    async def browser_removed_action(self, kind: str = "", removed: bool = True) -> "ApiResponse":
+        """`POST /project/<id>/browser-removed {kind, removed}` — take a browser kind off this
+        computer's list, or put it back. Flowpad stops offering it; nothing is uninstalled."""
+        from flow_sdk.core import browser_drivers  # noqa: PLC0415
+
+        if not browser_drivers.driver_of(kind):
+            return ApiFailResponse(message=f"{kind!r} is not a browser kind", status_code=400)
+        await asyncio.to_thread(browser_drivers.remove_kind, kind, removed)
+        return ApiSuccessResponse(data={"kind": kind, "removed": bool(removed)})
 
     async def _reindex_manifest(self) -> None:
         """Re-index ``project_manifest.json`` after a field write. The row is the

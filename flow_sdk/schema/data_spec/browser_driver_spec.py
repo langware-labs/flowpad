@@ -74,6 +74,8 @@ class BrowserKindSpec(DataSpec):
     #: One word for a menu (``browser_drivers.state_of``), or ``error`` with what a session reported.
     state: str = ""
     error: str = ""
+    #: The person took it off this machine's list; the browser itself is untouched.
+    removed: bool = False
     created: Optional[str] = None
     last_used: Optional[str] = None
 

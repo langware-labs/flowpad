@@ -45,6 +45,9 @@ PREF_CONFIG = "preferences.browser.config"
 PREF_NAMES = "preferences.browser.names"
 #: What a session reported about a failing kind, per machine: ``{<kind>: {message, at}}``.
 PREF_ERRORS = "preferences.browser.errors"
+#: The kinds a person removed from the list, per machine: ``{<kind>: true}``. Nothing is uninstalled.
+PREF_REMOVED = "preferences.browser.removed"
+_KIND_PREFS = (PREF_NAMES, PREF_ERRORS, PREF_REMOVED)
 #: A profile is a folder name of Flowpad's own — never a path, never a real user profile.
 _PROFILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}")
 
@@ -287,19 +290,19 @@ def _managed_profile(driver: str, profile: str = "") -> str:
     return f"{driver}-{profile or 'default'}"
 
 
-def _kind_prefs() -> tuple[dict, dict]:
-    """What this machine keeps per kind — ``(names, errors)`` — in one file read."""
+def _kind_prefs() -> tuple[dict, dict, dict]:
+    """What this machine keeps per kind — ``(names, errors, removed)`` — in one file read."""
     from flow_sdk.preferences import read_instance_prefs  # noqa: PLC0415
 
-    saved = read_instance_prefs({PREF_NAMES: {}, PREF_ERRORS: {}})
-    return tuple(dict(saved[key]) if isinstance(saved[key], dict) else {} for key in (PREF_NAMES, PREF_ERRORS))  # type: ignore[return-value]
+    saved = read_instance_prefs({key: {} for key in _KIND_PREFS})
+    return tuple(dict(saved[key]) if isinstance(saved[key], dict) else {} for key in _KIND_PREFS)  # type: ignore[return-value]
 
 
 def _set_kind_pref(key: str, kind: str, value: Any) -> None:
     """Set (or, with a falsy value, drop) what this machine keeps about one kind under ``key``."""
     from flow_sdk.preferences import write_instance_pref  # noqa: PLC0415
 
-    saved = _kind_prefs()[(PREF_NAMES, PREF_ERRORS).index(key)]
+    saved = _kind_prefs()[_KIND_PREFS.index(key)]
     if value:
         saved[kind] = value
     elif saved.pop(kind, None) is None:
@@ -312,6 +315,11 @@ def rename_kind(kind: str, name: str) -> None:
     _set_kind_pref(PREF_NAMES, kind, name.strip())
 
 
+def remove_kind(kind: str, removed: bool) -> None:
+    """Take the kind off this machine's list (or put it back). The browser itself is untouched."""
+    _set_kind_pref(PREF_REMOVED, kind, bool(removed))
+
+
 def report_error(kind: str, message: str) -> None:
     """A session's report that the kind is failing; "" clears it."""
     from flow_sdk.instances.model import utc_now_iso  # noqa: PLC0415
@@ -321,7 +329,8 @@ def report_error(kind: str, message: str) -> None:
 
 def list_kinds(states: Mapping[str, str], scan: Any = None, proven: tuple[str, str] = ("", "")) -> list[BrowserKindSpec]:
     """Every browser a session could be given on this machine, one per profile: the list a person
-    sees in the footer menu and an agent reads with ``flow browser list``.
+    sees in the footer menu and an agent reads with ``flow browser list``. A kind the person
+    removed stays in it, marked ``removed``: the menu hides it unless asked for all, an agent never sees it.
 
     A driver that rides the worker's extension gives one entry per real browser profile
     (``scan``: :func:`browser_profiles.scan_extension`); a managed driver gives its own window,
@@ -331,7 +340,7 @@ def list_kinds(states: Mapping[str, str], scan: Any = None, proven: tuple[str, s
     from flow_sdk.core import agent_browser  # noqa: PLC0415
     from flow_sdk.core.browser_profiles import folder_times  # noqa: PLC0415
 
-    names, errors = _kind_prefs()
+    names, errors, removed = _kind_prefs()
     worked_on, worked_at = proven
 
     def mine(kind: BrowserKindSpec) -> BrowserKindSpec:
@@ -339,6 +348,7 @@ def list_kinds(states: Mapping[str, str], scan: Any = None, proven: tuple[str, s
         failure = errors.get(kind.kind) or {}
         over = worked_on in (kind.kind, kind.driver) and worked_at > str(failure.get("at") or "")
         changes: dict[str, Any] = {"name": names[kind.kind]} if names.get(kind.kind) else {}
+        changes |= {"removed": True} if removed.get(kind.kind) else {}
         if failure.get("message") and usable(kind.state) and not over:
             changes |= {"state": "error", "error": str(failure["message"])}
         return kind.model_copy(update=changes) if changes else kind
