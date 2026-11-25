@@ -2,17 +2,16 @@
 id: 098a70ff-0160-4950-aa04-b7e7d1990ea2
 name: mockify
 description: 'Turns a product idea into a clickable HTML mock of the user journey
-  that the user can walk and comment on — every screen in order, with a journey bar
-  and a per-screen feedback box (text + image) whose comments are saved as rows and
-  sent back to this session in one Execute. Two
-  modes: real, the default (built from a running app''s own captured DOM and CSS,
-  checked side by side so it looks exactly like the app), and fast (HTML in the
-  product''s tokens — only for a product that does not run here, or when
-  the user asks for a sketch). Use for "mock this flow", "show me the UX", "make a clickable mock", or a
-  design discussion that needs screens before code; also when mock feedback arrives or a mock is approved. `mockify plan` / `mockify implement`:
-  build the approved mock from its build list, each item proven against its screen. `mockify test`: define a regression
-  test on the current UI as a manual_regression .md. `mockify guide`: a click-through guide of the app as it is, for
-  someone to follow ("show them how to do it", "send them the steps"), sent as one file. NOT for a working
+  that the user can walk and comment on — every screen in order, a journey bar
+  and a per-screen feedback box (text + image) whose comments come back to this
+  session in one Execute. Two modes: real, the default (built from a running app''s
+  captured DOM and CSS, so it looks exactly like the app), and fast (HTML in the
+  product''s tokens — only for a product that does not run here, or a sketch on
+  request). Use for "mock this flow", "show me the UX", "make a clickable mock" or a
+  design discussion needing screens before code; also when mock feedback arrives or a mock is approved.
+  `mockify plan` / `mockify implement`: build the approved mock, each item proven against its screen.
+  `mockify test`: a regression test on the current UI (manual_regression .md). `mockify guide`: a
+  click-through guide of the app as it is ("send them the steps"), as one file. NOT for a working
   app (web-app-builder), a one-page report or chart (html-builder), or slides (decker).'
 ---
 

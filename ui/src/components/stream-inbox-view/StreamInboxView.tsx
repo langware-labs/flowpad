@@ -1045,7 +1045,7 @@ export function StreamInboxView({
   const classifying = useClassifyRun();
   const [selDeleteOpen, setSelDeleteOpen] = useState(false);
 
-  // The whole-inbox search — server-side (`stream-inbox-search`), which hands back conversation ids:
+  // The whole-StreamInbox search — server-side (`stream-inbox-search`), which hands back conversation ids:
   // From, Subject and Message, each '' when not asked, and the ticked tags. The texts are the URL's,
   // debounced on their way there; the previous result is held while the next request is in flight so
   // the list doesn't blank. The hub page has no search: its texts narrow the rows instead (`rowFilter`).
@@ -1213,7 +1213,7 @@ export function StreamInboxView({
 
   // Unread: backend-owned (StreamInboxManager.unread) — the rail badge's number, so the two always
   // agree. It counts the user's own stream inbox, so an agent's or a source's view does not use it.
-  // `unclassified` is the backend's too: every conversation of the inbox waiting for a tag, loaded or not.
+  // `unclassified` is the backend's too: every conversation of the StreamInbox waiting for a tag, loaded or not.
   const { unread: streamInboxUnread, unclassified } = useStreamInboxManager();
   const ownStreamInbox = !agentId && !sourceId;
 

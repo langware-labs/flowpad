@@ -235,6 +235,8 @@ EXPECTED = {
     "QA_CYCLE": "qa_cycle",
     "QA_ITERATION": "qa_iteration",
     "QA_TEST_EXECUTION": "qa_test_execution",
+    # A cloud API endpoint (6cf67ba61) — additive member, no existing value changed.
+    "API_ENDPOINT": "api_endpoint",
 }
 
 

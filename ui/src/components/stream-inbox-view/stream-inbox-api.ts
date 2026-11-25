@@ -64,7 +64,7 @@ export async function bulkUpdateMessages(
   return result ?? { updated: 0 };
 }
 
-/** What a whole-inbox search asks for: one text per column of the list, each '' when not asked. */
+/** What a whole-StreamInbox search asks for: one text per column of the list, each '' when not asked. */
 export interface StreamInboxSearch {
   /** Who wrote in the conversation or is in it, by name or address. */
   from: string;

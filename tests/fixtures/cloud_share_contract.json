@@ -37,6 +37,7 @@
       "published",
       "remote",
       "scope",
+      "scratch",
       "setup_skipped",
       "shared_context_entity_data",
       "system",
