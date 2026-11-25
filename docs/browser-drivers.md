@@ -54,7 +54,7 @@ The session's own browser is `context_data["browser"]`: what its launch asked fo
 
 ## A channel read through a browser
 
-A message channel with no API (LinkedIn) is a connector of the `agent` data driver
+A message channel read in a signed-in page (LinkedIn, WhatsApp Web) is a connector of the `agent` data driver
 (`agentic-assets/data_driver/agent/`, `CONNECTOR_PROFILES` row with `browser=True`). To a person it is
 a channel like any other: the driver offers it as a tile of its own in "Add a channel" (`offers` in its
 manifest), whose form asks for the browser alone. The source's
@@ -69,6 +69,9 @@ so the project default never replaces it.
   local time into UTC. The reader and the sender both use it, so a sent message and its later
   read are one record. An edited message is a new one; a deleted one stays.
 - The worker reports `no_browser` or `signed_out` when a person must act; both park the source.
+- A connector whose profile names no send persona is read only (WhatsApp Web): a send is refused
+  before a worker is spent. Its reader opens one-to-one chats only, keys each by the contact's phone
+  number in digits (the API WhatsApp driver's key), and a chat it opens becomes read on WhatsApp.
 
 ## Browser kinds
 

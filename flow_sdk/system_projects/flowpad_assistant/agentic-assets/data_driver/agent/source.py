@@ -46,8 +46,9 @@ class ConnectorProfile:
     default_mailbox: str
     agent: str
     subagent: str
-    send_agent: str
-    send_subagent: str
+    #: Empty: the connector is read only, and a send is refused before a worker is spent.
+    send_agent: str = ""
+    send_subagent: str = ""
     #: Read through a browser rather than a connector: the source's config names the browser driver.
     browser: bool = False
 
@@ -65,6 +66,11 @@ CONNECTOR_PROFILES: dict[str, ConnectorProfile] = {
         kind="content.message.chat", mailbox_noun="inbox", default_mailbox="inbox",
         agent="linkedin-reader", subagent="linkedin_analyzer", send_agent="linkedin-poster", send_subagent="linkedin_sender",
         browser=True,
+    ),
+    # Read only: sending from a person's own number is a decision of its own.
+    "whatsapp": ConnectorProfile(
+        kind="content.message.chat", mailbox_noun="chat list", default_mailbox="chats",
+        agent="whatsapp-reader", subagent="whatsapp_analyzer", browser=True,
     ),
 }
 
@@ -273,6 +279,8 @@ class AgentSource(MessageSource):
         propagates as such: one failed reply must never become source health."""
         self._require_open()
         browser_of(self.config)  # refused before a worker is spent
+        if not profile_of(self.config).send_agent:
+            raise Unsupported("this channel is read only here: answer it in the app it belongs to")
         if not isinstance(data, MessageData):
             raise TypeError(f"expected MessageData, got {type(data).__name__}")
         if not (data.text or "").strip():
