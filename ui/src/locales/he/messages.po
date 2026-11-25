@@ -323,6 +323,10 @@ msgstr "(לא הוגדר)"
 msgid "(not visible)"
 msgstr "(לא גלוי)"
 
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "(optional)"
+msgstr ""
+
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "(overridden)"
 msgstr "(נדרס)"
@@ -558,10 +562,9 @@ msgstr "{0} — נפתח \"{fallbackName}\" במקומו."
 msgid "{0} · {1} · {2}ms"
 msgstr "{0} · {1} · {2}ms"
 
-#. placeholder {0}: f.label
 #: src/components/credentials/SecretVaultPicker.tsx
-msgid "{0} (optional)"
-msgstr "{0} (אופציונלי)"
+#~ msgid "{0} (optional)"
+#~ msgstr "{0} (אופציונלי)"
 
 #. placeholder {0}: hot.info.from
 #: src/components/assets/editor/chart/SequenceChartView.tsx
@@ -3141,6 +3144,7 @@ msgstr "פעיל"
 #: src/components/automations/AutomationsList.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/footer/BrowserChip.tsx
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -3968,6 +3972,7 @@ msgstr "הכל"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
 #: src/components/explorer-view/ExplorerNavigator.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
 #: src/components/home-tiles/HomeTiles.tsx
@@ -6032,6 +6037,10 @@ msgstr "דפדפו…"
 msgid "Browser"
 msgstr "דפדפן"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Browser name"
+msgstr ""
+
 #: src/components/links/BrowserProfileMenu.tsx
 msgid "Browser profile"
 msgstr "פרופיל דפדפן"
@@ -6459,6 +6468,7 @@ msgstr "לא ניתן לעדכן כרגע — מוצגת הרשימה שסונכ
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/terminal/interactive-terminal/useChainSession.tsx
@@ -7228,6 +7238,7 @@ msgid "Classify now"
 msgstr "סיווג עכשיו"
 
 #: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Classifying…"
 msgstr "מסווג…"
 
@@ -7429,7 +7440,6 @@ msgstr "נקו אינדקס"
 
 #: src/components/asset-counters/AssetItems.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear search"
 msgstr "נקו חיפוש"
 
@@ -8941,6 +8951,8 @@ msgstr "העתקת נתיב יחסי"
 msgid "Copy remote URL"
 msgstr "העתקת כתובת ה-remote"
 
+#: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Copy session details"
@@ -11481,7 +11493,7 @@ msgstr "מחיקת ארגון"
 msgid "Delete organization…"
 msgstr "מחיקת ארגון…"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Delete project"
 msgstr "מחקו פרויקט"
 
@@ -12116,6 +12128,22 @@ msgstr "זרקו"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Discard (delete)"
 msgstr "השלכה (מחיקה)"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes: back to the last commit"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes?"
+msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Discard changes and go back"
@@ -13498,6 +13526,11 @@ msgstr "כל מספר, בוט ואפליקציה ששולחים אליכם הו�
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location. Earlier sessions keep their history but cannot be resumed."
 msgstr "כל הכרטיסיות והתהליכים הפעילים של הפרויקט ייסגרו. לאחר מכן תיקיית הפרויקט תועבר ותאונדקס מחדש במיקומה החדש. סשנים קודמים ישמרו את ההיסטוריה שלהם, אך לא ניתן יהיה להמשיך בהם."
+
+#. placeholder {0}: data?.files?.length ?? 0
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Every pending change in this folder is dropped (files: {0}). Changed and removed files go back to the last commit, and new files are deleted from disk. This cannot be undone."
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "every project"
@@ -17736,6 +17769,10 @@ msgstr "השארת פעולות האוטומציה הקיימות"
 msgid "Keep the local copy out of git"
 msgstr "הוציאו את העותק המקומי מ-Git"
 
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Keep the values in"
+msgstr ""
+
 #: src/components/assets/confirm-project-delete.ts
 msgid "Keeping chat history can make this project reappear when projects are scanned."
 msgstr "שמירת היסטוריית הצ׳אטים עלולה לגרום לפרויקט להופיע שוב בסריקת פרויקטים."
@@ -19333,6 +19370,10 @@ msgstr "הגדירו כעוזר ברירת המחדל"
 #~ msgid "Make this the message's tag. No automation runs."
 #~ msgstr ""
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Make this the project default"
+msgstr ""
+
 #: src/components/search-index/index-copy.ts
 msgid "Make your records searchable"
 msgstr "הפכו את הרשומות שלכם לניתנות לחיפוש"
@@ -19728,6 +19769,7 @@ msgstr "קוד Mermaid"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/notifications/error-detail.ts
 msgid "Message"
 msgstr "הודעה"
@@ -23667,6 +23709,7 @@ msgstr "אופס! הדף לא נמצא"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/footer/ActivityDetailsModal.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/SecretManagerChip.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
@@ -26261,7 +26304,7 @@ msgstr "\"ביצירת פרויקט\" מבצע אינדוקס פעם אחת, ב�
 msgid "Project data store"
 msgstr "מאגר נתונים של הפרויקט"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Project deleted"
 msgstr "הפרויקט נמחק"
 
@@ -27678,6 +27721,11 @@ msgstr "הסירו את {0}"
 msgid "Remove {0} from {1}?"
 msgstr "להסיר את {0} מ-{1}?"
 
+#. placeholder {0}: kind.name
+#: src/components/footer/BrowserChip.tsx
+msgid "Remove {0} from the list"
+msgstr ""
+
 #: src/components/agents/AllowedSendersEditor.tsx
 msgid "Remove {a}"
 msgstr "הסרת {a}"
@@ -27784,6 +27832,10 @@ msgstr "הסרה מהתור"
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove from team"
 msgstr "הסרה מהצוות"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Remove from the list"
+msgstr ""
 
 #: src/components/terminal/project-list-menu.tsx
 msgid "Remove from this computer"
@@ -27916,6 +27968,10 @@ msgstr "להסיר את זה? ה-hub מפסיק לנתב את ההודעות ש�
 msgid "Remove variable"
 msgstr "הסירו משתנה"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "removed"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Removed"
@@ -27984,6 +28040,7 @@ msgstr "יוסרו: {removes}"
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/PendingActionsChip.tsx
 #: src/components/footer/PendingActionsChip.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -27997,6 +28054,8 @@ msgid "Rename"
 msgstr "שינוי שם"
 
 #. placeholder {0}: c.displayName
+#. placeholder {0}: kind.name
+#: src/components/footer/BrowserChip.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Rename {0}"
 msgstr "שנו שם {0}"
@@ -28542,6 +28601,7 @@ msgid "Restarting…"
 msgstr "הפעלה מחדש בתהליך..."
 
 #: src/components/assets/editor/revisions/RevisionsPanel.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Restore"
 msgstr "שחזור"
@@ -30024,7 +30084,6 @@ msgid "Search languages…"
 msgstr "חיפוש שפות…"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Search messages"
 msgstr "חפשו הודעות"
@@ -30146,6 +30205,7 @@ msgid "secret manager"
 msgstr "מנהל סודות"
 
 #: src/components/conversation/CredentialValueLock.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/footer/SecretManagerChip.tsx
 #: src/components/footer/SecretManagerChip.tsx
@@ -35431,6 +35491,7 @@ msgstr "התהליך הזה מצביע על פרויקט שנמחק."
 #: src/components/assets/confirm-project-delete.ts
 #: src/components/connections-manager.tsx
 #: src/components/footer/SecretManagerChip.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "this project"
 msgstr "הפרויקט הזה"
@@ -37120,6 +37181,10 @@ msgid "Use the default home"
 msgstr "השתמשו בדף הבית המוגדר כברירת מחדל"
 
 #: src/components/footer/BrowserChip.tsx
+msgid "Use the project default in this session"
+msgstr ""
+
+#: src/components/footer/BrowserChip.tsx
 msgid "Use the project's choice"
 msgstr "שימוש בבחירת הפרויקט"
 
@@ -37369,7 +37434,6 @@ msgstr "הכספת {vault} עדיין אינה קריאה"
 msgid "Vault {vault} is set up on this computer"
 msgstr "הכספת {vault} הוגדרה במחשב הזה"
 
-#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 msgid "Vault name"
 msgstr "שם הכספת"

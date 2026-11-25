@@ -323,6 +323,10 @@ msgstr "(not set)"
 msgid "(not visible)"
 msgstr "(not visible)"
 
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "(optional)"
+msgstr "(optional)"
+
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "(overridden)"
 msgstr "(overridden)"
@@ -558,10 +562,9 @@ msgstr "{0} — opened \"{fallbackName}\" instead."
 msgid "{0} · {1} · {2}ms"
 msgstr "{0} · {1} · {2}ms"
 
-#. placeholder {0}: f.label
 #: src/components/credentials/SecretVaultPicker.tsx
-msgid "{0} (optional)"
-msgstr "{0} (optional)"
+#~ msgid "{0} (optional)"
+#~ msgstr "{0} (optional)"
 
 #. placeholder {0}: hot.info.from
 #: src/components/assets/editor/chart/SequenceChartView.tsx
@@ -3141,6 +3144,7 @@ msgstr "active"
 #: src/components/automations/AutomationsList.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/footer/BrowserChip.tsx
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -3968,6 +3972,7 @@ msgstr "all"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
 #: src/components/explorer-view/ExplorerNavigator.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
 #: src/components/home-tiles/HomeTiles.tsx
@@ -6032,6 +6037,10 @@ msgstr "Browse…"
 msgid "Browser"
 msgstr "Browser"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Browser name"
+msgstr "Browser name"
+
 #: src/components/links/BrowserProfileMenu.tsx
 msgid "Browser profile"
 msgstr "Browser profile"
@@ -6459,6 +6468,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/terminal/interactive-terminal/useChainSession.tsx
@@ -7228,6 +7238,7 @@ msgid "Classify now"
 msgstr "Classify now"
 
 #: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Classifying…"
 msgstr "Classifying…"
 
@@ -7429,7 +7440,6 @@ msgstr "Clear Index"
 
 #: src/components/asset-counters/AssetItems.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear search"
 msgstr "Clear search"
 
@@ -8941,6 +8951,8 @@ msgstr "Copy relative path"
 msgid "Copy remote URL"
 msgstr "Copy remote URL"
 
+#: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Copy session details"
@@ -11481,7 +11493,7 @@ msgstr "Delete organization"
 msgid "Delete organization…"
 msgstr "Delete organization…"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Delete project"
 msgstr "Delete project"
 
@@ -12116,6 +12128,22 @@ msgstr "Discard"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Discard (delete)"
 msgstr "Discard (delete)"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all"
+msgstr "Discard all"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes"
+msgstr "Discard all changes"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes: back to the last commit"
+msgstr "Discard all changes: back to the last commit"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes?"
+msgstr "Discard all changes?"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Discard changes and go back"
@@ -13498,6 +13526,11 @@ msgstr "Every number, bot and app that sends you messages — and where each mes
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location. Earlier sessions keep their history but cannot be resumed."
 msgstr "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location. Earlier sessions keep their history but cannot be resumed."
+
+#. placeholder {0}: data?.files?.length ?? 0
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Every pending change in this folder is dropped (files: {0}). Changed and removed files go back to the last commit, and new files are deleted from disk. This cannot be undone."
+msgstr "Every pending change in this folder is dropped (files: {0}). Changed and removed files go back to the last commit, and new files are deleted from disk. This cannot be undone."
 
 #: src/components/connections-manager.tsx
 msgid "every project"
@@ -17736,6 +17769,10 @@ msgstr "Keep the existing automation actions"
 msgid "Keep the local copy out of git"
 msgstr "Keep the local copy out of git"
 
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Keep the values in"
+msgstr "Keep the values in"
+
 #: src/components/assets/confirm-project-delete.ts
 msgid "Keeping chat history can make this project reappear when projects are scanned."
 msgstr "Keeping chat history can make this project reappear when projects are scanned."
@@ -19333,6 +19370,10 @@ msgstr "Make this the default assistant"
 #~ msgid "Make this the message's tag. No automation runs."
 #~ msgstr "Make this the message's tag. No automation runs."
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Make this the project default"
+msgstr "Make this the project default"
+
 #: src/components/search-index/index-copy.ts
 msgid "Make your records searchable"
 msgstr "Make your records searchable"
@@ -19728,6 +19769,7 @@ msgstr "Mermaid source"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/notifications/error-detail.ts
 msgid "Message"
 msgstr "Message"
@@ -23667,6 +23709,7 @@ msgstr "Oops! Page not found"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/footer/ActivityDetailsModal.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/SecretManagerChip.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
@@ -26261,7 +26304,7 @@ msgstr "Project create indexes once, as the project is created. First selection 
 msgid "Project data store"
 msgstr "Project data store"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Project deleted"
 msgstr "Project deleted"
 
@@ -27678,6 +27721,11 @@ msgstr "Remove {0}"
 msgid "Remove {0} from {1}?"
 msgstr "Remove {0} from {1}?"
 
+#. placeholder {0}: kind.name
+#: src/components/footer/BrowserChip.tsx
+msgid "Remove {0} from the list"
+msgstr "Remove {0} from the list"
+
 #: src/components/agents/AllowedSendersEditor.tsx
 msgid "Remove {a}"
 msgstr "Remove {a}"
@@ -27784,6 +27832,10 @@ msgstr "Remove from queue"
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove from team"
 msgstr "Remove from team"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Remove from the list"
+msgstr "Remove from the list"
 
 #: src/components/terminal/project-list-menu.tsx
 msgid "Remove from this computer"
@@ -27916,6 +27968,10 @@ msgstr "Remove this? The hub stops routing its messages now. The agents and thei
 msgid "Remove variable"
 msgstr "Remove variable"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "removed"
+msgstr "removed"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Removed"
@@ -27984,6 +28040,7 @@ msgstr "Removes: {removes}"
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/PendingActionsChip.tsx
 #: src/components/footer/PendingActionsChip.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -27997,6 +28054,8 @@ msgid "Rename"
 msgstr "Rename"
 
 #. placeholder {0}: c.displayName
+#. placeholder {0}: kind.name
+#: src/components/footer/BrowserChip.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Rename {0}"
 msgstr "Rename {0}"
@@ -28542,6 +28601,7 @@ msgid "Restarting…"
 msgstr "Restarting…"
 
 #: src/components/assets/editor/revisions/RevisionsPanel.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Restore"
 msgstr "Restore"
@@ -30024,7 +30084,6 @@ msgid "Search languages…"
 msgstr "Search languages…"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Search messages"
 msgstr "Search messages"
@@ -30146,6 +30205,7 @@ msgid "secret manager"
 msgstr "secret manager"
 
 #: src/components/conversation/CredentialValueLock.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/footer/SecretManagerChip.tsx
 #: src/components/footer/SecretManagerChip.tsx
@@ -35431,6 +35491,7 @@ msgstr "This process points to a deleted project."
 #: src/components/assets/confirm-project-delete.ts
 #: src/components/connections-manager.tsx
 #: src/components/footer/SecretManagerChip.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "this project"
 msgstr "this project"
@@ -37120,6 +37181,10 @@ msgid "Use the default home"
 msgstr "Use the default home"
 
 #: src/components/footer/BrowserChip.tsx
+msgid "Use the project default in this session"
+msgstr "Use the project default in this session"
+
+#: src/components/footer/BrowserChip.tsx
 msgid "Use the project's choice"
 msgstr "Use the project's choice"
 
@@ -37369,7 +37434,6 @@ msgstr "Vault {vault} is not readable yet"
 msgid "Vault {vault} is set up on this computer"
 msgstr "Vault {vault} is set up on this computer"
 
-#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 msgid "Vault name"
 msgstr "Vault name"

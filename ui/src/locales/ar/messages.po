@@ -323,6 +323,10 @@ msgstr "(غير محدد)"
 msgid "(not visible)"
 msgstr "(غير مرئي)"
 
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "(optional)"
+msgstr ""
+
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "(overridden)"
 msgstr "(مُتجاوَز)"
@@ -558,10 +562,9 @@ msgstr "{0} — تم فتح \"{fallbackName}\" بدلاً منه."
 msgid "{0} · {1} · {2}ms"
 msgstr "{0} · {1} · {2}ms"
 
-#. placeholder {0}: f.label
 #: src/components/credentials/SecretVaultPicker.tsx
-msgid "{0} (optional)"
-msgstr "{0} (اختياري)"
+#~ msgid "{0} (optional)"
+#~ msgstr "{0} (اختياري)"
 
 #. placeholder {0}: hot.info.from
 #: src/components/assets/editor/chart/SequenceChartView.tsx
@@ -3141,6 +3144,7 @@ msgstr "نشط"
 #: src/components/automations/AutomationsList.tsx
 #: src/components/data-sources/status-style.ts
 #: src/components/entity-card/entity-card-rows.ts
+#: src/components/footer/BrowserChip.tsx
 #: src/components/locale/LocalePicker.tsx
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -3968,6 +3972,7 @@ msgstr "الكل"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
 #: src/components/explorer-view/ExplorerNavigator.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
 #: src/components/home-tiles/HomeTiles.tsx
@@ -6032,6 +6037,10 @@ msgstr "استعراض…"
 msgid "Browser"
 msgstr "المتصفح"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Browser name"
+msgstr ""
+
 #: src/components/links/BrowserProfileMenu.tsx
 msgid "Browser profile"
 msgstr "الملف الشخصي للمتصفح"
@@ -6459,6 +6468,7 @@ msgstr "تعذّر التحديث الآن — يُعرض آخر قائمة تم
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/terminal/interactive-terminal/useChainSession.tsx
@@ -7228,6 +7238,7 @@ msgid "Classify now"
 msgstr "تصنيف الآن"
 
 #: src/components/tags/ClassifyTable.tsx
+#: src/components/tags/StreamInboxTags.tsx
 msgid "Classifying…"
 msgstr "جارٍ التصنيف…"
 
@@ -7429,7 +7440,6 @@ msgstr "مسح الفهرس"
 
 #: src/components/asset-counters/AssetItems.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear search"
 msgstr "مسح البحث"
 
@@ -8941,6 +8951,8 @@ msgstr "نسخ المسار النسبي"
 msgid "Copy remote URL"
 msgstr "نسخ عنوان URL البعيد"
 
+#: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Copy session details"
@@ -11481,7 +11493,7 @@ msgstr "حذف المؤسسة"
 msgid "Delete organization…"
 msgstr "حذف المؤسسة…"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Delete project"
 msgstr "حذف المشروع"
 
@@ -12116,6 +12128,22 @@ msgstr "تجاهل"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Discard (delete)"
 msgstr "تجاهل (حذف)"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes: back to the last commit"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Discard all changes?"
+msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Discard changes and go back"
@@ -13498,6 +13526,11 @@ msgstr "كل رقم وبوت وتطبيق يرسل رسائل، ووجهة كل 
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location. Earlier sessions keep their history but cannot be resumed."
 msgstr "ستُغلق جميع علامات التبويب والعمليات الجارية لهذا المشروع. بعد ذلك يُنقل مجلد المشروع ويُعاد فهرسته في موقعه الجديد. تبقى الجلسات السابقة محفوظة في سجلها، غير أنه لا يمكن استئنافها."
+
+#. placeholder {0}: data?.files?.length ?? 0
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Every pending change in this folder is dropped (files: {0}). Changed and removed files go back to the last commit, and new files are deleted from disk. This cannot be undone."
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "every project"
@@ -17736,6 +17769,10 @@ msgstr "الإبقاء على إجراءات الأتمتة الحالية"
 msgid "Keep the local copy out of git"
 msgstr "استبعاد النسخة المحلية من Git"
 
+#: src/components/credentials/SecretVaultPicker.tsx
+msgid "Keep the values in"
+msgstr ""
+
 #: src/components/assets/confirm-project-delete.ts
 msgid "Keeping chat history can make this project reappear when projects are scanned."
 msgstr "قد يؤدي الاحتفاظ بسجل المحادثات إلى ظهور هذا المشروع مجددًا عند فحص المشاريع."
@@ -19333,6 +19370,10 @@ msgstr "تعيين هذا كمساعد افتراضي"
 #~ msgid "Make this the message's tag. No automation runs."
 #~ msgstr ""
 
+#: src/components/footer/BrowserChip.tsx
+msgid "Make this the project default"
+msgstr ""
+
 #: src/components/search-index/index-copy.ts
 msgid "Make your records searchable"
 msgstr "اجعلوا سجلاتكم قابلة للبحث"
@@ -19728,6 +19769,7 @@ msgstr "مصدر Mermaid"
 #: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/notifications/error-detail.ts
 msgid "Message"
 msgstr "رسالة"
@@ -23667,6 +23709,7 @@ msgstr "عذرًا! الصفحة غير موجودة"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/footer/ActivityDetailsModal.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/SecretManagerChip.tsx
 #: src/components/help/AskForHelpDialog.tsx
 #: src/components/help/MyHelpRequests.tsx
@@ -26261,7 +26304,7 @@ msgstr "«عند إنشاء المشروع» يفهرس مرة واحدة، أث
 msgid "Project data store"
 msgstr "مخزن بيانات المشروع"
 
-#: src/components/assets/AssetsPage.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Project deleted"
 msgstr "تم حذف المشروع"
 
@@ -27678,6 +27721,11 @@ msgstr "إزالة {0}"
 msgid "Remove {0} from {1}?"
 msgstr "إزالة {0} من {1}؟"
 
+#. placeholder {0}: kind.name
+#: src/components/footer/BrowserChip.tsx
+msgid "Remove {0} from the list"
+msgstr ""
+
 #: src/components/agents/AllowedSendersEditor.tsx
 msgid "Remove {a}"
 msgstr "إزالة {a}"
@@ -27784,6 +27832,10 @@ msgstr "إزالة من قائمة الانتظار"
 #: src/components/organization/tabs/TeamDetail.tsx
 msgid "Remove from team"
 msgstr "إزالة من الفريق"
+
+#: src/components/footer/BrowserChip.tsx
+msgid "Remove from the list"
+msgstr ""
 
 #: src/components/terminal/project-list-menu.tsx
 msgid "Remove from this computer"
@@ -27916,6 +27968,10 @@ msgstr "إزالة هذا العنصر؟ يتوقف المركز عن توجيه
 msgid "Remove variable"
 msgstr "إزالة المتغير"
 
+#: src/components/footer/BrowserChip.tsx
+msgid "removed"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Removed"
@@ -27984,6 +28040,7 @@ msgstr "سيُزال: {removes}"
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/footer/PendingActionsChip.tsx
 #: src/components/footer/PendingActionsChip.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -27997,6 +28054,8 @@ msgid "Rename"
 msgstr "إعادة تسمية"
 
 #. placeholder {0}: c.displayName
+#. placeholder {0}: kind.name
+#: src/components/footer/BrowserChip.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Rename {0}"
 msgstr "إعادة تسمية {0}"
@@ -28542,6 +28601,7 @@ msgid "Restarting…"
 msgstr "جاري إعادة التشغيل…"
 
 #: src/components/assets/editor/revisions/RevisionsPanel.tsx
+#: src/components/footer/BrowserChip.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Restore"
 msgstr "استعادة"
@@ -30024,7 +30084,6 @@ msgid "Search languages…"
 msgstr "البحث عن اللغات…"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/tags/StreamInboxTags.tsx
 msgid "Search messages"
 msgstr "البحث في الرسائل"
@@ -30146,6 +30205,7 @@ msgid "secret manager"
 msgstr "مدير الأسرار"
 
 #: src/components/conversation/CredentialValueLock.tsx
+#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/footer/SecretManagerChip.tsx
 #: src/components/footer/SecretManagerChip.tsx
@@ -35431,6 +35491,7 @@ msgstr "هذه العملية تشير إلى مشروع محذوف."
 #: src/components/assets/confirm-project-delete.ts
 #: src/components/connections-manager.tsx
 #: src/components/footer/SecretManagerChip.tsx
+#: src/components/project-home/ProjectHomeMenu.tsx
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "this project"
 msgstr "هذا المشروع"
@@ -37120,6 +37181,10 @@ msgid "Use the default home"
 msgstr "استخدام الصفحة الرئيسية الافتراضية"
 
 #: src/components/footer/BrowserChip.tsx
+msgid "Use the project default in this session"
+msgstr ""
+
+#: src/components/footer/BrowserChip.tsx
 msgid "Use the project's choice"
 msgstr "استخدام اختيار المشروع"
 
@@ -37369,7 +37434,6 @@ msgstr "الخزنة {vault} غير قابلة للقراءة بعد"
 msgid "Vault {vault} is set up on this computer"
 msgstr "تم إعداد الخزنة {vault} على هذا الحاسوب"
 
-#: src/components/credentials/SecretVaultPicker.tsx
 #: src/components/credentials/SecretVaultPicker.tsx
 msgid "Vault name"
 msgstr "اسم الخزنة"
