@@ -6,6 +6,7 @@ import {
   pendingPromptOf,
   sentRunSummaryOf,
   sessionEventOf,
+  turnOf,
 } from '@src/components/conversation/session-turns';
 
 const SID = 'a1a1a1a1-0000-4000-8000-000000000001';
@@ -89,5 +90,17 @@ describe('sentRunSummaryOf', () => {
     // The host's own view of an answer it has not sent: held while a draft, not once it went out.
     expect(heldResultOf([prompt('p1', 'go'), answer('r1', null, true)])).toBe('ok');
     expect(heldResultOf([prompt('p1', 'go'), answer('r1', null)])).toBeNull();
+  });
+});
+
+describe('turnOf', () => {
+  const carried = (marker: object) =>
+    fm({ id: 't', attachment: [{ attachment_type: 'type_id', data: 'remote_worker_session-s1', prompt_preview: JSON.stringify(marker) }] });
+
+  it("reads a turn's kind and an answer's exit code off the session carrier; a prompt when it names none", () => {
+    expect(turnOf(carried({ turn: { kind: 'command' } }))).toEqual({ kind: 'command', exitCode: null });
+    expect(turnOf(carried({ turn: { kind: 'command', exit_code: 3 }, snapshot: {} }))).toEqual({ kind: 'command', exitCode: 3 });
+    expect(turnOf(carried({ snapshot: { id: 's1' } }))).toEqual({ kind: 'prompt', exitCode: null });
+    expect(turnOf(prompt('p1', 'go'))).toEqual({ kind: 'prompt', exitCode: null });
   });
 });

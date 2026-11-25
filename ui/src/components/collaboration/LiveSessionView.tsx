@@ -27,6 +27,7 @@ import { useMarkLatestRead } from '@src/components/conversation/useMarkLatestRea
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { MarkdownView } from '@src/components/markdown-view';
+import { TurnKindTicks, useTurnKindLabels } from './TurnKinds';
 import { useApproveLiveSession } from './useApproveLiveSession';
 import { SessionRoleBadge } from './SessionRoleBadge';
 import {
@@ -34,6 +35,7 @@ import {
   pendingPromptOf,
   promptTextOf,
   resultTextOf,
+  turnOf,
   sessionTitle,
 } from '@src/components/conversation/session-turns';
 import { isPromptMessage } from '@src/components/conversation/attachment-actions/prompt-attachment';
@@ -59,8 +61,11 @@ export function useLiveSession(sessionId: string) {
   return useEntity<RemoteWorkerSession>(sessionTypeId, { watch: true });
 }
 
+/** What marks a turn's text by its kind: a prompt, a shell command, a script. */
+const TURN_GLYPH: Record<string, string> = { prompt: '❯', command: '$', control: 'ƒ' };
+
 /** Guest-facing status line per lifecycle state. */
-function statusLine(status: string | undefined, hostName: string): ReactNode {
+function statusLine(status: string | undefined, hostName: string, kinds: string): ReactNode {
   switch (status) {
     case RemoteWorkerSessionStatus.DRAFT:
       return <Trans>Requesting access to {hostName}'s machine…</Trans>;
@@ -69,7 +74,14 @@ function statusLine(status: string | undefined, hostName: string): ReactNode {
     case RemoteWorkerSessionStatus.RUNNING:
       return <Trans>Working on {hostName}'s machine…</Trans>;
     case RemoteWorkerSessionStatus.IDLE:
-      return <Trans>Connected to {hostName}'s machine.</Trans>;
+      // With more than prompts approved, the line says what the host allowed.
+      return kinds ? (
+        <Trans>
+          Connected to {hostName}'s machine · {kinds}
+        </Trans>
+      ) : (
+        <Trans>Connected to {hostName}'s machine.</Trans>
+      );
     case RemoteWorkerSessionStatus.ERROR:
       return <Trans>Connected to {hostName}'s machine — the last prompt failed.</Trans>;
     case RemoteWorkerSessionStatus.DECLINED:
@@ -150,6 +162,8 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   const firstPrompt = useMemo(() => messages.find((m) => isPromptMessage(m)) ?? null, [messages]);
 
   const { approve, picker: approvePicker } = useApproveLiveSession();
+  const [unticked, setUnticked] = useState<string[]>([]);
+  const { line: kindsLine } = useTurnKindLabels();
   const retryFailedPrompt = useRetryFailedPrompt();
   // The prompt the host failed to run and nothing answered since — its failed line offers Retry.
   const failed = useMemo(() => failedPromptOf(messages), [messages]);
@@ -180,6 +194,11 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
 
   const isHost = sessionRole(session, cloudUser?.id) === 'host';
   const status = session.status as RemoteWorkerSessionStatus | undefined;
+  // What the guest asked to run and what the host leaves ticked; then what was approved.
+  const asked = session.askableTurnKinds;
+  const ticked = asked.filter((k) => !unticked.includes(k));
+  const approvedKinds = session.effectiveTurnKinds;
+  const approvedKindsLine = approvedKinds.length > 1 ? kindsLine(approvedKinds) : '';
   const terminal = isSessionTerminal(status);
   const running =
     status === RemoteWorkerSessionStatus.RUNNING || (status === RemoteWorkerSessionStatus.IDLE && !!pendingPrompt);
@@ -224,6 +243,9 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   // Either side may type a prompt: label each by who actually wrote it.
   const mine = (fm: FlowMessage) => authoredBy(senderOf(fm), [cloudUser?.id, localUser?.id]);
   const replyAuthor = isHost ? t`your Claude Code` : t`${hostName}'s Claude Code`;
+  // Who answered a command (the machine) and a script (Flowpad), not a worker.
+  const machineName = isHost ? t`your machine` : t`${hostName}'s machine`;
+  const flowpadName = isHost ? t`your Flowpad` : t`${hostName}'s Flowpad`;
   const title = firstPrompt ? sessionTitle(promptTextOf(firstPrompt)) : t`Live session with ${otherName}`;
 
   const onSent = () => void refetch?.();
@@ -285,7 +307,19 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
             <Radio className="h-4 w-4 flex-shrink-0" />
             <span>
               {status === RemoteWorkerSessionStatus.PENDING ? (
-                <Trans>{guestName} wants to run prompts on your machine.</Trans>
+                asked.length > 1 ? (
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <Trans>{guestName} wants to run on your machine:</Trans>
+                    <TurnKindTicks
+                      asked={asked}
+                      ticked={ticked}
+                      onChange={(next) => setUnticked(asked.filter((k) => !next.includes(k)))}
+                      disabled={!!busy}
+                    />
+                  </span>
+                ) : (
+                  <Trans>{guestName} wants to run prompts on your machine.</Trans>
+                )
               ) : (
                 <Trans>
                   Live session with {guestName} on your machine · {status}
@@ -299,7 +333,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                 <Button
                   size="sm"
                   className="bg-blue-600 text-white hover:bg-blue-500"
-                  onClick={() => void runAction('approve', () => approve(session))}
+                  onClick={() => void runAction('approve', () => approve(session, { turnKinds: ticked }))}
                   disabled={!!busy}
                   title={t`Approve this live session only`}
                   data-testid="live-session-approve"
@@ -327,7 +361,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
         <div className="sticky top-0 z-10 flex flex-shrink-0 items-center gap-2 border-b bg-background px-4 py-2 text-xs text-muted-foreground">
           <Radio className={`h-3.5 w-3.5 flex-shrink-0 ${running ? 'animate-pulse text-emerald-500' : ''}`} />
           <span data-testid="live-session-status-line">
-            {statusLine(running ? RemoteWorkerSessionStatus.RUNNING : status, hostName)}
+            {statusLine(running ? RemoteWorkerSessionStatus.RUNNING : status, hostName, approvedKindsLine)}
           </span>
           <div className="ms-auto flex items-center gap-2">
             {sessionOnLatestMessage}
@@ -365,6 +399,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   liveSessionId={sessionId}
                   onSent={onSent}
                   variant="terminal"
+                  turnKinds={approvedKinds}
                   autoFocus
                   placeholder={
                     isHost ? t`Prompt for your Claude Code…` : t`Prompt for Claude Code on ${hostName}'s machine…`
@@ -399,6 +434,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   <SessionEventLine key={fm.id} text={fm.text ?? ''} onRetry={retry} retrying={busy === 'retry'} />
                 );
               }
+              const turn = turnOf(fm);
               const result = resultTextOf(fm);
               if (result !== null) {
                 if (fm.is_draft && isHost) {
@@ -417,17 +453,39 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   <div
                     key={fm.id}
                     data-testid="live-session-reply"
+                    data-turn-kind={turn.kind}
                     data-side={isHost ? 'local' : 'remote'}
                     className="flex flex-col gap-0.5 border-s-2 border-sky-500/60 ps-3"
                   >
                     <span className="select-none font-sans text-[10.5px] font-medium uppercase tracking-wide text-sky-700 dark:text-sky-300">
-                      {replyAuthor}
+                      {turn.kind === 'command'
+                        ? machineName
+                        : turn.kind === 'control'
+                          ? flowpadName
+                          : replyAuthor}
                       <span className="ms-1.5 normal-case tracking-normal text-muted-foreground">
-                        {isHost ? <Trans>· local</Trans> : <Trans>· remote</Trans>}
+                        {turn.kind === 'command' ? (
+                          <Trans>· command · exit {turn.exitCode ?? '?'}</Trans>
+                        ) : turn.kind === 'control' ? (
+                          turn.exitCode ? (
+                            <Trans>· script · threw</Trans>
+                          ) : (
+                            <Trans>· script · returned</Trans>
+                          )
+                        ) : isHost ? (
+                          <Trans>· local</Trans>
+                        ) : (
+                          <Trans>· remote</Trans>
+                        )}
                       </span>
                     </span>
                     <div className="break-words text-foreground/90" data-testid="live-session-reply-body">
-                      <MarkdownView value={result} dense codeChrome={false} />
+                      {turn.kind === 'prompt' ? (
+                        <MarkdownView value={result} dense codeChrome={false} />
+                      ) : (
+                        // A command's output and a script's value are text as they came, never markdown.
+                        <pre className="whitespace-pre-wrap">{result}</pre>
+                      )}
                     </div>
                   </div>
                 );
@@ -439,10 +497,11 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   key={fm.id}
                   className="flex gap-2"
                   data-testid="live-session-prompt"
+                  data-turn-kind={turn.kind}
                   data-side={mine(fm) ? 'local' : 'remote'}
                 >
                   <span className="shrink-0 select-none text-emerald-600 dark:text-emerald-400">
-                    {mine(fm) ? t`You` : otherName} ❯
+                    {mine(fm) ? t`You` : otherName} {TURN_GLYPH[turn.kind] ?? TURN_GLYPH.prompt}
                   </span>
                   <pre className="whitespace-pre-wrap">{prompt}</pre>
                 </div>

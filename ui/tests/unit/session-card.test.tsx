@@ -83,6 +83,40 @@ describe("SessionCard — the session's one line in the conversation", () => {
     expect(screen.queryByTestId('session-card-disconnect')).toBeNull();
   });
 
+  it('host + pending, more than prompts asked: one tick per kind, and Approve sends what stays ticked', async () => {
+    const onApprove = vi.fn().mockResolvedValue(undefined);
+    renderCard({
+      session: session(RemoteWorkerSessionStatus.PENDING, { requested_turn_kinds: ['prompt', 'command', 'control'] }),
+      role: 'host',
+      onApprove,
+    });
+    expect(screen.getByTestId('session-card-status').textContent).toBe('wants to run on your machine:');
+    const tick = (kind: string) => screen.getByTestId(`turn-kind-tick-${kind}`) as HTMLInputElement;
+    expect(['prompt', 'command', 'control'].map((k) => tick(k).checked)).toEqual([true, true, true]);
+
+    fireEvent.click(tick('control'));
+    fireEvent.click(tick('prompt'));
+    expect(tick('command').disabled).toBe(true); // the last tick stays: an approval runs something
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('session-card-approve'));
+    });
+    expect(onApprove).toHaveBeenCalledWith(['command']);
+  });
+
+  it('host: a guest that asks for prompts only gets no ticks, and the approved chip names more than prompts', () => {
+    renderCard({ session: session(RemoteWorkerSessionStatus.PENDING), role: 'host', onApprove: vi.fn() });
+    expect(screen.getByTestId('session-card-status').textContent).toBe('wants to run prompts on your machine');
+    expect(screen.queryByTestId('turn-kind-tick-prompt')).toBeNull();
+    cleanup();
+
+    const kinds = ['prompt', 'command', 'control'];
+    renderCard({
+      session: session(RemoteWorkerSessionStatus.IDLE, { requested_turn_kinds: kinds, turn_kinds: ['prompt', 'command'] }),
+      role: 'host',
+    });
+    expect(screen.getByTestId('live-session-permission-chip').textContent).toBe('Approved: Prompts · Commands');
+  });
+
   it('host + pending: Approve (this session only) and Decline', async () => {
     const onApprove = vi.fn().mockResolvedValue(undefined);
     const onDecline = vi.fn().mockResolvedValue(undefined);

@@ -169,6 +169,11 @@ msgstr "ملف .env.local غير مستثنى من Git في هذا المستو�
 msgid "· assigned to {assignee}"
 msgstr "· مُسند إلى {assignee}"
 
+#. placeholder {0}: turn.exitCode ?? '?'
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "· command · exit {0}"
+msgstr "· أمر · رمز الخروج {0}"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· local"
 msgstr "· محلي"
@@ -180,6 +185,14 @@ msgstr "اختيار فرع"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· remote"
 msgstr "· عن بُعد"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "· script · returned"
+msgstr "· سكربت · أعاد"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "· script · threw"
+msgstr "· سكربت · فشل"
 
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 msgid "· skill: {skill}"
@@ -1496,6 +1509,10 @@ msgid "{guestName} is waiting for your approval before any prompt runs on your m
 msgstr "ينتظر {guestName} موافقتكم قبل تشغيل أي موجّه على جهازكم."
 
 #: src/components/collaboration/LiveSessionView.tsx
+msgid "{guestName} wants to run on your machine:"
+msgstr "{guestName} يريد التشغيل على جهازكم:"
+
+#: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
 msgstr "طلب من {guestName} لتشغيل الأوامر على جهازكم."
 
@@ -1534,6 +1551,14 @@ msgstr "{hostName} يراجع"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName}'s Claude Code"
 msgstr "Claude Code لدى {hostName}"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName}'s Flowpad"
+msgstr "Flowpad لدى {hostName}"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName}'s machine"
+msgstr "جهاز {hostName}"
 
 #: src/components/remote-control/RemoteControlPanel.tsx
 msgid "{hours} h {rest} min left"
@@ -4922,6 +4947,10 @@ msgstr "وافق عليه {hostName}"
 msgid "Approved for this session"
 msgstr "موافَق عليه لهذه الجلسة"
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Approved: {approvedKinds}"
+msgstr "موافَق عليه: {approvedKinds}"
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr "تتيح الموافقة لهذا الجهاز التصرّف باسمك على FlowPad، ولا تُمنح إلا لرمز من إنشائك."
@@ -7988,6 +8017,7 @@ msgid "command"
 msgstr "أمر"
 
 #: src/components/assets/editor/mcp/McpViewer.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/project-resource-list/resource-meta.ts
@@ -8034,6 +8064,7 @@ msgstr "الأمر:"
 msgid "Command: "
 msgstr "الأمر: "
 
+#: src/components/collaboration/TurnKinds.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Commands"
 msgstr "الأوامر"
@@ -8405,6 +8436,10 @@ msgstr "متصل في هذا المتصفح {0}"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Connected to {hostName}'s machine — the last prompt failed."
 msgstr "متصل بجهاز {hostName} — فشل الموجّه الأخير."
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Connected to {hostName}'s machine · {kinds}"
+msgstr "تم الاتصال بجهاز {hostName} · {kinds}"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Connected to {hostName}'s machine."
@@ -14871,6 +14906,10 @@ msgstr "نتائج Flowpad Cloud"
 #: src/components/account/user-info.tsx
 msgid "Flowpad Cloud:"
 msgstr "Flowpad Cloud:"
+
+#: src/components/collaboration/TurnKinds.tsx
+msgid "Flowpad control"
+msgstr "التحكم في Flowpad"
 
 #: src/pages/entry/DesktopDownload.tsx
 msgid "FlowPad Desktop isn't available for 32-bit Windows — it needs 64-bit Windows."
@@ -26384,6 +26423,7 @@ msgstr "موجّه"
 #: src/components/automations/ThenStepsEditor.tsx
 #: src/components/conversation/AttachMenu.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/PromptRunSummaryDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
@@ -26490,6 +26530,7 @@ msgid "prompts"
 msgstr "المطالبات"
 
 #: src/components/chats-navigator/ChatPromptsPopover.tsx
+#: src/components/collaboration/TurnKinds.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
@@ -29822,6 +29863,7 @@ msgid "Screen recording is not supported"
 msgstr "تسجيل الشاشة غير مدعوم"
 
 #: src/components/automations/blocks/ThenBlock.tsx
+#: src/components/conversation/MessageComposer.tsx
 msgid "Script"
 msgstr "نص برمجي"
 
@@ -37706,6 +37748,10 @@ msgid "wants to run on your machine"
 msgstr "يطلب التشغيل على جهازك"
 
 #: src/components/conversation/SessionCard.tsx
+msgid "wants to run on your machine:"
+msgstr "يريد التشغيل على جهازكم:"
+
+#: src/components/conversation/SessionCard.tsx
 msgid "wants to run prompts on your machine"
 msgstr "يريد تشغيل موجّهات على جهازكم"
 
@@ -38895,6 +38941,10 @@ msgstr "عاد طلب التشخيص الخاص بكم"
 msgid "Your display name"
 msgstr "اسمكم المعروض"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "your Flowpad"
+msgstr "Flowpad لديكم"
+
 #: src/components/upgrade/UpgradeScreen.tsx
 msgid "Your Flowpad budget is used up, so the assistant has paused. Your work is saved — upgrade to pick up right where you left off."
 msgstr "نفدت ميزانية Flowpad الخاصة بك، لذا أُوقف المساعد مؤقتًا. عملك محفوظ — يمكن الترقية للمتابعة من حيث توقف العمل."
@@ -38915,6 +38965,7 @@ msgstr "طلبات المساعدة الخاصة بكم"
 msgid "Your local value of {credential} is copied into the vault, and the credential records where it is."
 msgstr "تُنسخ قيمتكم المحلية لـ {credential} إلى الخزنة، وتسجّل بيانات الاعتماد مكانها."
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/pages/hub-home/AccessKeysSection.tsx
 #: src/pages/hub-home/TurnOnRemoteControlDialog.tsx
 msgid "your machine"

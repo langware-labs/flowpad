@@ -56,13 +56,22 @@ export function GuestPermissionChip({
   pending,
   onApprove,
   disabled,
+  approvedKinds,
 }: {
   guestName: string;
   pending: boolean;
   onApprove: () => void;
   disabled: boolean;
+  /** What the host approved beyond prompts, as one line ("Prompts · Commands · Flowpad control"). */
+  approvedKinds?: string;
 }) {
-  const label = pending ? <Trans>Needs your approval</Trans> : <Trans>Approved for this session</Trans>;
+  const label = pending ? (
+    <Trans>Needs your approval</Trans>
+  ) : approvedKinds ? (
+    <Trans>Approved: {approvedKinds}</Trans>
+  ) : (
+    <Trans>Approved for this session</Trans>
+  );
   const detail = pending ? (
     <Trans>{guestName} is waiting for your approval before any prompt runs on your machine.</Trans>
   ) : (

@@ -67,6 +67,20 @@ async def test_the_first_reply_wakes_the_session_once_with_the_reply():
 
 
 @async_context
+async def test_a_live_session_line_is_not_the_reply():
+    """2026-11-25: a wait for a session turn's answer was used up by "X approved the live session"."""
+    process, conv, _, rule = await _setup()
+    line = FlowMessage(text="Shani approved the live session", conversation_id=conv.id, kind="session_event")
+    await line.save()
+
+    await _arrive(rule, line)
+    assert _queued(process) == []
+
+    await _arrive(rule, await _message(conv.id, "exit 0"))
+    assert len(_queued(process)) == 1
+
+
+@async_context
 async def test_a_message_the_session_wrote_is_not_the_reply():
     process, conv, _, rule = await _setup()
     own = await _message(conv.id, "Also: should the trial be free?")

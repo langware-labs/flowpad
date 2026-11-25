@@ -57,6 +57,12 @@ A multi-action skill for the Flowpad app. Identify the requested action from the
 > generates a self-contained deck from it. Do not hand-write slide HTML or
 > route this through `records`.
 
+> **Working on another person's machine through a live session is not an action of this
+> skill.** When the user asks to check, run or look at something on someone else's machine —
+> or the launch prompt says a live session is active — invoke the `live-session-helper`
+> skill: it covers the session's state, the kinds of turn its host approved, and how to send
+> and wait for each.
+
 ## Action: context
 
 Read the per-tab data-context the UI mirrors to the server. Use this whenever the user refers to "the current X" / "this X" / "the one I'm looking at" instead of giving an explicit TypeId.

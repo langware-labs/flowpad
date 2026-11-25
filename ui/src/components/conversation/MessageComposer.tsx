@@ -64,6 +64,9 @@ interface MessageComposerProps {
    *  session id (the backend appends the snapshot-carrier attachment). Set by
    *  LiveSessionView; the plain conversation composer leaves it unset. */
   liveSessionId?: string;
+  /** Inside a session view: the kinds of turn its host approved. With more than prompts, the
+   *  input offers a switch and sends the text as the chosen kind. */
+  turnKinds?: readonly string[];
   /** The participant whose machine a prompt runs on. When set (with
    *  `onStartLiveSession`), the composer offers the live-session icon. Null = plain chat box. */
   sessionHost?: SessionHost | null;
@@ -205,6 +208,7 @@ export function MessageComposer({
   agentId,
   onChannelSent,
   liveSessionId,
+  turnKinds,
   sessionHost,
   onStartLiveSession,
   variant = 'chat',
@@ -265,6 +269,10 @@ export function MessageComposer({
   // The prompt this send carries; an open box left empty sends a plain message.
   const callPrompt = promptBoxOpen ? promptText.trim() : '';
   const terminal = variant === 'terminal';
+  // What the next turn runs as. A kind the host no longer allows falls back to a prompt.
+  const [pickedKind, setPickedKind] = useState('prompt');
+  const offeredKinds = liveSessionId && turnKinds && turnKinds.length > 1 ? turnKinds : null;
+  const turnKind = offeredKinds?.includes(pickedKind) ? pickedKind : 'prompt';
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
   }, [autoFocus]);
@@ -414,6 +422,7 @@ export function MessageComposer({
           text: trimmed,
           files,
           sessionId: liveSessionId ?? null,
+          turnKind,
         })
       : {};
     if (callPrompt) extras.callPrompt = callPrompt;
@@ -931,7 +940,34 @@ export function MessageComposer({
           </div>
           {terminal && (
             <span className="select-none self-center text-sm text-emerald-600 dark:text-emerald-400" aria-hidden>
-              ❯
+              {turnKind === 'command' ? '$' : turnKind === 'control' ? 'ƒ' : '❯'}
+            </span>
+          )}
+          {terminal && offeredKinds && (
+            <span
+              className="inline-flex shrink-0 items-center self-center overflow-hidden rounded border border-border text-[10px] font-medium uppercase tracking-wide"
+              role="radiogroup"
+              data-testid="composer-turn-kind"
+            >
+              {offeredKinds.map((kind, i) => (
+                <button
+                  key={kind}
+                  type="button"
+                  role="radio"
+                  aria-checked={kind === turnKind}
+                  onClick={() => setPickedKind(kind)}
+                  data-testid={`composer-turn-kind-${kind}`}
+                  className={cn(
+                    'px-1.5 py-px',
+                    i > 0 && 'border-s border-border',
+                    kind === turnKind
+                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {kind === 'command' ? <Trans>Command</Trans> : kind === 'control' ? <Trans>Script</Trans> : <Trans>Prompt</Trans>}
+                </button>
+              ))}
             </span>
           )}
           <textarea

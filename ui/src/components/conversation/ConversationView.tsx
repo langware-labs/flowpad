@@ -98,7 +98,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { ConversationLiveActivity } from './ConversationLiveActivity';
 import { mostRecentProcess } from '@src/utils/process-recency';
-import { sessionRole, useConversationSessions } from '@src/hooks/useConversationSessions';
+import { sessionRole, useConversationSessions, useLiveSessionNote } from '@src/hooks/useConversationSessions';
 import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
 import {
@@ -122,7 +122,7 @@ import { useRetryFailedPrompt } from './useRetryFailedPrompt';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
 import type { WorkerType } from './conversation-session-constants';
-import { buildConversationStatusPrompt, buildMessageStartPrompt } from './prompt-building';
+import { buildConversationStatusPrompt, buildMessageStartPrompt, withLiveSessionNote } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
 import { useIsMobile } from '@src/hooks/use-mobile';
 
@@ -470,7 +470,12 @@ export function ConversationView({
   // instant any session in the thread exists (live or in-flight).
   // A message's ⋮ menu starts a worker on THAT message — the header's launch
   // lifecycle, one instance for the whole feed, with a message-pinned prompt.
-  const buildStatusPrompt = useCallback(() => buildConversationStatusPrompt(conversationTypeId), [conversationTypeId]);
+  // A worker opened here is told when the user has a live session open on the other machine.
+  const liveSessionNote = useLiveSessionNote(conversationId, useAuth().cloudUser?.id);
+  const buildStatusPrompt = useCallback(
+    () => withLiveSessionNote(buildConversationStatusPrompt(conversationTypeId), liveSessionNote),
+    [conversationTypeId, liveSessionNote],
+  );
   const { launch: launchWorker } = useConversationSession({
     conversation: conversation ?? null,
     ensureMapped,
@@ -482,10 +487,14 @@ export function ConversationView({
     (messageId: string, worker: WorkerType) =>
       launchWorker(
         worker,
-        () => buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId)),
+        () =>
+          withLiveSessionNote(
+            buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId)),
+            liveSessionNote,
+          ),
         messageId,
       ),
-    [launchWorker, conversationTypeId],
+    [launchWorker, conversationTypeId, liveSessionNote],
   );
 
   const { runImplementPlan, openPlanSession } = useImplementPlan({
@@ -1472,7 +1481,9 @@ export function ConversationView({
                     promptCount={item.promptCount}
                     replyCount={item.replyCount}
                     onOpen={() => openLiveSession(item.sessionId)}
-                    onApprove={role === 'host' && session ? () => approveSession(session) : undefined}
+                    onApprove={
+                      role === 'host' && session ? (turnKinds) => approveSession(session, { turnKinds }) : undefined
+                    }
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
                     onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
                     lastPromptFailed={!!turns?.failed}
