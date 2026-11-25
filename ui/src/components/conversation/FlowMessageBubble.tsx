@@ -247,6 +247,8 @@ interface FlowMessageBubbleProps {
    *  responder's `sender_id` is intentionally absent from the guest's roster,
    *  so we suppress the unresolved-sender alert and its telemetry. */
   isHelpdesk?: boolean;
+  /** The parent conversation's title — names a new conversation this message is forwarded into. */
+  conversationTitle?: string | null;
   /** This message carries the conversation's diagnosis card (DiagnosisCard) in place of its text. */
   diagnosisCard?: boolean;
   /** The viewer's hub user id. A hub-mirrored row names its sender by hub
@@ -321,6 +323,7 @@ export function FlowMessageBubble({
   participants,
   rosterReady = false,
   isHelpdesk = false,
+  conversationTitle,
   diagnosisCard = false,
   viewerCloudUserId = null,
   attachmentProjectId,
@@ -442,8 +445,8 @@ export function FlowMessageBubble({
   const forwardSource = useMemo(() => {
     if (!forwardOpen || !fm) return null;
     const firstLine = (fm.text ?? '').trim().split('\n')[0]?.slice(0, 60);
-    return messageForwardShareSource({ label: firstLine || 'Message' });
-  }, [forwardOpen, fm]);
+    return messageForwardShareSource({ label: firstLine || 'Message', conversationTitle });
+  }, [forwardOpen, fm, conversationTitle]);
   const commitForward = useCallback(
     async (target: SendTarget) => {
       const convId =

@@ -937,6 +937,7 @@ export function ConversationView({
           deleteForEveryone={conversation?.remote === true}
           selfIds={selfIds}
           isHelpdesk={isHelpdeskConversation}
+          conversationTitle={conversation?.title}
           diagnosisCard={id === diagnosisCardId}
           viewerCloudUserId={cloudUserId}
           attachmentProjectId={attachmentProjectId}

@@ -50,6 +50,15 @@ describe('git share source gating', () => {
     ).toBeUndefined();
   });
 
+  it('a forward titles a new conversation FW: <source title>, never stacked', () => {
+    const title = (conversationTitle?: string) =>
+      messageForwardShareSource({ label: 'first line', conversationTitle }).defaultTitle;
+    expect(title('Q3 pricing')).toBe('FW: Q3 pricing');
+    expect(title('FW: Q3 pricing')).toBe('FW: Q3 pricing');
+    expect(title('Fwd: Q3 pricing')).toBe('Fwd: Q3 pricing');
+    expect(title('  ')).toBe('first line');
+  });
+
   it('a folder share pins git as POLICY, so no toggle is offered', async () => {
     const src = folderShareSource(new TypeId('folder', FOLDER_ID), { label: 'widgets' });
     // Pinned: the bytes always travel as a git origin…

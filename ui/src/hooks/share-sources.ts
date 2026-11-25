@@ -346,7 +346,14 @@ function noAssetShareSource(label: string, typeLabel: string): ShareSource {
  * Forward-a-message: the backend's `forward` action owns the packaging (it
  * clones the source FlowMessage, attachments and all). The dialog's `commit`
  * override does the POST; this source just labels the share.
+ *
+ * A new conversation started by the forward is titled after the one the message
+ * came from — `FW: <its title>`, never stacked — or after the message when that
+ * conversation has no title.
  */
-export function messageForwardShareSource(args: { label: string }): ShareSource {
-  return noAssetShareSource(args.label, 'MESSAGE');
+export function messageForwardShareSource(args: { label: string; conversationTitle?: string | null }): ShareSource {
+  const source = noAssetShareSource(args.label, 'MESSAGE');
+  const from = args.conversationTitle?.trim();
+  if (!from) return source;
+  return { ...source, defaultTitle: /^fwd?:/i.test(from) ? from : `FW: ${from}` };
 }
