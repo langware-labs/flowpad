@@ -174,6 +174,46 @@ export function tileIsLocal(tile: HomeTile, ownIsLocal = true): boolean {
   return tile.deployments.length > 0 && tile.deployments.every((d) => d.isLocal);
 }
 
+/** The Agents table's columns, each one a sort. */
+export type TileSortKey = 'agent' | 'deployments' | 'issues';
+
+export interface TileSort {
+  key: TileSortKey;
+  descending: boolean;
+}
+
+/** The table opens sorted by name, A first — the order the icons come in. */
+export const BY_NAME: TileSort = { key: 'agent', descending: false };
+
+/** A first click on a column: names A first, counts most first. A second click on it flips that. */
+export function nextSort(current: TileSort, key: TileSortKey): TileSort {
+  return current.key === key ? { key, descending: !current.descending } : { key, descending: key !== 'agent' };
+}
+
+const byLabel = (a: HomeTile, b: HomeTile) => a.label.localeCompare(b.label);
+
+/** `tiles` in the table's order; equal counts stay in name order. */
+export function sortTiles(tiles: HomeTile[], sort: TileSort): HomeTile[] {
+  const sign = sort.descending ? -1 : 1;
+  const count = (tile: HomeTile) => (sort.key === 'deployments' ? deploymentCount(tile) : tile.issueCount);
+  return [...tiles].sort((a, b) =>
+    sort.key === 'agent' ? sign * byLabel(a, b) : sign * (count(a) - count(b)) || byLabel(a, b),
+  );
+}
+
+/** What Quick search looks in, lower-cased: the names, the description and where it is deployed. */
+export function tileSearchText(tile: HomeTile): string {
+  return [
+    tile.label,
+    tile.agent?.name,
+    tile.agent?.description,
+    ...tile.deployments.map((d) => d.target?.provider || d.name),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
 /** One page of a list: its rows, the 1-based position of the first, how many pages, and which one (clamped). */
 export interface PageSlice<T> {
   rows: T[];

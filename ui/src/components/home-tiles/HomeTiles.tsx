@@ -1,17 +1,21 @@
 import { Agent, Deployment, WebApp, type Project } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Cloud, Monitor } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Cloud, Monitor } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
 import { useAgentLauncher } from '@src/components/agents/use-agent-launcher';
 import { ALL_AGENTS, ALL_DEPLOYMENTS } from '@src/components/asset-counters/agent-counters';
+import { NoRows, QuickSearchInput } from '@src/components/asset-counters/AssetItems';
 import { useIssues } from '@src/components/asset-counters/issue-counters';
+import { matchesQuickSearch, quickSearchTerms } from '@src/components/asset-counters/quick-search';
+import { AxisToggle } from '@src/components/asset-counters/StatChips';
 import { colorForIdentityKey } from '@src/components/conversation/avatar-color';
 import { initialsFromLabel } from '@src/components/conversation/participant-display';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { BreadcrumbChevron } from '@src/components/ui/breadcrumb';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { useOpenProjectApp, useProjectApps } from '@src/components/top-nav-bar/use-project-apps';
 import { WebAppAvatar } from '@src/components/webapp-display/WebAppIcon';
 import { MAX_HOME_AGENTS, useProjectAgents } from '@src/hooks/use-project-agents';
@@ -22,15 +26,21 @@ import {
   buildAgentTiles,
   buildAppTiles,
   buildHubAgentTiles,
+  BY_NAME,
   deploymentCount,
   loneDeployment,
+  nextSort,
   pageOf,
   resolveSelection,
+  sortTiles,
   TILES_PAGE_SIZE,
   tileIsLocal,
+  tileSearchText,
   type HomeSelection,
   type HomeTile,
   type PageSlice,
+  type TileSort,
+  type TileSortKey,
 } from './home-tiles-model';
 
 export const ICON_BUTTON = 'rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground';
@@ -277,32 +287,248 @@ export function PageArrows({
   );
 }
 
-/** One row of icons, 25 to a page. It opens on the page that holds the selected icon. */
+/** The page that holds the selected icon, so a selection made elsewhere is in view; else the first. */
+function useTilePage(tiles: HomeTile[], home: HomeTilesState) {
+  const [page, setPage] = useState(() => {
+    const at = tiles.findIndex((tile) => tile.key === home.selection?.tile.key);
+    return at < 0 ? 0 : Math.floor(at / TILES_PAGE_SIZE);
+  });
+  return { page, setPage };
+}
+
+/**
+ * How many empty slots keep a short page as tall as a full one, so paging to the last page, or narrowing the
+ * table, never moves what is below it. A list that fits on one page has no pages to keep level.
+ */
+function fillerCount(listed: number, shown: number): number {
+  return listed > TILES_PAGE_SIZE ? Math.max(0, TILES_PAGE_SIZE - shown) : 0;
+}
+
+/** One row of icons, 25 to a page; a short page keeps the height of a full one. */
 function TilePages({
   title,
   tiles,
   home,
+  page,
+  onPage,
+  extra,
   testId,
 }: {
   title: ReactNode;
   tiles: HomeTile[];
   home: HomeTilesState;
+  page: number;
+  onPage: (page: number) => void;
+  /** Shown after the arrows in the header (the Agents section's List / Table switch). */
+  extra?: ReactNode;
   testId: string;
 }) {
-  const [page, setPage] = useState(() => {
-    const at = tiles.findIndex((tile) => tile.key === home.selection?.tile.key);
-    return at < 0 ? 0 : Math.floor(at / TILES_PAGE_SIZE);
-  });
   const slice = pageOf(tiles, page, TILES_PAGE_SIZE);
   return (
     <TileSection
       title={title}
-      headerExtra={<PageArrows slice={slice} total={tiles.length} onPage={setPage} testId={testId} />}
+      headerExtra={
+        <>
+          <PageArrows slice={slice} total={tiles.length} onPage={onPage} testId={testId} />
+          {extra}
+        </>
+      }
     >
       {slice.rows.map((tile) => (
         <Tile key={tile.key} tile={tile} home={home} />
       ))}
+      {Array.from({ length: fillerCount(tiles.length, slice.rows.length) }, (_, i) => (
+        <div key={`filler-${i}`} aria-hidden className="invisible h-20 w-20" data-testid={`${testId}-filler`} />
+      ))}
     </TileSection>
+  );
+}
+
+/** A count as the icon shows it, or a dash for none. */
+function CountOrDash({ value, tone, testId }: { value: number; tone: 'primary' | 'issues'; testId: string }) {
+  if (value <= 0) return <span className="text-muted-foreground">—</span>;
+  return <TileCount value={value} tone={tone} testId={testId} />;
+}
+
+const SORT_KEYS: TileSortKey[] = ['agent', 'deployments', 'issues'];
+
+/**
+ * The Agents section as a table: Quick search, a sort on every column, the same pages as the icons.
+ * A row is an icon: a click selects it into the side panel, a double click opens it.
+ */
+function AgentTable({
+  title,
+  home,
+  page,
+  onPage,
+  extra,
+}: {
+  title: ReactNode;
+  home: HomeTilesState;
+  page: number;
+  onPage: (page: number) => void;
+  extra: ReactNode;
+}) {
+  const { t } = useLingui();
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<TileSort>(BY_NAME);
+  const indexed = useMemo(() => home.agents.map((tile) => ({ tile, haystack: tileSearchText(tile) })), [home.agents]);
+  const rows = useMemo(() => {
+    const terms = quickSearchTerms(query);
+    const found = indexed.filter(({ haystack }) => matchesQuickSearch(haystack, terms)).map(({ tile }) => tile);
+    return sortTiles(found, sort);
+  }, [indexed, query, sort]);
+  const slice = pageOf(rows, page, TILES_PAGE_SIZE);
+  const headers: Record<TileSortKey, string> = {
+    agent: t`Agent`,
+    deployments: t`Deployments`,
+    issues: t`Open issues`,
+  };
+  // A new search or sort starts over on the first page.
+  const search = (next: string) => {
+    setQuery(next);
+    onPage(0);
+  };
+  const sortBy = (key: TileSortKey) => {
+    setSort((current) => nextSort(current, key));
+    onPage(0);
+  };
+  return (
+    <TileSection
+      title={title}
+      headerExtra={
+        <>
+          <PageArrows slice={slice} total={rows.length} onPage={onPage} testId="home-agents" />
+          {extra}
+        </>
+      }
+    >
+      <QuickSearchInput value={query} onChange={search} className="w-full max-w-sm" testId="home-agents-search" />
+      <Table data-testid="home-agents-table">
+        <TableHeader>
+          <TableRow>
+            {SORT_KEYS.map((key) => {
+              const active = sort.key === key;
+              const Arrow = !active ? ArrowUpDown : sort.descending ? ArrowDown : ArrowUp;
+              return (
+                <TableHead
+                  key={key}
+                  className={key === 'agent' ? 'w-[45%] max-w-0' : undefined}
+                  aria-sort={active ? (sort.descending ? 'descending' : 'ascending') : 'none'}
+                >
+                  <button
+                    type="button"
+                    onClick={() => sortBy(key)}
+                    className={cn(
+                      '-ms-2 inline-flex h-7 items-center gap-1 rounded-md px-2 hover:bg-accent hover:text-foreground',
+                      active && 'text-foreground',
+                    )}
+                    data-testid={`home-agents-sort-${key}`}
+                  >
+                    {headers[key]}
+                    <Arrow className={cn('h-3.5 w-3.5', !active && 'text-muted-foreground')} aria-hidden />
+                  </button>
+                </TableHead>
+              );
+            })}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {slice.rows.map((tile) => (
+            <TableRow
+              key={tile.key}
+              data-state={home.selection?.tile.key === tile.key ? 'selected' : undefined}
+              className="cursor-pointer"
+              onClick={() => home.select(tile.key)}
+              onDoubleClick={() => home.open(tile)}
+              data-testid="home-agents-row"
+              data-tile-key={tile.key}
+            >
+              <TableCell className="w-[45%] max-w-0">
+                <div className="flex min-w-0 items-center gap-3">
+                  <TileFace tile={tile} className="h-8 w-8 shrink-0 text-sm" glyphClassName="h-4 w-4 text-lg" />
+                  <span className="truncate font-medium text-foreground">{tile.label}</span>
+                </div>
+              </TableCell>
+              <TableCell>
+                <CountOrDash value={deploymentCount(tile)} tone="primary" testId="home-agents-deployments" />
+              </TableCell>
+              <TableCell>
+                <CountOrDash value={tile.issueCount} tone="issues" testId="home-agents-issues" />
+              </TableCell>
+            </TableRow>
+          ))}
+          {slice.rows.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={SORT_KEYS.length} className="text-center text-muted-foreground">
+                <div className="flex h-8 items-center justify-center">
+                  <NoRows hasItems={home.agents.length > 0} query={query} />
+                </div>
+              </TableCell>
+            </TableRow>
+          )}
+          {Array.from({ length: fillerCount(home.agents.length, Math.max(slice.rows.length, 1)) }, (_, i) => (
+            <TableRow key={`filler-${i}`} aria-hidden className="invisible" data-testid="home-agents-filler">
+              <TableCell colSpan={SORT_KEYS.length}>
+                <div className="h-8" />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TileSection>
+  );
+}
+
+type AgentsView = 'list' | 'table';
+
+/**
+ * The Agents section: the icons (List, what it opens on every time) or the same agents as a table.
+ * The two share one page, so switching keeps you where you were.
+ */
+function AgentPages({ home }: { home: HomeTilesState }) {
+  const { t } = useLingui();
+  const { page, setPage } = useTilePage(home.agents, home);
+  const [view, setView] = useState<AgentsView>('list');
+  const title = labelForType(Agent.type);
+  const views = (
+    <AxisToggle
+      ariaLabel={t`View`}
+      options={[
+        { key: 'list', label: <Trans>List</Trans> },
+        { key: 'table', label: <Trans>Table</Trans> },
+      ]}
+      value={view}
+      onSelect={(key) => setView(key === 'table' ? 'table' : 'list')}
+      className="ms-auto"
+      testId="home-agents-view"
+    />
+  );
+  if (view === 'table') return <AgentTable title={title} home={home} page={page} onPage={setPage} extra={views} />;
+  return (
+    <TilePages
+      title={title}
+      tiles={home.agents}
+      home={home}
+      page={page}
+      onPage={setPage}
+      extra={views}
+      testId="home-agents"
+    />
+  );
+}
+
+function AppPages({ home }: { home: HomeTilesState }) {
+  const { page, setPage } = useTilePage(home.apps, home);
+  return (
+    <TilePages
+      title={<Trans>Apps</Trans>}
+      tiles={home.apps}
+      home={home}
+      page={page}
+      onPage={setPage}
+      testId="home-apps"
+    />
   );
 }
 
@@ -313,12 +539,12 @@ export function HomeTiles({ home, className }: { home: HomeTilesState; className
     <div className={cn('flex flex-col gap-4 text-start', className)} data-testid="home-tiles">
       {home.agents.length > 0 && (
         <div data-testid="project-agents-strip">
-          <TilePages title={labelForType(Agent.type)} tiles={home.agents} home={home} testId="home-agents" />
+          <AgentPages home={home} />
         </div>
       )}
       {home.apps.length > 0 && (
         <div data-testid="project-home-apps">
-          <TilePages title={<Trans>Apps</Trans>} tiles={home.apps} home={home} testId="home-apps" />
+          <AppPages home={home} />
         </div>
       )}
     </div>
