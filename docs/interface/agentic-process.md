@@ -171,7 +171,10 @@ A page shown in the display can report its live state to the agent beside it
   (`NavigationActions.openDock`) and every page and app frame runs with. Nothing mints per navigation, and the UI
   never mints. An agent that opens a page (`flow show`) MAY give it a key of its own, to hand it a context —
   `with_state_key` in `flow_sdk/core/navigate.py`, naming the session; the same page shown about the same thing
-  gets the same key. Either way the app hands the key to the frame: `?state=` for a served page (the server also writes
+  gets the same key. The one page that always has a key of its own is an app message's nano-app: its key names
+  the message (`context.message`), the app reads what it was opened on through it (`app-data`), and the app
+  shell asks the backend for it (`FlowMessage.appKey` → `app-key`; one message, one key — `app_state_key`),
+  so the frame, its page tab and the file opened in a browser (`?state=<key>&api=<backend>`) share it. Either way the app hands the key to the frame: `?state=` for a served page (the server also writes
   `__FLOWPAD_STATE_KEY__` into it), the head prelude for an MCP page. The SDK sends it as `X-Flowpad-State`
   (and `?state=` on the WebSocket). `sdk.htmlPage()` returns what the key stands for —
   `{context, params, process}` — so `process` is state, not a second global. A dock with no known key (a link from
