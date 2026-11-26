@@ -185,3 +185,22 @@ it('edits public access while preserving the restricted sender list', async () =
   expect(source.allowed_senders).toEqual(['15550001111']);
   expect(source.config).not.toHaveProperty('open_to_all');
 });
+
+it('offers public access on a channel that answers, though its driver declares no sender list', async () => {
+  hoisted.specs = [spec({ name: 'bot' })];
+  const source = new DataSource({ name: 'Bot', provider: 'bot' });
+  const save = vi.spyOn(source, 'save').mockResolvedValue(undefined as never);
+  vi.spyOn(source, 'markEdit').mockImplementation(() => undefined);
+  render(<TooltipProvider><DataSourceDialog open editing={source} onOpenChange={vi.fn()} /></TooltipProvider>);
+  fireEvent.click(screen.getByLabelText('Open to all'));
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(source.open_to_all).toBe(true);
+});
+
+it('offers no public access on a source that only reads', () => {
+  hoisted.specs = [spec({ name: 'feed', sends: false })];
+  const source = new DataSource({ name: 'Feed', provider: 'feed' });
+  render(<TooltipProvider><DataSourceDialog open editing={source} onOpenChange={vi.fn()} /></TooltipProvider>);
+  expect(screen.queryByLabelText('Open to all')).toBeNull();
+});

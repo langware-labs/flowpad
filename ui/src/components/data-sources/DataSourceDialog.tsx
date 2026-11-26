@@ -34,6 +34,7 @@ import {
   emptyDraft,
   fieldRules,
   fieldValue,
+  offersOpenToAll,
   pickedFrom,
   pickedIn,
   specFields,
@@ -584,7 +585,7 @@ export function DataSourceDialog({
                     .map(renderField)
                 )}
 
-                {!byWizard && specFields(spec).some(([key]) => key === ALLOWED_SENDERS_KEY) && (
+                {!byWizard && offersOpenToAll(spec) && (
                   <div className="flex items-center gap-2 rounded border p-2">
                     <Checkbox
                       id="ds-open-to-all"
